@@ -49,30 +49,52 @@
 | `docker-compose.yml` | Bridge + HA deployment |
 | `Makefile` | Build, test, proto-gen targets |
 
+### Repository Root (HACS)
+
+| File | Responsibility |
+|------|----------------|
+| `hacs.json` | HACS manifest (name, render_readme) |
+| `README.md` | User-facing docs (HACS requirement, Gold: docs-*) |
+| `LICENSE` | MIT license |
+| `.github/workflows/hacs.yml` | HACS validation CI |
+| `.github/workflows/hassfest.yml` | Hassfest validation CI |
+| `.github/workflows/test.yml` | Tests + lint + coverage CI |
+| `.github/workflows/go.yml` | Go build + test CI |
+| `.github/workflows/release.yml` | Release drafter |
+| `pyproject.toml` | pytest + coverage config |
+
 ### HA Custom Integration (`ha-integration/custom_components/eebus/`)
 
 | File | Responsibility |
 |------|----------------|
-| `__init__.py` | Integration setup, gRPC connection lifecycle |
-| `manifest.json` | Integration metadata |
-| `config_flow.py` | Discovery + pairing UI flow |
-| `coordinator.py` | DataUpdateCoordinator, gRPC stream listener |
-| `const.py` | Constants (domain, default port, etc.) |
+| `__init__.py` | Integration setup, runtime_data pattern |
+| `manifest.json` | Full manifest (documentation, issue_tracker, quality_scale) |
+| `quality_scale.yaml` | Gold Quality Scale compliance tracking |
+| `config_flow.py` | Discovery + pairing + reconfigure flow |
+| `coordinator.py` | DataUpdateCoordinator, gRPC stream listener, log-when-unavailable |
+| `const.py` | Constants, PARALLEL_UPDATES |
 | `entity.py` | Base entity class with device info |
 | `sensor.py` | Power consumption, energy sensors |
 | `number.py` | LPC limit, failsafe number entities |
 | `switch.py` | LPC active, heartbeat switches |
 | `binary_sensor.py` | Connection status, heartbeat ok |
-| `strings.json` | UI texts |
+| `diagnostics.py` | Diagnostic data export (Gold) |
+| `icons.json` | Entity icon translations (Gold) |
+| `strings.json` | UI texts + entity translations + exception translations |
 | `translations/en.json` | English translations |
 | `translations/de.json` | German translations |
+| `brand/icon.png` | Brand icon 256x256 (HACS + Gold) |
+| `brand/logo.png` | Brand logo 256x256 (HACS + Gold) |
+| `tests/__init__.py` | Test package |
 | `tests/conftest.py` | Shared test fixtures |
-| `tests/test_config_flow.py` | Config flow tests |
+| `tests/test_config_flow.py` | Config flow tests (incl. reconfigure) |
 | `tests/test_coordinator.py` | Coordinator tests |
 | `tests/test_sensor.py` | Sensor entity tests |
 | `tests/test_number.py` | Number entity tests |
 | `tests/test_switch.py` | Switch entity tests |
 | `tests/test_binary_sensor.py` | Binary sensor entity tests |
+| `tests/test_diagnostics.py` | Diagnostics tests |
+| `tests/test_init.py` | Setup + unload tests |
 
 ---
 
@@ -2965,16 +2987,58 @@ git commit -m "feat: add Dockerfile and docker-compose for bridge deployment"
 
 ---
 
-## Phase 8: HA Custom Integration
+## Phase 8: HA Custom Integration — Scaffold & HACS
 
-### Task 15: Integration Scaffold
+### Task 15: HACS Repository Setup + Integration Scaffold
 
 **Files:**
+- Create: `hacs.json`
 - Create: `ha-integration/custom_components/eebus/manifest.json`
+- Create: `ha-integration/custom_components/eebus/quality_scale.yaml`
 - Create: `ha-integration/custom_components/eebus/const.py`
 - Create: `ha-integration/custom_components/eebus/__init__.py`
+- Create: `ha-integration/custom_components/eebus/brand/icon.png`
+- Create: `ha-integration/custom_components/eebus/brand/logo.png`
+- Create: `pyproject.toml`
+- Create: `LICENSE`
 
-- [ ] **Step 1: Create manifest.json**
+- [ ] **Step 1: Create hacs.json (repo root)**
+
+Create `hacs.json`:
+
+```json
+{
+  "name": "EEBUS",
+  "render_readme": true
+}
+```
+
+- [ ] **Step 2: Create LICENSE**
+
+Create `LICENSE` with MIT license text (use your name + current year).
+
+- [ ] **Step 3: Create pyproject.toml**
+
+Create `pyproject.toml`:
+
+```toml
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["ha-integration/custom_components/eebus/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__",
+    "if TYPE_CHECKING",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+```
+
+- [ ] **Step 4: Create manifest.json (Gold-compliant)**
 
 Create `ha-integration/custom_components/eebus/manifest.json`:
 
@@ -2983,27 +3047,129 @@ Create `ha-integration/custom_components/eebus/manifest.json`:
   "domain": "eebus",
   "name": "EEBUS",
   "codeowners": ["@volschin"],
-  "version": "0.1.0",
-  "requirements": ["grpcio>=1.60.0", "protobuf>=4.25.0"],
-  "dependencies": [],
+  "config_flow": true,
+  "documentation": "https://github.com/volschin/eebus-ha-bridge",
+  "integration_type": "device",
   "iot_class": "local_push",
-  "config_flow": true
+  "issue_tracker": "https://github.com/volschin/eebus-ha-bridge/issues",
+  "quality_scale": "gold",
+  "requirements": ["grpcio>=1.60.0", "protobuf>=4.25.0"],
+  "single_config_entry": false,
+  "version": "0.1.0"
 }
 ```
 
-- [ ] **Step 2: Create const.py**
+- [ ] **Step 5: Create quality_scale.yaml**
+
+Create `ha-integration/custom_components/eebus/quality_scale.yaml`:
+
+```yaml
+# Quality Scale for EEBUS Integration
+# https://developers.home-assistant.io/docs/core/integration-quality-scale/
+
+rules:
+  # Bronze
+  action-setup:
+    status: exempt
+    comment: Integration bietet keine Service Actions.
+  appropriate-polling: done
+  brands: done
+  common-modules: done
+  config-flow: done
+  config-flow-test-coverage: done
+  dependency-transparency: done
+  docs-actions:
+    status: exempt
+    comment: Integration bietet keine Service Actions.
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  entity-event-setup: done
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure: done
+  test-before-setup: done
+  unique-config-entry: done
+
+  # Silver
+  action-exceptions:
+    status: exempt
+    comment: Integration bietet keine Service Actions.
+  config-entry-unloading: done
+  docs-configuration-parameters: done
+  docs-installation-parameters: done
+  entity-unavailable: done
+  integration-owner: done
+  log-when-unavailable: done
+  parallel-updates: done
+  reauthentication-flow:
+    status: exempt
+    comment: Keine Authentifizierung nötig (lokales gRPC-Protokoll).
+  test-coverage: done
+
+  # Gold
+  devices: done
+  diagnostics: done
+  discovery:
+    status: done
+    comment: mDNS-basierte EEBUS/SHIP Discovery via Bridge gRPC API.
+  discovery-update-info:
+    status: exempt
+    comment: Netzwerk-Info-Update über Bridge, nicht direkt via HA Discovery.
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices: done
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: done
+  dynamic-devices:
+    status: exempt
+    comment: Ein EEBUS-Gerät pro Config Entry.
+  entity-category: done
+  entity-device-class: done
+  entity-disabled-by-default: done
+  entity-translations: done
+  exception-translations: done
+  icon-translations: done
+  reconfiguration-flow: done
+  repair-issues:
+    status: exempt
+    comment: >
+      Keine Auth, Verbindungsprobleme über Verfügbarkeit und Logging
+      kommuniziert. Reconfigure-Flow deckt Bridge-Adressänderungen ab.
+  stale-devices:
+    status: exempt
+    comment: Ein Gerät pro Config Entry, wird bei Unload entfernt.
+```
+
+- [ ] **Step 6: Create const.py**
 
 Create `ha-integration/custom_components/eebus/const.py`:
 
 ```python
+"""Constants for the EEBUS integration."""
+
+from homeassistant.const import Platform
+
 DOMAIN = "eebus"
 DEFAULT_GRPC_PORT = 50051
 CONF_GRPC_HOST = "grpc_host"
 CONF_GRPC_PORT = "grpc_port"
 CONF_DEVICE_SKI = "device_ski"
+
+PLATFORMS = [
+    Platform.BINARY_SENSOR,
+    Platform.NUMBER,
+    Platform.SENSOR,
+    Platform.SWITCH,
+]
+
+PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling
 ```
 
-- [ ] **Step 3: Create __init__.py**
+- [ ] **Step 7: Create __init__.py (runtime_data pattern)**
 
 Create `ha-integration/custom_components/eebus/__init__.py`:
 
@@ -3012,16 +3178,21 @@ Create `ha-integration/custom_components/eebus/__init__.py`:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_DEVICE_SKI, CONF_GRPC_HOST, CONF_GRPC_PORT, DOMAIN
+from .const import CONF_DEVICE_SKI, CONF_GRPC_HOST, CONF_GRPC_PORT, PLATFORMS
 from .coordinator import EebusCoordinator
 
-PLATFORMS: list[str] = ["binary_sensor", "sensor", "number", "switch"]
+if TYPE_CHECKING:
+    EebusConfigEntry = ConfigEntry[EebusCoordinator]
+else:
+    EebusConfigEntry = ConfigEntry
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> bool:
     """Set up EEBUS from a config entry."""
     coordinator = EebusCoordinator(
         hass,
@@ -3031,24 +3202,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     await coordinator.async_config_entry_first_refresh()
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    entry.runtime_data = coordinator
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> bool:
     """Unload EEBUS config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        coordinator: EebusCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
-        await coordinator.async_shutdown()
+        await entry.runtime_data.async_shutdown()
     return unload_ok
+
+
+async def _async_reload_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> None:
+    """Reload on options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 8: Create brand directory with placeholder icons**
+
+Create `ha-integration/custom_components/eebus/brand/icon.png` — 256x256 EEBUS icon (placeholder: use EEBUS logo or a simple energy icon).
+
+Create `ha-integration/custom_components/eebus/brand/logo.png` — 256x256 EEBUS logo.
+
+Note: These can be generated via any icon tool or sourced from the EEBUS Initiative website. HACS requires at minimum `icon.png`.
+
+- [ ] **Step 9: Commit**
 
 ```bash
-git add ha-integration/
-git commit -m "feat: scaffold HA custom integration with manifest and init"
+git add hacs.json LICENSE pyproject.toml ha-integration/
+git commit -m "feat: scaffold HA integration with HACS + Gold quality scale compliance"
 ```
 
 ---
@@ -3136,7 +3323,7 @@ python -m pytest custom_components/eebus/tests/test_coordinator.py -v
 
 Expected: `ImportError` — `coordinator` module does not exist.
 
-- [ ] **Step 3: Implement coordinator**
+- [ ] **Step 3: Implement coordinator (with log-when-unavailable)**
 
 Create `ha-integration/custom_components/eebus/coordinator.py`:
 
@@ -3154,6 +3341,7 @@ import grpc
 import grpc.aio
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 _LOGGER = logging.getLogger(__name__)
@@ -3162,7 +3350,11 @@ POLL_INTERVAL = timedelta(seconds=30)
 
 
 class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Coordinator that manages gRPC connection and data updates."""
+    """Coordinator that manages gRPC connection and data updates.
+
+    Implements log-when-unavailable (Silver): logs once on first failure,
+    once on recovery. No repeated warnings.
+    """
 
     def __init__(
         self,
@@ -3183,6 +3375,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.ski = ski
         self._channel: grpc.aio.Channel | None = None
         self._stream_tasks: list[asyncio.Task] = []
+        self._was_unavailable: bool = False
 
     async def _ensure_channel(self) -> grpc.aio.Channel:
         """Create or return existing gRPC channel."""
@@ -3194,7 +3387,6 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Fetch data via gRPC polling (fallback when streams fail)."""
         try:
             channel = await self._ensure_channel()
-            # Import generated stubs at runtime
             from . import proto_stubs
 
             device_stub = proto_stubs.DeviceServiceStub(channel)
@@ -3229,9 +3421,92 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except grpc.aio.AioRpcError:
                 data["consumption_limit"] = None
 
+            # Try to get heartbeat status
+            try:
+                lpc_stub = proto_stubs.LPCServiceStub(channel)
+                hb = await lpc_stub.GetHeartbeatStatus(
+                    proto_stubs.DeviceRequest(ski=self.ski)
+                )
+                data["heartbeat_status"] = {
+                    "running": hb.running,
+                    "within_duration": hb.within_duration,
+                }
+            except grpc.aio.AioRpcError:
+                data["heartbeat_status"] = None
+
+            # Log recovery (log-when-unavailable, Silver)
+            if self._was_unavailable:
+                _LOGGER.info("EEBUS bridge connection restored at %s:%s", self.host, self.port)
+                self._was_unavailable = False
+
             return data
         except grpc.aio.AioRpcError as err:
+            # Close broken channel so next attempt creates a fresh one
+            if self._channel is not None:
+                await self._channel.close()
+                self._channel = None
+
+            # Log first failure only (log-when-unavailable, Silver)
+            if not self._was_unavailable:
+                _LOGGER.warning(
+                    "EEBUS bridge unavailable at %s:%s: %s", self.host, self.port, err
+                )
+                self._was_unavailable = True
+
             raise UpdateFailed(f"gRPC error: {err}") from err
+
+    async def async_write_lpc_limit(self, value_watts: float) -> None:
+        """Write LPC consumption limit via gRPC."""
+        channel = await self._ensure_channel()
+        from . import proto_stubs
+        stub = proto_stubs.LPCServiceStub(channel)
+        await stub.WriteConsumptionLimit(
+            proto_stubs.WriteLoadLimitRequest(
+                ski=self.ski, value_watts=value_watts, is_active=True
+            )
+        )
+
+    async def async_write_failsafe_limit(self, value_watts: float) -> None:
+        """Write failsafe limit via gRPC."""
+        channel = await self._ensure_channel()
+        from . import proto_stubs
+        stub = proto_stubs.LPCServiceStub(channel)
+        await stub.WriteFailsafeLimit(
+            proto_stubs.WriteFailsafeLimitRequest(
+                ski=self.ski, value_watts=value_watts
+            )
+        )
+
+    async def async_set_lpc_active(self, active: bool) -> None:
+        """Activate or deactivate LPC limit via gRPC."""
+        channel = await self._ensure_channel()
+        from . import proto_stubs
+        stub = proto_stubs.LPCServiceStub(channel)
+        # Read current limit first, then write with new is_active
+        current = await stub.GetConsumptionLimit(
+            proto_stubs.DeviceRequest(ski=self.ski)
+        )
+        await stub.WriteConsumptionLimit(
+            proto_stubs.WriteLoadLimitRequest(
+                ski=self.ski,
+                value_watts=current.value_watts,
+                is_active=active,
+            )
+        )
+
+    async def async_start_heartbeat(self) -> None:
+        """Start EEBUS heartbeat via gRPC."""
+        channel = await self._ensure_channel()
+        from . import proto_stubs
+        stub = proto_stubs.LPCServiceStub(channel)
+        await stub.StartHeartbeat(proto_stubs.DeviceRequest(ski=self.ski))
+
+    async def async_stop_heartbeat(self) -> None:
+        """Stop EEBUS heartbeat via gRPC."""
+        channel = await self._ensure_channel()
+        from . import proto_stubs
+        stub = proto_stubs.LPCServiceStub(channel)
+        await stub.StopHeartbeat(proto_stubs.DeviceRequest(ski=self.ski))
 
     async def async_shutdown(self) -> None:
         """Close gRPC channel and cancel stream tasks."""
@@ -3353,7 +3628,6 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialize."""
         self._host: str = ""
         self._port: int = DEFAULT_GRPC_PORT
-        self._discovered_devices: list[dict[str, str]] = []
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -3369,8 +3643,6 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
                 channel = grpc.aio.insecure_channel(
                     f"{self._host}:{self._port}"
                 )
-                # Verify connection by calling GetStatus
-                # Import generated stubs at runtime
                 from . import proto_stubs
 
                 stub = proto_stubs.DeviceServiceStub(channel)
@@ -3409,9 +3681,49 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="device",
             data_schema=STEP_DEVICE_DATA_SCHEMA,
         )
+
+    # Gold: reconfiguration-flow
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle reconfiguration of bridge connection."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            try:
+                channel = grpc.aio.insecure_channel(
+                    f"{user_input[CONF_GRPC_HOST]}:{user_input[CONF_GRPC_PORT]}"
+                )
+                from . import proto_stubs
+
+                stub = proto_stubs.DeviceServiceStub(channel)
+                await stub.GetStatus(proto_stubs.Empty())
+                await channel.close()
+
+                return self.async_update_reload_and_abort(
+                    self._get_reconfigure_entry(),
+                    data_updates={
+                        CONF_GRPC_HOST: user_input[CONF_GRPC_HOST],
+                        CONF_GRPC_PORT: user_input[CONF_GRPC_PORT],
+                    },
+                )
+            except grpc.aio.AioRpcError:
+                errors["base"] = "cannot_connect"
+
+        entry = self._get_reconfigure_entry()
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_GRPC_HOST, default=entry.data.get(CONF_GRPC_HOST, "")): str,
+                    vol.Required(CONF_GRPC_PORT, default=entry.data.get(CONF_GRPC_PORT, DEFAULT_GRPC_PORT)): int,
+                }
+            ),
+            errors=errors,
+        )
 ```
 
-- [ ] **Step 4: Create strings.json and translations**
+- [ ] **Step 4: Create strings.json (with entity + exception translations for Gold)**
 
 Create `ha-integration/custom_components/eebus/strings.json`:
 
@@ -3420,36 +3732,8 @@ Create `ha-integration/custom_components/eebus/strings.json`:
   "config": {
     "step": {
       "user": {
-        "title": "Connect to EEBUS Bridge",
-        "data": {
-          "grpc_host": "Bridge Host",
-          "grpc_port": "Bridge Port"
-        }
-      },
-      "device": {
-        "title": "Select EEBUS Device",
-        "data": {
-          "device_ski": "Device SKI"
-        }
-      }
-    },
-    "error": {
-      "cannot_connect": "Cannot connect to EEBUS bridge"
-    }
-  }
-}
-```
-
-Create `ha-integration/custom_components/eebus/translations/en.json` with the same content as `strings.json`.
-
-Create `ha-integration/custom_components/eebus/translations/de.json`:
-
-```json
-{
-  "config": {
-    "step": {
-      "user": {
         "title": "Mit EEBUS Bridge verbinden",
+        "description": "Bridge-Adresse eingeben und Verbindung testen.",
         "data": {
           "grpc_host": "Bridge-Host",
           "grpc_port": "Bridge-Port"
@@ -3460,16 +3744,149 @@ Create `ha-integration/custom_components/eebus/translations/de.json`:
         "data": {
           "device_ski": "Geräte-SKI"
         }
+      },
+      "reconfigure": {
+        "title": "EEBUS Bridge rekonfigurieren",
+        "description": "Bridge-Verbindungsparameter ändern.",
+        "data": {
+          "grpc_host": "Bridge-Host",
+          "grpc_port": "Bridge-Port"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Verbindung zur EEBUS Bridge fehlgeschlagen"
+      "cannot_connect": "Verbindung zur EEBUS Bridge fehlgeschlagen. Bitte Host und Port prüfen."
+    },
+    "abort": {
+      "already_configured": "Dieses Gerät ist bereits konfiguriert.",
+      "reconfigure_successful": "Rekonfiguration erfolgreich."
+    }
+  },
+  "exceptions": {
+    "bridge_unavailable": {
+      "message": "EEBUS Bridge unter {host}:{port} nicht erreichbar."
+    },
+    "grpc_error": {
+      "message": "gRPC-Fehler: {error}"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "power_consumption": { "name": "Leistungsaufnahme" },
+      "consumption_limit": { "name": "Leistungslimit" }
+    },
+    "number": {
+      "lpc_limit": { "name": "LPC Limit" },
+      "failsafe_limit": { "name": "Failsafe Limit" }
+    },
+    "switch": {
+      "lpc_active": { "name": "LPC aktiv" },
+      "heartbeat": { "name": "Heartbeat" }
+    },
+    "binary_sensor": {
+      "connected": { "name": "Verbunden" },
+      "heartbeat_ok": { "name": "Heartbeat OK" }
     }
   }
 }
 ```
 
-- [ ] **Step 5: Run test**
+Create `ha-integration/custom_components/eebus/translations/en.json`:
+
+```json
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to EEBUS Bridge",
+        "description": "Enter bridge address and test connection.",
+        "data": {
+          "grpc_host": "Bridge Host",
+          "grpc_port": "Bridge Port"
+        }
+      },
+      "device": {
+        "title": "Select EEBUS Device",
+        "data": {
+          "device_ski": "Device SKI"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure EEBUS Bridge",
+        "description": "Change bridge connection parameters.",
+        "data": {
+          "grpc_host": "Bridge Host",
+          "grpc_port": "Bridge Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to EEBUS bridge. Check host and port."
+    },
+    "abort": {
+      "already_configured": "This device is already configured.",
+      "reconfigure_successful": "Reconfiguration successful."
+    }
+  },
+  "exceptions": {
+    "bridge_unavailable": {
+      "message": "EEBUS bridge at {host}:{port} unreachable."
+    },
+    "grpc_error": {
+      "message": "gRPC error: {error}"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "power_consumption": { "name": "Power Consumption" },
+      "consumption_limit": { "name": "Consumption Limit" }
+    },
+    "number": {
+      "lpc_limit": { "name": "LPC Limit" },
+      "failsafe_limit": { "name": "Failsafe Limit" }
+    },
+    "switch": {
+      "lpc_active": { "name": "LPC Active" },
+      "heartbeat": { "name": "Heartbeat" }
+    },
+    "binary_sensor": {
+      "connected": { "name": "Connected" },
+      "heartbeat_ok": { "name": "Heartbeat OK" }
+    }
+  }
+}
+```
+
+Create `ha-integration/custom_components/eebus/translations/de.json` — same content as `strings.json`.
+
+- [ ] **Step 5: Create icons.json (Gold: icon-translations)**
+
+Create `ha-integration/custom_components/eebus/icons.json`:
+
+```json
+{
+  "entity": {
+    "sensor": {
+      "power_consumption": { "default": "mdi:flash" },
+      "consumption_limit": { "default": "mdi:speedometer" }
+    },
+    "number": {
+      "lpc_limit": { "default": "mdi:speedometer" },
+      "failsafe_limit": { "default": "mdi:shield-alert" }
+    },
+    "switch": {
+      "lpc_active": { "default": "mdi:power-plug" },
+      "heartbeat": { "default": "mdi:heart-pulse" }
+    },
+    "binary_sensor": {
+      "connected": { "default": "mdi:lan-connect" },
+      "heartbeat_ok": { "default": "mdi:heart-pulse" }
+    }
+  }
+}
+```
+
+- [ ] **Step 6: Run test**
 
 ```bash
 cd /home/volsch/eebus/ha-integration
@@ -3478,11 +3895,11 @@ python -m pytest custom_components/eebus/tests/test_config_flow.py -v
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add ha-integration/custom_components/eebus/config_flow.py ha-integration/custom_components/eebus/strings.json ha-integration/custom_components/eebus/translations/ ha-integration/custom_components/eebus/tests/test_config_flow.py
-git commit -m "feat: add config flow with bridge connection and device selection"
+git add ha-integration/custom_components/eebus/config_flow.py ha-integration/custom_components/eebus/strings.json ha-integration/custom_components/eebus/translations/ ha-integration/custom_components/eebus/icons.json ha-integration/custom_components/eebus/tests/test_config_flow.py
+git commit -m "feat: add config flow with reconfigure, entity/exception translations, icons"
 ```
 
 ---
@@ -3540,7 +3957,7 @@ python -m pytest custom_components/eebus/tests/test_sensor.py -v
 
 Expected: `ImportError`.
 
-- [ ] **Step 3: Implement entity base**
+- [ ] **Step 3: Implement entity base (Gold: has_entity_name, devices, translation_key)**
 
 Create `ha-integration/custom_components/eebus/entity.py`:
 
@@ -3557,7 +3974,14 @@ from .coordinator import EebusCoordinator
 
 
 class EebusEntity(CoordinatorEntity[EebusCoordinator]):
-    """Base class for EEBUS entities."""
+    """Base class for EEBUS entities.
+
+    Gold compliance:
+    - has_entity_name = True (Bronze)
+    - entity_unique_id via _attr_unique_id (Bronze)
+    - device_info creates HA device (Gold: devices)
+    - translation_key for entity names (Gold: entity-translations)
+    """
 
     _attr_has_entity_name = True
 
@@ -3567,7 +3991,8 @@ class EebusEntity(CoordinatorEntity[EebusCoordinator]):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.ski)},
             name=f"EEBUS {coordinator.ski[:8]}",
-            manufacturer="EEBUS",
+            manufacturer="Vaillant",
+            model="VR940f",
         )
 ```
 
@@ -3586,11 +4011,11 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfEnergy, UnitOfPower
+from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import DOMAIN, PARALLEL_UPDATES
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
 
@@ -3601,7 +4026,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up EEBUS sensors."""
-    coordinator: EebusCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: EebusCoordinator = entry.runtime_data
     entities: list[SensorEntity] = [
         EebusPowerSensor(coordinator),
         EebusConsumptionLimitSensor(coordinator),
@@ -3610,12 +4035,15 @@ async def async_setup_entry(
 
 
 class EebusPowerSensor(EebusEntity, SensorEntity):
-    """Sensor for current power consumption."""
+    """Sensor for current power consumption.
 
-    _attr_name = "Power Consumption"
+    Gold: device_class, state_class, translation_key, entity_category.
+    """
+
     _attr_device_class = SensorDeviceClass.POWER
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_translation_key = "power_consumption"
 
     def __init__(self, coordinator: EebusCoordinator) -> None:
         """Initialize."""
@@ -3631,12 +4059,16 @@ class EebusPowerSensor(EebusEntity, SensorEntity):
 
 
 class EebusConsumptionLimitSensor(EebusEntity, SensorEntity):
-    """Read-only sensor showing current consumption limit."""
+    """Read-only sensor showing current consumption limit.
 
-    _attr_name = "Consumption Limit"
+    Gold: entity_category DIAGNOSTIC (informational, not primary).
+    """
+
     _attr_device_class = SensorDeviceClass.POWER
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_translation_key = "consumption_limit"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: EebusCoordinator) -> None:
         """Initialize."""
@@ -3727,11 +4159,11 @@ from __future__ import annotations
 
 from homeassistant.components.number import NumberDeviceClass, NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfPower
+from homeassistant.const import EntityCategory, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import DOMAIN, PARALLEL_UPDATES
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
 
@@ -3742,7 +4174,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up EEBUS number entities."""
-    coordinator: EebusCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: EebusCoordinator = entry.runtime_data
     async_add_entities([
         EebusLPCLimitNumber(coordinator),
         EebusFailsafeLimitNumber(coordinator),
@@ -3750,15 +4182,19 @@ async def async_setup_entry(
 
 
 class EebusLPCLimitNumber(EebusEntity, NumberEntity):
-    """Number entity for setting LPC consumption limit."""
+    """Number entity for setting LPC consumption limit.
 
-    _attr_name = "LPC Limit"
+    Gold: device_class, translation_key, entity_category CONFIG.
+    """
+
     _attr_device_class = NumberDeviceClass.POWER
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_mode = NumberMode.BOX
     _attr_native_min_value = 0
     _attr_native_max_value = 32000
     _attr_native_step = 100
+    _attr_translation_key = "lpc_limit"
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: EebusCoordinator) -> None:
         """Initialize."""
@@ -3782,15 +4218,20 @@ class EebusLPCLimitNumber(EebusEntity, NumberEntity):
 
 
 class EebusFailsafeLimitNumber(EebusEntity, NumberEntity):
-    """Number entity for setting failsafe limit."""
+    """Number entity for setting failsafe limit.
 
-    _attr_name = "Failsafe Limit"
+    Gold: entity_category CONFIG, entity_disabled_by_default.
+    """
+
     _attr_device_class = NumberDeviceClass.POWER
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_mode = NumberMode.BOX
     _attr_native_min_value = 0
     _attr_native_max_value = 32000
     _attr_native_step = 100
+    _attr_translation_key = "failsafe_limit"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_entity_registry_enabled_default = False  # Gold: less popular entities disabled
 
     def __init__(self, coordinator: EebusCoordinator) -> None:
         """Initialize."""
@@ -3826,10 +4267,11 @@ from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import DOMAIN, PARALLEL_UPDATES
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
 
@@ -3840,7 +4282,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up EEBUS switch entities."""
-    coordinator: EebusCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: EebusCoordinator = entry.runtime_data
     async_add_entities([
         EebusLPCActiveSwitch(coordinator),
         EebusHeartbeatSwitch(coordinator),
@@ -3848,9 +4290,13 @@ async def async_setup_entry(
 
 
 class EebusLPCActiveSwitch(EebusEntity, SwitchEntity):
-    """Switch for activating/deactivating LPC limit."""
+    """Switch for activating/deactivating LPC limit.
 
-    _attr_name = "LPC Active"
+    Gold: translation_key, entity_category CONFIG.
+    """
+
+    _attr_translation_key = "lpc_active"
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: EebusCoordinator) -> None:
         """Initialize."""
@@ -3879,9 +4325,14 @@ class EebusLPCActiveSwitch(EebusEntity, SwitchEntity):
 
 
 class EebusHeartbeatSwitch(EebusEntity, SwitchEntity):
-    """Switch for starting/stopping EEBUS heartbeat."""
+    """Switch for starting/stopping EEBUS heartbeat.
 
-    _attr_name = "Heartbeat"
+    Gold: translation_key, entity_category CONFIG, disabled by default.
+    """
+
+    _attr_translation_key = "heartbeat"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_entity_registry_enabled_default = False  # Gold: less popular, disabled by default
 
     def __init__(self, coordinator: EebusCoordinator) -> None:
         """Initialize."""
@@ -3923,10 +4374,11 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import DOMAIN, PARALLEL_UPDATES
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
 
@@ -3937,7 +4389,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up EEBUS binary sensors."""
-    coordinator: EebusCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: EebusCoordinator = entry.runtime_data
     async_add_entities([
         EebusConnectedSensor(coordinator),
         EebusHeartbeatOkSensor(coordinator),
@@ -3945,10 +4397,14 @@ async def async_setup_entry(
 
 
 class EebusConnectedSensor(EebusEntity, BinarySensorEntity):
-    """Binary sensor for EEBUS connection status."""
+    """Binary sensor for EEBUS connection status.
 
-    _attr_name = "Connected"
+    Gold: translation_key, entity_category DIAGNOSTIC.
+    """
+
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    _attr_translation_key = "connected"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: EebusCoordinator) -> None:
         """Initialize."""
@@ -3964,11 +4420,15 @@ class EebusConnectedSensor(EebusEntity, BinarySensorEntity):
 
 
 class EebusHeartbeatOkSensor(EebusEntity, BinarySensorEntity):
-    """Binary sensor for heartbeat health."""
+    """Binary sensor for heartbeat health.
 
-    _attr_name = "Heartbeat OK"
+    Gold: translation_key, entity_category DIAGNOSTIC, disabled by default.
+    """
+
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
-    _attr_entity_registry_enabled_default = True
+    _attr_translation_key = "heartbeat_ok"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False  # Gold: less popular, disabled by default
 
     def __init__(self, coordinator: EebusCoordinator) -> None:
         """Initialize."""
@@ -4094,9 +4554,198 @@ git commit -m "feat: add Python gRPC stub generation from protobuf schemas"
 
 ---
 
-## Phase 10: Integration Testing
+## Phase 10: Diagnostics & Integration Tests
 
-### Task 21: End-to-End gRPC Integration Test
+### Task 21: Diagnostics (Gold)
+
+**Files:**
+- Create: `ha-integration/custom_components/eebus/diagnostics.py`
+- Create: `ha-integration/custom_components/eebus/tests/test_diagnostics.py`
+
+- [ ] **Step 1: Write failing test for diagnostics**
+
+Create `ha-integration/custom_components/eebus/tests/test_diagnostics.py`:
+
+```python
+"""Tests for EEBUS diagnostics."""
+
+from unittest.mock import MagicMock
+
+import pytest
+
+from custom_components.eebus.diagnostics import async_get_config_entry_diagnostics
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_output():
+    """Test diagnostics returns expected structure."""
+    hass = MagicMock()
+    entry = MagicMock()
+    entry.data = {
+        "grpc_host": "192.168.1.100",
+        "grpc_port": 50051,
+        "device_ski": "abcdef1234567890",
+    }
+    coordinator = MagicMock()
+    coordinator.data = {"power_watts": 1500.0, "connected": True}
+    entry.runtime_data = coordinator
+
+    result = await async_get_config_entry_diagnostics(hass, entry)
+
+    assert "config" in result
+    assert result["config"]["grpc_host"] == "192.168.1.100"
+    assert result["config"]["device_ski"] == "**REDACTED**"
+    assert "coordinator_data" in result
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+cd /home/volsch/eebus/ha-integration
+python -m pytest custom_components/eebus/tests/test_diagnostics.py -v
+```
+
+Expected: `ImportError`.
+
+- [ ] **Step 3: Implement diagnostics**
+
+Create `ha-integration/custom_components/eebus/diagnostics.py`:
+
+```python
+"""Diagnostics for the EEBUS integration."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from homeassistant.core import HomeAssistant
+
+from . import EebusConfigEntry
+
+
+async def async_get_config_entry_diagnostics(
+    hass: HomeAssistant,
+    entry: EebusConfigEntry,
+) -> dict[str, Any]:
+    """Return diagnostics for a config entry."""
+    coordinator = entry.runtime_data
+
+    return {
+        "config": {
+            "grpc_host": entry.data.get("grpc_host"),
+            "grpc_port": entry.data.get("grpc_port"),
+            "device_ski": "**REDACTED**",
+        },
+        "coordinator_data": dict(coordinator.data) if coordinator.data else None,
+    }
+```
+
+- [ ] **Step 4: Run test**
+
+```bash
+cd /home/volsch/eebus/ha-integration
+python -m pytest custom_components/eebus/tests/test_diagnostics.py -v
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add ha-integration/custom_components/eebus/diagnostics.py ha-integration/custom_components/eebus/tests/test_diagnostics.py
+git commit -m "feat: add diagnostics export (Gold quality scale)"
+```
+
+---
+
+### Task 22: Setup & Unload Tests (Silver: test-coverage)
+
+**Files:**
+- Create: `ha-integration/custom_components/eebus/tests/test_init.py`
+
+- [ ] **Step 1: Write tests for setup and unload**
+
+Create `ha-integration/custom_components/eebus/tests/test_init.py`:
+
+```python
+"""Tests for EEBUS integration setup and unload."""
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_setup_entry():
+    """Test async_setup_entry creates coordinator and forwards platforms."""
+    from custom_components.eebus import async_setup_entry
+
+    hass = MagicMock()
+    entry = MagicMock()
+    entry.data = {
+        "grpc_host": "127.0.0.1",
+        "grpc_port": 50051,
+        "device_ski": "test-ski",
+    }
+    entry.runtime_data = None
+    entry.async_on_unload = MagicMock()
+    entry.add_update_listener = MagicMock()
+
+    with patch(
+        "custom_components.eebus.EebusCoordinator"
+    ) as mock_coordinator_cls:
+        coordinator = AsyncMock()
+        coordinator.async_config_entry_first_refresh = AsyncMock()
+        mock_coordinator_cls.return_value = coordinator
+
+        hass.config_entries.async_forward_entry_setups = AsyncMock()
+
+        result = await async_setup_entry(hass, entry)
+
+        assert result is True
+        assert entry.runtime_data == coordinator
+        coordinator.async_config_entry_first_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_unload_entry():
+    """Test async_unload_entry shuts down coordinator."""
+    from custom_components.eebus import async_unload_entry
+
+    hass = MagicMock()
+    entry = MagicMock()
+
+    coordinator = AsyncMock()
+    coordinator.async_shutdown = AsyncMock()
+    entry.runtime_data = coordinator
+
+    hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+
+    result = await async_unload_entry(hass, entry)
+
+    assert result is True
+    coordinator.async_shutdown.assert_awaited_once()
+```
+
+- [ ] **Step 2: Run tests**
+
+```bash
+cd /home/volsch/eebus/ha-integration
+python -m pytest custom_components/eebus/tests/test_init.py -v
+```
+
+Expected: PASS.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add ha-integration/custom_components/eebus/tests/test_init.py
+git commit -m "test: add setup/unload tests for Silver coverage requirement"
+```
+
+---
+
+### Task 23: End-to-End gRPC Integration Test
 
 **Files:**
 - Create: `eebus-bridge/internal/grpc/integration_test.go`
@@ -4179,7 +4828,6 @@ func TestIntegrationDeviceServiceRoundTrip(t *testing.T) {
 		t.Fatalf("SubscribeDeviceEvents: %v", err)
 	}
 
-	// Simulate a device connection event
 	callbacks.RemoteSKIConnected(nil, "remote-ski-test")
 
 	evt, err := stream.Recv()
@@ -4213,19 +4861,25 @@ git commit -m "test: add gRPC integration test for device service round-trip"
 
 ---
 
-## Phase 11: CI Pipeline
+## Phase 11: CI Pipeline (HACS + Hassfest + Tests)
 
-### Task 22: GitHub Actions CI
+### Task 24: GitHub Actions CI Workflows
 
 **Files:**
-- Create: `.github/workflows/ci.yml`
+- Create: `.github/workflows/go.yml`
+- Create: `.github/workflows/test.yml`
+- Create: `.github/workflows/hacs.yml`
+- Create: `.github/workflows/hassfest.yml`
+- Create: `.github/workflows/release.yml`
 
-- [ ] **Step 1: Create CI workflow**
+Modeled after the [Danfoss-TLX-2-HA](https://github.com/volschin/Danfoss-TLX-2-HA) CI setup.
 
-Create `.github/workflows/ci.yml`:
+- [ ] **Step 1: Create HACS validation workflow**
+
+Create `.github/workflows/hacs.yml`:
 
 ```yaml
-name: CI
+name: HACS Validation
 
 on:
   push:
@@ -4234,7 +4888,95 @@ on:
     branches: [main]
 
 jobs:
-  go:
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: HACS Validation
+        uses: hacs/action@main
+        with:
+          category: integration
+```
+
+- [ ] **Step 2: Create Hassfest validation workflow**
+
+Create `.github/workflows/hassfest.yml`:
+
+```yaml
+name: Hassfest
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Hassfest Validation
+        uses: home-assistant/actions/hassfest@master
+```
+
+- [ ] **Step 3: Create Python test + lint workflow**
+
+Create `.github/workflows/test.yml`:
+
+```yaml
+name: Test & Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-asyncio pytest-cov ruff homeassistant voluptuous grpcio protobuf
+
+      - name: Lint with ruff
+        run: ruff check ha-integration/custom_components/ ha-integration/custom_components/eebus/tests/
+
+      - name: Run tests with coverage
+        run: pytest --cov=ha-integration.custom_components.eebus --cov-report=term-missing --cov-fail-under=95 -v
+```
+
+- [ ] **Step 4: Create Go build + test workflow**
+
+Create `.github/workflows/go.yml`:
+
+```yaml
+name: Go
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -4249,32 +4991,281 @@ jobs:
       - run: go test -tags=integration -v ./internal/grpc/ -run TestIntegration
       - run: go build ./cmd/eebus-bridge/
 
-  python:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ha-integration
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install pytest pytest-asyncio grpcio grpcio-tools protobuf homeassistant voluptuous
-      - run: python -m pytest custom_components/eebus/tests/ -v
-
   docker:
     runs-on: ubuntu-latest
-    needs: [go]
+    needs: [build]
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t eebus-bridge ./eebus-bridge
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 5: Create release drafter workflow**
+
+Create `.github/workflows/release.yml`:
+
+```yaml
+name: Release Drafter
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: release-drafter/release-drafter@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add .github/
-git commit -m "ci: add GitHub Actions workflow for Go, Python, and Docker"
+git commit -m "ci: add HACS, Hassfest, test, Go, and release CI workflows"
+```
+
+---
+
+## Phase 12: README (Gold Documentation)
+
+### Task 25: README (Danfoss-TLX-2-HA style)
+
+**Files:**
+- Modify: `README.md`
+
+This README satisfies Gold documentation requirements: docs-high-level-description, docs-installation-instructions, docs-removal-instructions, docs-configuration-parameters, docs-installation-parameters, docs-data-update, docs-examples, docs-known-limitations, docs-supported-devices, docs-supported-functions, docs-troubleshooting, docs-use-cases.
+
+- [ ] **Step 1: Write README**
+
+Replace `README.md`:
+
+````markdown
+# EEBUS Bridge → Home Assistant
+
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration) [![GitHub Release](https://img.shields.io/github/v/release/volschin/eebus-ha-bridge?style=for-the-badge)](https://github.com/volschin/eebus-ha-bridge/releases) [![License](https://img.shields.io/github/license/volschin/eebus-ha-bridge?style=for-the-badge)](LICENSE) [![Quality Scale](https://img.shields.io/badge/Quality%20Scale-Gold-FFD700?style=for-the-badge)](https://www.home-assistant.io/docs/quality_scale/)
+
+[![Tests](https://img.shields.io/github/actions/workflow/status/volschin/eebus-ha-bridge/test.yml?branch=main&style=for-the-badge&label=Tests)](https://github.com/volschin/eebus-ha-bridge/actions/workflows/test.yml) [![HACS Validation](https://img.shields.io/github/actions/workflow/status/volschin/eebus-ha-bridge/hacs.yml?branch=main&style=for-the-badge&label=HACS)](https://github.com/volschin/eebus-ha-bridge/actions/workflows/hacs.yml) [![Hassfest](https://img.shields.io/github/actions/workflow/status/volschin/eebus-ha-bridge/hassfest.yml?branch=main&style=for-the-badge&label=Hassfest)](https://github.com/volschin/eebus-ha-bridge/actions/workflows/hassfest.yml)
+
+Lokale Integration von EEBUS-faehigen Waermepumpen in Home Assistant ueber das **EEBUS-Protokoll** (SHIP + SPINE) -- ohne Cloud, ohne mypyllant-Abhaengigkeit fuer Lastmanagement.
+
+## Features
+
+- **Leistungsbegrenzung (LPC)** -- Paragraph-14a-konforme Laststeuerung via EEBUS
+- **Leistungsmessung** -- Elektrische Verbrauchsdaten der Waermepumpe in Echtzeit
+- **Discovery & Pairing** -- mDNS-Erkennung und SKI-basiertes Pairing ueber den HA Config Flow
+- **Heartbeat-Ueberwachung** -- Sicherheitsrelevanter EEBUS-Heartbeat mit Failsafe-Fallback
+- **Energy Dashboard** -- Volle Integration mit dem HA Energy Dashboard
+- **Erweiterbar** -- Architektur vorbereitet fuer zukuenftige EEBUS-HVAC-Use-Cases
+
+## Architektur
+
+```
+Home Assistant                    eebus-bridge (Go)         Vaillant VR940f
++----------------+    gRPC    +------------------+   SHIP   +--------------+
+| eebus custom   |<---------->| gRPC Server      |<-------->| aroTHERM plus|
+| integration    |            | eebus-go (SHIP/  |          | (EEBUS CS)   |
+| (Python)       |            | SPINE embedded)  |          |              |
++----------------+            +------------------+          +--------------+
+```
+
+## Installation
+
+### HACS (empfohlen)
+
+1. HACS in Home Assistant oeffnen
+2. **Integrations** > drei Punkte oben rechts > **Custom repositories**
+3. Repository-URL einfuegen: `https://github.com/volschin/eebus-ha-bridge`
+4. Kategorie: **Integration** > **Add**
+5. Nach "EEBUS" suchen und **Download** klicken
+6. Home Assistant neustarten
+
+### Manuelle Installation
+
+1. Neuestes Release von der [Releases-Seite](https://github.com/volschin/eebus-ha-bridge/releases) herunterladen
+2. Den Ordner `eebus` nach `custom_components/eebus/` kopieren
+3. Home Assistant neustarten
+
+### Bridge-Setup
+
+Der Go-basierte Bridge-Dienst muss separat laufen (Docker empfohlen):
+
+```bash
+docker-compose up -d eebus-bridge
+```
+
+Alternativ als Binary:
+
+```bash
+./eebus-bridge --config config.yaml
+```
+
+## Einrichtung
+
+1. **Settings** > **Devices & Services** > **Add Integration**
+2. Nach **EEBUS** suchen
+3. **Bridge-Host** und **Bridge-Port** eingeben (Standard: `localhost:50051`)
+4. Die Integration testet die Verbindung zur Bridge
+5. **Geraete-SKI** eingeben (wird in der Bridge-Log beim Discovery angezeigt)
+6. In der **myVaillant-App** das Pairing bestaetigen
+
+### Rekonfiguration
+
+Bridge-Adresse aendern: **Settings** > **Devices & Services** > **EEBUS** > **Configure**
+
+### Entfernen
+
+**Settings** > **Devices & Services** > **EEBUS** > **Delete**
+
+## Daten-Aktualisierung
+
+Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Updates. Bei Stream-Abbruch wechselt sie automatisch auf **Polling** (30s Intervall) und verbindet den Stream im Hintergrund neu.
+
+- **Leistungsmessung:** Event-basiert (ca. alle 60s vom Inverter)
+- **LPC-Limits:** Event-basiert (bei Aenderung)
+- **Heartbeat:** Alle 4 Sekunden (im Bridge, nicht in HA)
+
+## Verfuegbare Entities
+
+### Sensoren
+
+| Entity | Typ | Beschreibung |
+|--------|-----|-------------|
+| `sensor.eebus_power_consumption` | sensor | Aktuelle elektr. Leistung (W) |
+| `sensor.eebus_consumption_limit` | sensor | Aktuell gesetztes LPC-Limit (W), readonly |
+
+### Steuerung
+
+| Entity | Typ | Beschreibung |
+|--------|-----|-------------|
+| `number.eebus_lpc_limit` | number | LPC-Limit setzen (W) |
+| `number.eebus_failsafe_limit` | number | Failsafe-Grenze (W), standardmaessig deaktiviert |
+| `switch.eebus_lpc_active` | switch | Limit aktivieren/deaktivieren |
+| `switch.eebus_heartbeat` | switch | Heartbeat an/aus, standardmaessig deaktiviert |
+
+### Diagnose
+
+| Entity | Typ | Beschreibung |
+|--------|-----|-------------|
+| `binary_sensor.eebus_connected` | binary_sensor | EEBUS-Verbindungsstatus |
+| `binary_sensor.eebus_heartbeat_ok` | binary_sensor | Heartbeat innerhalb Toleranz, standardmaessig deaktiviert |
+
+## Unterstuetzte Geraete
+
+### Kompatible Modelle
+
+| Hersteller | Modell | Gateway | Getestet |
+|-----------|--------|---------|----------|
+| Vaillant | aroTHERM plus | VR940f | Primaeres Ziel |
+| Vaillant | aroTHERM plus | VR920/VR921 | Erwartet kompatibel |
+
+### Voraussetzungen
+
+- Vaillant Gateway (VR920/VR921/VR940f) mit aktiviertem EEBUS
+- Gateway und eebus-bridge im selben Netzwerk
+- Docker oder Go 1.22+ fuer den Bridge-Dienst
+
+### Nicht unterstuetzt
+
+- HVAC-Steuerung (Betriebsmodi, Sollwerte) -- Vaillant exponiert diese nicht ueber EEBUS
+- Geraete ohne EEBUS-Schnittstelle
+
+## Anwendungsbeispiele
+
+### PV-gefuehrte Lastbegrenzung
+
+```yaml
+automation:
+  - alias: "PV-Ueberschuss an Waermepumpe"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.pv_ueberschuss
+        above: 2000
+    action:
+      - service: number.set_value
+        target:
+          entity_id: number.eebus_lpc_limit
+        data:
+          value: "{{ states('sensor.pv_ueberschuss') | float }}"
+      - service: switch.turn_on
+        target:
+          entity_id: switch.eebus_lpc_active
+```
+
+### Paragraph-14a-Notbremse
+
+```yaml
+automation:
+  - alias: "Paragraph 14a Leistungsbegrenzung"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.netzbetreiber_signal
+        to: "on"
+    action:
+      - service: number.set_value
+        target:
+          entity_id: number.eebus_lpc_limit
+        data:
+          value: 4200
+      - service: switch.turn_on
+        target:
+          entity_id: switch.eebus_lpc_active
+```
+
+## Bekannte Einschraenkungen
+
+- **Keine HVAC-Steuerung:** Vaillant exponiert Betriebsmodi und Sollwerte nicht ueber EEBUS. Dafuer weiterhin mypyllant nutzen.
+- **Kein Auto-Discovery in HA:** Die Bridge-Adresse muss manuell eingegeben werden. Die EEBUS-Discovery (mDNS) findet Waermepumpen, aber die Bridge selbst wird nicht von HA entdeckt.
+- **Re-Pairing bei Zertifikatsverlust:** Wird das Bridge-Zertifikat geloescht, aendert sich der SKI. Erneutes Pairing in der myVaillant-App noetig.
+- **Heartbeat bei Bridge-Ausfall:** Die Waermepumpe erkennt den Heartbeat-Timeout (max 2 min) und faellt auf den Failsafe-Wert zurueck.
+
+## Troubleshooting
+
+<details>
+<summary>Bridge nicht erreichbar</summary>
+
+1. Bridge-Container laeuft? `docker ps | grep eebus-bridge`
+2. Port 50051 erreichbar? `grpcurl -plaintext localhost:50051 list`
+3. Bridge-Log pruefen: `docker logs eebus-bridge`
+
+</details>
+
+<details>
+<summary>Pairing schlaegt fehl</summary>
+
+1. SKI in der Bridge-Log pruefen (wird beim Start ausgegeben)
+2. In der myVaillant-App unter Netzwerk > EEBUS den Bridge-SKI bestaetigen
+3. Sicherstellen, dass beide Geraete im selben Netzwerk sind
+
+</details>
+
+<details>
+<summary>Keine Messwerte</summary>
+
+- EEBUS-Messwerte kommen ca. alle 60 Sekunden
+- Pruefen ob `binary_sensor.eebus_connected` "on" ist
+- Bridge-Log auf Fehlermeldungen pruefen
+
+</details>
+
+## Lizenz
+
+MIT License -- siehe [LICENSE](LICENSE).
+````
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add README.md
+git commit -m "docs: add Gold-compliant README with full documentation coverage"
 ```
 
 ---
@@ -4285,18 +5276,58 @@ git commit -m "ci: add GitHub Actions workflow for Go, Python, and Docker"
 |-------|-------|-------------|
 | 1 | 1-3 | Go scaffold, config, certs |
 | 2 | 4 | Event bus |
-| 3 | 5 | Protobuf schemas |
+| 3 | 5 | Protobuf schemas + code gen |
 | 4 | 6-7 | EEBUS service + use case wrappers |
 | 5 | 8-11 | gRPC server + service implementations |
 | 6 | 12-13 | Device registry + main wiring |
 | 7 | 14 | Docker deployment |
-| 8 | 15-19 | HA custom integration |
+| 8 | 15-19 | HA integration scaffold (HACS + Gold), coordinator, config flow, entities |
 | 9 | 20 | Python proto stubs |
-| 10 | 21 | Integration tests |
-| 11 | 22 | CI pipeline |
+| 10 | 21-23 | Diagnostics, setup/unload tests, gRPC integration test |
+| 11 | 24 | CI workflows (HACS, Hassfest, test, Go, release) |
+| 12 | 25 | README (Gold documentation) |
 
-**Total:** 22 tasks across 11 phases.
+**Total:** 25 tasks across 12 phases.
 
-**Parallelizable:** The Go bridge (Tasks 1-14) and HA integration (Tasks 15-19) can be developed in parallel once protobuf schemas (Task 5) are stable. Python stub generation (Task 20) depends on the proto schemas.
+**Quality Scale Gold compliance by task:**
 
-**First milestone:** After Tasks 1-14, the bridge is runnable and testable with `grpcurl` or any gRPC client. The HA integration adds the user-facing layer on top.
+| Rule | Status | Task |
+|------|--------|------|
+| config-flow | done | 17 |
+| config-flow-test-coverage | done | 17 |
+| brands | done | 15 |
+| entity-unique-id | done | 18-19 |
+| has-entity-name | done | 18 |
+| runtime-data | done | 15 |
+| test-before-configure | done | 17 |
+| unique-config-entry | done | 17 |
+| config-entry-unloading | done | 15, 22 |
+| entity-unavailable | done | 16 |
+| log-when-unavailable | done | 16 |
+| parallel-updates | done | 15 |
+| test-coverage (>95%) | done | 22, 24 |
+| devices | done | 18 |
+| diagnostics | done | 21 |
+| entity-category | done | 18-19 |
+| entity-device-class | done | 18-19 |
+| entity-disabled-by-default | done | 19 |
+| entity-translations | done | 17 |
+| exception-translations | done | 17 |
+| icon-translations | done | 17 |
+| reconfiguration-flow | done | 17 |
+| docs-* (all) | done | 25 |
+
+**HACS compliance by task:**
+
+| Requirement | Task |
+|-------------|------|
+| hacs.json | 15 |
+| manifest.json (all fields) | 15 |
+| brand/ (icon.png, logo.png) | 15 |
+| HACS validation CI | 24 |
+| Hassfest validation CI | 24 |
+| Release drafter | 24 |
+
+**Parallelizable:** Go bridge (Tasks 1-14) and HA integration (Tasks 15-19) can be developed in parallel once protobuf schemas (Task 5) are stable.
+
+**First milestone:** After Tasks 1-14, the bridge is runnable and testable with `grpcurl`. The HA integration adds the user-facing layer on top.
