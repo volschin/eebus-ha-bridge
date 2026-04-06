@@ -28,6 +28,7 @@ Home Assistant                    eebus-bridge (Go)         Vaillant VR940f
 
 - [Research — Integrationsansätze](eebus-research.md) — Analyse von 7 möglichen Ansätzen zur EEBUS-Integration
 - [Design-Spec](docs/superpowers/specs/2026-04-06-eebus-bridge-design.md) — Detailliertes Design für den gewählten Ansatz (Go-Bridge + gRPC + HA Custom Integration)
+- [Implementation Plan](docs/superpowers/plans/2026-04-06-eebus-bridge.md) - Detaillierter Implementierungsplan zur Umsetzung des Designs
 
 ## Lizenz
 
