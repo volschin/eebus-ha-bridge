@@ -1,0 +1,15 @@
+services:
+  eebus-bridge:
+    build:
+      context: ./eebus-bridge
+    ports:
+      - "50051:50051"
+      - "4712:4712"
+    volumes:
+      - eebus-data:/data
+      - ./eebus-bridge/config.yaml:/etc/eebus-bridge/config.yaml:ro
+    network_mode: host
+    restart: unless-stopped
+
+volumes:
+  eebus-data:
