@@ -79,9 +79,14 @@ jobs:
       needs.test.result == 'success'
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
       pull-requests: read
     steps:
+      - name: Wait for HACS and Hassfest workflows
+        uses: int128/wait-for-workflows-action@v1
+        with:
+          filter-workflow-name: "HACS,Hassfest"
       - uses: release-drafter/release-drafter@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
