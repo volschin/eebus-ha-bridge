@@ -2,7 +2,6 @@
 
 import inspect
 from datetime import timedelta
-from unittest.mock import MagicMock, patch
 
 from custom_components.eebus.coordinator import EebusCoordinator, POLL_INTERVAL
 
