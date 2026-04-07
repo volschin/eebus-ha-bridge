@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Detect which paths changed so Go jobs can be skipped when irrelevant
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            go:
+              - 'eebus-bridge/**'
+              - '.github/workflows/ci.yml'
+
+  go:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: eebus-bridge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - run: go vet ./...
+      - run: go test -v -race ./...
+      - run: go test -tags=integration -v ./internal/grpc/ -run TestIntegration
+      - run: go build ./cmd/eebus-bridge/
+
+  docker:
+    needs: go
+    if: needs.go.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t eebus-bridge ./eebus-bridge
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-asyncio pytest-cov ruff homeassistant voluptuous grpcio protobuf
+      - name: Lint with ruff
+        run: ruff check custom_components/
+      - name: Run tests with coverage
+        run: PYTHONPATH=. pytest --cov --cov-report=term-missing -v
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  release-draft:
+    needs: [go, docker, test, hacs, hassfest]
+    # Runs exactly once on push to main, only when all quality gates pass.
+    # Go and docker may be skipped (no Go files changed) — that is acceptable.
+    if: |
+      always() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      (needs.go.result == 'success' || needs.go.result == 'skipped') &&
+      (needs.docker.result == 'success' || needs.docker.result == 'skipped') &&
+      needs.test.result == 'success' &&
+      needs.hacs.result == 'success' &&
+      needs.hassfest.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: release-drafter/release-drafter@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
