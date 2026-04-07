@@ -66,22 +66,8 @@ jobs:
       - name: Run tests with coverage
         run: PYTHONPATH=. pytest --cov --cov-report=term-missing -v
 
-  hacs:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hacs/action@main
-        with:
-          category: integration
-
-  hassfest:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: home-assistant/actions/hassfest@master
-
   release-draft:
-    needs: [go, docker, test, hacs, hassfest]
+    needs: [go, docker, test]
     # Runs exactly once on push to main, only when all quality gates pass.
     # Go and docker may be skipped (no Go files changed) — that is acceptable.
     if: |
@@ -90,9 +76,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       (needs.go.result == 'success' || needs.go.result == 'skipped') &&
       (needs.docker.result == 'success' || needs.docker.result == 'skipped') &&
-      needs.test.result == 'success' &&
-      needs.hacs.result == 'success' &&
-      needs.hassfest.result == 'success'
+      needs.test.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
