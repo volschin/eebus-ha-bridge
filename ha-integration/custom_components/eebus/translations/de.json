@@ -1,0 +1,61 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mit EEBUS Bridge verbinden",
+        "description": "Bridge-Adresse eingeben und Verbindung testen.",
+        "data": {
+          "grpc_host": "Bridge-Host",
+          "grpc_port": "Bridge-Port"
+        }
+      },
+      "device": {
+        "title": "EEBUS-Gerät auswählen",
+        "data": {
+          "device_ski": "Geräte-SKI"
+        }
+      },
+      "reconfigure": {
+        "title": "EEBUS Bridge rekonfigurieren",
+        "description": "Bridge-Verbindungsparameter ändern.",
+        "data": {
+          "grpc_host": "Bridge-Host",
+          "grpc_port": "Bridge-Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zur EEBUS Bridge fehlgeschlagen. Bitte Host und Port prüfen."
+    },
+    "abort": {
+      "already_configured": "Dieses Gerät ist bereits konfiguriert.",
+      "reconfigure_successful": "Rekonfiguration erfolgreich."
+    }
+  },
+  "exceptions": {
+    "bridge_unavailable": {
+      "message": "EEBUS Bridge unter {host}:{port} nicht erreichbar."
+    },
+    "grpc_error": {
+      "message": "gRPC-Fehler: {error}"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "power_consumption": { "name": "Leistungsaufnahme" },
+      "consumption_limit": { "name": "Leistungslimit" }
+    },
+    "number": {
+      "lpc_limit": { "name": "LPC Limit" },
+      "failsafe_limit": { "name": "Failsafe Limit" }
+    },
+    "switch": {
+      "lpc_active": { "name": "LPC aktiv" },
+      "heartbeat": { "name": "Heartbeat" }
+    },
+    "binary_sensor": {
+      "connected": { "name": "Verbunden" },
+      "heartbeat_ok": { "name": "Heartbeat OK" }
+    }
+  }
+}

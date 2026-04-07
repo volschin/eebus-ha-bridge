@@ -1,0 +1,20 @@
+{
+  "entity": {
+    "sensor": {
+      "power_consumption": { "default": "mdi:flash" },
+      "consumption_limit": { "default": "mdi:speedometer" }
+    },
+    "number": {
+      "lpc_limit": { "default": "mdi:speedometer" },
+      "failsafe_limit": { "default": "mdi:shield-alert" }
+    },
+    "switch": {
+      "lpc_active": { "default": "mdi:power-plug" },
+      "heartbeat": { "default": "mdi:heart-pulse" }
+    },
+    "binary_sensor": {
+      "connected": { "default": "mdi:lan-connect" },
+      "heartbeat_ok": { "default": "mdi:heart-pulse" }
+    }
+  }
+}
