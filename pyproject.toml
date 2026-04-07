@@ -2,6 +2,13 @@
 asyncio_mode = "auto"
 testpaths = ["custom_components/eebus/tests"]
 
+[tool.coverage.run]
+source_pkgs = ["custom_components.eebus"]
+omit = [
+    "custom_components/eebus/tests/*",
+    "custom_components/eebus/generated/*",
+]
+
 [tool.coverage.report]
 exclude_lines = [
     "pragma: no cover",

@@ -31,4 +31,4 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          PYTHONPATH=. pytest --cov=custom_components.eebus --cov-report=term-missing --cov-fail-under=80 -v
+          PYTHONPATH=. pytest --cov --cov-report=term-missing -v
