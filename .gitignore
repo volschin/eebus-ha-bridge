@@ -1,1 +1,7 @@
 .worktrees/
+__pycache__/
+*.pyc
+*.pyo
+eebus-bridge/bin/
+eebus-bridge/eebus-bridge
+.pytest_cache/
