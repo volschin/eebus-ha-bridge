@@ -9,7 +9,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o /eebus-bridge ./cmd/eebus-bridge
 
-FROM alpine:3.19
+FROM alpine:3.23
 
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /eebus-bridge /usr/local/bin/eebus-bridge
