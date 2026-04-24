@@ -84,7 +84,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Wait for HACS and Hassfest workflows
-        uses: int128/wait-for-workflows-action@1f1ff640422da303e1be7679bf86de8b4834abbe # v1.69.0
+        uses: int128/wait-for-workflows-action@e692cc8a1deff84358b3ca1b3e9695cd8965c416 # v1.70.0
         with:
           filter-workflow-name: "HACS,Hassfest"
       - uses: release-drafter/release-drafter@5de93583980a40bd78603b6dfdcda5b4df377b32 # v7.2.0
