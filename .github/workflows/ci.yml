@@ -87,6 +87,6 @@ jobs:
         uses: int128/wait-for-workflows-action@fde01766374e5b994fb1dc42fb498895d29e585b # v1.71.0
         with:
           filter-workflow-name: "HACS,Hassfest"
-      - uses: release-drafter/release-drafter@563bf132657a13ded0b01fcb723c5a58cdd824e2 # v7.2.1
+      - uses: release-drafter/release-drafter@c2e2804cc59f45f57076a99af580d0fedb697927 # v7.3.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
