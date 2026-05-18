@@ -21,4 +21,9 @@ touch "$OUT_DIR/__init__.py"
 touch "$OUT_DIR/eebus/__init__.py"
 touch "$OUT_DIR/eebus/v1/__init__.py"
 
+# Rewrite absolute "from eebus.v1 import" to relative imports so the stubs
+# work when loaded as part of custom_components.eebus (not as a top-level package).
+find "$OUT_DIR/eebus/v1" \( -name "*.py" -o -name "*.pyi" \) -exec sed -i \
+  's/^from eebus\.v1 import \(.*\) as \(.*\)$/from . import \1 as \2/' {} \;
+
 echo "Proto stubs generated in $OUT_DIR"
