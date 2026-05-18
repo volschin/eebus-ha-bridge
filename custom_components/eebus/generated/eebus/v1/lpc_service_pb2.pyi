@@ -1,4 +1,4 @@
-from eebus.v1 import common_pb2 as _common_pb2
+from . import common_pb2 as _common_pb2
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message

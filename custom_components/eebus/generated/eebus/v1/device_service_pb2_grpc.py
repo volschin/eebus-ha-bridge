@@ -3,8 +3,8 @@
 import grpc
 import warnings
 
-from eebus.v1 import common_pb2 as eebus_dot_v1_dot_common__pb2
-from eebus.v1 import device_service_pb2 as eebus_dot_v1_dot_device__service__pb2
+from . import common_pb2 as eebus_dot_v1_dot_common__pb2
+from . import device_service_pb2 as eebus_dot_v1_dot_device__service__pb2
 
 GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__

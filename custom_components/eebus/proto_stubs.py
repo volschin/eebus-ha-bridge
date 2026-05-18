@@ -3,21 +3,17 @@
 Run `generate_proto.sh` to regenerate after proto changes.
 """
 
-try:
-    from .generated.eebus.v1.common_pb2 import (  # noqa: F401
-        DeviceRequest,
-        Empty,
-        LoadLimit,
-        MeasurementEntry,
-        PowerMeasurement,
-    )
-    from .generated.eebus.v1.device_service_pb2_grpc import DeviceServiceStub  # noqa: F401
-    from .generated.eebus.v1.lpc_service_pb2 import (  # noqa: F401
-        WriteFailsafeLimitRequest,
-        WriteLoadLimitRequest,
-    )
-    from .generated.eebus.v1.lpc_service_pb2_grpc import LPCServiceStub  # noqa: F401
-    from .generated.eebus.v1.monitoring_service_pb2_grpc import MonitoringServiceStub  # noqa: F401
-except ImportError:
-    # Stubs not yet generated — will fail at runtime if used
-    pass
+from .generated.eebus.v1.common_pb2 import (  # noqa: F401
+    DeviceRequest,
+    Empty,
+    LoadLimit,
+    MeasurementEntry,
+    PowerMeasurement,
+)
+from .generated.eebus.v1.device_service_pb2_grpc import DeviceServiceStub  # noqa: F401
+from .generated.eebus.v1.lpc_service_pb2 import (  # noqa: F401
+    WriteFailsafeLimitRequest,
+    WriteLoadLimitRequest,
+)
+from .generated.eebus.v1.lpc_service_pb2_grpc import LPCServiceStub  # noqa: F401
+from .generated.eebus.v1.monitoring_service_pb2_grpc import MonitoringServiceStub  # noqa: F401
