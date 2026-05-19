@@ -8,7 +8,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, UnitOfPower
+from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -25,6 +25,9 @@ async def async_setup_entry(
     coordinator: EebusCoordinator = entry.runtime_data
     async_add_entities([
         EebusPowerSensor(coordinator),
+        EebusEnergyConsumedSensor(coordinator),
+        EebusEnergyConsumedHeatingSensor(coordinator),
+        EebusEnergyConsumedDhwSensor(coordinator),
         EebusConsumptionLimitSensor(coordinator),
     ])
 
@@ -48,6 +51,69 @@ class EebusPowerSensor(EebusEntity, SensorEntity):
         if self.coordinator.data is None:
             return None
         return self.coordinator.data.get("power_watts")
+
+
+class EebusEnergyConsumedSensor(EebusEntity, SensorEntity):
+    """Sensor for cumulative consumed energy."""
+
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_translation_key = "energy_consumed"
+
+    def __init__(self, coordinator: EebusCoordinator) -> None:
+        """Initialize."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.ski}_energy_consumed"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return consumed energy in kWh."""
+        if self.coordinator.data is None:
+            return None
+        return self.coordinator.data.get("energy_consumed_kwh")
+
+
+class EebusEnergyConsumedHeatingSensor(EebusEntity, SensorEntity):
+    """Sensor for cumulative consumed energy for space heating."""
+
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_translation_key = "energy_consumed_heating"
+
+    def __init__(self, coordinator: EebusCoordinator) -> None:
+        """Initialize."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.ski}_energy_consumed_heating"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return consumed heating energy in kWh."""
+        if self.coordinator.data is None:
+            return None
+        return self.coordinator.data.get("energy_consumed_heating_kwh")
+
+
+class EebusEnergyConsumedDhwSensor(EebusEntity, SensorEntity):
+    """Sensor for cumulative consumed energy for domestic hot water."""
+
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_translation_key = "energy_consumed_dhw"
+
+    def __init__(self, coordinator: EebusCoordinator) -> None:
+        """Initialize."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.ski}_energy_consumed_dhw"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return consumed DHW energy in kWh."""
+        if self.coordinator.data is None:
+            return None
+        return self.coordinator.data.get("energy_consumed_dhw_kwh")
 
 
 class EebusConsumptionLimitSensor(EebusEntity, SensorEntity):

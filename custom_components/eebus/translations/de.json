@@ -43,6 +43,9 @@
   "entity": {
     "sensor": {
       "power_consumption": { "name": "Leistungsaufnahme" },
+      "energy_consumed": { "name": "Energieverbrauch" },
+      "energy_consumed_heating": { "name": "Energieverbrauch Heizung" },
+      "energy_consumed_dhw": { "name": "Energieverbrauch Warmwasser" },
       "consumption_limit": { "name": "Leistungslimit" }
     },
     "number": {
