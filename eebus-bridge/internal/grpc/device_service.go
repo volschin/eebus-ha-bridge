@@ -13,13 +13,15 @@ type DeviceService struct {
 	callbacks *eebus.Callbacks
 	bus       *eebus.EventBus
 	localSKI  string
+	registry  *eebus.DeviceRegistry
 }
 
-func NewDeviceService(callbacks *eebus.Callbacks, bus *eebus.EventBus, localSKI string) *DeviceService {
+func NewDeviceService(callbacks *eebus.Callbacks, bus *eebus.EventBus, localSKI string, registry *eebus.DeviceRegistry) *DeviceService {
 	return &DeviceService{
 		callbacks: callbacks,
 		bus:       bus,
 		localSKI:  localSKI,
+		registry:  registry,
 	}
 }
 
@@ -79,7 +81,19 @@ func mapConnectionState(cs shipapi.ConnectionState) pb.PairingState {
 }
 
 func (s *DeviceService) ListPairedDevices(_ context.Context, _ *pb.Empty) (*pb.ListPairedDevicesResponse, error) {
-	return &pb.ListPairedDevicesResponse{}, nil
+	devices := s.registry.ListDevices()
+	result := make([]*pb.PairedDevice, 0, len(devices))
+	for _, device := range devices {
+		result = append(result, &pb.PairedDevice{
+			Ski:               device.SKI,
+			Brand:             device.Brand,
+			Model:             device.Model,
+			Serial:            device.Serial,
+			DeviceType:        device.DeviceType,
+			SupportedUseCases: device.UseCases,
+		})
+	}
+	return &pb.ListPairedDevicesResponse{Devices: result}, nil
 }
 
 func (s *DeviceService) SubscribeDeviceEvents(_ *pb.Empty, stream pb.DeviceService_SubscribeDeviceEventsServer) error {

@@ -1,6 +1,7 @@
 package eebus
 
 import (
+	"log"
 	"sync"
 
 	"github.com/enbility/eebus-go/api"
@@ -13,13 +14,15 @@ type Callbacks struct {
 	mu             sync.RWMutex
 	discoveredSvcs []shipapi.RemoteService
 	pairingStates  map[string]*shipapi.ConnectionStateDetail
+	debugEvents    bool
 }
 
 // NewCallbacks creates a new Callbacks instance backed by the given EventBus.
-func NewCallbacks(bus *EventBus) *Callbacks {
+func NewCallbacks(bus *EventBus, debugEvents bool) *Callbacks {
 	return &Callbacks{
 		bus:           bus,
 		pairingStates: make(map[string]*shipapi.ConnectionStateDetail),
+		debugEvents:   debugEvents,
 	}
 }
 
@@ -28,6 +31,10 @@ var _ api.ServiceReaderInterface = (*Callbacks)(nil)
 
 // RemoteSKIConnected is called when a remote SKI connects.
 func (c *Callbacks) RemoteSKIConnected(service api.ServiceInterface, ski string) {
+	if c.debugEvents {
+		log.Printf("[DEBUG] EEBUS callback: remote SKI connected: ski=%s", ski)
+	}
+
 	c.bus.Publish(Event{
 		SKI:  ski,
 		Type: "device.connected",
@@ -36,6 +43,10 @@ func (c *Callbacks) RemoteSKIConnected(service api.ServiceInterface, ski string)
 
 // RemoteSKIDisconnected is called when a remote SKI disconnects.
 func (c *Callbacks) RemoteSKIDisconnected(service api.ServiceInterface, ski string) {
+	if c.debugEvents {
+		log.Printf("[DEBUG] EEBUS callback: remote SKI disconnected: ski=%s", ski)
+	}
+
 	c.bus.Publish(Event{
 		SKI:  ski,
 		Type: "device.disconnected",
@@ -44,6 +55,10 @@ func (c *Callbacks) RemoteSKIDisconnected(service api.ServiceInterface, ski stri
 
 // VisibleRemoteServicesUpdated is called when the list of visible remote services changes.
 func (c *Callbacks) VisibleRemoteServicesUpdated(service api.ServiceInterface, entries []shipapi.RemoteService) {
+	if c.debugEvents {
+		log.Printf("[DEBUG] EEBUS callback: visible remote services updated: count=%d", len(entries))
+	}
+
 	c.mu.Lock()
 	c.discoveredSvcs = entries
 	c.mu.Unlock()
@@ -60,6 +75,14 @@ func (c *Callbacks) ServiceShipIDUpdate(ski string, shipID string) {
 
 // ServicePairingDetailUpdate is called when the pairing state of a remote service changes.
 func (c *Callbacks) ServicePairingDetailUpdate(ski string, detail *shipapi.ConnectionStateDetail) {
+	if c.debugEvents {
+		if detail != nil {
+			log.Printf("[DEBUG] EEBUS callback: pairing detail updated: ski=%s state=%v", ski, detail.State())
+		} else {
+			log.Printf("[DEBUG] EEBUS callback: pairing detail updated: ski=%s state=<nil>", ski)
+		}
+	}
+
 	c.mu.Lock()
 	c.pairingStates[ski] = detail
 	c.mu.Unlock()

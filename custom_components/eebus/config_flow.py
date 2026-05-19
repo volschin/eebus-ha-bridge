@@ -21,6 +21,8 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+CONFIG_RPC_TIMEOUT = 8
+
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_GRPC_HOST): str,
@@ -60,11 +62,11 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
             try:
                 from . import proto_stubs
                 stub = proto_stubs.DeviceServiceStub(channel)
-                await stub.GetStatus(proto_stubs.Empty())
+                await stub.GetStatus(proto_stubs.Empty(), timeout=CONFIG_RPC_TIMEOUT)
                 return await self.async_step_device()
             except Exception:
                 _LOGGER.exception(
-                    "Failed to connect to EEBUS bridge at %s:%s",
+                    "Failed to connect to EEBUS bridge during config flow at %s:%s",
                     self._host,
                     self._port,
                 )
@@ -114,7 +116,7 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
             try:
                 from . import proto_stubs
                 stub = proto_stubs.DeviceServiceStub(channel)
-                await stub.GetStatus(proto_stubs.Empty())
+                await stub.GetStatus(proto_stubs.Empty(), timeout=CONFIG_RPC_TIMEOUT)
                 return self.async_update_reload_and_abort(
                     self._get_reconfigure_entry(),
                     data_updates={

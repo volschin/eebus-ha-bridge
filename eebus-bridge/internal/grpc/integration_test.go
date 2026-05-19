@@ -16,11 +16,12 @@ import (
 
 func TestIntegrationDeviceServiceRoundTrip(t *testing.T) {
 	bus := eebus.NewEventBus()
-	callbacks := eebus.NewCallbacks(bus)
+	callbacks := eebus.NewCallbacks(bus, false)
+	registry := eebus.NewDeviceRegistry()
 
-	deviceSvc := bridgegrpc.NewDeviceService(callbacks, bus, "integration-test-ski")
-	lpcSvc := bridgegrpc.NewLPCService(nil, bus)
-	monSvc := bridgegrpc.NewMonitoringService(nil, bus)
+	deviceSvc := bridgegrpc.NewDeviceService(callbacks, bus, "integration-test-ski", registry)
+	lpcSvc := bridgegrpc.NewLPCService(nil, bus, registry)
+	monSvc := bridgegrpc.NewMonitoringService(nil, bus, registry)
 
 	srv := bridgegrpc.NewServer(0)
 	pb.RegisterDeviceServiceServer(srv.GRPCServer(), deviceSvc)

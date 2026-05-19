@@ -12,6 +12,7 @@ type Config struct {
 	GRPC         GRPCConfig         `yaml:"grpc"`
 	EEBUS        EEBUSConfig        `yaml:"eebus"`
 	Certificates CertificatesConfig `yaml:"certificates"`
+	Logging      LoggingConfig      `yaml:"logging"`
 }
 
 type GRPCConfig struct {
@@ -31,6 +32,10 @@ type CertificatesConfig struct {
 	CertFile     string `yaml:"cert_file"`
 	KeyFile      string `yaml:"key_file"`
 	StoragePath  string `yaml:"storage_path"`
+}
+
+type LoggingConfig struct {
+	DebugEvents bool `yaml:"debug_events"`
 }
 
 func LoadFromFile(path string) (*Config, error) {
@@ -105,5 +110,10 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("EEBUS_CERT_STORAGE"); v != "" {
 		cfg.Certificates.StoragePath = v
+	}
+	if v := os.Getenv("EEBUS_DEBUG_EVENTS"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Logging.DebugEvents = enabled
+		}
 	}
 }
