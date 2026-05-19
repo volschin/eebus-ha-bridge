@@ -10,5 +10,5 @@
   "quality_scale": "gold",
   "requirements": ["grpcio>=1.60.0", "protobuf>=4.25.0"],
   "single_config_entry": false,
-  "version": "0.2.0"
+  "version": "0.2.1"
 }
