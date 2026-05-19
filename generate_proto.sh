@@ -2,10 +2,17 @@
 # Generate Python gRPC stubs from protobuf definitions
 set -euo pipefail
 
+# Home Assistant Core pins grpcio==1.78.0 in package_constraints.txt.
+# Stubs must be generated with a matching grpcio-tools so the embedded
+# GRPC_GENERATED_VERSION does not exceed HA's runtime grpcio (see issue #22).
+GRPCIO_TOOLS_VERSION="${GRPCIO_TOOLS_VERSION:-1.78.0}"
+
 PROTO_DIR="eebus-bridge/proto"
 OUT_DIR="custom_components/eebus/generated"
 
 mkdir -p "$OUT_DIR"
+
+pip install --quiet "grpcio-tools==${GRPCIO_TOOLS_VERSION}"
 
 python -m grpc_tools.protoc \
   -I "$PROTO_DIR" \
