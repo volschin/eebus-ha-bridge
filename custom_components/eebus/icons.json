@@ -2,6 +2,9 @@
   "entity": {
     "sensor": {
       "power_consumption": { "default": "mdi:flash" },
+      "energy_consumed": { "default": "mdi:lightning-bolt" },
+      "energy_consumed_heating": { "default": "mdi:radiator" },
+      "energy_consumed_dhw": { "default": "mdi:water-boiler" },
       "consumption_limit": { "default": "mdi:speedometer" }
     },
     "number": {

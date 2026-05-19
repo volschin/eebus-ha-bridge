@@ -56,15 +56,21 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
             self._host = user_input[CONF_GRPC_HOST]
             self._port = user_input[CONF_GRPC_PORT]
 
+            channel = grpc.aio.insecure_channel(f"{self._host}:{self._port}")
             try:
-                channel = grpc.aio.insecure_channel(f"{self._host}:{self._port}")
                 from . import proto_stubs
                 stub = proto_stubs.DeviceServiceStub(channel)
                 await stub.GetStatus(proto_stubs.Empty())
-                await channel.close()
                 return await self.async_step_device()
             except Exception:
+                _LOGGER.exception(
+                    "Failed to connect to EEBUS bridge at %s:%s",
+                    self._host,
+                    self._port,
+                )
                 errors["base"] = "cannot_connect"
+            finally:
+                await channel.close()
 
         return self.async_show_form(
             step_id="user",
@@ -102,15 +108,13 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            channel = grpc.aio.insecure_channel(
+                f"{user_input[CONF_GRPC_HOST]}:{user_input[CONF_GRPC_PORT]}"
+            )
             try:
-                channel = grpc.aio.insecure_channel(
-                    f"{user_input[CONF_GRPC_HOST]}:{user_input[CONF_GRPC_PORT]}"
-                )
                 from . import proto_stubs
                 stub = proto_stubs.DeviceServiceStub(channel)
                 await stub.GetStatus(proto_stubs.Empty())
-                await channel.close()
-
                 return self.async_update_reload_and_abort(
                     self._get_reconfigure_entry(),
                     data_updates={
@@ -119,7 +123,14 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
                     },
                 )
             except Exception:
+                _LOGGER.exception(
+                    "Failed to connect to EEBUS bridge during reconfigure at %s:%s",
+                    user_input[CONF_GRPC_HOST],
+                    user_input[CONF_GRPC_PORT],
+                )
                 errors["base"] = "cannot_connect"
+            finally:
+                await channel.close()
 
         entry = self._get_reconfigure_entry()
         return self.async_show_form(

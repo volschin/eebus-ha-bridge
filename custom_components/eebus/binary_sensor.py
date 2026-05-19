@@ -77,5 +77,8 @@ class EebusHeartbeatOkSensor(EebusEntity, BinarySensorEntity):
         hb = self.coordinator.data.get("heartbeat_status")
         if hb is None:
             return None
+        within_duration = hb.get("within_duration")
+        if within_duration is None:
+            return None
         # PROBLEM class: is_on=True means there's a problem
-        return not hb.get("within_duration", True)
+        return not within_duration

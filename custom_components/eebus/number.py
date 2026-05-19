@@ -57,6 +57,15 @@ class EebusLPCLimitNumber(EebusEntity, NumberEntity):
             return None
         return limit.get("value_watts")
 
+    @property
+    def available(self) -> bool:
+        """Disable entity when LPC is known to be unsupported."""
+        if not super().available:
+            return False
+        if self.coordinator.data is None:
+            return False
+        return self.coordinator.data.get("lpc_supported") is not False
+
     async def async_set_native_value(self, value: float) -> None:
         """Set new LPC limit via gRPC."""
         await self.coordinator.async_write_lpc_limit(value)
@@ -93,6 +102,15 @@ class EebusFailsafeLimitNumber(EebusEntity, NumberEntity):
         if failsafe is None:
             return None
         return failsafe.get("value_watts")
+
+    @property
+    def available(self) -> bool:
+        """Disable entity when failsafe is known to be unsupported."""
+        if not super().available:
+            return False
+        if self.coordinator.data is None:
+            return False
+        return self.coordinator.data.get("failsafe_supported") is not False
 
     async def async_set_native_value(self, value: float) -> None:
         """Set new failsafe limit via gRPC."""

@@ -54,8 +54,14 @@ func main() {
 	}
 
 	localEntity := bridgeSvc.LocalEntity()
+	if localEntity == nil {
+		log.Fatal("local CEM entity is not available")
+	}
 	lpcWrapper.Setup(localEntity)
 	monitoringWrapper.Setup(localEntity)
+	bridgeSvc.Service().AddUseCase(lpcWrapper.UseCase())
+	bridgeSvc.Service().AddUseCase(monitoringWrapper.UseCase())
+	log.Println("Registered EEBUS use cases: LPC, Monitoring")
 
 	grpcSrv := bridgegrpc.NewServer(cfg.GRPC.Port)
 
