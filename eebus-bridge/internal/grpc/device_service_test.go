@@ -16,8 +16,8 @@ func setupDeviceTest(t *testing.T) pb.DeviceServiceClient {
 	t.Helper()
 
 	bus := eebus.NewEventBus()
-	callbacks := eebus.NewCallbacks(bus)
-	svc := bridgegrpc.NewDeviceService(callbacks, bus, "test-local-ski")
+	callbacks := eebus.NewCallbacks(bus, false)
+	svc := bridgegrpc.NewDeviceService(callbacks, bus, "test-local-ski", eebus.NewDeviceRegistry())
 
 	srv := bridgegrpc.NewServer(0)
 	pb.RegisterDeviceServiceServer(srv.GRPCServer(), svc)

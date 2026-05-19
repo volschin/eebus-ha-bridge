@@ -14,7 +14,7 @@ import (
 
 func TestSubscribeLPCEvents(t *testing.T) {
 	bus := eebus.NewEventBus()
-	svc := bridgegrpc.NewLPCService(nil, bus)
+	svc := bridgegrpc.NewLPCService(nil, bus, eebus.NewDeviceRegistry())
 
 	srv := bridgegrpc.NewServer(0)
 	pb.RegisterLPCServiceServer(srv.GRPCServer(), svc)

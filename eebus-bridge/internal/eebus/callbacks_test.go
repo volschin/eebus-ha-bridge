@@ -12,7 +12,7 @@ func TestCallbacksDispatchConnect(t *testing.T) {
 	ch := bus.Subscribe()
 	defer bus.Unsubscribe(ch)
 
-	cb := eebus.NewCallbacks(bus)
+	cb := eebus.NewCallbacks(bus, false)
 	cb.RemoteSKIConnected(nil, "test-ski-123")
 
 	select {
@@ -33,7 +33,7 @@ func TestCallbacksDispatchDisconnect(t *testing.T) {
 	ch := bus.Subscribe()
 	defer bus.Unsubscribe(ch)
 
-	cb := eebus.NewCallbacks(bus)
+	cb := eebus.NewCallbacks(bus, false)
 	cb.RemoteSKIDisconnected(nil, "test-ski-456")
 
 	select {
@@ -48,7 +48,7 @@ func TestCallbacksDispatchDisconnect(t *testing.T) {
 
 func TestCallbacksAllowWaitingForTrust(t *testing.T) {
 	bus := eebus.NewEventBus()
-	cb := eebus.NewCallbacks(bus)
+	cb := eebus.NewCallbacks(bus, false)
 
 	if !cb.AllowWaitingForTrust("any-ski") {
 		t.Error("AllowWaitingForTrust should return true")

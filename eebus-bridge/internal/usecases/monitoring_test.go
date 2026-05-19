@@ -14,7 +14,7 @@ func TestMonitoringEventRouting(t *testing.T) {
 	ch := bus.Subscribe()
 	defer bus.Unsubscribe(ch)
 
-	monWrapper := usecases.NewMonitoringWrapper(bus)
+	monWrapper := usecases.NewMonitoringWrapper(bus, nil, false)
 
 	monWrapper.HandleEvent("test-ski", nil, nil, mampc.DataUpdatePower)
 
@@ -33,7 +33,7 @@ func TestMonitoringEnergyConsumedEventRouting(t *testing.T) {
 	ch := bus.Subscribe()
 	defer bus.Unsubscribe(ch)
 
-	monWrapper := usecases.NewMonitoringWrapper(bus)
+	monWrapper := usecases.NewMonitoringWrapper(bus, nil, false)
 	monWrapper.HandleEvent("ski-2", nil, nil, mampc.DataUpdateEnergyConsumed)
 
 	select {
@@ -51,7 +51,7 @@ func TestMonitoringFrequencyEventRouting(t *testing.T) {
 	ch := bus.Subscribe()
 	defer bus.Unsubscribe(ch)
 
-	monWrapper := usecases.NewMonitoringWrapper(bus)
+	monWrapper := usecases.NewMonitoringWrapper(bus, nil, false)
 	monWrapper.HandleEvent("ski-3", nil, nil, mampc.DataUpdateFrequency)
 
 	select {
@@ -69,7 +69,7 @@ func TestMonitoringUnknownEventIgnored(t *testing.T) {
 	ch := bus.Subscribe()
 	defer bus.Unsubscribe(ch)
 
-	monWrapper := usecases.NewMonitoringWrapper(bus)
+	monWrapper := usecases.NewMonitoringWrapper(bus, nil, false)
 	monWrapper.HandleEvent("ski-x", nil, nil, "unknown-event-type")
 
 	select {

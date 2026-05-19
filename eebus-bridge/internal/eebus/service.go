@@ -36,7 +36,7 @@ func NewBridgeService(cfg *config.Config, cert tls.Certificate, bus *EventBus) (
 		return nil, fmt.Errorf("creating eebus config: %w", err)
 	}
 
-	callbacks := NewCallbacks(bus)
+	callbacks := NewCallbacks(bus, cfg.Logging.DebugEvents)
 	svc := eebusservice.NewService(eebusConfig, callbacks)
 
 	return &BridgeService{

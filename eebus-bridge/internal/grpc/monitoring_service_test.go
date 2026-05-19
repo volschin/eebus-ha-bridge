@@ -14,7 +14,7 @@ import (
 
 func TestSubscribeMeasurements(t *testing.T) {
 	bus := eebus.NewEventBus()
-	svc := bridgegrpc.NewMonitoringService(nil, bus)
+	svc := bridgegrpc.NewMonitoringService(nil, bus, eebus.NewDeviceRegistry())
 
 	srv := bridgegrpc.NewServer(0)
 	pb.RegisterMonitoringServiceServer(srv.GRPCServer(), svc)

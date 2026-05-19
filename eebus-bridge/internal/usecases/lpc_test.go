@@ -14,7 +14,7 @@ func TestLPCEventRouting(t *testing.T) {
 	ch := bus.Subscribe()
 	defer bus.Unsubscribe(ch)
 
-	lpcWrapper := usecases.NewLPCWrapper(bus)
+	lpcWrapper := usecases.NewLPCWrapper(bus, nil, false)
 
 	// Simulate an eebus-go event callback directly (no SPINE entity needed).
 	lpcWrapper.HandleEvent("test-ski", nil, nil, eglpc.DataUpdateLimit)
@@ -37,7 +37,7 @@ func TestLPCFailsafePowerEventRouting(t *testing.T) {
 	ch := bus.Subscribe()
 	defer bus.Unsubscribe(ch)
 
-	lpcWrapper := usecases.NewLPCWrapper(bus)
+	lpcWrapper := usecases.NewLPCWrapper(bus, nil, false)
 	lpcWrapper.HandleEvent("ski-2", nil, nil, eglpc.DataUpdateFailsafeConsumptionActivePowerLimit)
 
 	select {
@@ -55,7 +55,7 @@ func TestLPCFailsafeDurationEventRouting(t *testing.T) {
 	ch := bus.Subscribe()
 	defer bus.Unsubscribe(ch)
 
-	lpcWrapper := usecases.NewLPCWrapper(bus)
+	lpcWrapper := usecases.NewLPCWrapper(bus, nil, false)
 	lpcWrapper.HandleEvent("ski-3", nil, nil, eglpc.DataUpdateFailsafeDurationMinimum)
 
 	select {
@@ -73,7 +73,7 @@ func TestLPCUnknownEventIgnored(t *testing.T) {
 	ch := bus.Subscribe()
 	defer bus.Unsubscribe(ch)
 
-	lpcWrapper := usecases.NewLPCWrapper(bus)
+	lpcWrapper := usecases.NewLPCWrapper(bus, nil, false)
 	lpcWrapper.HandleEvent("ski-x", nil, nil, "unknown-event-type")
 
 	select {
