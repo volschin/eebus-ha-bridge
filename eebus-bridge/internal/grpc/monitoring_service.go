@@ -92,22 +92,30 @@ func (s *MonitoringService) GetMeasurements(_ context.Context, req *pb.DeviceReq
 		for idx, value := range values {
 			appendMeasurement(&measurements, now, fmt.Sprintf("power_l%d", idx+1), value, "W")
 		}
+	} else {
+		log.Printf("[DEBUG] Monitoring.GetMeasurements readPowerPerPhase failed: requested_ski=%s err=%v", req.Ski, err)
 	}
 
 	if values, err := s.readCurrentPerPhase(req.Ski); err == nil {
 		for idx, value := range values {
 			appendMeasurement(&measurements, now, fmt.Sprintf("current_l%d", idx+1), value, "A")
 		}
+	} else {
+		log.Printf("[DEBUG] Monitoring.GetMeasurements readCurrentPerPhase failed: requested_ski=%s err=%v", req.Ski, err)
 	}
 
 	if values, err := s.readVoltagePerPhase(req.Ski); err == nil {
 		for idx, value := range values {
 			appendMeasurement(&measurements, now, fmt.Sprintf("voltage_l%d", idx+1), value, "V")
 		}
+	} else {
+		log.Printf("[DEBUG] Monitoring.GetMeasurements readVoltagePerPhase failed: requested_ski=%s err=%v", req.Ski, err)
 	}
 
 	if value, err := s.readFrequency(req.Ski); err == nil {
 		appendMeasurement(&measurements, now, "frequency", value, "Hz")
+	} else {
+		log.Printf("[DEBUG] Monitoring.GetMeasurements readFrequency failed: requested_ski=%s err=%v", req.Ski, err)
 	}
 
 	if value, err := s.readEnergyConsumed(req.Ski); err == nil {
