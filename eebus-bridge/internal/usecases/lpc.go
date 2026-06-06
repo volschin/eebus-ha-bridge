@@ -6,11 +6,9 @@ import (
 	"time"
 
 	eebusapi "github.com/enbility/eebus-go/api"
-	featureserver "github.com/enbility/eebus-go/features/server"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
 	eglpc "github.com/enbility/eebus-go/usecases/eg/lpc"
 	spineapi "github.com/enbility/spine-go/api"
-	"github.com/enbility/spine-go/model"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
 
@@ -38,12 +36,6 @@ func (w *LPCWrapper) Setup(localEntity spineapi.EntityLocalInterface) {
 	}
 	w.localEntity = localEntity
 	w.uc = eglpc.NewLPC(localEntity, w.HandleEvent)
-	if _, err := featureserver.NewFeature(model.FeatureTypeTypeDeviceDiagnosis, localEntity); err != nil {
-		log.Printf("creating local DeviceDiagnosis feature failed: %v", err)
-	}
-	if _, err := featureserver.NewDeviceDiagnosis(localEntity); err != nil {
-		log.Printf("creating local DeviceDiagnosis heartbeat server failed: %v", err)
-	}
 }
 
 // UseCase returns the underlying eebus-go LPC use case (may be nil before Setup).
