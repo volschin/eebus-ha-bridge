@@ -152,7 +152,7 @@ func (s *MonitoringService) GetMeasurements(_ context.Context, req *pb.DeviceReq
 	if s.debugProtocol {
 		log.Printf("[PROTOCOL] Bosch device measurements (SKI=%s):", req.Ski)
 		for _, m := range measurements {
-			log.Printf("  [PROTOCOL]   %s = %.2f %s", m.Name, m.Value, m.Unit)
+			log.Printf("  [PROTOCOL]   %s = %.2f %s", m.Type, m.Value, m.Unit)
 		}
 	}
 
