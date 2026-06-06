@@ -145,14 +145,15 @@ func (s *MonitoringService) resolveEntity(ski string) (spineapi.EntityRemoteInte
 	if s.registry == nil {
 		return nil, status.Error(codes.Unavailable, "device registry not initialized")
 	}
+	ski = eebus.NormalizeSKI(ski)
 	entity := s.registry.FirstEntity(ski)
 	if entity == nil {
 		log.Printf("[DEBUG] Monitoring.resolveEntity no entity for requested SKI: requested_ski=%s", ski)
 	}
-	if entity == nil && ski == "" {
+	if entity == nil {
 		entity = s.registry.FirstAvailableEntity()
 		if entity != nil {
-			log.Printf("[DEBUG] Monitoring.resolveEntity selected fallback entity for empty SKI request")
+			log.Printf("[DEBUG] Monitoring.resolveEntity selected fallback entity: requested_ski=%s", ski)
 		}
 	}
 	if entity == nil {

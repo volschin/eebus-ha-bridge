@@ -28,7 +28,7 @@ func NewDeviceService(callbacks *eebus.Callbacks, bus *eebus.EventBus, localSKI 
 func (s *DeviceService) GetStatus(_ context.Context, _ *pb.Empty) (*pb.ServiceStatus, error) {
 	return &pb.ServiceStatus{
 		Running:  true,
-		LocalSki: s.localSKI,
+		LocalSki: eebus.NormalizeSKI(s.localSKI),
 	}, nil
 }
 
@@ -37,25 +37,26 @@ func (s *DeviceService) ListDiscoveredDevices(_ context.Context, _ *pb.Empty) (*
 	devices := make([]*pb.DiscoveredDevice, 0, len(svcs))
 	for _, svc := range svcs {
 		devices = append(devices, &pb.DiscoveredDevice{
-			Ski: svc.Ski,
+			Ski: eebus.NormalizeSKI(svc.Ski),
 		})
 	}
 	return &pb.ListDevicesResponse{Devices: devices}, nil
 }
 
 func (s *DeviceService) RegisterRemoteSKI(_ context.Context, req *pb.RegisterSKIRequest) (*pb.Empty, error) {
-	s.bus.Publish(eebus.Event{SKI: req.Ski, Type: "device.register_ski"})
+	s.bus.Publish(eebus.Event{SKI: eebus.NormalizeSKI(req.Ski), Type: "device.register_ski"})
 	return &pb.Empty{}, nil
 }
 
 func (s *DeviceService) UnregisterRemoteSKI(_ context.Context, req *pb.DeviceRequest) (*pb.Empty, error) {
-	s.bus.Publish(eebus.Event{SKI: req.Ski, Type: "device.unregister_ski"})
+	s.bus.Publish(eebus.Event{SKI: eebus.NormalizeSKI(req.Ski), Type: "device.unregister_ski"})
 	return &pb.Empty{}, nil
 }
 
 func (s *DeviceService) GetPairingStatus(_ context.Context, req *pb.DeviceRequest) (*pb.PairingStatus, error) {
-	state := s.callbacks.PairingState(req.Ski)
-	ps := &pb.PairingStatus{Ski: req.Ski, State: pb.PairingState_PAIRING_STATE_UNSPECIFIED}
+	ski := eebus.NormalizeSKI(req.Ski)
+	state := s.callbacks.PairingState(ski)
+	ps := &pb.PairingStatus{Ski: ski, State: pb.PairingState_PAIRING_STATE_UNSPECIFIED}
 	if state != nil {
 		ps.State = mapConnectionState(state.State())
 	}

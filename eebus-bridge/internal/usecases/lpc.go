@@ -3,22 +3,38 @@ package usecases
 import (
 	"errors"
 	"log"
+	"sync"
 	"time"
 
 	eebusapi "github.com/enbility/eebus-go/api"
-	eglpc "github.com/enbility/eebus-go/usecases/eg/lpc"
+	featureclient "github.com/enbility/eebus-go/features/client"
+	featureserver "github.com/enbility/eebus-go/features/server"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
+	eglpc "github.com/enbility/eebus-go/usecases/eg/lpc"
 	spineapi "github.com/enbility/spine-go/api"
+	"github.com/enbility/spine-go/model"
 	"github.com/volschin/eebus-bridge/internal/eebus"
+)
+
+const (
+	heartbeatInterval   = 4 * time.Second
+	heartbeatStaleAfter = 2 * time.Minute
 )
 
 // LPCWrapper wraps the eebus-go LPC (Limitation of Power Consumption) use case
 // and routes events to the internal EventBus.
 type LPCWrapper struct {
-	uc       *eglpc.LPC
-	bus      *eebus.EventBus
-	registry *eebus.DeviceRegistry
-	debug    bool
+	uc          *eglpc.LPC
+	localEntity spineapi.EntityLocalInterface
+	bus         *eebus.EventBus
+	registry    *eebus.DeviceRegistry
+	debug       bool
+
+	heartbeatMu      sync.RWMutex
+	heartbeatRunning bool
+	heartbeatSKI     string
+	lastHeartbeat    time.Time
+	stopHeartbeat    chan struct{}
 }
 
 var errLPCNotInitialized = errors.New("lpc use case not initialized")
@@ -33,7 +49,14 @@ func (w *LPCWrapper) Setup(localEntity spineapi.EntityLocalInterface) {
 	if localEntity == nil {
 		return
 	}
+	w.localEntity = localEntity
 	w.uc = eglpc.NewLPC(localEntity, w.HandleEvent)
+	if _, err := featureserver.NewFeature(model.FeatureTypeTypeDeviceDiagnosis, localEntity); err != nil {
+		log.Printf("creating local DeviceDiagnosis feature failed: %v", err)
+	}
+	if _, err := featureserver.NewDeviceDiagnosis(localEntity); err != nil {
+		log.Printf("creating local DeviceDiagnosis heartbeat server failed: %v", err)
+	}
 }
 
 // UseCase returns the underlying eebus-go LPC use case (may be nil before Setup).
@@ -134,4 +157,111 @@ func (w *LPCWrapper) ConsumptionNominalMax(entity spineapi.EntityRemoteInterface
 		return 0, errLPCNotInitialized
 	}
 	return w.uc.ConsumptionNominalMax(entity)
+}
+
+// StartHeartbeat starts periodic DeviceDiagnosis heartbeat requests to the
+// remote controllable system. If ski is empty, the first known remote entity is used.
+func (w *LPCWrapper) StartHeartbeat(ski string) error {
+	if w.localEntity == nil {
+		return errLPCNotInitialized
+	}
+	if w.registry == nil {
+		return errors.New("device registry not initialized")
+	}
+	if err := w.localEntity.HeartbeatManager().StartHeartbeat(); err != nil {
+		return err
+	}
+
+	w.heartbeatMu.Lock()
+	defer w.heartbeatMu.Unlock()
+	w.heartbeatSKI = ski
+	if w.heartbeatRunning {
+		return nil
+	}
+	w.stopHeartbeat = make(chan struct{})
+	w.heartbeatRunning = true
+	go w.heartbeatLoop(w.stopHeartbeat)
+	return nil
+}
+
+// StopHeartbeat stops the periodic heartbeat requests.
+func (w *LPCWrapper) StopHeartbeat() error {
+	w.heartbeatMu.Lock()
+	defer w.heartbeatMu.Unlock()
+	if !w.heartbeatRunning {
+		if w.localEntity != nil {
+			w.localEntity.HeartbeatManager().StopHeartbeat()
+		}
+		return nil
+	}
+	close(w.stopHeartbeat)
+	w.stopHeartbeat = nil
+	w.heartbeatRunning = false
+	if w.localEntity != nil {
+		w.localEntity.HeartbeatManager().StopHeartbeat()
+	}
+	return nil
+}
+
+// IsHeartbeatWithinDuration reports whether the last heartbeat request succeeded recently.
+func (w *LPCWrapper) IsHeartbeatWithinDuration(_ spineapi.EntityRemoteInterface) bool {
+	w.heartbeatMu.RLock()
+	defer w.heartbeatMu.RUnlock()
+	return w.heartbeatRunning && !w.lastHeartbeat.IsZero() && time.Since(w.lastHeartbeat) <= heartbeatStaleAfter
+}
+
+func (w *LPCWrapper) IsHeartbeatRunning() bool {
+	w.heartbeatMu.RLock()
+	defer w.heartbeatMu.RUnlock()
+	localRunning := w.localEntity != nil && w.localEntity.HeartbeatManager().IsHeartbeatRunning()
+	return w.heartbeatRunning || localRunning
+}
+
+func (w *LPCWrapper) heartbeatLoop(stop <-chan struct{}) {
+	w.requestHeartbeatOnce()
+	ticker := time.NewTicker(heartbeatInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			w.requestHeartbeatOnce()
+		case <-stop:
+			return
+		}
+	}
+}
+
+func (w *LPCWrapper) requestHeartbeatOnce() {
+	w.heartbeatMu.RLock()
+	ski := w.heartbeatSKI
+	w.heartbeatMu.RUnlock()
+
+	entity := w.registry.FirstEntity(ski)
+	if entity == nil {
+		entity = w.registry.FirstAvailableEntity()
+	}
+	if entity == nil {
+		if w.debug {
+			log.Printf("[DEBUG] LPC heartbeat waiting for remote entity: ski=%s", ski)
+		}
+		return
+	}
+
+	diagnosis, err := featureclient.NewDeviceDiagnosis(w.localEntity, entity)
+	if err != nil {
+		log.Printf("creating DeviceDiagnosis heartbeat client failed: %v", err)
+		return
+	}
+	if _, err := diagnosis.RequestHeartbeat(); err != nil {
+		log.Printf("requesting EEBUS heartbeat failed: %v", err)
+		return
+	}
+
+	w.heartbeatMu.Lock()
+	w.lastHeartbeat = time.Now()
+	w.heartbeatMu.Unlock()
+	if w.debug {
+		log.Printf("[DEBUG] Requested EEBUS heartbeat: ski=%s", ski)
+	}
 }

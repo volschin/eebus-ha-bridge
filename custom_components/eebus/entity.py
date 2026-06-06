@@ -19,7 +19,7 @@ class EebusEntity(CoordinatorEntity[EebusCoordinator]):
         super().__init__(coordinator)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.ski)},
-            name=f"EEBUS {coordinator.ski[:8]}",
-            manufacturer="Vaillant",
-            model="VR940f",
+            name="Bosch Compress 5800i",
+            manufacturer="Bosch",
+            model="Compress 5800i",
         )

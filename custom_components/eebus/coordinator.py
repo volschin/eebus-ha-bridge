@@ -35,6 +35,11 @@ def _rpc_error_text(err: grpc.aio.AioRpcError) -> str:
     return f"code={err.code().name} details={err.details()}"
 
 
+def _normalize_ski(ski: str) -> str:
+    """Normalize SKI input to the compact uppercase representation used by the bridge."""
+    return ski.strip().replace(" ", "").upper()
+
+
 class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator that manages gRPC connection and data updates."""
 
@@ -54,7 +59,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.host = host
         self.port = port
-        self.ski = ski
+        self.ski = _normalize_ski(ski)
         self._channel: grpc.aio.Channel | None = None
         self._stream_tasks: list[asyncio.Task] = []
         self._was_unavailable: bool = False

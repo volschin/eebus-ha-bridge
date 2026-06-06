@@ -1,6 +1,7 @@
 package eebus
 
 import (
+	"strings"
 	"sync"
 
 	spineapi "github.com/enbility/spine-go/api"
@@ -28,8 +29,13 @@ func NewDeviceRegistry() *DeviceRegistry {
 	}
 }
 
+func NormalizeSKI(ski string) string {
+	return strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(ski), " ", ""))
+}
+
 func (r *DeviceRegistry) AddDevice(ski string, info DeviceInfo) {
 	r.mu.Lock()
+	ski = NormalizeSKI(ski)
 	info.SKI = ski
 	r.devices[ski] = info
 	r.mu.Unlock()
@@ -43,6 +49,15 @@ func (r *DeviceRegistry) UpsertObservation(
 ) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// Bosch/Connect-Key can report the remote entity via the use-case callback
+	// while the callback SKI is empty. In that case store the entity under the
+	// real remote device SKI; otherwise HA later calls WriteConsumptionLimit with
+	// the Bosch SKI and resolveEntity() fails with NOT_FOUND.
+	if ski == "" && remoteDevice != nil {
+		ski = remoteDevice.Ski()
+	}
+	ski = NormalizeSKI(ski)
 
 	info := r.devices[ski]
 	info.SKI = ski
@@ -82,6 +97,7 @@ func (r *DeviceRegistry) UpsertObservation(
 
 func (r *DeviceRegistry) RemoveDevice(ski string) {
 	r.mu.Lock()
+	ski = NormalizeSKI(ski)
 	delete(r.devices, ski)
 	r.mu.Unlock()
 }
@@ -89,6 +105,7 @@ func (r *DeviceRegistry) RemoveDevice(ski string) {
 func (r *DeviceRegistry) GetDevice(ski string) (DeviceInfo, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	ski = NormalizeSKI(ski)
 	info, ok := r.devices[ski]
 	return info, ok
 }
@@ -106,6 +123,7 @@ func (r *DeviceRegistry) ListDevices() []DeviceInfo {
 func (r *DeviceRegistry) FirstEntity(ski string) spineapi.EntityRemoteInterface {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	ski = NormalizeSKI(ski)
 	info, ok := r.devices[ski]
 	if !ok || len(info.RemoteEntities) == 0 {
 		return nil
