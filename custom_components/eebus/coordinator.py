@@ -491,10 +491,17 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         channel = await self._ensure_channel()
         from . import proto_stubs
         stub = proto_stubs.LPCServiceStub(channel)
+        # Use duration from current device state; fallback to 3600s so the
+        # Bosch WP does not immediately reset active=false on duration=0.
+        current_limit = (self.data or {}).get("consumption_limit") or {}
+        duration = int(current_limit.get("duration_seconds") or 0)
+        if duration == 0:
+            duration = 3600
         try:
             await stub.WriteConsumptionLimit(
                 proto_stubs.WriteLoadLimitRequest(
-                    ski=self.ski, value_watts=value_watts, is_active=True
+                    ski=self.ski, value_watts=value_watts, is_active=True,
+                    duration_seconds=duration,
                 ),
                 timeout=RPC_TIMEOUT,
             )
@@ -538,12 +545,18 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         current = await stub.GetConsumptionLimit(
             proto_stubs.DeviceRequest(ski=self.ski), timeout=RPC_TIMEOUT
         )
+        # If activating, ensure duration > 0 so the Bosch WP does not
+        # immediately reset the active flag when duration=0 is received.
+        duration = int(current.duration_seconds or 0)
+        if active and duration == 0:
+            duration = 3600
         try:
             await stub.WriteConsumptionLimit(
                 proto_stubs.WriteLoadLimitRequest(
                     ski=self.ski,
                     value_watts=current.value_watts,
                     is_active=active,
+                    duration_seconds=duration,
                 ),
                 timeout=RPC_TIMEOUT,
             )
