@@ -57,7 +57,9 @@
       "voltage_l1": { "name": "Voltage L1" },
       "voltage_l2": { "name": "Voltage L2" },
       "voltage_l3": { "name": "Voltage L3" },
-      "consumption_limit": { "name": "Consumption Limit" }
+      "consumption_limit": { "name": "Consumption Limit" },
+      "nominal_max_power": { "name": "Nominal Max Power" },
+      "limit_duration": { "name": "Limit Duration" }
     },
     "number": {
       "lpc_limit": { "name": "LPC Limit" },

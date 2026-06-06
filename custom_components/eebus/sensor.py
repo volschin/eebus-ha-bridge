@@ -365,3 +365,45 @@ class EebusVoltageL3Sensor(EebusEntity, SensorEntity):
         if self.coordinator.data is None:
             return None
         return self.coordinator.data.get("voltage_l3_volt")
+
+
+class EebusNominalMaxPowerSensor(EebusEntity, SensorEntity):
+    """Sensor for device nominal max power."""
+
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_translation_key = "nominal_max_power"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: EebusCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.ski}_nominal_max_power"
+
+    @property
+    def native_value(self) -> float | None:
+        if self.coordinator.data is None:
+            return None
+        return self.coordinator.data.get("consumption_nominal_max_watts")
+
+
+class EebusLimitDurationSensor(EebusEntity, SensorEntity):
+    """Sensor for current LPC limit duration."""
+
+    _attr_native_unit_of_measurement = "s"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_translation_key = "limit_duration"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: EebusCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.ski}_limit_duration"
+
+    @property
+    def native_value(self) -> float | None:
+        if self.coordinator.data is None:
+            return None
+        limit = self.coordinator.data.get("consumption_limit")
+        if limit is None:
+            return None
+        return limit.get("duration_seconds")
