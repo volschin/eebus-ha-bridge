@@ -547,9 +547,12 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         # If activating, ensure duration > 0 so the Bosch WP does not
         # immediately reset the active flag when duration=0 is received.
+        # If deactivating, explicitly send duration=0 to clear the limit.
         duration = int(current.duration_seconds or 0)
         if active and duration == 0:
             duration = 3600
+        elif not active:
+            duration = 0
         try:
             await stub.WriteConsumptionLimit(
                 proto_stubs.WriteLoadLimitRequest(
