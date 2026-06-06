@@ -91,6 +91,21 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "connected": status.running,
                 "local_ski": status.local_ski,
                 "ski_registered": self._ski_registered,
+                "power_watts": None,
+                "energy_consumed_kwh": None,
+                "energy_produced_kwh": None,
+                "energy_consumed_heating_kwh": None,
+                "energy_consumed_dhw_kwh": None,
+                "grid_frequency_hz": None,
+                "power_l1_watts": None,
+                "power_l2_watts": None,
+                "power_l3_watts": None,
+                "current_l1_ampere": None,
+                "current_l2_ampere": None,
+                "current_l3_ampere": None,
+                "voltage_l1_volt": None,
+                "voltage_l2_volt": None,
+                "voltage_l3_volt": None,
             }
             if self.ski == status.local_ski:
                 _LOGGER.warning(
@@ -150,12 +165,17 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 measurements = await monitoring_stub.GetMeasurements(
                     request, timeout=RPC_TIMEOUT
                 )
+                data.update(self._extract_standard_measurements(measurements.measurements))
                 scoped_energy = self._extract_scoped_energy_kwh(measurements.measurements)
                 data["energy_consumed_heating_kwh"] = scoped_energy["heating"]
                 data["energy_consumed_dhw_kwh"] = scoped_energy["dhw"]
                 _LOGGER.debug(
-                    "EEBUS scoped energy read for SKI %s: heating=%s dhw=%s entries=%s",
+                    "EEBUS measurement read for SKI %s: power=%s energy_total=%s energy_produced=%s freq=%s heating=%s dhw=%s entries=%s",
                     self.ski,
+                    data["power_watts"],
+                    data["energy_consumed_kwh"],
+                    data["energy_produced_kwh"],
+                    data["grid_frequency_hz"],
                     data["energy_consumed_heating_kwh"],
                     data["energy_consumed_dhw_kwh"],
                     len(measurements.measurements),
@@ -167,6 +187,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         measurements = await monitoring_stub.GetMeasurements(
                             fallback_request, timeout=RPC_TIMEOUT
                         )
+                        data.update(self._extract_standard_measurements(measurements.measurements))
                         scoped_energy = self._extract_scoped_energy_kwh(
                             measurements.measurements
                         )
@@ -174,8 +195,12 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         data["energy_consumed_dhw_kwh"] = scoped_energy["dhw"]
                         used_fallback = True
                         _LOGGER.debug(
-                            "EEBUS scoped energy read for SKI %s used fallback: heating=%s dhw=%s entries=%s",
+                            "EEBUS measurement read for SKI %s used fallback: power=%s energy_total=%s energy_produced=%s freq=%s heating=%s dhw=%s entries=%s",
                             self.ski,
+                            data["power_watts"],
+                            data["energy_consumed_kwh"],
+                            data["energy_produced_kwh"],
+                            data["grid_frequency_hz"],
                             data["energy_consumed_heating_kwh"],
                             data["energy_consumed_dhw_kwh"],
                             len(measurements.measurements),
@@ -202,36 +227,38 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data["energy_consumed_dhw_kwh"] = None
 
             try:
-                energy = await monitoring_stub.GetEnergyConsumed(
-                    request, timeout=RPC_TIMEOUT
-                )
-                data["energy_consumed_kwh"] = energy.kilowatt_hours
-                _LOGGER.debug(
-                    "EEBUS total energy read for SKI %s succeeded: kWh=%s",
-                    self.ski,
-                    energy.kilowatt_hours,
-                )
+                if data["energy_consumed_kwh"] is None:
+                    energy = await monitoring_stub.GetEnergyConsumed(
+                        request, timeout=RPC_TIMEOUT
+                    )
+                    data["energy_consumed_kwh"] = energy.kilowatt_hours
+                    _LOGGER.debug(
+                        "EEBUS total energy read for SKI %s succeeded: kWh=%s",
+                        self.ski,
+                        energy.kilowatt_hours,
+                    )
             except grpc.aio.AioRpcError as err:
                 if _is_not_found(err):
                     saw_not_found = True
-                    try:
-                        energy = await monitoring_stub.GetEnergyConsumed(
-                            fallback_request, timeout=RPC_TIMEOUT
-                        )
-                        data["energy_consumed_kwh"] = energy.kilowatt_hours
-                        used_fallback = True
-                        _LOGGER.debug(
-                            "EEBUS total energy read for SKI %s used fallback: kWh=%s",
-                            self.ski,
-                            energy.kilowatt_hours,
-                        )
-                    except grpc.aio.AioRpcError as retry_err:
-                        data["energy_consumed_kwh"] = None
-                        _LOGGER.debug(
-                            "EEBUS total energy read failed for SKI %s and fallback: %s",
-                            self.ski,
-                            _rpc_error_text(retry_err),
-                        )
+                    if data["energy_consumed_kwh"] is None:
+                        try:
+                            energy = await monitoring_stub.GetEnergyConsumed(
+                                fallback_request, timeout=RPC_TIMEOUT
+                            )
+                            data["energy_consumed_kwh"] = energy.kilowatt_hours
+                            used_fallback = True
+                            _LOGGER.debug(
+                                "EEBUS total energy read for SKI %s used fallback: kWh=%s",
+                                self.ski,
+                                energy.kilowatt_hours,
+                            )
+                        except grpc.aio.AioRpcError as retry_err:
+                            data["energy_consumed_kwh"] = None
+                            _LOGGER.debug(
+                                "EEBUS total energy read failed for SKI %s and fallback: %s",
+                                self.ski,
+                                _rpc_error_text(retry_err),
+                            )
                 else:
                     data["energy_consumed_kwh"] = None
                     _LOGGER.debug(
@@ -524,6 +551,53 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if "energy" in normalized and ("heating" in normalized or "space_heating" in normalized):
                 result["heating"] = value
 
+        return result
+
+    @staticmethod
+    def _extract_standard_measurements(measurements: list[Any]) -> dict[str, float | None]:
+        """Extract bridge-standardized measurement entries into coordinator keys."""
+        result: dict[str, float | None] = {
+            "power_watts": None,
+            "energy_consumed_kwh": None,
+            "energy_produced_kwh": None,
+            "grid_frequency_hz": None,
+            "power_l1_watts": None,
+            "power_l2_watts": None,
+            "power_l3_watts": None,
+            "current_l1_ampere": None,
+            "current_l2_ampere": None,
+            "current_l3_ampere": None,
+            "voltage_l1_volt": None,
+            "voltage_l2_volt": None,
+            "voltage_l3_volt": None,
+        }
+        key_map = {
+            "power_consumption": "power_watts",
+            "energy_consumed": "energy_consumed_kwh",
+            "energy_produced": "energy_produced_kwh",
+            "frequency": "grid_frequency_hz",
+            "power_l1": "power_l1_watts",
+            "power_l2": "power_l2_watts",
+            "power_l3": "power_l3_watts",
+            "current_l1": "current_l1_ampere",
+            "current_l2": "current_l2_ampere",
+            "current_l3": "current_l3_ampere",
+            "voltage_l1": "voltage_l1_volt",
+            "voltage_l2": "voltage_l2_volt",
+            "voltage_l3": "voltage_l3_volt",
+        }
+        for measurement in measurements:
+            measurement_type = str(getattr(measurement, "type", "")).strip().lower()
+            if not measurement_type:
+                continue
+            normalized = measurement_type.replace("-", "_").replace(" ", "_")
+            target_key = key_map.get(normalized)
+            if target_key is None:
+                continue
+            value = getattr(measurement, "value", None)
+            if value is None:
+                continue
+            result[target_key] = value
         return result
 
     async def async_write_lpc_limit(self, value_watts: float) -> None:

@@ -2,6 +2,7 @@
 
 import inspect
 from datetime import timedelta
+from types import SimpleNamespace
 
 from custom_components.eebus.coordinator import EebusCoordinator, POLL_INTERVAL
 
@@ -35,3 +36,26 @@ def test_coordinator_init():
     assert coordinator.ski == "test-ski"
     assert coordinator._channel is None
     assert coordinator._was_unavailable is False
+
+
+def test_extract_standard_measurements_maps_entries():
+    """Test mapping bridge measurement entries to coordinator keys."""
+    measurements = [
+        SimpleNamespace(type="power_consumption", value=1234.5),
+        SimpleNamespace(type="energy_consumed", value=6.7),
+        SimpleNamespace(type="energy_produced", value=1.2),
+        SimpleNamespace(type="frequency", value=49.98),
+        SimpleNamespace(type="power_l1", value=410.0),
+        SimpleNamespace(type="current_l1", value=1.9),
+        SimpleNamespace(type="voltage_l1", value=229.7),
+    ]
+
+    result = EebusCoordinator._extract_standard_measurements(measurements)
+
+    assert result["power_watts"] == 1234.5
+    assert result["energy_consumed_kwh"] == 6.7
+    assert result["energy_produced_kwh"] == 1.2
+    assert result["grid_frequency_hz"] == 49.98
+    assert result["power_l1_watts"] == 410.0
+    assert result["current_l1_ampere"] == 1.9
+    assert result["voltage_l1_volt"] == 229.7

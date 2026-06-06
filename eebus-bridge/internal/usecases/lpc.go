@@ -6,6 +6,7 @@ import (
 	"time"
 
 	eebusapi "github.com/enbility/eebus-go/api"
+	featureserver "github.com/enbility/eebus-go/features/server"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
 	eglpc "github.com/enbility/eebus-go/usecases/eg/lpc"
 	spineapi "github.com/enbility/spine-go/api"
@@ -37,7 +38,10 @@ func (w *LPCWrapper) Setup(localEntity spineapi.EntityLocalInterface) {
 	}
 	w.localEntity = localEntity
 	w.uc = eglpc.NewLPC(localEntity, w.HandleEvent)
-	if _, err := model.NewDeviceDiagnosis(localEntity); err != nil {
+	if _, err := featureserver.NewFeature(model.FeatureTypeTypeDeviceDiagnosis, localEntity); err != nil {
+		log.Printf("creating local DeviceDiagnosis feature failed: %v", err)
+	}
+	if _, err := featureserver.NewDeviceDiagnosis(localEntity); err != nil {
 		log.Printf("creating local DeviceDiagnosis heartbeat server failed: %v", err)
 	}
 }
@@ -166,7 +170,7 @@ func (w *LPCWrapper) IsHeartbeatWithinDuration(_ spineapi.EntityRemoteInterface)
 	if w.localEntity == nil {
 		return false
 	}
-	return w.localEntity.HeartbeatManager().IsHeartbeatWithinDuration()
+	return w.localEntity.HeartbeatManager().IsHeartbeatRunning()
 }
 
 func (w *LPCWrapper) IsHeartbeatRunning() bool {

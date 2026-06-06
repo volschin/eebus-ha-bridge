@@ -3,8 +3,19 @@
     "sensor": {
       "power_consumption": { "default": "mdi:flash" },
       "energy_consumed": { "default": "mdi:lightning-bolt" },
+      "energy_produced": { "default": "mdi:transmission-tower-export" },
       "energy_consumed_heating": { "default": "mdi:radiator" },
       "energy_consumed_dhw": { "default": "mdi:water-boiler" },
+      "grid_frequency": { "default": "mdi:sine-wave" },
+      "power_l1": { "default": "mdi:alpha-l-circle-outline" },
+      "power_l2": { "default": "mdi:alpha-l-circle-outline" },
+      "power_l3": { "default": "mdi:alpha-l-circle-outline" },
+      "current_l1": { "default": "mdi:current-ac" },
+      "current_l2": { "default": "mdi:current-ac" },
+      "current_l3": { "default": "mdi:current-ac" },
+      "voltage_l1": { "default": "mdi:lightning-bolt-outline" },
+      "voltage_l2": { "default": "mdi:lightning-bolt-outline" },
+      "voltage_l3": { "default": "mdi:lightning-bolt-outline" },
       "consumption_limit": { "default": "mdi:speedometer" }
     },
     "number": {
