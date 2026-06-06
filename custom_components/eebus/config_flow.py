@@ -84,23 +84,34 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle device selection step."""
-        if user_input is not None:
-            ski = user_input[CONF_DEVICE_SKI]
-            await self.async_set_unique_id(ski)
-            self._abort_if_unique_id_configured()
+        errors: dict[str, str] = {}
 
-            return self.async_create_entry(
-                title=f"EEBUS {ski[:8]}",
-                data={
-                    CONF_GRPC_HOST: self._host,
-                    CONF_GRPC_PORT: self._port,
-                    CONF_DEVICE_SKI: ski,
-                },
-            )
+        if user_input is not None:
+            ski = user_input[CONF_DEVICE_SKI].strip().upper()
+
+            if not ski:
+                errors["base"] = "invalid_ski_empty"
+            elif len(ski) < 10:
+                errors["base"] = "invalid_ski_too_short"
+            elif len(ski) > 40:
+                errors["base"] = "invalid_ski_too_long"
+            else:
+                await self.async_set_unique_id(ski)
+                self._abort_if_unique_id_configured()
+
+                return self.async_create_entry(
+                    title=f"EEBUS {ski[:8]}",
+                    data={
+                        CONF_GRPC_HOST: self._host,
+                        CONF_GRPC_PORT: self._port,
+                        CONF_DEVICE_SKI: ski,
+                    },
+                )
 
         return self.async_show_form(
             step_id="device",
             data_schema=STEP_DEVICE_DATA_SCHEMA,
+            errors=errors,
         )
 
     async def async_step_reconfigure(

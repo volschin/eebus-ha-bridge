@@ -60,6 +60,11 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.host = host
         self.port = port
         self.ski = _normalize_ski(ski)
+        if not self.ski:
+            _LOGGER.warning(
+                "EEBUS coordinator initialized with empty/invalid SKI (raw input: %r); data updates will fail",
+                ski,
+            )
         self._channel: grpc.aio.Channel | None = None
         self._stream_tasks: list[asyncio.Task] = []
         self._was_unavailable: bool = False
@@ -77,6 +82,9 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data via gRPC polling."""
+        if not self.ski:
+            raise UpdateFailed("Device SKI is empty or invalid; check EEBUS integration configuration")
+
         try:
             channel = await self._ensure_channel()
             from . import proto_stubs
@@ -106,6 +114,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "voltage_l1_volt": None,
                 "voltage_l2_volt": None,
                 "voltage_l3_volt": None,
+                "consumption_nominal_max_watts": None,
             }
             if self.ski == status.local_ski:
                 _LOGGER.warning(
@@ -115,7 +124,6 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             monitoring_stub = proto_stubs.MonitoringServiceStub(channel)
             request = proto_stubs.DeviceRequest(ski=self.ski)
-            fallback_request = proto_stubs.DeviceRequest(ski="")
             used_fallback = False
             saw_not_found = False
 
@@ -132,24 +140,11 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except grpc.aio.AioRpcError as err:
                 if _is_not_found(err):
                     saw_not_found = True
-                    try:
-                        power = await monitoring_stub.GetPowerConsumption(
-                            fallback_request, timeout=RPC_TIMEOUT
-                        )
-                        data["power_watts"] = power.watts
-                        used_fallback = True
-                        _LOGGER.debug(
-                            "EEBUS power read for SKI %s used fallback entity: watts=%s",
-                            self.ski,
-                            power.watts,
-                        )
-                    except grpc.aio.AioRpcError as retry_err:
-                        data["power_watts"] = None
-                        _LOGGER.debug(
-                            "EEBUS power read failed for SKI %s and fallback: %s",
-                            self.ski,
-                            _rpc_error_text(retry_err),
-                        )
+                    data["power_watts"] = None
+                    _LOGGER.debug(
+                        "EEBUS power read failed for SKI %s with NOT_FOUND (device may be re-registering)",
+                        self.ski,
+                    )
                 else:
                     data["power_watts"] = None
                     _LOGGER.debug(
@@ -279,6 +274,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "value_watts": limit.value_watts,
                     "is_active": limit.is_active,
                     "is_changeable": limit.is_changeable,
+                    "duration_seconds": limit.duration_seconds,
                 }
                 self._lpc_supported = True
                 _LOGGER.debug(
@@ -299,6 +295,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             "value_watts": limit.value_watts,
                             "is_active": limit.is_active,
                             "is_changeable": limit.is_changeable,
+                            "duration_seconds": limit.duration_seconds,
                         }
                         self._lpc_supported = True
                         used_fallback = True
@@ -445,6 +442,49 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.exception("Failed to read heartbeat status")
                 data["heartbeat_status"] = None
                 data["heartbeat_supported"] = self._heartbeat_supported
+
+            try:
+                lpc_stub = proto_stubs.LPCServiceStub(channel)
+                nominal_max = await lpc_stub.GetConsumptionNominalMax(
+                    request, timeout=RPC_TIMEOUT
+                )
+                data["consumption_nominal_max_watts"] = nominal_max.watts
+                _LOGGER.debug(
+                    "EEBUS nominal max consumption for SKI %s: watts=%s",
+                    self.ski,
+                    nominal_max.watts,
+                )
+            except grpc.aio.AioRpcError as err:
+                if _is_not_found(err):
+                    saw_not_found = True
+                    try:
+                        nominal_max = await lpc_stub.GetConsumptionNominalMax(
+                            fallback_request, timeout=RPC_TIMEOUT
+                        )
+                        data["consumption_nominal_max_watts"] = nominal_max.watts
+                        used_fallback = True
+                        _LOGGER.debug(
+                            "EEBUS nominal max consumption for SKI %s used fallback: watts=%s",
+                            self.ski,
+                            nominal_max.watts,
+                        )
+                    except grpc.aio.AioRpcError as retry_err:
+                        data["consumption_nominal_max_watts"] = None
+                        _LOGGER.debug(
+                            "EEBUS nominal max read failed for SKI %s and fallback: %s",
+                            self.ski,
+                            _rpc_error_text(retry_err),
+                        )
+                else:
+                    data["consumption_nominal_max_watts"] = None
+                    _LOGGER.debug(
+                        "EEBUS nominal max read failed for SKI %s: %s",
+                        self.ski,
+                        _rpc_error_text(err),
+                    )
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Failed to read nominal max consumption")
+                data["consumption_nominal_max_watts"] = None
 
             data["lpc_supported"] = self._lpc_supported
             data["failsafe_supported"] = self._failsafe_supported

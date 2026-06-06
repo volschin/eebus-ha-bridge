@@ -23,7 +23,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("loading config: %v", err)
 	}
-	log.Printf("EEBUS debug_events=%t", cfg.Logging.DebugEvents)
+	log.Printf("EEBUS debug_events=%t, debug_protocol=%t", cfg.Logging.DebugEvents, cfg.Logging.DebugProtocol)
 
 	cert, err := certs.EnsureCertificate(
 		cfg.Certificates.CertFile,
@@ -73,8 +73,8 @@ func main() {
 	grpcSrv := bridgegrpc.NewServer(cfg.GRPC.Port)
 
 	deviceSvc := bridgegrpc.NewDeviceService(bridgeSvc.Callbacks(), bus, ski, registry)
-	lpcSvc := bridgegrpc.NewLPCService(lpcWrapper, bus, registry)
-	monitoringSvc := bridgegrpc.NewMonitoringService(monitoringWrapper, bus, registry)
+	lpcSvc := bridgegrpc.NewLPCService(lpcWrapper, bus, registry, cfg.Logging.DebugProtocol)
+	monitoringSvc := bridgegrpc.NewMonitoringService(monitoringWrapper, bus, registry, cfg.Logging.DebugProtocol)
 
 	pb.RegisterDeviceServiceServer(grpcSrv.GRPCServer(), deviceSvc)
 	pb.RegisterLPCServiceServer(grpcSrv.GRPCServer(), lpcSvc)

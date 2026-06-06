@@ -8,6 +8,11 @@ services:
     volumes:
       - eebus-data:/data
       - ./eebus-bridge/config.yaml:/etc/eebus-bridge/config.yaml:ro
+    environment:
+      # Set to "true" to enable EEBUS protocol logging (shows all measurements and signals)
+      - DEBUG_EEBUS_PROTOCOL=false
+      # Set to "true" to enable debug event logging
+      - EEBUS_DEBUG_EVENTS=false
     network_mode: host
     restart: unless-stopped
 

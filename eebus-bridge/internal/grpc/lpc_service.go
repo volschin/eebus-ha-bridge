@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"log"
 	"time"
 
 	ucapi "github.com/enbility/eebus-go/usecases/api"
@@ -15,18 +16,22 @@ import (
 
 type LPCService struct {
 	pb.UnimplementedLPCServiceServer
-	lpc      *usecases.LPCWrapper
-	bus      *eebus.EventBus
-	registry *eebus.DeviceRegistry
+	lpc           *usecases.LPCWrapper
+	bus           *eebus.EventBus
+	registry      *eebus.DeviceRegistry
+	debugProtocol bool
 }
 
-func NewLPCService(lpc *usecases.LPCWrapper, bus *eebus.EventBus, registry *eebus.DeviceRegistry) *LPCService {
-	return &LPCService{lpc: lpc, bus: bus, registry: registry}
+func NewLPCService(lpc *usecases.LPCWrapper, bus *eebus.EventBus, registry *eebus.DeviceRegistry, debugProtocol bool) *LPCService {
+	return &LPCService{lpc: lpc, bus: bus, registry: registry, debugProtocol: debugProtocol}
 }
 
 func (s *LPCService) GetConsumptionLimit(_ context.Context, req *pb.DeviceRequest) (*pb.LoadLimit, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if req.Ski == "" {
+		return nil, status.Error(codes.InvalidArgument, "device SKI is required (empty SKI provided)")
 	}
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
@@ -39,12 +44,20 @@ func (s *LPCService) GetConsumptionLimit(_ context.Context, req *pb.DeviceReques
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "reading consumption limit: %v", err)
 	}
-	return convertLoadLimit(limit), nil
+	result := convertLoadLimit(limit)
+	if s.debugProtocol {
+		log.Printf("[PROTOCOL] Bosch LPC consumption limit (SKI=%s): value=%d W, active=%v, changeable=%v, duration=%d s", 
+			req.Ski, int(result.ValueWatts), result.IsActive, result.IsChangeable, result.DurationSeconds)
+	}
+	return result, nil
 }
 
 func (s *LPCService) WriteConsumptionLimit(_ context.Context, req *pb.WriteLoadLimitRequest) (*pb.Empty, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if req.Ski == "" {
+		return nil, status.Error(codes.InvalidArgument, "device SKI is required (empty SKI provided)")
 	}
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
@@ -62,12 +75,19 @@ func (s *LPCService) WriteConsumptionLimit(_ context.Context, req *pb.WriteLoadL
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "writing consumption limit: %v", err)
 	}
+	if s.debugProtocol {
+		log.Printf("[PROTOCOL] Bosch LPC write (SKI=%s): value=%d W, duration=%d s, active=%v", 
+			req.Ski, req.ValueWatts, req.DurationSeconds, req.IsActive)
+	}
 	return &pb.Empty{}, nil
 }
 
 func (s *LPCService) GetFailsafeLimit(_ context.Context, req *pb.DeviceRequest) (*pb.FailsafeLimit, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if req.Ski == "" {
+		return nil, status.Error(codes.InvalidArgument, "device SKI is required (empty SKI provided)")
 	}
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
@@ -84,15 +104,23 @@ func (s *LPCService) GetFailsafeLimit(_ context.Context, req *pb.DeviceRequest) 
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "reading failsafe duration: %v", err)
 	}
-	return &pb.FailsafeLimit{
+	result := &pb.FailsafeLimit{
 		ValueWatts:             value,
 		DurationMinimumSeconds: int64(duration / time.Second),
-	}, nil
+	}
+	if s.debugProtocol {
+		log.Printf("[PROTOCOL] Bosch failsafe limit (SKI=%s): value=%d W, min_duration=%d s", 
+			req.Ski, int(result.ValueWatts), result.DurationMinimumSeconds)
+	}
+	return result, nil
 }
 
 func (s *LPCService) WriteFailsafeLimit(_ context.Context, req *pb.WriteFailsafeLimitRequest) (*pb.Empty, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if req.Ski == "" {
+		return nil, status.Error(codes.InvalidArgument, "device SKI is required (empty SKI provided)")
 	}
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
@@ -108,6 +136,10 @@ func (s *LPCService) WriteFailsafeLimit(_ context.Context, req *pb.WriteFailsafe
 		if err := s.lpc.WriteFailsafeDurationMinimum(entity, time.Duration(req.DurationMinimumSeconds)*time.Second); err != nil {
 			return nil, status.Errorf(codes.Internal, "writing failsafe duration: %v", err)
 		}
+	}
+	if s.debugProtocol {
+		log.Printf("[PROTOCOL] Bosch failsafe write (SKI=%s): value=%d W, min_duration=%d s", 
+			req.Ski, req.ValueWatts, req.DurationMinimumSeconds)
 	}
 	return &pb.Empty{}, nil
 }
@@ -139,6 +171,9 @@ func (s *LPCService) GetHeartbeatStatus(_ context.Context, req *pb.DeviceRequest
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
+	if req.Ski == "" {
+		return nil, status.Error(codes.InvalidArgument, "device SKI is required (empty SKI provided)")
+	}
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
 	}
@@ -159,6 +194,9 @@ func (s *LPCService) GetConsumptionNominalMax(_ context.Context, req *pb.DeviceR
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
+	if req.Ski == "" {
+		return nil, status.Error(codes.InvalidArgument, "device SKI is required (empty SKI provided)")
+	}
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
 	}
@@ -170,7 +208,11 @@ func (s *LPCService) GetConsumptionNominalMax(_ context.Context, req *pb.DeviceR
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "reading nominal max consumption: %v", err)
 	}
-	return &pb.PowerValue{Watts: value}, nil
+	result := &pb.PowerValue{Watts: value}
+	if s.debugProtocol {
+		log.Printf("[PROTOCOL] Bosch nominal max power (SKI=%s): %.2f W", req.Ski, value)
+	}
+	return result, nil
 }
 
 func (s *LPCService) SubscribeLPCEvents(req *pb.DeviceRequest, stream pb.LPCService_SubscribeLPCEventsServer) error {
@@ -222,12 +264,6 @@ func (s *LPCService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, 
 	}
 	ski = eebus.NormalizeSKI(ski)
 	entity := s.registry.FirstEntity(ski)
-	if entity == nil {
-		// Bosch/Connect-Key sometimes stores the entity only after the LPC
-		// UseCaseSupportUpdate callback. In single-device installations use the
-		// only known entity as fallback instead of returning NOT_FOUND.
-		entity = s.registry.FirstAvailableEntity()
-	}
 	if entity == nil {
 		return nil, status.Errorf(codes.NotFound, "no remote entity found for ski %s", ski)
 	}

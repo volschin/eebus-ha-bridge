@@ -35,7 +35,8 @@ type CertificatesConfig struct {
 }
 
 type LoggingConfig struct {
-	DebugEvents bool `yaml:"debug_events"`
+	DebugEvents   bool `yaml:"debug_events"`
+	DebugProtocol bool `yaml:"debug_protocol"`
 }
 
 func LoadFromFile(path string) (*Config, error) {
@@ -114,6 +115,11 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("EEBUS_DEBUG_EVENTS"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			cfg.Logging.DebugEvents = enabled
+		}
+	}
+	if v := os.Getenv("DEBUG_EEBUS_PROTOCOL"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Logging.DebugProtocol = enabled
 		}
 	}
 }

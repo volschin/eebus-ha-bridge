@@ -17,5 +17,12 @@ COPY --from=builder /eebus-bridge /usr/local/bin/eebus-bridge
 VOLUME /data
 EXPOSE 50051 4712
 
+# Environment variables:
+# - DEBUG_EEBUS_PROTOCOL: Set to "true" to enable detailed EEBUS protocol logging
+#   Shows all measurements, signals, and control commands sent/received from EEBUS devices
+# - EEBUS_DEBUG_EVENTS: Set to "true" to enable debug event logging
+# - EEBUS_GRPC_PORT: Override gRPC port (default: 50051)
+# - EEBUS_PORT: Override EEBUS port (default: 4712)
+
 ENTRYPOINT ["eebus-bridge"]
 CMD ["--config", "/etc/eebus-bridge/config.yaml"]

@@ -47,6 +47,8 @@ async def async_setup_entry(
         EebusVoltageL2Sensor(coordinator),
         EebusVoltageL3Sensor(coordinator),
         EebusConsumptionLimitSensor(coordinator),
+        EebusNominalMaxPowerSensor(coordinator),
+        EebusLimitDurationSensor(coordinator),
     ])
 
 
