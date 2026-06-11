@@ -19,7 +19,7 @@ jobs:
         uses: docker/setup-qemu-action@v3 # renovate: datasource=github-releases depName=docker/setup-qemu-action
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3 # renovate: datasource=github-releases depName=docker/setup-buildx-action
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0 # renovate: datasource=github-releases depName=docker/setup-buildx-action
 
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0 # renovate: datasource=github-releases depName=docker/login-action
