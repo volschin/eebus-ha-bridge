@@ -17,9 +17,11 @@ class EebusEntity(CoordinatorEntity[EebusCoordinator]):
     def __init__(self, coordinator: EebusCoordinator) -> None:
         """Initialize the entity."""
         super().__init__(coordinator)
+        info = (coordinator.data or {}).get("device_info") or {}
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.ski)},
             name=f"EEBUS {coordinator.ski[:8]}",
-            manufacturer="Vaillant",
-            model="VR940f",
+            manufacturer=info.get("manufacturer"),
+            model=info.get("model"),
+            serial_number=info.get("serial"),
         )

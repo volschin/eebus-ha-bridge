@@ -1,15 +1,29 @@
 """Tests for the EEBUS coordinator."""
 
+import asyncio
 import inspect
 from datetime import timedelta
 from unittest.mock import MagicMock
 
+from custom_components.eebus import proto_stubs
 from custom_components.eebus.coordinator import EebusCoordinator, POLL_INTERVAL
 from custom_components.eebus.generated.eebus.v1 import (
     device_service_pb2,
     lpc_service_pb2,
     monitoring_service_pb2,
 )
+
+
+def _device_stub_returning(*devices):
+    """Build a stub whose ListPairedDevices async-returns the given devices."""
+    response = device_service_pb2.ListPairedDevicesResponse(devices=list(devices))
+
+    async def _list(_request, timeout=None):
+        return response
+
+    stub = MagicMock()
+    stub.ListPairedDevices = _list
+    return stub
 
 
 def test_coordinator_poll_interval():
@@ -146,6 +160,55 @@ def test_lpc_failsafe_event_pushes_data():
         "value_watts": 3000.0,
         "duration_minimum_seconds": 7200,
     }
+
+
+def test_fetch_device_info_uses_matching_ski():
+    """Real brand/model/serial for the configured SKI is surfaced (issue #28)."""
+    coordinator, _ = _make_coordinator(ski="bosch-ski")
+    stub = _device_stub_returning(
+        device_service_pb2.PairedDevice(ski="other", brand="Vaillant", model="VR940f"),
+        device_service_pb2.PairedDevice(
+            ski="bosch-ski",
+            brand="Bosch",
+            model="Compress 5800i",
+            serial="SN-123",
+            device_type="HeatPumpAppliance",
+        ),
+    )
+    info = asyncio.run(
+        coordinator._async_fetch_device_info(stub, proto_stubs, allow_fallback=False)
+    )
+    assert info == {
+        "manufacturer": "Bosch",
+        "model": "Compress 5800i",
+        "serial": "SN-123",
+        "device_type": "HeatPumpAppliance",
+    }
+
+
+def test_fetch_device_info_fallback_single_device():
+    """When reads fell back to the only device, its info is used despite SKI mismatch."""
+    coordinator, _ = _make_coordinator(ski="configured-ski")
+    stub = _device_stub_returning(
+        device_service_pb2.PairedDevice(ski="actual-ski", brand="Bosch")
+    )
+    info = asyncio.run(
+        coordinator._async_fetch_device_info(stub, proto_stubs, allow_fallback=True)
+    )
+    assert info == {"manufacturer": "Bosch"}
+
+
+def test_fetch_device_info_no_match_returns_none():
+    """No SKI match and no fallback yields None (no mislabeling)."""
+    coordinator, _ = _make_coordinator(ski="configured-ski")
+    stub = _device_stub_returning(
+        device_service_pb2.PairedDevice(ski="a", brand="Bosch"),
+        device_service_pb2.PairedDevice(ski="b", brand="Vaillant"),
+    )
+    info = asyncio.run(
+        coordinator._async_fetch_device_info(stub, proto_stubs, allow_fallback=True)
+    )
+    assert info is None
 
 
 def test_device_event_triggers_refresh():

@@ -80,6 +80,30 @@ func (r *DeviceRegistry) UpsertObservation(
 	r.devices[ski] = info
 }
 
+// UpsertDeviceClassification stores manufacturer/device-type metadata reported by
+// a remote device. Empty values are ignored so later partial updates never clear
+// previously discovered fields.
+func (r *DeviceRegistry) UpsertDeviceClassification(ski, brand, deviceModel, serial, deviceType string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	info := r.devices[ski]
+	info.SKI = ski
+	if brand != "" {
+		info.Brand = brand
+	}
+	if deviceModel != "" {
+		info.Model = deviceModel
+	}
+	if serial != "" {
+		info.Serial = serial
+	}
+	if deviceType != "" {
+		info.DeviceType = deviceType
+	}
+	r.devices[ski] = info
+}
+
 func (r *DeviceRegistry) RemoveDevice(ski string) {
 	r.mu.Lock()
 	delete(r.devices, ski)
