@@ -66,7 +66,7 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Lint Dockerfile
-        uses: hadolint/hadolint-action@v3.1.0 # renovate: datasource=github-releases depName=hadolint/hadolint-action
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0 # renovate: datasource=github-releases depName=hadolint/hadolint-action
         with:
           dockerfile: eebus-bridge/Dockerfile
       - run: docker build -t eebus-bridge ./eebus-bridge

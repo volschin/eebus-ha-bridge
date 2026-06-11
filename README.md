@@ -114,7 +114,7 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 | Hersteller | Modell | Gateway | Getestet |
 |-----------|--------|---------|----------|
 | Vaillant | aroTHERM plus | VR940f | Primaeres Ziel |
-| Vaillant | aroTHERM plus | VR920/VR921 | Erwartet kompatibel |
+| Vaillant | aroTHERM plus | VR920/VR921 | Kompatibel |
 
 ### Voraussetzungen
 
