@@ -16,9 +16,9 @@ type Config struct {
 }
 
 type GRPCConfig struct {
-	Port              int    `yaml:"port"`
-	Bind              string `yaml:"bind"`
-	EnableReflection  bool   `yaml:"enable_reflection"`
+	Port             int    `yaml:"port"`
+	Bind             string `yaml:"bind"`
+	EnableReflection bool   `yaml:"enable_reflection"`
 }
 
 type EEBUSConfig struct {
@@ -41,7 +41,7 @@ type LoggingConfig struct {
 }
 
 func LoadFromFile(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is an operator-supplied config file location, not user input
 	if err != nil {
 		return nil, fmt.Errorf("reading config file: %w", err)
 	}
