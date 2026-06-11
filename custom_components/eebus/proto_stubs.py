@@ -10,10 +10,18 @@ from .generated.eebus.v1.common_pb2 import (  # noqa: F401
     MeasurementEntry,
     PowerMeasurement,
 )
+from .generated.eebus.v1.device_service_pb2 import (  # noqa: F401
+    DeviceEventType,
+    RegisterSKIRequest,
+)
 from .generated.eebus.v1.device_service_pb2_grpc import DeviceServiceStub  # noqa: F401
 from .generated.eebus.v1.lpc_service_pb2 import (  # noqa: F401
+    LPCEventType,
     WriteFailsafeLimitRequest,
     WriteLoadLimitRequest,
+)
+from .generated.eebus.v1.monitoring_service_pb2 import (  # noqa: F401
+    MeasurementEventType,
 )
 from .generated.eebus.v1.lpc_service_pb2_grpc import LPCServiceStub  # noqa: F401
 from .generated.eebus.v1.monitoring_service_pb2_grpc import MonitoringServiceStub  # noqa: F401

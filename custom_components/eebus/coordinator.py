@@ -15,9 +15,12 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 _LOGGER = logging.getLogger(__name__)
 
-POLL_INTERVAL = timedelta(seconds=30)
+# Event streams deliver push updates; polling only reconciles state the
+# streams cannot carry (scoped energy, heartbeat, support flags).
+POLL_INTERVAL = timedelta(minutes=5)
 RPC_TIMEOUT = 10
 RE_REGISTER_NOT_FOUND_STREAK = 4
+STREAM_RETRY_SECONDS = 30
 
 
 def _is_unimplemented(err: grpc.aio.AioRpcError) -> bool:
@@ -627,6 +630,156 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
                 return
             raise
+
+    def async_start_streams(self) -> None:
+        """Start background tasks consuming bridge event streams."""
+        if self._stream_tasks:
+            return
+        for name, runner in (
+            ("device_events", self._run_device_event_stream),
+            ("lpc_events", self._run_lpc_event_stream),
+            ("measurements", self._run_measurement_stream),
+        ):
+            self._stream_tasks.append(
+                self.hass.async_create_background_task(
+                    runner(), name=f"eebus_{name}_{self.ski}"
+                )
+            )
+
+    async def _run_stream(self, name: str, consume: Any) -> None:
+        """Run a stream consumer with reconnect/backoff until cancelled."""
+        while True:
+            try:
+                channel = await self._ensure_channel()
+                await consume(channel)
+            except asyncio.CancelledError:
+                raise
+            except grpc.aio.AioRpcError as err:
+                if _is_unimplemented(err):
+                    _LOGGER.info(
+                        "EEBUS %s stream not supported by bridge; relying on polling",
+                        name,
+                    )
+                    return
+                _LOGGER.debug(
+                    "EEBUS %s stream ended (%s); retrying in %ss",
+                    name,
+                    _rpc_error_text(err),
+                    STREAM_RETRY_SECONDS,
+                )
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("EEBUS %s stream failed; retrying", name)
+            await asyncio.sleep(STREAM_RETRY_SECONDS)
+
+    async def _run_device_event_stream(self) -> None:
+        from . import proto_stubs
+
+        async def consume(channel: grpc.aio.Channel) -> None:
+            stub = proto_stubs.DeviceServiceStub(channel)
+            async for event in stub.SubscribeDeviceEvents(proto_stubs.Empty()):
+                self._handle_device_event(event)
+
+        await self._run_stream("device", consume)
+
+    async def _run_lpc_event_stream(self) -> None:
+        from . import proto_stubs
+
+        async def consume(channel: grpc.aio.Channel) -> None:
+            stub = proto_stubs.LPCServiceStub(channel)
+            async for event in stub.SubscribeLPCEvents(
+                proto_stubs.DeviceRequest(ski=self.ski)
+            ):
+                self._handle_lpc_event(event)
+
+        await self._run_stream("LPC", consume)
+
+    async def _run_measurement_stream(self) -> None:
+        from . import proto_stubs
+
+        async def consume(channel: grpc.aio.Channel) -> None:
+            stub = proto_stubs.MonitoringServiceStub(channel)
+            async for event in stub.SubscribeMeasurements(
+                proto_stubs.DeviceRequest(ski=self.ski)
+            ):
+                self._handle_measurement_event(event)
+
+        await self._run_stream("measurement", consume)
+
+    def _event_matches(self, event_ski: str) -> bool:
+        """Return True when an event applies to the configured device."""
+        if not event_ski or event_ski == self.ski:
+            return True
+        # Reads fell back to the first available entity; its events are ours.
+        return bool(self.data and self.data.get("read_fallback_used"))
+
+    def _push_data(self, updates: dict[str, Any]) -> None:
+        """Merge stream updates into coordinator data and notify listeners."""
+        if self.data is None:
+            return
+        self.async_set_updated_data({**self.data, **updates})
+
+    def _handle_device_event(self, event: Any) -> None:
+        from . import proto_stubs
+
+        if not self._event_matches(event.ski):
+            return
+        event_type = event.event_type
+        if event_type == proto_stubs.DeviceEventType.DEVICE_EVENT_TRUST_REMOVED:
+            _LOGGER.warning("EEBUS device %s removed trust with bridge", event.ski)
+        elif event_type not in (
+            proto_stubs.DeviceEventType.DEVICE_EVENT_CONNECTED,
+            proto_stubs.DeviceEventType.DEVICE_EVENT_DISCONNECTED,
+        ):
+            return
+        # Connection state changed; reconcile everything via one poll.
+        self.hass.async_create_task(self.async_request_refresh())
+
+    def _handle_lpc_event(self, event: Any) -> None:
+        from . import proto_stubs
+
+        if not self._event_matches(event.ski):
+            return
+        event_type = event.event_type
+        if event_type == proto_stubs.LPCEventType.LPC_EVENT_LIMIT_UPDATED:
+            limit = event.limit_update
+            self._push_data(
+                {
+                    "consumption_limit": {
+                        "value_watts": limit.value_watts,
+                        "is_active": limit.is_active,
+                        "is_changeable": limit.is_changeable,
+                    }
+                }
+            )
+        elif event_type == proto_stubs.LPCEventType.LPC_EVENT_FAILSAFE_UPDATED:
+            failsafe = event.failsafe_update
+            self._push_data(
+                {
+                    "failsafe_limit": {
+                        "value_watts": failsafe.value_watts,
+                        "duration_minimum_seconds": failsafe.duration_minimum_seconds,
+                    }
+                }
+            )
+        elif event_type == proto_stubs.LPCEventType.LPC_EVENT_HEARTBEAT_TIMEOUT:
+            self.hass.async_create_task(self.async_request_refresh())
+
+    def _handle_measurement_event(self, event: Any) -> None:
+        from . import proto_stubs
+
+        if not self._event_matches(event.ski):
+            return
+        event_type = event.event_type
+        if (
+            event_type == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_POWER_UPDATED
+            and event.HasField("power")
+        ):
+            self._push_data({"power_watts": event.power.watts})
+        elif (
+            event_type == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_ENERGY_UPDATED
+            and event.HasField("energy")
+        ):
+            self._push_data({"energy_consumed_kwh": event.energy.kilowatt_hours})
 
     async def async_shutdown(self) -> None:
         """Close gRPC channel and cancel stream tasks."""

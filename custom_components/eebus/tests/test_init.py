@@ -26,6 +26,7 @@ async def test_setup_entry():
     ) as mock_coordinator_cls:
         coordinator = AsyncMock()
         coordinator.async_config_entry_first_refresh = AsyncMock()
+        coordinator.async_start_streams = MagicMock()
         mock_coordinator_cls.return_value = coordinator
 
         hass.config_entries.async_forward_entry_setups = AsyncMock()
@@ -35,6 +36,7 @@ async def test_setup_entry():
         assert result is True
         assert entry.runtime_data == coordinator
         coordinator.async_config_entry_first_refresh.assert_awaited_once()
+        coordinator.async_start_streams.assert_called_once()
 
 
 @pytest.mark.asyncio
