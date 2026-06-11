@@ -6,8 +6,8 @@ import (
 	"time"
 
 	eebusapi "github.com/enbility/eebus-go/api"
-	eglpc "github.com/enbility/eebus-go/usecases/eg/lpc"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
+	eglpc "github.com/enbility/eebus-go/usecases/eg/lpc"
 	spineapi "github.com/enbility/spine-go/api"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
@@ -15,10 +15,11 @@ import (
 // LPCWrapper wraps the eebus-go LPC (Limitation of Power Consumption) use case
 // and routes events to the internal EventBus.
 type LPCWrapper struct {
-	uc       *eglpc.LPC
-	bus      *eebus.EventBus
-	registry *eebus.DeviceRegistry
-	debug    bool
+	uc          *eglpc.LPC
+	bus         *eebus.EventBus
+	registry    *eebus.DeviceRegistry
+	localEntity spineapi.EntityLocalInterface
+	debug       bool
 }
 
 var errLPCNotInitialized = errors.New("lpc use case not initialized")
@@ -33,6 +34,7 @@ func (w *LPCWrapper) Setup(localEntity spineapi.EntityLocalInterface) {
 	if localEntity == nil {
 		return
 	}
+	w.localEntity = localEntity
 	w.uc = eglpc.NewLPC(localEntity, w.HandleEvent)
 }
 
@@ -56,6 +58,7 @@ func (w *LPCWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInterfa
 
 	if w.registry != nil {
 		w.registry.UpsertObservation(ski, device, entity, "lpc")
+		enrichDeviceClassification(w.registry, w.localEntity, ski, device, entity)
 	}
 
 	var eventType string

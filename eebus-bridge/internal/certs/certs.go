@@ -65,11 +65,11 @@ func persistCertificate(cert tls.Certificate, dir string) error {
 	}
 
 	// Write cert PEM
-	certOut, err := os.Create(filepath.Join(dir, "cert.pem"))
+	certOut, err := os.Create(filepath.Join(dir, "cert.pem")) // #nosec G304 -- dir is an operator-controlled config path, not user input
 	if err != nil {
 		return err
 	}
-	defer certOut.Close()
+	defer func() { _ = certOut.Close() }()
 	for _, c := range cert.Certificate {
 		if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: c}); err != nil {
 			return err
@@ -81,11 +81,11 @@ func persistCertificate(cert tls.Certificate, dir string) error {
 	if err != nil {
 		return err
 	}
-	keyOut, err := os.OpenFile(filepath.Join(dir, "key.pem"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	keyOut, err := os.OpenFile(filepath.Join(dir, "key.pem"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) // #nosec G304 -- dir is an operator-controlled config path, not user input
 	if err != nil {
 		return err
 	}
-	defer keyOut.Close()
+	defer func() { _ = keyOut.Close() }()
 	return pem.Encode(keyOut, &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
 }
 

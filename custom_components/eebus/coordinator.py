@@ -420,6 +420,9 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data["lpc_supported"] = self._lpc_supported
             data["failsafe_supported"] = self._failsafe_supported
             data["read_fallback_used"] = used_fallback
+            data["device_info"] = await self._async_fetch_device_info(
+                device_stub, proto_stubs, allow_fallback=used_fallback
+            )
 
             if saw_not_found:
                 self._not_found_streak += 1
@@ -463,6 +466,52 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._was_unavailable = True
 
             raise UpdateFailed(f"gRPC error: {err}") from err
+
+    async def _async_fetch_device_info(
+        self, device_stub: Any, proto_stubs: Any, allow_fallback: bool
+    ) -> dict[str, str] | None:
+        """Read manufacturer/model metadata for the configured device.
+
+        Returns the brand, model, serial and EEBUS device type reported by the
+        bridge so Home Assistant can label the device with real values instead of
+        a hardcoded manufacturer. Best-effort: returns None on any error.
+        """
+        try:
+            response = await device_stub.ListPairedDevices(
+                proto_stubs.Empty(), timeout=RPC_TIMEOUT
+            )
+        except grpc.aio.AioRpcError as err:
+            if not _is_unimplemented(err):
+                _LOGGER.debug(
+                    "ListPairedDevices failed for SKI %s: %s",
+                    self.ski,
+                    _rpc_error_text(err),
+                )
+            return None
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Failed to list paired devices")
+            return None
+
+        devices = list(response.devices)
+        if not devices:
+            return None
+
+        match = next((d for d in devices if d.ski == self.ski), None)
+        if match is None and allow_fallback and len(devices) == 1:
+            match = devices[0]
+        if match is None:
+            return None
+
+        info: dict[str, str] = {}
+        if match.brand:
+            info["manufacturer"] = match.brand
+        if match.model:
+            info["model"] = match.model
+        if match.serial:
+            info["serial"] = match.serial
+        if match.device_type:
+            info["device_type"] = match.device_type
+        return info or None
 
     async def _async_register_remote_ski(
         self, device_stub: Any, proto_stubs: Any, force: bool
