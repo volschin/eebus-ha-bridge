@@ -16,7 +16,7 @@ func TestSubscribeMeasurements(t *testing.T) {
 	bus := eebus.NewEventBus()
 	svc := bridgegrpc.NewMonitoringService(nil, bus, eebus.NewDeviceRegistry())
 
-	srv := bridgegrpc.NewServer(0)
+	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterMonitoringServiceServer(srv.GRPCServer(), svc)
 	go srv.Start()
 	t.Cleanup(srv.Stop)

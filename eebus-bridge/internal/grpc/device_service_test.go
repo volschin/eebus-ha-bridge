@@ -19,7 +19,7 @@ func setupDeviceTest(t *testing.T) pb.DeviceServiceClient {
 	callbacks := eebus.NewCallbacks(bus, false)
 	svc := bridgegrpc.NewDeviceService(callbacks, bus, "test-local-ski", eebus.NewDeviceRegistry())
 
-	srv := bridgegrpc.NewServer(0)
+	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterDeviceServiceServer(srv.GRPCServer(), svc)
 
 	go srv.Start()

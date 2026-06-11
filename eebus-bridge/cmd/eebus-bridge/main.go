@@ -65,7 +65,7 @@ func main() {
 	bridgeSvc.Service().AddUseCase(monitoringWrapper.UseCase())
 	log.Println("Registered EEBUS use cases: LPC, Monitoring")
 
-	grpcSrv := bridgegrpc.NewServer(cfg.GRPC.Port)
+	grpcSrv := bridgegrpc.NewServer(cfg.GRPC.Bind, cfg.GRPC.Port, cfg.GRPC.EnableReflection)
 
 	deviceSvc := bridgegrpc.NewDeviceService(bridgeSvc.Callbacks(), bus, ski, registry)
 	lpcSvc := bridgegrpc.NewLPCService(lpcWrapper, bus, registry)
@@ -76,7 +76,7 @@ func main() {
 	pb.RegisterMonitoringServiceServer(grpcSrv.GRPCServer(), monitoringSvc)
 
 	go func() {
-		log.Printf("gRPC server listening on :%d", cfg.GRPC.Port)
+		log.Printf("gRPC server listening on %s:%d", cfg.GRPC.Bind, cfg.GRPC.Port)
 		if err := grpcSrv.Start(); err != nil {
 			log.Fatalf("gRPC server: %v", err)
 		}

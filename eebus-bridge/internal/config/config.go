@@ -16,7 +16,9 @@ type Config struct {
 }
 
 type GRPCConfig struct {
-	Port int `yaml:"port"`
+	Port              int    `yaml:"port"`
+	Bind              string `yaml:"bind"`
+	EnableReflection  bool   `yaml:"enable_reflection"`
 }
 
 type EEBUSConfig struct {
@@ -59,6 +61,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.GRPC.Port == 0 {
 		cfg.GRPC.Port = 50051
 	}
+	if cfg.GRPC.Bind == "" {
+		cfg.GRPC.Bind = "127.0.0.1"
+	}
 	if cfg.EEBUS.Port == 0 {
 		cfg.EEBUS.Port = 4712
 	}
@@ -83,6 +88,14 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("EEBUS_GRPC_PORT"); v != "" {
 		if port, err := strconv.Atoi(v); err == nil {
 			cfg.GRPC.Port = port
+		}
+	}
+	if v := os.Getenv("EEBUS_GRPC_BIND"); v != "" {
+		cfg.GRPC.Bind = v
+	}
+	if v := os.Getenv("EEBUS_GRPC_REFLECTION"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.GRPC.EnableReflection = enabled
 		}
 	}
 	if v := os.Getenv("EEBUS_PORT"); v != "" {

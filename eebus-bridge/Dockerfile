@@ -11,11 +11,17 @@ RUN CGO_ENABLED=0 go build -o /eebus-bridge ./cmd/eebus-bridge
 
 FROM alpine:3.23
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates \
+ && addgroup -S eebus \
+ && adduser -S -G eebus eebus \
+ && mkdir -p /data /etc/eebus-bridge \
+ && chown eebus:eebus /data
+
 COPY --from=builder /eebus-bridge /usr/local/bin/eebus-bridge
 
 VOLUME /data
 EXPOSE 50051 4712
 
+USER eebus
 ENTRYPOINT ["eebus-bridge"]
 CMD ["--config", "/etc/eebus-bridge/config.yaml"]

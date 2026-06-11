@@ -1,5 +1,11 @@
 grpc:
   port: 50051
+  # bind to 127.0.0.1 (default) to restrict gRPC to local access only.
+  # Set to 0.0.0.0 only when the bridge runs on a separate host from Home Assistant.
+  bind: "127.0.0.1"
+  # enable_reflection exposes gRPC service metadata for tools like grpcurl.
+  # Keep false in production.
+  enable_reflection: false
 
 eebus:
   port: 4712

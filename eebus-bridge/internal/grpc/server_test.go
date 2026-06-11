@@ -12,7 +12,7 @@ import (
 )
 
 func TestServerStartStop(t *testing.T) {
-	srv := bridgegrpc.NewServer(0) // port 0 = random free port
+	srv := bridgegrpc.NewServer("127.0.0.1", 0, false) // port 0 = random free port
 
 	go func() {
 		if err := srv.Start(); err != nil {

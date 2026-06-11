@@ -14,21 +14,25 @@ import (
 type Server struct {
 	grpcServer *grpc.Server
 	listener   net.Listener
+	bind       string
 	port       int
 	mu         sync.RWMutex
 }
 
-func NewServer(port int) *Server {
+func NewServer(bind string, port int, enableReflection bool) *Server {
 	grpcServer := grpc.NewServer()
 
 	healthSrv := health.NewServer()
 	grpc_health_v1.RegisterHealthServer(grpcServer, healthSrv)
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 
-	reflection.Register(grpcServer)
+	if enableReflection {
+		reflection.Register(grpcServer)
+	}
 
 	return &Server{
 		grpcServer: grpcServer,
+		bind:       bind,
 		port:       port,
 	}
 }
@@ -38,7 +42,7 @@ func (s *Server) GRPCServer() *grpc.Server {
 }
 
 func (s *Server) Start() error {
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
+	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", s.bind, s.port))
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
