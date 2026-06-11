@@ -1,0 +1,17 @@
+linters:
+  enable:
+    - errcheck
+    - gosec
+    - staticcheck
+
+linters-settings:
+  gosec:
+    excludes:
+      - G115  # integer overflow on conversion — proto int64 fields
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck

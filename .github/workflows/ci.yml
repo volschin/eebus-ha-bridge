@@ -10,12 +10,16 @@ on:
     paths-ignore:
       - '**/*.md'
 
+permissions:
+  contents: read
+
 jobs:
   # Detect which paths changed so Go jobs can be skipped when irrelevant
   changes:
     runs-on: ubuntu-latest
     outputs:
       go: ${{ steps.filter.outputs.go }}
+      proto: ${{ steps.filter.outputs.proto }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
@@ -25,6 +29,9 @@ jobs:
             go:
               - 'eebus-bridge/**'
               - '.github/workflows/ci.yml'
+            proto:
+              - 'eebus-bridge/proto/**'
+              - 'generate_proto.sh'
 
   go:
     needs: changes
@@ -39,8 +46,16 @@ jobs:
         with:
           go-version: "1.26"
       - run: go vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6 # renovate: datasource=github-releases depName=golangci/golangci-lint-action
+        with:
+          working-directory: eebus-bridge
       - run: go test -v -race ./...
       - run: go test -tags=integration -v ./internal/grpc/ -run TestIntegration
+      - name: govulncheck
+        uses: golang/govulncheck-action@v1 # renovate: datasource=github-releases depName=golang/govulncheck-action
+        with:
+          work-dir: eebus-bridge
       - run: go build ./cmd/eebus-bridge/
 
   docker:
@@ -49,6 +64,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0 # renovate: datasource=github-releases depName=hadolint/hadolint-action
+        with:
+          dockerfile: eebus-bridge/Dockerfile
       - run: docker build -t eebus-bridge ./eebus-bridge
 
   test:
@@ -64,22 +83,43 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-asyncio pytest-cov ruff homeassistant voluptuous grpcio protobuf
+          pip install pytest pytest-asyncio pytest-cov ruff homeassistant voluptuous grpcio protobuf pip-audit
       - name: Lint with ruff
         run: ruff check custom_components/
+      - name: Audit production dependencies
+        run: |
+          pip-audit --requirement /dev/stdin <<'EOF'
+          grpcio>=1.78.0
+          protobuf>=4.25.0
+          EOF
       - name: Run tests with coverage
         run: PYTHONPATH=. pytest --cov --cov-report=term-missing -v
 
+  proto-drift:
+    needs: changes
+    if: needs.changes.outputs.proto == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Regenerate proto stubs
+        run: bash generate_proto.sh
+      - name: Check for stub drift
+        run: git diff --exit-code custom_components/eebus/generated/
+
   release-draft:
-    needs: [go, docker, test]
+    needs: [go, docker, test, proto-drift]
     # Runs exactly once on push to main, only when all quality gates pass.
-    # Go and docker may be skipped (no Go files changed) — that is acceptable.
+    # Go, docker, and proto-drift may be skipped (no relevant files changed) — acceptable.
     if: |
       always() &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       (needs.go.result == 'success' || needs.go.result == 'skipped') &&
       (needs.docker.result == 'success' || needs.docker.result == 'skipped') &&
+      (needs.proto-drift.result == 'success' || needs.proto-drift.result == 'skipped') &&
       needs.test.result == 'success'
     runs-on: ubuntu-latest
     permissions:
