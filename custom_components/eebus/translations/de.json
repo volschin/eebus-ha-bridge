@@ -1,5 +1,6 @@
 {
   "config": {
+    "flow_title": "EEBUS Bridge ({host})",
     "step": {
       "user": {
         "title": "Mit EEBUS Bridge verbinden",
@@ -11,6 +12,7 @@
       },
       "device": {
         "title": "EEBUS-Gerät auswählen",
+        "description": "Gefundenes Gerät auswählen oder SKI manuell eingeben.",
         "data": {
           "device_ski": "Geräte-SKI"
         }
@@ -29,6 +31,8 @@
     },
     "abort": {
       "already_configured": "Dieses Gerät ist bereits konfiguriert.",
+      "already_in_progress": "Konfiguration läuft bereits.",
+      "not_eebus_bridge": "Gefundenes SHIP-Gerät stellt keine EEBUS-Bridge-gRPC-API bereit.",
       "reconfigure_successful": "Rekonfiguration erfolgreich."
     }
   },
