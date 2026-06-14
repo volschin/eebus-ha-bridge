@@ -54,9 +54,14 @@ jobs:
       - run: go test -v -race ./...
       - run: go test -tags=integration -v ./internal/grpc/ -run TestIntegration
       - name: govulncheck
-        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4 # renovate: datasource=github-releases depName=golang/govulncheck-action
-        with:
-          work-dir: eebus-bridge
+        # Invoke govulncheck directly instead of golang/govulncheck-action: the
+        # action runs its own internal actions/checkout, which collides with the
+        # already-persisted credentials and fails with
+        # `remote: Duplicate header: "Authorization"` (HTTP 400). The repo is
+        # already checked out and Go is already set up above.
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
       - run: go build ./cmd/eebus-bridge/
 
   docker:
