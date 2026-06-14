@@ -81,8 +81,9 @@ func TestIntegrationDeviceServiceRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stream.Recv: %v", err)
 	}
-	if evt.Ski != "remote-ski-test" {
-		t.Errorf("event SKI = %q", evt.Ski)
+	// SKI is normalized (uppercased, whitespace stripped) before dispatch.
+	if evt.Ski != "REMOTE-SKI-TEST" {
+		t.Errorf("event SKI = %q, want REMOTE-SKI-TEST", evt.Ski)
 	}
 	if evt.EventType != pb.DeviceEventType_DEVICE_EVENT_CONNECTED {
 		t.Errorf("event type = %v", evt.EventType)
