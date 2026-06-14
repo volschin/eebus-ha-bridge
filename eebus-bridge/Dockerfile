@@ -1,5 +1,6 @@
 FROM golang:1.26-alpine AS builder
 
+# hadolint ignore=DL3018
 RUN apk add --no-cache git
 
 WORKDIR /app
@@ -11,6 +12,7 @@ RUN CGO_ENABLED=0 go build -o /eebus-bridge ./cmd/eebus-bridge
 
 FROM alpine:3.24
 
+# hadolint ignore=DL3018
 RUN apk add --no-cache ca-certificates \
  && addgroup -S eebus \
  && adduser -S -G eebus eebus \
