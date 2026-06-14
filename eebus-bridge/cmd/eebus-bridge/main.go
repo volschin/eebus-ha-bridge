@@ -63,6 +63,14 @@ func main() {
 	monitoringWrapper.Setup(localEntity)
 	bridgeSvc.Service().AddUseCase(lpcWrapper.UseCase())
 	bridgeSvc.Service().AddUseCase(monitoringWrapper.UseCase())
+	// Controllable systems revert an active LPC limit to its failsafe value when
+	// heartbeats stop arriving, so keep the local heartbeat running for the
+	// lifetime of the bridge.
+	if err := lpcWrapper.StartHeartbeat(""); err != nil {
+		log.Printf("starting LPC heartbeat failed: %v", err)
+	} else {
+		log.Println("Started LPC heartbeat")
+	}
 	log.Println("Registered EEBUS use cases: LPC, Monitoring")
 
 	grpcSrv := bridgegrpc.NewServer(cfg.GRPC.Bind, cfg.GRPC.Port, cfg.GRPC.EnableReflection)
@@ -108,6 +116,9 @@ func main() {
 	<-sigCh
 
 	log.Println("Shutting down...")
+	if err := lpcWrapper.StopHeartbeat(); err != nil {
+		log.Printf("stopping LPC heartbeat failed: %v", err)
+	}
 	grpcSrv.Stop()
 	bridgeSvc.Shutdown()
 	log.Println("Shutdown complete")

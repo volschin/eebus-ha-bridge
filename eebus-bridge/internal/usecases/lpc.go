@@ -138,3 +138,38 @@ func (w *LPCWrapper) ConsumptionNominalMax(entity spineapi.EntityRemoteInterface
 	}
 	return w.uc.ConsumptionNominalMax(entity)
 }
+
+// StartHeartbeat starts the local entity's periodic DeviceDiagnosis heartbeat.
+// Controllable systems (e.g. heat pumps) drop an LPC limit to its failsafe value
+// when heartbeats stop arriving, so the bridge must keep the heartbeat running.
+// The ski argument is accepted for API symmetry but unused: the heartbeat is a
+// property of the local entity, not of a specific remote.
+func (w *LPCWrapper) StartHeartbeat(_ string) error {
+	if w.localEntity == nil {
+		return errLPCNotInitialized
+	}
+	return w.localEntity.HeartbeatManager().StartHeartbeat()
+}
+
+// StopHeartbeat stops the periodic heartbeat requests.
+func (w *LPCWrapper) StopHeartbeat() error {
+	if w.localEntity == nil {
+		return errLPCNotInitialized
+	}
+	w.localEntity.HeartbeatManager().StopHeartbeat()
+	return nil
+}
+
+// IsHeartbeatRunning reports whether the local heartbeat is currently active.
+func (w *LPCWrapper) IsHeartbeatRunning() bool {
+	if w.localEntity == nil {
+		return false
+	}
+	return w.localEntity.HeartbeatManager().IsHeartbeatRunning()
+}
+
+// IsHeartbeatWithinDuration reports whether the heartbeat is currently active.
+// The entity argument is accepted for API symmetry with per-remote callers.
+func (w *LPCWrapper) IsHeartbeatWithinDuration(_ spineapi.EntityRemoteInterface) bool {
+	return w.IsHeartbeatRunning()
+}

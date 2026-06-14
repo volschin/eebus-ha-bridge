@@ -49,3 +49,25 @@ func TestSubscribeLPCEvents(t *testing.T) {
 		t.Errorf("EventType = %v, want LPC_EVENT_LIMIT_UPDATED", evt.EventType)
 	}
 }
+
+func TestHeartbeatHandlersValidation(t *testing.T) {
+	// nil lpc wrapper: handlers must report Unavailable, never panic.
+	svc := bridgegrpc.NewLPCService(nil, eebus.NewEventBus(), eebus.NewDeviceRegistry())
+	ctx := context.Background()
+
+	if _, err := svc.StartHeartbeat(ctx, nil); err == nil {
+		t.Error("StartHeartbeat(nil request) should error")
+	}
+	if _, err := svc.StartHeartbeat(ctx, &pb.DeviceRequest{Ski: "x"}); err == nil {
+		t.Error("StartHeartbeat with nil lpc should error (Unavailable)")
+	}
+	if _, err := svc.StopHeartbeat(ctx, &pb.DeviceRequest{}); err == nil {
+		t.Error("StopHeartbeat with nil lpc should error (Unavailable)")
+	}
+	if _, err := svc.GetHeartbeatStatus(ctx, nil); err == nil {
+		t.Error("GetHeartbeatStatus(nil request) should error")
+	}
+	if _, err := svc.GetHeartbeatStatus(ctx, &pb.DeviceRequest{Ski: "x"}); err == nil {
+		t.Error("GetHeartbeatStatus with nil lpc should error (Unavailable)")
+	}
+}

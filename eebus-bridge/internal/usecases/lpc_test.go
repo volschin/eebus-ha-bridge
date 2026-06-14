@@ -68,6 +68,25 @@ func TestLPCFailsafeDurationEventRouting(t *testing.T) {
 	}
 }
 
+func TestLPCHeartbeatWithoutLocalEntity(t *testing.T) {
+	// Without Setup() the wrapper has no local entity; heartbeat operations must
+	// fail gracefully rather than panic.
+	lpcWrapper := usecases.NewLPCWrapper(eebus.NewEventBus(), nil, false)
+
+	if err := lpcWrapper.StartHeartbeat(""); err == nil {
+		t.Error("StartHeartbeat without local entity should return an error")
+	}
+	if err := lpcWrapper.StopHeartbeat(); err == nil {
+		t.Error("StopHeartbeat without local entity should return an error")
+	}
+	if lpcWrapper.IsHeartbeatRunning() {
+		t.Error("IsHeartbeatRunning should be false without local entity")
+	}
+	if lpcWrapper.IsHeartbeatWithinDuration(nil) {
+		t.Error("IsHeartbeatWithinDuration should be false without local entity")
+	}
+}
+
 func TestLPCUnknownEventIgnored(t *testing.T) {
 	bus := eebus.NewEventBus()
 	ch := bus.Subscribe()
