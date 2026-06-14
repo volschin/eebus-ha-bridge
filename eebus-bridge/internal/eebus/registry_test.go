@@ -60,6 +60,44 @@ func TestRegistryUpsertDeviceClassification(t *testing.T) {
 	}
 }
 
+func TestNormalizeSKI(t *testing.T) {
+	cases := map[string]string{
+		"abcdef":       "ABCDEF",
+		"  ab cd ef  ": "ABCDEF",
+		"AbCdEf":       "ABCDEF",
+		"":             "",
+	}
+	for in, want := range cases {
+		if got := eebus.NormalizeSKI(in); got != want {
+			t.Errorf("NormalizeSKI(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestRegistrySKINormalizationConsistency(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+
+	// Stored with lowercase + spaces; looked up with uppercase, no spaces.
+	reg.AddDevice("ab cd 12", eebus.DeviceInfo{Brand: "Bosch"})
+
+	if _, ok := reg.GetDevice("ABCD12"); !ok {
+		t.Error("normalized lookup failed: device stored under non-normalized key")
+	}
+
+	// Classification reported under a differently-cased SKI must land on the
+	// same record so brand/model are not split across two keys.
+	reg.UpsertDeviceClassification("ABCD12", "Bosch", "Compress 5800i", "", "")
+	info, ok := reg.GetDevice("ab cd 12")
+	if !ok || info.Model != "Compress 5800i" {
+		t.Errorf("classification not merged onto same device: ok=%v model=%q", ok, info.Model)
+	}
+
+	reg.RemoveDevice("Ab Cd 12")
+	if _, ok := reg.GetDevice("ABCD12"); ok {
+		t.Error("normalized removal failed")
+	}
+}
+
 func TestRegistryListDevices(t *testing.T) {
 	reg := eebus.NewDeviceRegistry()
 	reg.AddDevice("ski-1", eebus.DeviceInfo{Brand: "A"})

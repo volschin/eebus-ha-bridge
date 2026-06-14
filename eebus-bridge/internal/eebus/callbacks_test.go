@@ -17,8 +17,9 @@ func TestCallbacksDispatchConnect(t *testing.T) {
 
 	select {
 	case evt := <-ch:
-		if evt.SKI != "test-ski-123" {
-			t.Errorf("SKI = %q, want test-ski-123", evt.SKI)
+		// SKI is normalized (uppercased, whitespace stripped) before dispatch.
+		if evt.SKI != "TEST-SKI-123" {
+			t.Errorf("SKI = %q, want TEST-SKI-123", evt.SKI)
 		}
 		if evt.Type != "device.connected" {
 			t.Errorf("Type = %q, want device.connected", evt.Type)
