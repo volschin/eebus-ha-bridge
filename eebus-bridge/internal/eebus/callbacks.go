@@ -31,6 +31,7 @@ var _ api.ServiceReaderInterface = (*Callbacks)(nil)
 
 // RemoteSKIConnected is called when a remote SKI connects.
 func (c *Callbacks) RemoteSKIConnected(service api.ServiceInterface, ski string) {
+	ski = NormalizeSKI(ski)
 	if c.debugEvents {
 		log.Printf("[DEBUG] EEBUS callback: remote SKI connected: ski=%s", ski)
 	}
@@ -43,6 +44,7 @@ func (c *Callbacks) RemoteSKIConnected(service api.ServiceInterface, ski string)
 
 // RemoteSKIDisconnected is called when a remote SKI disconnects.
 func (c *Callbacks) RemoteSKIDisconnected(service api.ServiceInterface, ski string) {
+	ski = NormalizeSKI(ski)
 	if c.debugEvents {
 		log.Printf("[DEBUG] EEBUS callback: remote SKI disconnected: ski=%s", ski)
 	}
@@ -75,6 +77,7 @@ func (c *Callbacks) ServiceShipIDUpdate(ski string, shipID string) {
 
 // ServicePairingDetailUpdate is called when the pairing state of a remote service changes.
 func (c *Callbacks) ServicePairingDetailUpdate(ski string, detail *shipapi.ConnectionStateDetail) {
+	ski = NormalizeSKI(ski)
 	if c.debugEvents {
 		if detail != nil {
 			log.Printf("[DEBUG] EEBUS callback: pairing detail updated: ski=%s state=%v", ski, detail.State())
@@ -113,5 +116,6 @@ func (c *Callbacks) DiscoveredServices() []shipapi.RemoteService {
 func (c *Callbacks) PairingState(ski string) *shipapi.ConnectionStateDetail {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	ski = NormalizeSKI(ski)
 	return c.pairingStates[ski]
 }

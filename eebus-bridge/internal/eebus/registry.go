@@ -1,6 +1,7 @@
 package eebus
 
 import (
+	"strings"
 	"sync"
 
 	spineapi "github.com/enbility/spine-go/api"
@@ -28,8 +29,18 @@ func NewDeviceRegistry() *DeviceRegistry {
 	}
 }
 
+// NormalizeSKI canonicalizes a SKI for use as a registry key: uppercase, no
+// surrounding or embedded whitespace. Remote peers (e.g. Bosch/Connect-Key) may
+// report the same SKI with differing case or spacing; normalizing prevents the
+// same device being stored under multiple keys, which later causes resolveEntity
+// lookups to fail with NOT_FOUND.
+func NormalizeSKI(ski string) string {
+	return strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(ski), " ", ""))
+}
+
 func (r *DeviceRegistry) AddDevice(ski string, info DeviceInfo) {
 	r.mu.Lock()
+	ski = NormalizeSKI(ski)
 	info.SKI = ski
 	r.devices[ski] = info
 	r.mu.Unlock()
@@ -43,6 +54,15 @@ func (r *DeviceRegistry) UpsertObservation(
 ) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// A remote (e.g. Bosch/Connect-Key) can report the entity through the
+	// use-case callback with an empty SKI. Fall back to the real remote device
+	// SKI so HA's later WriteConsumptionLimit resolves the entity instead of
+	// failing with NOT_FOUND.
+	if ski == "" && remoteDevice != nil {
+		ski = remoteDevice.Ski()
+	}
+	ski = NormalizeSKI(ski)
 
 	info := r.devices[ski]
 	info.SKI = ski
@@ -87,6 +107,7 @@ func (r *DeviceRegistry) UpsertDeviceClassification(ski, brand, deviceModel, ser
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	ski = NormalizeSKI(ski)
 	info := r.devices[ski]
 	info.SKI = ski
 	if brand != "" {
@@ -106,6 +127,7 @@ func (r *DeviceRegistry) UpsertDeviceClassification(ski, brand, deviceModel, ser
 
 func (r *DeviceRegistry) RemoveDevice(ski string) {
 	r.mu.Lock()
+	ski = NormalizeSKI(ski)
 	delete(r.devices, ski)
 	r.mu.Unlock()
 }
@@ -113,6 +135,7 @@ func (r *DeviceRegistry) RemoveDevice(ski string) {
 func (r *DeviceRegistry) GetDevice(ski string) (DeviceInfo, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	ski = NormalizeSKI(ski)
 	info, ok := r.devices[ski]
 	return info, ok
 }
@@ -130,6 +153,7 @@ func (r *DeviceRegistry) ListDevices() []DeviceInfo {
 func (r *DeviceRegistry) FirstEntity(ski string) spineapi.EntityRemoteInterface {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	ski = NormalizeSKI(ski)
 	info, ok := r.devices[ski]
 	if !ok || len(info.RemoteEntities) == 0 {
 		return nil
