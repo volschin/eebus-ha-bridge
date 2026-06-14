@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	spineapi "github.com/enbility/spine-go/api"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
+	spineapi "github.com/enbility/spine-go/api"
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 	"github.com/volschin/eebus-bridge/internal/usecases"
@@ -130,16 +130,49 @@ func (s *LPCService) WriteFailsafeLimit(_ context.Context, req *pb.WriteFailsafe
 	return &pb.Empty{}, nil
 }
 
-func (s *LPCService) StartHeartbeat(_ context.Context, _ *pb.DeviceRequest) (*pb.Empty, error) {
-	return nil, status.Error(codes.Unimplemented, "heartbeat not supported by underlying use case")
+func (s *LPCService) StartHeartbeat(_ context.Context, req *pb.DeviceRequest) (*pb.Empty, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if s.lpc == nil {
+		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
+	}
+	if err := s.lpc.StartHeartbeat(req.Ski); err != nil {
+		return nil, status.Errorf(codes.Internal, "starting LPC heartbeat: %v", err)
+	}
+	return &pb.Empty{}, nil
 }
 
 func (s *LPCService) StopHeartbeat(_ context.Context, _ *pb.DeviceRequest) (*pb.Empty, error) {
-	return nil, status.Error(codes.Unimplemented, "heartbeat not supported by underlying use case")
+	if s.lpc == nil {
+		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
+	}
+	if err := s.lpc.StopHeartbeat(); err != nil {
+		return nil, status.Errorf(codes.Internal, "stopping LPC heartbeat: %v", err)
+	}
+	return &pb.Empty{}, nil
 }
 
-func (s *LPCService) GetHeartbeatStatus(_ context.Context, _ *pb.DeviceRequest) (*pb.HeartbeatStatus, error) {
-	return nil, status.Error(codes.Unimplemented, "heartbeat not supported by underlying use case")
+func (s *LPCService) GetHeartbeatStatus(_ context.Context, req *pb.DeviceRequest) (*pb.HeartbeatStatus, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if s.lpc == nil {
+		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
+	}
+	// Heartbeat state is a property of the local entity, so report Running even
+	// when the remote SKI cannot be resolved yet.
+	entity, err := s.resolveEntity(req.Ski)
+	if err != nil {
+		return &pb.HeartbeatStatus{
+			Running:        s.lpc.IsHeartbeatRunning(),
+			WithinDuration: false,
+		}, nil
+	}
+	return &pb.HeartbeatStatus{
+		Running:        s.lpc.IsHeartbeatRunning(),
+		WithinDuration: s.lpc.IsHeartbeatWithinDuration(entity),
+	}, nil
 }
 
 func (s *LPCService) GetConsumptionNominalMax(_ context.Context, req *pb.DeviceRequest) (*pb.PowerValue, error) {
