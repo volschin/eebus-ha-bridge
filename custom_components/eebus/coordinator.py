@@ -22,6 +22,25 @@ RPC_TIMEOUT = 10
 RE_REGISTER_NOT_FOUND_STREAK = 4
 STREAM_RETRY_SECONDS = 30
 
+# Maps a GetMeasurements entry type (as emitted by the Go bridge) to the
+# coordinator data key consumed by the per-phase / grid / produced-energy
+# sensors. Types not present here (e.g. power_consumption, energy_consumed) are
+# handled by their own dedicated reads.
+FLAT_MEASUREMENT_TYPE_TO_KEY: dict[str, str] = {
+    "power_l1": "power_l1_w",
+    "power_l2": "power_l2_w",
+    "power_l3": "power_l3_w",
+    "current_l1": "current_l1_a",
+    "current_l2": "current_l2_a",
+    "current_l3": "current_l3_a",
+    "voltage_l1": "voltage_l1_v",
+    "voltage_l2": "voltage_l2_v",
+    "voltage_l3": "voltage_l3_v",
+    "frequency": "frequency_hz",
+    "energy_produced": "energy_produced_kwh",
+}
+FLAT_MEASUREMENT_KEYS: tuple[str, ...] = tuple(FLAT_MEASUREMENT_TYPE_TO_KEY.values())
+
 
 def _is_unimplemented(err: grpc.aio.AioRpcError) -> bool:
     """Return True when gRPC reports method/use case is not implemented."""
@@ -90,6 +109,10 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "local_ski": status.local_ski,
                 "ski_registered": self._ski_registered,
             }
+            # Per-phase / grid / produced-energy measurements default to None and
+            # are populated from GetMeasurements when the device advertises them.
+            for _key in FLAT_MEASUREMENT_KEYS:
+                data[_key] = None
             if self.ski == status.local_ski:
                 _LOGGER.warning(
                     "Configured remote SKI %s matches bridge local SKI; monitoring reads will stay empty",
@@ -151,6 +174,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 scoped_energy = self._extract_scoped_energy_kwh(measurements.measurements)
                 data["energy_consumed_heating_kwh"] = scoped_energy["heating"]
                 data["energy_consumed_dhw_kwh"] = scoped_energy["dhw"]
+                data.update(self._extract_flat_measurements(measurements.measurements))
                 _LOGGER.debug(
                     "EEBUS scoped energy read for SKI %s: heating=%s dhw=%s entries=%s",
                     self.ski,
@@ -170,6 +194,9 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         )
                         data["energy_consumed_heating_kwh"] = scoped_energy["heating"]
                         data["energy_consumed_dhw_kwh"] = scoped_energy["dhw"]
+                        data.update(
+                            self._extract_flat_measurements(measurements.measurements)
+                        )
                         used_fallback = True
                         _LOGGER.debug(
                             "EEBUS scoped energy read for SKI %s used fallback: heating=%s dhw=%s entries=%s",
@@ -571,6 +598,24 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if "energy" in normalized and ("heating" in normalized or "space_heating" in normalized):
                 result["heating"] = value
 
+        return result
+
+    @staticmethod
+    def _extract_flat_measurements(measurements: list[Any]) -> dict[str, float | None]:
+        """Map per-phase / grid / produced-energy entries to coordinator keys."""
+        result: dict[str, float | None] = {}
+        for measurement in measurements:
+            measurement_type = str(getattr(measurement, "type", "")).lower().strip()
+            if not measurement_type:
+                continue
+            normalized = measurement_type.replace("-", "_").replace(" ", "_")
+            key = FLAT_MEASUREMENT_TYPE_TO_KEY.get(normalized)
+            if key is None:
+                continue
+            value = getattr(measurement, "value", None)
+            if value is None:
+                continue
+            result[key] = value
         return result
 
     async def async_write_lpc_limit(self, value_watts: float) -> None:

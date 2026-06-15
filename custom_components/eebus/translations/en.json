@@ -50,7 +50,18 @@
       "energy_consumed": { "name": "Energy Consumed" },
       "energy_consumed_heating": { "name": "Energy Consumed Heating" },
       "energy_consumed_dhw": { "name": "Energy Consumed Domestic Hot Water" },
-      "consumption_limit": { "name": "Consumption Limit" }
+      "consumption_limit": { "name": "Consumption Limit" },
+      "power_l1": { "name": "Power L1" },
+      "power_l2": { "name": "Power L2" },
+      "power_l3": { "name": "Power L3" },
+      "current_l1": { "name": "Current L1" },
+      "current_l2": { "name": "Current L2" },
+      "current_l3": { "name": "Current L3" },
+      "voltage_l1": { "name": "Voltage L1" },
+      "voltage_l2": { "name": "Voltage L2" },
+      "voltage_l3": { "name": "Voltage L3" },
+      "frequency": { "name": "Grid Frequency" },
+      "energy_produced": { "name": "Energy Produced" }
     },
     "number": {
       "lpc_limit": { "name": "LPC Limit" },
