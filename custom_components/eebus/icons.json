@@ -5,7 +5,18 @@
       "energy_consumed": { "default": "mdi:lightning-bolt" },
       "energy_consumed_heating": { "default": "mdi:radiator" },
       "energy_consumed_dhw": { "default": "mdi:water-boiler" },
-      "consumption_limit": { "default": "mdi:speedometer" }
+      "consumption_limit": { "default": "mdi:speedometer" },
+      "power_l1": { "default": "mdi:flash" },
+      "power_l2": { "default": "mdi:flash" },
+      "power_l3": { "default": "mdi:flash" },
+      "current_l1": { "default": "mdi:current-ac" },
+      "current_l2": { "default": "mdi:current-ac" },
+      "current_l3": { "default": "mdi:current-ac" },
+      "voltage_l1": { "default": "mdi:sine-wave" },
+      "voltage_l2": { "default": "mdi:sine-wave" },
+      "voltage_l3": { "default": "mdi:sine-wave" },
+      "frequency": { "default": "mdi:sine-wave" },
+      "energy_produced": { "default": "mdi:transmission-tower-export" }
     },
     "number": {
       "lpc_limit": { "default": "mdi:speedometer" },

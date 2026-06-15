@@ -3,6 +3,7 @@
 import asyncio
 import inspect
 from datetime import timedelta
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from custom_components.eebus import proto_stubs
@@ -222,3 +223,40 @@ def test_device_event_triggers_refresh():
     )
     coordinator._handle_device_event(event)
     coordinator.hass.async_create_task.assert_called_once()
+
+
+def _entry(measurement_type, value):
+    """Build a duck-typed GetMeasurements entry (type/value attributes)."""
+    return SimpleNamespace(type=measurement_type, value=value)
+
+
+def test_extract_flat_measurements_maps_types():
+    """Per-phase / grid / produced-energy entries map to coordinator keys."""
+    entries = [
+        _entry("power_l1", 230.0),
+        _entry("current_l2", 4.5),
+        _entry("voltage_l3", 231.2),
+        _entry("frequency", 50.0),
+        _entry("energy_produced", 12.3),
+        # Unrelated / scoped types are ignored by the flat extractor.
+        _entry("energy_consumed", 99.0),
+    ]
+    result = EebusCoordinator._extract_flat_measurements(entries)
+    assert result == {
+        "power_l1_w": 230.0,
+        "current_l2_a": 4.5,
+        "voltage_l3_v": 231.2,
+        "frequency_hz": 50.0,
+        "energy_produced_kwh": 12.3,
+    }
+
+
+def test_extract_flat_measurements_ignores_blank_and_missing():
+    """Entries without a type are skipped; a value of 0.0 is kept."""
+    entries = [
+        _entry("", 1.0),
+        _entry("voltage_l1", None),
+        _entry("power_l1", 0.0),
+    ]
+    result = EebusCoordinator._extract_flat_measurements(entries)
+    assert result == {"power_l1_w": 0.0}

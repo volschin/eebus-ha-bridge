@@ -50,7 +50,18 @@
       "energy_consumed": { "name": "Energieverbrauch" },
       "energy_consumed_heating": { "name": "Energieverbrauch Heizung" },
       "energy_consumed_dhw": { "name": "Energieverbrauch Warmwasser" },
-      "consumption_limit": { "name": "Leistungslimit" }
+      "consumption_limit": { "name": "Leistungslimit" },
+      "power_l1": { "name": "Leistung L1" },
+      "power_l2": { "name": "Leistung L2" },
+      "power_l3": { "name": "Leistung L3" },
+      "current_l1": { "name": "Strom L1" },
+      "current_l2": { "name": "Strom L2" },
+      "current_l3": { "name": "Strom L3" },
+      "voltage_l1": { "name": "Spannung L1" },
+      "voltage_l2": { "name": "Spannung L2" },
+      "voltage_l3": { "name": "Spannung L3" },
+      "frequency": { "name": "Netzfrequenz" },
+      "energy_produced": { "name": "Eingespeiste Energie" }
     },
     "number": {
       "lpc_limit": { "name": "LPC Limit" },
