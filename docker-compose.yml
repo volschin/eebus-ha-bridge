@@ -1,5 +1,6 @@
 services:
   eebus-bridge:
+    image: ghcr.io/volschin/eebus-bridge:latest
     build:
       context: ./eebus-bridge
     volumes:
