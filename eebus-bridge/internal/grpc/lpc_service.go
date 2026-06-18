@@ -237,6 +237,15 @@ func convertLoadLimit(l ucapi.LoadLimit) *pb.LoadLimit {
 }
 
 func (s *LPCService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, error) {
+	// Prefer an entity that actually advertises the LPC use case. A device such as a
+	// Vaillant VR940f gateway registers several entities under one SKI; the flat
+	// registry returns whichever was observed first (often the monitoring meter),
+	// which eebus-go rejects on write with ErrNoCompatibleEntity (issue #47).
+	if s.lpc != nil {
+		if entity := s.lpc.CompatibleEntity(ski); entity != nil {
+			return entity, nil
+		}
+	}
 	if s.registry == nil {
 		return nil, status.Error(codes.Unavailable, "device registry not initialized")
 	}

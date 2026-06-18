@@ -79,6 +79,44 @@ func (w *LPCWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInterfa
 	}
 }
 
+// CompatibleEntity returns the first remote entity that actually supports the LPC
+// (Limitation of Power Consumption) use case for the given SKI. A gateway can
+// register several entities under one device SKI — e.g. a Vaillant VR940f exposes
+// both an EG-M monitoring meter entity and the heat-pump LPC entity. The flat
+// device registry returns whichever entity was observed first, so an LPC write may
+// be handed the monitoring entity, which eebus-go rejects with ErrNoCompatibleEntity
+// ("no compatible entity"). RemoteEntitiesScenarios lists only entities that
+// advertise the LPC use case, so resolving from it picks the correct one (issue #47).
+//
+// An empty ski matches the first LPC-capable entity of any device. Returns nil when
+// the use case is not set up or no compatible entity has been negotiated yet.
+func (w *LPCWrapper) CompatibleEntity(ski string) spineapi.EntityRemoteInterface {
+	if w.uc == nil {
+		return nil
+	}
+	for _, rs := range w.uc.RemoteEntitiesScenarios() {
+		entity := rs.Entity
+		if entity == nil || entity.Device() == nil {
+			continue
+		}
+		if lpcEntityMatchesSKI(entity.Device().Ski(), ski) {
+			return entity
+		}
+	}
+	return nil
+}
+
+// lpcEntityMatchesSKI reports whether a remote entity advertising the given (raw)
+// SKI satisfies a resolve request for want. An empty want matches any entity;
+// otherwise SKIs are compared after normalization so case and spacing differences
+// reported by the remote do not cause a spurious mismatch.
+func lpcEntityMatchesSKI(entitySKI, want string) bool {
+	if want == "" {
+		return true
+	}
+	return eebus.NormalizeSKI(entitySKI) == eebus.NormalizeSKI(want)
+}
+
 // ConsumptionLimit returns the current load control limit for the given remote entity.
 func (w *LPCWrapper) ConsumptionLimit(entity spineapi.EntityRemoteInterface) (ucapi.LoadLimit, error) {
 	if w.uc == nil {
