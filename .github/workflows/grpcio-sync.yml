@@ -1,0 +1,131 @@
+name: grpcio HA Sync
+
+# Home Assistant Core pins grpcio==X.Y.Z in homeassistant/package_constraints.txt.
+# Our manifest/CI floor (grpcio>=...) and the generated proto stubs must match that
+# pin, otherwise installing the integration into HA fails (see issue #22).
+# This workflow watches HA's latest stable release and, when it ships a newer grpcio
+# pin, bumps our floor, regenerates the stubs with the matching grpcio-tools, and
+# opens a PR.
+
+on:
+  schedule:
+    - cron: "17 6 * * *" # daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: grpcio-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # A PAT lets the resulting PR trigger CI; falls back to GITHUB_TOKEN
+          # (PRs opened with GITHUB_TOKEN do NOT trigger other workflows).
+          token: ${{ secrets.WORKFLOW_PAT || secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.14"
+
+      - name: Resolve HA grpcio pin and current floor
+        id: vers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Latest stable (non-prerelease) HA Core release tag.
+          TAG=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
+            https://api.github.com/repos/home-assistant/core/releases/latest \
+            | python -c "import sys, json; print(json.load(sys.stdin)['tag_name'])")
+          # grpcio pin from that release's package_constraints.txt.
+          NEW=$(curl -fsSL \
+            "https://raw.githubusercontent.com/home-assistant/core/${TAG}/homeassistant/package_constraints.txt" \
+            | sed -n 's/^grpcio==\([0-9][0-9.]*\)$/\1/p')
+          if [ -z "${NEW}" ]; then
+            echo "::error::could not parse grpcio pin from HA ${TAG}" >&2
+            exit 1
+          fi
+          CUR=$(grep -oE 'grpcio>=[0-9.]+' custom_components/eebus/manifest.json \
+            | head -1 | sed -E 's/grpcio>=//')
+          echo "ha_tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "new=${NEW}" >> "$GITHUB_OUTPUT"
+          echo "cur=${CUR}" >> "$GITHUB_OUTPUT"
+          echo "HA ${TAG} pins grpcio==${NEW}; current floor grpcio>=${CUR}"
+
+      - name: Decide whether a bump is needed
+        id: cmp
+        env:
+          NEW: ${{ steps.vers.outputs.new }}
+          CUR: ${{ steps.vers.outputs.cur }}
+        run: |
+          set -euo pipefail
+          pip install --quiet packaging
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          from packaging.version import Version
+          new, cur = Version(os.environ["NEW"]), Version(os.environ["CUR"])
+          print(f"bump={'true' if new > cur else 'false'}")
+          PY
+
+      - name: Bump floor and regenerate stubs
+        if: steps.cmp.outputs.bump == 'true'
+        env:
+          NEW: ${{ steps.vers.outputs.new }}
+        run: |
+          set -euo pipefail
+          # Minimal-diff version bumps (preserve surrounding formatting).
+          sed -i -E "s/grpcio>=[0-9.]+/grpcio>=${NEW}/g" custom_components/eebus/manifest.json
+          sed -i -E "s/grpcio>=[0-9.]+/grpcio>=${NEW}/g" .github/workflows/ci.yml
+          # Regenerate stubs with matching grpcio-tools so GRPC_GENERATED_VERSION
+          # does not exceed HA's runtime grpcio.
+          GRPCIO_TOOLS_VERSION="${NEW}" bash generate_proto.sh
+
+      - name: Open pull request
+        if: steps.cmp.outputs.bump == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || secrets.GITHUB_TOKEN }}
+          NEW: ${{ steps.vers.outputs.new }}
+          CUR: ${{ steps.vers.outputs.cur }}
+          HA_TAG: ${{ steps.vers.outputs.ha_tag }}
+        run: |
+          set -euo pipefail
+          BRANCH="chore/grpcio-${NEW}"
+          if git ls-remote --exit-code --heads origin "${BRANCH}" >/dev/null 2>&1; then
+            echo "Branch ${BRANCH} already exists — PR likely open. Skipping."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "${BRANCH}"
+          git add custom_components/eebus/manifest.json \
+            .github/workflows/ci.yml \
+            custom_components/eebus/generated/
+          git commit -m "chore(deps): bump grpcio floor to ${NEW} (HA ${HA_TAG})"
+          git push origin "${BRANCH}"
+          gh pr create \
+            --base main \
+            --head "${BRANCH}" \
+            --title "chore(deps): bump grpcio floor to ${NEW}" \
+            --label dependencies \
+            --body "$(cat <<EOF
+          Home Assistant Core release [\`${HA_TAG}\`](https://github.com/home-assistant/core/releases/tag/${HA_TAG}) pins \`grpcio==${NEW}\`.
+
+          This bumps our floor to match and regenerates the proto stubs with \`grpcio-tools==${NEW}\`.
+
+          - \`grpcio>=${CUR}\` → \`grpcio>=${NEW}\` in \`manifest.json\` and \`ci.yml\`
+          - regenerated \`custom_components/eebus/generated/\` via \`generate_proto.sh\`
+
+          Source of truth: \`homeassistant/package_constraints.txt\` @ \`${HA_TAG}\`.
+
+          _Opened automatically by the grpcio HA Sync workflow._
+          EOF
+          )"
