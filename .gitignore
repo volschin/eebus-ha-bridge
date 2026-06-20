@@ -5,3 +5,4 @@ __pycache__/
 eebus-bridge/bin/
 eebus-bridge/eebus-bridge
 .pytest_cache/
+.gstack/
