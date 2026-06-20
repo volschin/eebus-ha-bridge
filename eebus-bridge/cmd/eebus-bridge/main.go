@@ -104,9 +104,6 @@ func main() {
 			case "device.register_ski":
 				bridgeSvc.RegisterRemoteSKI(evt.SKI)
 				log.Printf("Registered remote SKI: %s", evt.SKI)
-			case "device.unregister_ski":
-				bridgeSvc.UnregisterRemoteSKI(evt.SKI)
-				log.Printf("Unregistered remote SKI: %s", evt.SKI)
 			}
 		}
 	}()

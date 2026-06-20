@@ -168,15 +168,6 @@ func (w *LPCWrapper) WriteFailsafeDurationMinimum(entity spineapi.EntityRemoteIn
 	return err
 }
 
-// ConsumptionNominalMax returns the nominal maximum active power the controllable system
-// can consume.
-func (w *LPCWrapper) ConsumptionNominalMax(entity spineapi.EntityRemoteInterface) (float64, error) {
-	if w.uc == nil {
-		return 0, errLPCNotInitialized
-	}
-	return w.uc.ConsumptionNominalMax(entity)
-}
-
 // StartHeartbeat starts the local entity's periodic DeviceDiagnosis heartbeat.
 // Controllable systems (e.g. heat pumps) drop an LPC limit to its failsafe value
 // when heartbeats stop arriving, so the bridge must keep the heartbeat running.

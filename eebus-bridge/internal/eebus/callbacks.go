@@ -13,16 +13,14 @@ type Callbacks struct {
 	bus            *EventBus
 	mu             sync.RWMutex
 	discoveredSvcs []shipapi.RemoteService
-	pairingStates  map[string]*shipapi.ConnectionStateDetail
 	debugEvents    bool
 }
 
 // NewCallbacks creates a new Callbacks instance backed by the given EventBus.
 func NewCallbacks(bus *EventBus, debugEvents bool) *Callbacks {
 	return &Callbacks{
-		bus:           bus,
-		pairingStates: make(map[string]*shipapi.ConnectionStateDetail),
-		debugEvents:   debugEvents,
+		bus:         bus,
+		debugEvents: debugEvents,
 	}
 }
 
@@ -86,10 +84,6 @@ func (c *Callbacks) ServicePairingDetailUpdate(ski string, detail *shipapi.Conne
 		}
 	}
 
-	c.mu.Lock()
-	c.pairingStates[ski] = detail
-	c.mu.Unlock()
-
 	c.bus.Publish(Event{
 		SKI:  ski,
 		Type: "pairing.updated",
@@ -110,12 +104,4 @@ func (c *Callbacks) DiscoveredServices() []shipapi.RemoteService {
 	result := make([]shipapi.RemoteService, len(c.discoveredSvcs))
 	copy(result, c.discoveredSvcs)
 	return result
-}
-
-// PairingState returns the current pairing state for the given SKI, or nil if unknown.
-func (c *Callbacks) PairingState(ski string) *shipapi.ConnectionStateDetail {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	ski = NormalizeSKI(ski)
-	return c.pairingStates[ski]
 }

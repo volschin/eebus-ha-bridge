@@ -305,50 +305,6 @@ func (x *HeartbeatStatus) GetWithinDuration() bool {
 	return false
 }
 
-type PowerValue struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Watts         float64                `protobuf:"fixed64,1,opt,name=watts,proto3" json:"watts,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *PowerValue) Reset() {
-	*x = PowerValue{}
-	mi := &file_eebus_v1_lpc_service_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PowerValue) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PowerValue) ProtoMessage() {}
-
-func (x *PowerValue) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_lpc_service_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PowerValue.ProtoReflect.Descriptor instead.
-func (*PowerValue) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_lpc_service_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *PowerValue) GetWatts() float64 {
-	if x != nil {
-		return x.Watts
-	}
-	return 0
-}
-
 type LPCEvent struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Ski       string                 `protobuf:"bytes,1,opt,name=ski,proto3" json:"ski,omitempty"`
@@ -364,7 +320,7 @@ type LPCEvent struct {
 
 func (x *LPCEvent) Reset() {
 	*x = LPCEvent{}
-	mi := &file_eebus_v1_lpc_service_proto_msgTypes[5]
+	mi := &file_eebus_v1_lpc_service_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -376,7 +332,7 @@ func (x *LPCEvent) String() string {
 func (*LPCEvent) ProtoMessage() {}
 
 func (x *LPCEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_lpc_service_proto_msgTypes[5]
+	mi := &file_eebus_v1_lpc_service_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -389,7 +345,7 @@ func (x *LPCEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LPCEvent.ProtoReflect.Descriptor instead.
 func (*LPCEvent) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_lpc_service_proto_rawDescGZIP(), []int{5}
+	return file_eebus_v1_lpc_service_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *LPCEvent) GetSki() string {
@@ -469,10 +425,7 @@ const file_eebus_v1_lpc_service_proto_rawDesc = "" +
 	"\x18duration_minimum_seconds\x18\x03 \x01(\x03R\x16durationMinimumSeconds\"T\n" +
 	"\x0fHeartbeatStatus\x12\x18\n" +
 	"\arunning\x18\x01 \x01(\bR\arunning\x12'\n" +
-	"\x0fwithin_duration\x18\x02 \x01(\bR\x0ewithinDuration\"\"\n" +
-	"\n" +
-	"PowerValue\x12\x14\n" +
-	"\x05watts\x18\x01 \x01(\x01R\x05watts\"\xd9\x01\n" +
+	"\x0fwithin_duration\x18\x02 \x01(\bR\x0ewithinDuration\"\xd9\x01\n" +
 	"\bLPCEvent\x12\x10\n" +
 	"\x03ski\x18\x01 \x01(\tR\x03ski\x125\n" +
 	"\n" +
@@ -484,7 +437,7 @@ const file_eebus_v1_lpc_service_proto_rawDesc = "" +
 	"\x15LPC_EVENT_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17LPC_EVENT_LIMIT_UPDATED\x10\x01\x12\x1e\n" +
 	"\x1aLPC_EVENT_FAILSAFE_UPDATED\x10\x02\x12\x1f\n" +
-	"\x1bLPC_EVENT_HEARTBEAT_TIMEOUT\x10\x032\xff\x04\n" +
+	"\x1bLPC_EVENT_HEARTBEAT_TIMEOUT\x10\x032\xb4\x04\n" +
 	"\n" +
 	"LPCService\x12C\n" +
 	"\x13GetConsumptionLimit\x12\x17.eebus.v1.DeviceRequest\x1a\x13.eebus.v1.LoadLimit\x12I\n" +
@@ -493,8 +446,7 @@ const file_eebus_v1_lpc_service_proto_rawDesc = "" +
 	"\x12WriteFailsafeLimit\x12#.eebus.v1.WriteFailsafeLimitRequest\x1a\x0f.eebus.v1.Empty\x12:\n" +
 	"\x0eStartHeartbeat\x12\x17.eebus.v1.DeviceRequest\x1a\x0f.eebus.v1.Empty\x129\n" +
 	"\rStopHeartbeat\x12\x17.eebus.v1.DeviceRequest\x1a\x0f.eebus.v1.Empty\x12H\n" +
-	"\x12GetHeartbeatStatus\x12\x17.eebus.v1.DeviceRequest\x1a\x19.eebus.v1.HeartbeatStatus\x12I\n" +
-	"\x18GetConsumptionNominalMax\x12\x17.eebus.v1.DeviceRequest\x1a\x14.eebus.v1.PowerValue\x12C\n" +
+	"\x12GetHeartbeatStatus\x12\x17.eebus.v1.DeviceRequest\x1a\x19.eebus.v1.HeartbeatStatus\x12C\n" +
 	"\x12SubscribeLPCEvents\x12\x17.eebus.v1.DeviceRequest\x1a\x12.eebus.v1.LPCEvent0\x01B=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3"
 
 var (
@@ -510,43 +462,40 @@ func file_eebus_v1_lpc_service_proto_rawDescGZIP() []byte {
 }
 
 var file_eebus_v1_lpc_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_eebus_v1_lpc_service_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_eebus_v1_lpc_service_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_eebus_v1_lpc_service_proto_goTypes = []any{
 	(LPCEventType)(0),                 // 0: eebus.v1.LPCEventType
 	(*WriteLoadLimitRequest)(nil),     // 1: eebus.v1.WriteLoadLimitRequest
 	(*FailsafeLimit)(nil),             // 2: eebus.v1.FailsafeLimit
 	(*WriteFailsafeLimitRequest)(nil), // 3: eebus.v1.WriteFailsafeLimitRequest
 	(*HeartbeatStatus)(nil),           // 4: eebus.v1.HeartbeatStatus
-	(*PowerValue)(nil),                // 5: eebus.v1.PowerValue
-	(*LPCEvent)(nil),                  // 6: eebus.v1.LPCEvent
-	(*LoadLimit)(nil),                 // 7: eebus.v1.LoadLimit
-	(*DeviceRequest)(nil),             // 8: eebus.v1.DeviceRequest
-	(*Empty)(nil),                     // 9: eebus.v1.Empty
+	(*LPCEvent)(nil),                  // 5: eebus.v1.LPCEvent
+	(*LoadLimit)(nil),                 // 6: eebus.v1.LoadLimit
+	(*DeviceRequest)(nil),             // 7: eebus.v1.DeviceRequest
+	(*Empty)(nil),                     // 8: eebus.v1.Empty
 }
 var file_eebus_v1_lpc_service_proto_depIdxs = []int32{
 	0,  // 0: eebus.v1.LPCEvent.event_type:type_name -> eebus.v1.LPCEventType
-	7,  // 1: eebus.v1.LPCEvent.limit_update:type_name -> eebus.v1.LoadLimit
+	6,  // 1: eebus.v1.LPCEvent.limit_update:type_name -> eebus.v1.LoadLimit
 	2,  // 2: eebus.v1.LPCEvent.failsafe_update:type_name -> eebus.v1.FailsafeLimit
-	8,  // 3: eebus.v1.LPCService.GetConsumptionLimit:input_type -> eebus.v1.DeviceRequest
+	7,  // 3: eebus.v1.LPCService.GetConsumptionLimit:input_type -> eebus.v1.DeviceRequest
 	1,  // 4: eebus.v1.LPCService.WriteConsumptionLimit:input_type -> eebus.v1.WriteLoadLimitRequest
-	8,  // 5: eebus.v1.LPCService.GetFailsafeLimit:input_type -> eebus.v1.DeviceRequest
+	7,  // 5: eebus.v1.LPCService.GetFailsafeLimit:input_type -> eebus.v1.DeviceRequest
 	3,  // 6: eebus.v1.LPCService.WriteFailsafeLimit:input_type -> eebus.v1.WriteFailsafeLimitRequest
-	8,  // 7: eebus.v1.LPCService.StartHeartbeat:input_type -> eebus.v1.DeviceRequest
-	8,  // 8: eebus.v1.LPCService.StopHeartbeat:input_type -> eebus.v1.DeviceRequest
-	8,  // 9: eebus.v1.LPCService.GetHeartbeatStatus:input_type -> eebus.v1.DeviceRequest
-	8,  // 10: eebus.v1.LPCService.GetConsumptionNominalMax:input_type -> eebus.v1.DeviceRequest
-	8,  // 11: eebus.v1.LPCService.SubscribeLPCEvents:input_type -> eebus.v1.DeviceRequest
-	7,  // 12: eebus.v1.LPCService.GetConsumptionLimit:output_type -> eebus.v1.LoadLimit
-	9,  // 13: eebus.v1.LPCService.WriteConsumptionLimit:output_type -> eebus.v1.Empty
-	2,  // 14: eebus.v1.LPCService.GetFailsafeLimit:output_type -> eebus.v1.FailsafeLimit
-	9,  // 15: eebus.v1.LPCService.WriteFailsafeLimit:output_type -> eebus.v1.Empty
-	9,  // 16: eebus.v1.LPCService.StartHeartbeat:output_type -> eebus.v1.Empty
-	9,  // 17: eebus.v1.LPCService.StopHeartbeat:output_type -> eebus.v1.Empty
-	4,  // 18: eebus.v1.LPCService.GetHeartbeatStatus:output_type -> eebus.v1.HeartbeatStatus
-	5,  // 19: eebus.v1.LPCService.GetConsumptionNominalMax:output_type -> eebus.v1.PowerValue
-	6,  // 20: eebus.v1.LPCService.SubscribeLPCEvents:output_type -> eebus.v1.LPCEvent
-	12, // [12:21] is the sub-list for method output_type
-	3,  // [3:12] is the sub-list for method input_type
+	7,  // 7: eebus.v1.LPCService.StartHeartbeat:input_type -> eebus.v1.DeviceRequest
+	7,  // 8: eebus.v1.LPCService.StopHeartbeat:input_type -> eebus.v1.DeviceRequest
+	7,  // 9: eebus.v1.LPCService.GetHeartbeatStatus:input_type -> eebus.v1.DeviceRequest
+	7,  // 10: eebus.v1.LPCService.SubscribeLPCEvents:input_type -> eebus.v1.DeviceRequest
+	6,  // 11: eebus.v1.LPCService.GetConsumptionLimit:output_type -> eebus.v1.LoadLimit
+	8,  // 12: eebus.v1.LPCService.WriteConsumptionLimit:output_type -> eebus.v1.Empty
+	2,  // 13: eebus.v1.LPCService.GetFailsafeLimit:output_type -> eebus.v1.FailsafeLimit
+	8,  // 14: eebus.v1.LPCService.WriteFailsafeLimit:output_type -> eebus.v1.Empty
+	8,  // 15: eebus.v1.LPCService.StartHeartbeat:output_type -> eebus.v1.Empty
+	8,  // 16: eebus.v1.LPCService.StopHeartbeat:output_type -> eebus.v1.Empty
+	4,  // 17: eebus.v1.LPCService.GetHeartbeatStatus:output_type -> eebus.v1.HeartbeatStatus
+	5,  // 18: eebus.v1.LPCService.SubscribeLPCEvents:output_type -> eebus.v1.LPCEvent
+	11, // [11:19] is the sub-list for method output_type
+	3,  // [3:11] is the sub-list for method input_type
 	3,  // [3:3] is the sub-list for extension type_name
 	3,  // [3:3] is the sub-list for extension extendee
 	0,  // [0:3] is the sub-list for field type_name
@@ -558,7 +507,7 @@ func file_eebus_v1_lpc_service_proto_init() {
 		return
 	}
 	file_eebus_v1_common_proto_init()
-	file_eebus_v1_lpc_service_proto_msgTypes[5].OneofWrappers = []any{
+	file_eebus_v1_lpc_service_proto_msgTypes[4].OneofWrappers = []any{
 		(*LPCEvent_LimitUpdate)(nil),
 		(*LPCEvent_FailsafeUpdate)(nil),
 	}
@@ -568,7 +517,7 @@ func file_eebus_v1_lpc_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_eebus_v1_lpc_service_proto_rawDesc), len(file_eebus_v1_lpc_service_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   6,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

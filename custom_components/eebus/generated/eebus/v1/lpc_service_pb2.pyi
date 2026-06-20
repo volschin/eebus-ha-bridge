@@ -56,12 +56,6 @@ class HeartbeatStatus(_message.Message):
     within_duration: bool
     def __init__(self, running: bool = ..., within_duration: bool = ...) -> None: ...
 
-class PowerValue(_message.Message):
-    __slots__ = ("watts",)
-    WATTS_FIELD_NUMBER: _ClassVar[int]
-    watts: float
-    def __init__(self, watts: _Optional[float] = ...) -> None: ...
-
 class LPCEvent(_message.Message):
     __slots__ = ("ski", "event_type", "limit_update", "failsafe_update")
     SKI_FIELD_NUMBER: _ClassVar[int]

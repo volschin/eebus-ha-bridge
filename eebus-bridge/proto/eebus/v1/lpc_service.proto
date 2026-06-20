@@ -14,7 +14,6 @@ service LPCService {
   rpc StartHeartbeat(DeviceRequest) returns (Empty);
   rpc StopHeartbeat(DeviceRequest) returns (Empty);
   rpc GetHeartbeatStatus(DeviceRequest) returns (HeartbeatStatus);
-  rpc GetConsumptionNominalMax(DeviceRequest) returns (PowerValue);
   rpc SubscribeLPCEvents(DeviceRequest) returns (stream LPCEvent);
 }
 
@@ -39,10 +38,6 @@ message WriteFailsafeLimitRequest {
 message HeartbeatStatus {
   bool running = 1;
   bool within_duration = 2;
-}
-
-message PowerValue {
-  double watts = 1;
 }
 
 message LPCEvent {
