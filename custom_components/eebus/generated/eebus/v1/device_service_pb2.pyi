@@ -8,25 +8,12 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
-class PairingState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
-    __slots__ = ()
-    PAIRING_STATE_UNSPECIFIED: _ClassVar[PairingState]
-    PAIRING_STATE_PENDING: _ClassVar[PairingState]
-    PAIRING_STATE_WAITING_FOR_TRUST: _ClassVar[PairingState]
-    PAIRING_STATE_TRUSTED: _ClassVar[PairingState]
-    PAIRING_STATE_DENIED: _ClassVar[PairingState]
-
 class DeviceEventType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     DEVICE_EVENT_UNSPECIFIED: _ClassVar[DeviceEventType]
     DEVICE_EVENT_CONNECTED: _ClassVar[DeviceEventType]
     DEVICE_EVENT_DISCONNECTED: _ClassVar[DeviceEventType]
     DEVICE_EVENT_TRUST_REMOVED: _ClassVar[DeviceEventType]
-PAIRING_STATE_UNSPECIFIED: PairingState
-PAIRING_STATE_PENDING: PairingState
-PAIRING_STATE_WAITING_FOR_TRUST: PairingState
-PAIRING_STATE_TRUSTED: PairingState
-PAIRING_STATE_DENIED: PairingState
 DEVICE_EVENT_UNSPECIFIED: DeviceEventType
 DEVICE_EVENT_CONNECTED: DeviceEventType
 DEVICE_EVENT_DISCONNECTED: DeviceEventType
@@ -67,14 +54,6 @@ class RegisterSKIRequest(_message.Message):
     SKI_FIELD_NUMBER: _ClassVar[int]
     ski: str
     def __init__(self, ski: _Optional[str] = ...) -> None: ...
-
-class PairingStatus(_message.Message):
-    __slots__ = ("ski", "state")
-    SKI_FIELD_NUMBER: _ClassVar[int]
-    STATE_FIELD_NUMBER: _ClassVar[int]
-    ski: str
-    state: PairingState
-    def __init__(self, ski: _Optional[str] = ..., state: _Optional[_Union[PairingState, str]] = ...) -> None: ...
 
 class PairedDevice(_message.Message):
     __slots__ = ("ski", "brand", "model", "serial", "device_type", "supported_use_cases")

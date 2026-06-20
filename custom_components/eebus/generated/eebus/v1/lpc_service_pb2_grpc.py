@@ -70,11 +70,6 @@ class LPCServiceStub(object):
                 request_serializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
                 response_deserializer=eebus_dot_v1_dot_lpc__service__pb2.HeartbeatStatus.FromString,
                 _registered_method=True)
-        self.GetConsumptionNominalMax = channel.unary_unary(
-                '/eebus.v1.LPCService/GetConsumptionNominalMax',
-                request_serializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
-                response_deserializer=eebus_dot_v1_dot_lpc__service__pb2.PowerValue.FromString,
-                _registered_method=True)
         self.SubscribeLPCEvents = channel.unary_stream(
                 '/eebus.v1.LPCService/SubscribeLPCEvents',
                 request_serializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
@@ -127,12 +122,6 @@ class LPCServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetConsumptionNominalMax(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
     def SubscribeLPCEvents(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -176,11 +165,6 @@ def add_LPCServiceServicer_to_server(servicer, server):
                     servicer.GetHeartbeatStatus,
                     request_deserializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.FromString,
                     response_serializer=eebus_dot_v1_dot_lpc__service__pb2.HeartbeatStatus.SerializeToString,
-            ),
-            'GetConsumptionNominalMax': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetConsumptionNominalMax,
-                    request_deserializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.FromString,
-                    response_serializer=eebus_dot_v1_dot_lpc__service__pb2.PowerValue.SerializeToString,
             ),
             'SubscribeLPCEvents': grpc.unary_stream_rpc_method_handler(
                     servicer.SubscribeLPCEvents,
@@ -377,33 +361,6 @@ class LPCService(object):
             '/eebus.v1.LPCService/GetHeartbeatStatus',
             eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
             eebus_dot_v1_dot_lpc__service__pb2.HeartbeatStatus.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def GetConsumptionNominalMax(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/eebus.v1.LPCService/GetConsumptionNominalMax',
-            eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
-            eebus_dot_v1_dot_lpc__service__pb2.PowerValue.FromString,
             options,
             channel_credentials,
             insecure,

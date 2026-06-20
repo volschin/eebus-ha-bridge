@@ -80,8 +80,3 @@ func (b *BridgeService) Callbacks() *Callbacks {
 func (b *BridgeService) RegisterRemoteSKI(ski string) {
 	b.service.RegisterRemoteSKI(ski)
 }
-
-// UnregisterRemoteSKI removes trust for a SKI and disconnects if connected.
-func (b *BridgeService) UnregisterRemoteSKI(ski string) {
-	b.service.UnregisterRemoteSKI(ski)
-}

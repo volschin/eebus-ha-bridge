@@ -19,15 +19,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	LPCService_GetConsumptionLimit_FullMethodName      = "/eebus.v1.LPCService/GetConsumptionLimit"
-	LPCService_WriteConsumptionLimit_FullMethodName    = "/eebus.v1.LPCService/WriteConsumptionLimit"
-	LPCService_GetFailsafeLimit_FullMethodName         = "/eebus.v1.LPCService/GetFailsafeLimit"
-	LPCService_WriteFailsafeLimit_FullMethodName       = "/eebus.v1.LPCService/WriteFailsafeLimit"
-	LPCService_StartHeartbeat_FullMethodName           = "/eebus.v1.LPCService/StartHeartbeat"
-	LPCService_StopHeartbeat_FullMethodName            = "/eebus.v1.LPCService/StopHeartbeat"
-	LPCService_GetHeartbeatStatus_FullMethodName       = "/eebus.v1.LPCService/GetHeartbeatStatus"
-	LPCService_GetConsumptionNominalMax_FullMethodName = "/eebus.v1.LPCService/GetConsumptionNominalMax"
-	LPCService_SubscribeLPCEvents_FullMethodName       = "/eebus.v1.LPCService/SubscribeLPCEvents"
+	LPCService_GetConsumptionLimit_FullMethodName   = "/eebus.v1.LPCService/GetConsumptionLimit"
+	LPCService_WriteConsumptionLimit_FullMethodName = "/eebus.v1.LPCService/WriteConsumptionLimit"
+	LPCService_GetFailsafeLimit_FullMethodName      = "/eebus.v1.LPCService/GetFailsafeLimit"
+	LPCService_WriteFailsafeLimit_FullMethodName    = "/eebus.v1.LPCService/WriteFailsafeLimit"
+	LPCService_StartHeartbeat_FullMethodName        = "/eebus.v1.LPCService/StartHeartbeat"
+	LPCService_StopHeartbeat_FullMethodName         = "/eebus.v1.LPCService/StopHeartbeat"
+	LPCService_GetHeartbeatStatus_FullMethodName    = "/eebus.v1.LPCService/GetHeartbeatStatus"
+	LPCService_SubscribeLPCEvents_FullMethodName    = "/eebus.v1.LPCService/SubscribeLPCEvents"
 )
 
 // LPCServiceClient is the client API for LPCService service.
@@ -41,7 +40,6 @@ type LPCServiceClient interface {
 	StartHeartbeat(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*Empty, error)
 	StopHeartbeat(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetHeartbeatStatus(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*HeartbeatStatus, error)
-	GetConsumptionNominalMax(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*PowerValue, error)
 	SubscribeLPCEvents(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LPCEvent], error)
 }
 
@@ -123,16 +121,6 @@ func (c *lPCServiceClient) GetHeartbeatStatus(ctx context.Context, in *DeviceReq
 	return out, nil
 }
 
-func (c *lPCServiceClient) GetConsumptionNominalMax(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*PowerValue, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(PowerValue)
-	err := c.cc.Invoke(ctx, LPCService_GetConsumptionNominalMax_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *lPCServiceClient) SubscribeLPCEvents(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LPCEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &LPCService_ServiceDesc.Streams[0], LPCService_SubscribeLPCEvents_FullMethodName, cOpts...)
@@ -163,7 +151,6 @@ type LPCServiceServer interface {
 	StartHeartbeat(context.Context, *DeviceRequest) (*Empty, error)
 	StopHeartbeat(context.Context, *DeviceRequest) (*Empty, error)
 	GetHeartbeatStatus(context.Context, *DeviceRequest) (*HeartbeatStatus, error)
-	GetConsumptionNominalMax(context.Context, *DeviceRequest) (*PowerValue, error)
 	SubscribeLPCEvents(*DeviceRequest, grpc.ServerStreamingServer[LPCEvent]) error
 	mustEmbedUnimplementedLPCServiceServer()
 }
@@ -195,9 +182,6 @@ func (UnimplementedLPCServiceServer) StopHeartbeat(context.Context, *DeviceReque
 }
 func (UnimplementedLPCServiceServer) GetHeartbeatStatus(context.Context, *DeviceRequest) (*HeartbeatStatus, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetHeartbeatStatus not implemented")
-}
-func (UnimplementedLPCServiceServer) GetConsumptionNominalMax(context.Context, *DeviceRequest) (*PowerValue, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetConsumptionNominalMax not implemented")
 }
 func (UnimplementedLPCServiceServer) SubscribeLPCEvents(*DeviceRequest, grpc.ServerStreamingServer[LPCEvent]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeLPCEvents not implemented")
@@ -349,24 +333,6 @@ func _LPCService_GetHeartbeatStatus_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _LPCService_GetConsumptionNominalMax_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeviceRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(LPCServiceServer).GetConsumptionNominalMax(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: LPCService_GetConsumptionNominalMax_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(LPCServiceServer).GetConsumptionNominalMax(ctx, req.(*DeviceRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _LPCService_SubscribeLPCEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(DeviceRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -412,10 +378,6 @@ var LPCService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetHeartbeatStatus",
 			Handler:    _LPCService_GetHeartbeatStatus_Handler,
-		},
-		{
-			MethodName: "GetConsumptionNominalMax",
-			Handler:    _LPCService_GetConsumptionNominalMax_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

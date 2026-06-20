@@ -3,7 +3,6 @@ package grpc
 import (
 	"context"
 
-	shipapi "github.com/enbility/ship-go/api"
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
@@ -46,38 +45,6 @@ func (s *DeviceService) ListDiscoveredDevices(_ context.Context, _ *pb.Empty) (*
 func (s *DeviceService) RegisterRemoteSKI(_ context.Context, req *pb.RegisterSKIRequest) (*pb.Empty, error) {
 	s.bus.Publish(eebus.Event{SKI: req.Ski, Type: "device.register_ski"})
 	return &pb.Empty{}, nil
-}
-
-func (s *DeviceService) UnregisterRemoteSKI(_ context.Context, req *pb.DeviceRequest) (*pb.Empty, error) {
-	s.bus.Publish(eebus.Event{SKI: req.Ski, Type: "device.unregister_ski"})
-	return &pb.Empty{}, nil
-}
-
-func (s *DeviceService) GetPairingStatus(_ context.Context, req *pb.DeviceRequest) (*pb.PairingStatus, error) {
-	state := s.callbacks.PairingState(req.Ski)
-	ps := &pb.PairingStatus{Ski: req.Ski, State: pb.PairingState_PAIRING_STATE_UNSPECIFIED}
-	if state != nil {
-		ps.State = mapConnectionState(state.State())
-	}
-	return ps, nil
-}
-
-func mapConnectionState(cs shipapi.ConnectionState) pb.PairingState {
-	switch cs {
-	case shipapi.ConnectionStateQueued,
-		shipapi.ConnectionStateInitiated,
-		shipapi.ConnectionStateReceivedPairingRequest,
-		shipapi.ConnectionStateInProgress:
-		return pb.PairingState_PAIRING_STATE_PENDING
-	case shipapi.ConnectionStateTrusted,
-		shipapi.ConnectionStateCompleted:
-		return pb.PairingState_PAIRING_STATE_TRUSTED
-	case shipapi.ConnectionStateRemoteDeniedTrust,
-		shipapi.ConnectionStateError:
-		return pb.PairingState_PAIRING_STATE_DENIED
-	default:
-		return pb.PairingState_PAIRING_STATE_UNSPECIFIED
-	}
 }
 
 func (s *DeviceService) ListPairedDevices(_ context.Context, _ *pb.Empty) (*pb.ListPairedDevicesResponse, error) {

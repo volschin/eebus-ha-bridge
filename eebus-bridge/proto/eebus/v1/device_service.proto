@@ -10,8 +10,6 @@ service DeviceService {
   rpc GetStatus(Empty) returns (ServiceStatus);
   rpc ListDiscoveredDevices(Empty) returns (ListDevicesResponse);
   rpc RegisterRemoteSKI(RegisterSKIRequest) returns (Empty);
-  rpc UnregisterRemoteSKI(DeviceRequest) returns (Empty);
-  rpc GetPairingStatus(DeviceRequest) returns (PairingStatus);
   rpc ListPairedDevices(Empty) returns (ListPairedDevicesResponse);
   rpc SubscribeDeviceEvents(Empty) returns (stream DeviceEvent);
 }
@@ -36,19 +34,6 @@ message ListDevicesResponse {
 
 message RegisterSKIRequest {
   string ski = 1;
-}
-
-message PairingStatus {
-  string ski = 1;
-  PairingState state = 2;
-}
-
-enum PairingState {
-  PAIRING_STATE_UNSPECIFIED = 0;
-  PAIRING_STATE_PENDING = 1;
-  PAIRING_STATE_WAITING_FOR_TRUST = 2;
-  PAIRING_STATE_TRUSTED = 3;
-  PAIRING_STATE_DENIED = 4;
 }
 
 message PairedDevice {

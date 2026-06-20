@@ -22,8 +22,6 @@ const (
 	DeviceService_GetStatus_FullMethodName             = "/eebus.v1.DeviceService/GetStatus"
 	DeviceService_ListDiscoveredDevices_FullMethodName = "/eebus.v1.DeviceService/ListDiscoveredDevices"
 	DeviceService_RegisterRemoteSKI_FullMethodName     = "/eebus.v1.DeviceService/RegisterRemoteSKI"
-	DeviceService_UnregisterRemoteSKI_FullMethodName   = "/eebus.v1.DeviceService/UnregisterRemoteSKI"
-	DeviceService_GetPairingStatus_FullMethodName      = "/eebus.v1.DeviceService/GetPairingStatus"
 	DeviceService_ListPairedDevices_FullMethodName     = "/eebus.v1.DeviceService/ListPairedDevices"
 	DeviceService_SubscribeDeviceEvents_FullMethodName = "/eebus.v1.DeviceService/SubscribeDeviceEvents"
 )
@@ -35,8 +33,6 @@ type DeviceServiceClient interface {
 	GetStatus(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ServiceStatus, error)
 	ListDiscoveredDevices(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ListDevicesResponse, error)
 	RegisterRemoteSKI(ctx context.Context, in *RegisterSKIRequest, opts ...grpc.CallOption) (*Empty, error)
-	UnregisterRemoteSKI(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*Empty, error)
-	GetPairingStatus(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*PairingStatus, error)
 	ListPairedDevices(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ListPairedDevicesResponse, error)
 	SubscribeDeviceEvents(ctx context.Context, in *Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DeviceEvent], error)
 }
@@ -79,26 +75,6 @@ func (c *deviceServiceClient) RegisterRemoteSKI(ctx context.Context, in *Registe
 	return out, nil
 }
 
-func (c *deviceServiceClient) UnregisterRemoteSKI(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*Empty, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Empty)
-	err := c.cc.Invoke(ctx, DeviceService_UnregisterRemoteSKI_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *deviceServiceClient) GetPairingStatus(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*PairingStatus, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(PairingStatus)
-	err := c.cc.Invoke(ctx, DeviceService_GetPairingStatus_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *deviceServiceClient) ListPairedDevices(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ListPairedDevicesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListPairedDevicesResponse)
@@ -135,8 +111,6 @@ type DeviceServiceServer interface {
 	GetStatus(context.Context, *Empty) (*ServiceStatus, error)
 	ListDiscoveredDevices(context.Context, *Empty) (*ListDevicesResponse, error)
 	RegisterRemoteSKI(context.Context, *RegisterSKIRequest) (*Empty, error)
-	UnregisterRemoteSKI(context.Context, *DeviceRequest) (*Empty, error)
-	GetPairingStatus(context.Context, *DeviceRequest) (*PairingStatus, error)
 	ListPairedDevices(context.Context, *Empty) (*ListPairedDevicesResponse, error)
 	SubscribeDeviceEvents(*Empty, grpc.ServerStreamingServer[DeviceEvent]) error
 	mustEmbedUnimplementedDeviceServiceServer()
@@ -157,12 +131,6 @@ func (UnimplementedDeviceServiceServer) ListDiscoveredDevices(context.Context, *
 }
 func (UnimplementedDeviceServiceServer) RegisterRemoteSKI(context.Context, *RegisterSKIRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method RegisterRemoteSKI not implemented")
-}
-func (UnimplementedDeviceServiceServer) UnregisterRemoteSKI(context.Context, *DeviceRequest) (*Empty, error) {
-	return nil, status.Error(codes.Unimplemented, "method UnregisterRemoteSKI not implemented")
-}
-func (UnimplementedDeviceServiceServer) GetPairingStatus(context.Context, *DeviceRequest) (*PairingStatus, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetPairingStatus not implemented")
 }
 func (UnimplementedDeviceServiceServer) ListPairedDevices(context.Context, *Empty) (*ListPairedDevicesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPairedDevices not implemented")
@@ -245,42 +213,6 @@ func _DeviceService_RegisterRemoteSKI_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DeviceService_UnregisterRemoteSKI_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeviceRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DeviceServiceServer).UnregisterRemoteSKI(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DeviceService_UnregisterRemoteSKI_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DeviceServiceServer).UnregisterRemoteSKI(ctx, req.(*DeviceRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DeviceService_GetPairingStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeviceRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DeviceServiceServer).GetPairingStatus(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DeviceService_GetPairingStatus_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DeviceServiceServer).GetPairingStatus(ctx, req.(*DeviceRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _DeviceService_ListPairedDevices_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(Empty)
 	if err := dec(in); err != nil {
@@ -328,14 +260,6 @@ var DeviceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RegisterRemoteSKI",
 			Handler:    _DeviceService_RegisterRemoteSKI_Handler,
-		},
-		{
-			MethodName: "UnregisterRemoteSKI",
-			Handler:    _DeviceService_UnregisterRemoteSKI_Handler,
-		},
-		{
-			MethodName: "GetPairingStatus",
-			Handler:    _DeviceService_GetPairingStatus_Handler,
 		},
 		{
 			MethodName: "ListPairedDevices",

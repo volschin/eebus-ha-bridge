@@ -175,24 +175,6 @@ func (s *LPCService) GetHeartbeatStatus(_ context.Context, req *pb.DeviceRequest
 	}, nil
 }
 
-func (s *LPCService) GetConsumptionNominalMax(_ context.Context, req *pb.DeviceRequest) (*pb.PowerValue, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "request is required")
-	}
-	if s.lpc == nil {
-		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
-	}
-	entity, err := s.resolveEntity(req.Ski)
-	if err != nil {
-		return nil, err
-	}
-	value, err := s.lpc.ConsumptionNominalMax(entity)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "reading nominal max consumption: %v", err)
-	}
-	return &pb.PowerValue{Watts: value}, nil
-}
-
 func (s *LPCService) SubscribeLPCEvents(req *pb.DeviceRequest, stream pb.LPCService_SubscribeLPCEventsServer) error {
 	ch := s.bus.Subscribe()
 	defer s.bus.Unsubscribe(ch)
