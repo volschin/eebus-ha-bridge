@@ -145,14 +145,39 @@ func (s *MonitoringService) SubscribeMeasurements(req *pb.DeviceRequest, stream 
 			default:
 				continue
 			}
-			if err := stream.Send(&pb.MeasurementEvent{
-				Ski:       evt.SKI,
-				EventType: eventType,
-			}); err != nil {
+			event := &pb.MeasurementEvent{Ski: evt.SKI, EventType: eventType}
+			s.attachMeasurementPayload(event, evt.SKI, eventType)
+			if err := stream.Send(event); err != nil {
 				return err
 			}
 		case <-stream.Context().Done():
 			return stream.Context().Err()
+		}
+	}
+}
+
+// attachMeasurementPayload best-effort fills the event's typed payload with the
+// current value so subscribers receive data directly instead of polling. On any
+// read failure the event is sent without a payload and the client falls back to
+// a refresh. Reuses the SKI-resolve + nil-entity fallback of the Get* readers.
+func (s *MonitoringService) attachMeasurementPayload(event *pb.MeasurementEvent, ski string, eventType pb.MeasurementEventType) {
+	if s.monitoring == nil {
+		return
+	}
+	switch eventType {
+	case pb.MeasurementEventType_MEASUREMENT_EVENT_POWER_UPDATED:
+		if value, err := s.readPower(ski); err == nil {
+			event.Data = &pb.MeasurementEvent_Power{Power: &pb.PowerMeasurement{
+				Watts:     value,
+				Timestamp: timestamppb.Now(),
+			}}
+		}
+	case pb.MeasurementEventType_MEASUREMENT_EVENT_ENERGY_UPDATED:
+		if value, err := s.readEnergyConsumed(ski); err == nil {
+			event.Data = &pb.MeasurementEvent_Energy{Energy: &pb.EnergyMeasurement{
+				KilowattHours: value,
+				Timestamp:     timestamppb.Now(),
+			}}
 		}
 	}
 }

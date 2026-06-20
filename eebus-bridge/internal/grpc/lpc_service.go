@@ -215,14 +215,42 @@ func (s *LPCService) SubscribeLPCEvents(req *pb.DeviceRequest, stream pb.LPCServ
 			default:
 				continue
 			}
-			if err := stream.Send(&pb.LPCEvent{
-				Ski:       evt.SKI,
-				EventType: eventType,
-			}); err != nil {
+			event := &pb.LPCEvent{Ski: evt.SKI, EventType: eventType}
+			s.attachLPCPayload(event, evt.SKI, eventType)
+			if err := stream.Send(event); err != nil {
 				return err
 			}
 		case <-stream.Context().Done():
 			return stream.Context().Err()
+		}
+	}
+}
+
+// attachLPCPayload best-effort fills the event's typed payload with the current
+// limit/failsafe values so subscribers receive data directly instead of having
+// to poll. If the use case is not ready or the entity/value cannot be read, the
+// event is sent without a payload and the client falls back to a refresh.
+func (s *LPCService) attachLPCPayload(event *pb.LPCEvent, ski string, eventType pb.LPCEventType) {
+	if s.lpc == nil {
+		return
+	}
+	entity, err := s.resolveEntity(ski)
+	if err != nil {
+		return
+	}
+	switch eventType {
+	case pb.LPCEventType_LPC_EVENT_LIMIT_UPDATED:
+		if limit, err := s.lpc.ConsumptionLimit(entity); err == nil {
+			event.Data = &pb.LPCEvent_LimitUpdate{LimitUpdate: convertLoadLimit(limit)}
+		}
+	case pb.LPCEventType_LPC_EVENT_FAILSAFE_UPDATED:
+		value, verr := s.lpc.FailsafeConsumptionActivePowerLimit(entity)
+		duration, derr := s.lpc.FailsafeDurationMinimum(entity)
+		if verr == nil && derr == nil {
+			event.Data = &pb.LPCEvent_FailsafeUpdate{FailsafeUpdate: &pb.FailsafeLimit{
+				ValueWatts:             value,
+				DurationMinimumSeconds: int64(duration / time.Second),
+			}}
 		}
 	}
 }

@@ -163,6 +163,36 @@ def test_lpc_failsafe_event_pushes_data():
     }
 
 
+def test_lpc_limit_event_without_payload_refreshes():
+    """LIMIT_UPDATED without a payload must reconcile via poll, never zero the limit."""
+    coordinator, pushed = _make_coordinator(
+        data={"consumption_limit": {"value_watts": 4200.0, "is_active": True}}
+    )
+    coordinator.hass = MagicMock()
+    coordinator.async_request_refresh = MagicMock(return_value=None)
+    event = lpc_service_pb2.LPCEvent(
+        ski="test-ski",
+        event_type=lpc_service_pb2.LPC_EVENT_LIMIT_UPDATED,
+    )
+    coordinator._handle_lpc_event(event)
+    assert not pushed  # no zeroing push
+    coordinator.hass.async_create_task.assert_called_once()
+
+
+def test_measurement_power_event_without_payload_refreshes():
+    """POWER_UPDATED without a payload must reconcile via poll instead of dropping."""
+    coordinator, pushed = _make_coordinator(data={"power_watts": 100.0})
+    coordinator.hass = MagicMock()
+    coordinator.async_request_refresh = MagicMock(return_value=None)
+    event = monitoring_service_pb2.MeasurementEvent(
+        ski="test-ski",
+        event_type=monitoring_service_pb2.MEASUREMENT_EVENT_POWER_UPDATED,
+    )
+    coordinator._handle_measurement_event(event)
+    assert not pushed
+    coordinator.hass.async_create_task.assert_called_once()
+
+
 def test_fetch_device_info_uses_matching_ski():
     """Real brand/model/serial for the configured SKI is surfaced (issue #28)."""
     coordinator, _ = _make_coordinator(ski="bosch-ski")

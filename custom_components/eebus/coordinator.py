@@ -835,6 +835,10 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
         event_type = event.event_type
         if event_type == proto_stubs.LPCEventType.LPC_EVENT_LIMIT_UPDATED:
+            if not event.HasField("limit_update"):
+                # Bridge signalled a change but sent no payload; reconcile via poll.
+                self.hass.async_create_task(self.async_request_refresh())
+                return
             limit = event.limit_update
             self._push_data(
                 {
@@ -846,6 +850,9 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 }
             )
         elif event_type == proto_stubs.LPCEventType.LPC_EVENT_FAILSAFE_UPDATED:
+            if not event.HasField("failsafe_update"):
+                self.hass.async_create_task(self.async_request_refresh())
+                return
             failsafe = event.failsafe_update
             self._push_data(
                 {
@@ -864,16 +871,17 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not self._event_matches(event.ski):
             return
         event_type = event.event_type
-        if (
-            event_type == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_POWER_UPDATED
-            and event.HasField("power")
-        ):
-            self._push_data({"power_watts": event.power.watts})
-        elif (
-            event_type == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_ENERGY_UPDATED
-            and event.HasField("energy")
-        ):
-            self._push_data({"energy_consumed_kwh": event.energy.kilowatt_hours})
+        if event_type == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_POWER_UPDATED:
+            if event.HasField("power"):
+                self._push_data({"power_watts": event.power.watts})
+            else:
+                # Change signalled without a payload; reconcile via poll.
+                self.hass.async_create_task(self.async_request_refresh())
+        elif event_type == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_ENERGY_UPDATED:
+            if event.HasField("energy"):
+                self._push_data({"energy_consumed_kwh": event.energy.kilowatt_hours})
+            else:
+                self.hass.async_create_task(self.async_request_refresh())
 
     async def async_shutdown(self) -> None:
         """Close gRPC channel and cancel stream tasks."""
