@@ -24,6 +24,9 @@ COPY --from=builder /eebus-bridge /usr/local/bin/eebus-bridge
 VOLUME /data
 EXPOSE 50051 4712
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD ["eebus-bridge", "-healthcheck", "--config", "/etc/eebus-bridge/config.yaml"]
+
 USER eebus
 ENTRYPOINT ["eebus-bridge"]
 CMD ["--config", "/etc/eebus-bridge/config.yaml"]
