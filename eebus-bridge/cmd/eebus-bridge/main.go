@@ -17,7 +17,15 @@ import (
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
+	healthcheck := flag.Bool("healthcheck", false, "probe the gRPC health service and exit")
 	flag.Parse()
+
+	if *healthcheck {
+		if err := runHealthcheck(*configPath); err != nil {
+			log.Fatalf("healthcheck: %v", err)
+		}
+		return
+	}
 
 	cfg, err := config.LoadFromFile(*configPath)
 	if err != nil {
