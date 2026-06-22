@@ -3,25 +3,27 @@ tag-template: "v$RESOLVED_VERSION"
 
 categories:
   - title: "New Features"
-    labels: ["feature", "enhancement"]
+    semver-increment: minor
+    when:
+      labels: ["feature", "enhancement"]
   - title: "Bug Fixes"
-    labels: ["fix", "bugfix", "bug"]
+    when:
+      labels: ["fix", "bugfix", "bug"]
   - title: "Documentation"
-    labels: ["documentation", "docs"]
+    when:
+      labels: ["documentation", "docs"]
   - title: "Maintenance"
-    labels: ["chore", "maintenance", "ci"]
+    when:
+      labels: ["chore", "maintenance", "ci"]
+  - type: "version-resolver"
+    semver-increment: "major"
+    when:
+      labels: ["major"]
+  - type: "version-resolver"
+    semver-increment: "patch"
 
 change-template: "- $TITLE @$AUTHOR (#$NUMBER)"
 change-title-escapes: '\<*_&'
-
-version-resolver:
-  major:
-    labels: ["major"]
-  minor:
-    labels: ["feature", "enhancement"]
-  patch:
-    labels: ["fix", "bugfix", "bug", "documentation", "chore"]
-  default: patch
 
 template: |
   ## Changes
