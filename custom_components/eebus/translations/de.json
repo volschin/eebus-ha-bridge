@@ -27,7 +27,8 @@
       }
     },
     "error": {
-      "cannot_connect": "Verbindung zur EEBUS Bridge fehlgeschlagen. Bitte Host und Port prüfen."
+      "cannot_connect": "Verbindung zur EEBUS Bridge fehlgeschlagen. Bitte Host und Port prüfen.",
+      "ski_is_local": "Das ist die eigene SKI der Bridge. Bitte die SKI der Wärmepumpe eingeben."
     },
     "abort": {
       "already_configured": "Dieses Gerät ist bereits konfiguriert.",
