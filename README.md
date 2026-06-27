@@ -193,6 +193,38 @@ automation:
 1. SKI in der Bridge-Log pruefen (wird beim Start ausgegeben)
 2. In der myVaillant-App unter Netzwerk > EEBUS den Bridge-SKI bestaetigen
 3. Sicherstellen, dass beide Geraete im selben Netzwerk sind
+4. Vaillant-Gateways erlauben nur **eine** EEBUS-Verbindung -- pruefen, dass kein
+   anderer Energiemanager (z. B. sensoNET-Cloud) den Slot belegt
+5. Bleibt die Verbindung in einer Reconnect-Schleife (Status erreicht nie
+   `Trusted`), das SHIP-Logging aktivieren (siehe unten), um den Abbruchgrund
+   zu sehen
+
+</details>
+
+<details>
+<summary>SHIP-Handshake debuggen</summary>
+
+Die internen ship-go/eebus-go-Logs sind standardmaessig stumm. Zum Anzeigen der
+SHIP-Handshake-Fehler und Abbruchgruende:
+
+```yaml
+logging:
+  ship_log: true     # Debug/Info/Error -- enthaelt den Abbruchgrund
+  # ship_trace: true # rohe Nachrichten pro Paket, sehr ausfuehrlich
+```
+
+Oder per Umgebungsvariable (z. B. in `docker-compose.yml`):
+
+```
+EEBUS_SHIP_LOG=true
+```
+
+Anschliessend im Bridge-Log nach `[SHIP DEBUG]`/`[SHIP ERROR]` suchen, z. B.:
+
+- `SHIP handshake error: ... handshake timeout` -- Geraet antwortet nicht /
+  Pairing geraeteseitig nicht bestaetigt
+- `Node rejected by application` -- Geraet hat den Bridge-SKI aktiv abgelehnt
+- TLS/Zertifikatsfehler -- SKI stimmt nicht ueberein
 
 </details>
 
