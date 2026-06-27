@@ -30,6 +30,15 @@ _LOGGER = logging.getLogger(__name__)
 
 CONFIG_RPC_TIMEOUT = 8
 
+
+def _normalize_ski(ski: str) -> str:
+    """Normalize a SKI for comparison (strip colons/whitespace, lowercase).
+
+    Mirrors the bridge's SKI normalization so a hand-typed value with colons or
+    different casing still matches the bridge's reported local SKI.
+    """
+    return ski.replace(":", "").replace(" ", "").strip().lower()
+
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_GRPC_HOST): str,
@@ -153,19 +162,29 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle device selection step."""
+        errors: dict[str, str] = {}
+
         if user_input is not None:
             ski = user_input[CONF_DEVICE_SKI].strip()
-            await self.async_set_unique_id(ski)
-            self._abort_if_unique_id_configured()
 
-            return self.async_create_entry(
-                title=f"EEBUS {ski[:8]}",
-                data={
-                    CONF_GRPC_HOST: self._host,
-                    CONF_GRPC_PORT: self._port,
-                    CONF_DEVICE_SKI: ski,
-                },
-            )
+            # The picker hides the bridge's own SKI, but custom_value=True lets a
+            # user paste it by hand (e.g. the "Local SKI" line from the bridge
+            # log). That SKI never resolves to a remote entity, so reject it
+            # rather than create a permanently broken entry.
+            if _normalize_ski(ski) == _normalize_ski(self._local_ski):
+                errors[CONF_DEVICE_SKI] = "ski_is_local"
+            else:
+                await self.async_set_unique_id(ski)
+                self._abort_if_unique_id_configured()
+
+                return self.async_create_entry(
+                    title=f"EEBUS {ski[:8]}",
+                    data={
+                        CONF_GRPC_HOST: self._host,
+                        CONF_GRPC_PORT: self._port,
+                        CONF_DEVICE_SKI: ski,
+                    },
+                )
 
         options = await self._async_list_discovered_skis()
         schema = vol.Schema(
@@ -179,7 +198,9 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
                 ),
             }
         )
-        return self.async_show_form(step_id="device", data_schema=schema)
+        return self.async_show_form(
+            step_id="device", data_schema=schema, errors=errors
+        )
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None

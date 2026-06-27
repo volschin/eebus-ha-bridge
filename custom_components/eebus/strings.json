@@ -27,7 +27,8 @@
       }
     },
     "error": {
-      "cannot_connect": "Cannot connect to EEBUS bridge. Check host and port."
+      "cannot_connect": "Cannot connect to EEBUS bridge. Check host and port.",
+      "ski_is_local": "That is the bridge's own SKI. Enter the heat pump's SKI instead."
     },
     "abort": {
       "already_configured": "This device is already configured.",
