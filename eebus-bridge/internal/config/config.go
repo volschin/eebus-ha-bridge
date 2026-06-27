@@ -38,6 +38,11 @@ type CertificatesConfig struct {
 
 type LoggingConfig struct {
 	DebugEvents bool `yaml:"debug_events"`
+	// ShipLog forwards ship-go/eebus-go internal Debug/Info/Error logs (SHIP
+	// handshake errors and abort reasons) to the bridge logger.
+	ShipLog bool `yaml:"ship_log"`
+	// ShipTrace additionally enables raw per-message Trace logs (very verbose).
+	ShipTrace bool `yaml:"ship_trace"`
 }
 
 func LoadFromFile(path string) (*Config, error) {
@@ -127,6 +132,16 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("EEBUS_DEBUG_EVENTS"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			cfg.Logging.DebugEvents = enabled
+		}
+	}
+	if v := os.Getenv("EEBUS_SHIP_LOG"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Logging.ShipLog = enabled
+		}
+	}
+	if v := os.Getenv("EEBUS_SHIP_TRACE"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Logging.ShipTrace = enabled
 		}
 	}
 }
