@@ -54,6 +54,10 @@ func (w *MonitoringWrapper) HandleEvent(ski string, device spineapi.DeviceRemote
 		)
 	}
 
+	if w.debug {
+		eebus.DefaultUseCaseDiscovery().LogOnce(ski, device)
+	}
+
 	if w.registry != nil {
 		w.registry.UpsertObservation(ski, device, entity, "monitoring")
 		enrichDeviceClassification(w.registry, w.localEntity, ski, device, entity)

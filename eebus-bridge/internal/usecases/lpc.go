@@ -56,6 +56,10 @@ func (w *LPCWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInterfa
 		)
 	}
 
+	if w.debug {
+		eebus.DefaultUseCaseDiscovery().LogOnce(ski, device)
+	}
+
 	if w.registry != nil {
 		w.registry.UpsertObservation(ski, device, entity, "lpc")
 		enrichDeviceClassification(w.registry, w.localEntity, ski, device, entity)
