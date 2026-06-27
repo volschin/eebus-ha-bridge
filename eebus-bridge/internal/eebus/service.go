@@ -39,6 +39,12 @@ func NewBridgeService(cfg *config.Config, cert tls.Certificate, bus *EventBus) (
 	callbacks := NewCallbacks(bus, cfg.Logging.DebugEvents)
 	svc := eebusservice.NewService(eebusConfig, callbacks)
 
+	// Forward ship-go/eebus-go internal logs (SHIP handshake errors, abort
+	// reasons) to the bridge logger when enabled. Default is silent.
+	if cfg.Logging.ShipLog || cfg.Logging.ShipTrace {
+		svc.SetLogging(&shipLogger{trace: cfg.Logging.ShipTrace})
+	}
+
 	return &BridgeService{
 		service:   svc,
 		callbacks: callbacks,
