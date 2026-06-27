@@ -1,0 +1,38 @@
+# VR940 EEBUS use-case discovery dump
+# Captured 2026-06-27 via internal/eebus/discovery.go (bridge v0.5.3), device paired over SHIP.
+# Device SKI 682F708CEBA5DF9ADCB9E6787EA911D9FC3AC490, type=Generic, 10 entities.
+# actor = the role THE VR940 plays in each use case (i.e. for MGCP/VAPD it is the
+# *consumer/reader*, so the bridge must implement the complementary *provider* role).
+
+[DISCOVERY] device ski=682F708CEBA5DF9ADCB9E6787EA911D9FC3AC490 type=Generic entities=10
+[DISCOVERY]   entity addr=0     type=DeviceInformation  features=[DeviceClassification/server, NodeManagement/special]
+[DISCOVERY]   entity addr=1     type=CEM                features=[Generic/client]
+[DISCOVERY]   entity addr=2     type=CEM                features=[Generic/client]
+[DISCOVERY]   entity addr=3     type=HeatPumpAppliance  features=[DeviceClassification/server, DeviceConfiguration/server, DeviceDiagnosis/server, ElectricalConnection/server, Generic/client, LoadControl/server, Measurement/server]
+[DISCOVERY]   entity addr=3:1   type=Compressor         features=[ElectricalConnection/server, Measurement/server, SmartEnergyManagementPs/server]
+[DISCOVERY]   entity addr=4     type=DHWCircuit         features=[HVAC/server, Measurement/server, Setpoint/server]
+[DISCOVERY]   entity addr=5     type=HeatingCircuit     features=[DeviceClassification/server]
+[DISCOVERY]   entity addr=5:1   type=HeatingZone        features=[DeviceClassification/server]
+[DISCOVERY]   entity addr=5:1:1 type=HVACRoom           features=[DeviceClassification/server, HVAC/server, Measurement/server, Setpoint/server]
+[DISCOVERY]   entity addr=6     type=TemperatureSensor  features=[Measurement/server]
+
+[DISCOVERY]   usecase actor=ControllableSystem      name=limitationOfPowerConsumption                                  v1.0.0 available=true  scenarios=[1,2,3,4]
+[DISCOVERY]   usecase actor=IdentifiableNode        name=nodeIdentification                                            v1.0.0 available=true  scenarios=[1]
+[DISCOVERY]   usecase actor=MonitoredUnit           name=monitoringOfPowerConsumption                                  v1.0.0 available=true  scenarios=[1,2,3,4,5]
+[DISCOVERY]   usecase actor=Compressor              name=optimizationOfSelfConsumptionByHeatPumpCompressorFlexibility  v1.0.0 available=true  scenarios=[1,2]
+[DISCOVERY]   usecase actor=MonitoredUnit           name=monitoringOfPowerConsumption                                  v1.0.0 available=true  scenarios=[1]
+[DISCOVERY]   usecase actor=DHWCircuit              name=configurationOfDhwSystemFunction                              v1.0.0 available=true  scenarios=[1,2,3]
+[DISCOVERY]   usecase actor=DHWCircuit              name=configurationOfDhwTemperature                                 v1.0.0 available=true  scenarios=[1]
+[DISCOVERY]   usecase actor=DHWCircuit              name=monitoringOfDhwSystemFunction                                 v1.0.0 available=true  scenarios=[1,2]
+[DISCOVERY]   usecase actor=DHWCircuit              name=monitoringOfDhwTemperature                                    v1.0.0 available=true  scenarios=[1]
+[DISCOVERY]   usecase actor=HVACRoom                name=configurationOfRoomHeatingSystemFunction                      v1.0.0 available=true  scenarios=[1]
+[DISCOVERY]   usecase actor=HVACRoom                name=configurationOfRoomHeatingTemperature                         v1.0.0 available=true  scenarios=[1]
+[DISCOVERY]   usecase actor=HVACRoom                name=monitoringOfRoomHeatingSystemFunction                         v1.0.0 available=true  scenarios=[1]
+[DISCOVERY]   usecase actor=HVACRoom                name=monitoringOfRoomTemperature                                   v1.0.0 available=true  scenarios=[1]
+[DISCOVERY]   usecase actor=HVACRoom                name=visualizationOfHeatingAreaName                                v1.0.0 available=false scenarios=[3]
+[DISCOVERY]   usecase actor=HeatingCircuit          name=visualizationOfHeatingAreaName                                v1.0.0 available=false scenarios=[1]
+[DISCOVERY]   usecase actor=HeatingZone             name=visualizationOfHeatingAreaName                                v1.0.0 available=false scenarios=[2]
+[DISCOVERY]   usecase actor=OutdoorTemperatureSensor name=monitoringOfOutdoorTemperature                              v1.0.0 available=true  scenarios=[1]
+[DISCOVERY]   usecase actor=MonitoringAppliance     name=monitoringOfGridConnectionPoint                               v1.0.0 available=true  scenarios=[1,2,3,4,5,6,7]
+[DISCOVERY]   usecase actor=VisualizationAppliance  name=visualizationOfAggregatedBatteryData                          v1.0.0 available=true  scenarios=[1,2,3,4]
+[DISCOVERY]   usecase actor=VisualizationAppliance  name=visualizationOfAggregatedPhotovoltaicData                     v1.0.0 available=true  scenarios=[1,2,3]
