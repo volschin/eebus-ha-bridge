@@ -81,9 +81,42 @@ doesn't expose it." Update the wording.
    ```
    Read the dump → decide whether the HP advertises an MGCP / VAPD / energy-mgmt
    path before building any provider-side use case.
-2. If MGCP/VAPD provider is the path: spike a provider-side use case (grid
-   connection point measurements fed from HA via a new gRPC `SetGridData` /
-   `SetPVData` RPC streamed from the coordinator).
-3. New proto RPCs both sides (regen Go + Python per CLAUDE.md proto contract).
-4. HA side: config option to map existing PV/grid power sensors → push stream.
-5. Skip display-only PV. Skip HVAC setpoints until eebus-go gains the UCs.
+
+   **Result (captured 2026-06-27, full dump: `docs/vr940-usecase-dump.txt`):**
+   confirmed against the live VR940 (SKI 682F708C…, 10 entities). The gateway
+   advertises **all three** target paths as `available=true`. The `actor` field
+   is the role *the VR940 plays*, so for the data-feed use cases it is the
+   consumer/reader — the bridge must implement the complementary **provider**.
+
+   | Use case | VR940 actor (role it plays) | Bridge must provide | In eebus-go v0.7.0? |
+   |----------|-----------------------------|---------------------|---------------------|
+   | `monitoringOfGridConnectionPoint` (MGCP), scen 1-7 | MonitoringAppliance (reader) | Grid-connection-point **server** | only reader `ma/mgcp` → **no provider** |
+   | `visualizationOfAggregatedPhotovoltaicData` (VAPD), scen 1-3 | VisualizationAppliance (reader) | PV-system **server** | only reader `cem/vapd` → **no provider** |
+   | `visualizationOfAggregatedBatteryData` (VABD), scen 1-4 | VisualizationAppliance (reader) | Battery-system **server** | only reader `cem/vabd` → **no provider** |
+   | `optimizationOfSelfConsumptionByHeatPumpCompressorFlexibility` (OSCF), scen 1,2 | Compressor (flexibility provider) | EM/optimizer side | **not in eebus-go at all** |
+
+   Plus a major surprise: the VR940 exposes **full HVAC/DHW control** —
+   `configurationOfDhw{SystemFunction,Temperature}`,
+   `configurationOfRoomHeating{SystemFunction,Temperature}` and their monitoring
+   counterparts, backed by `HVAC/server` + `Setpoint/server` features on the
+   `DHWCircuit` (addr=4) and `HVACRoom` (addr=5:1:1) entities. **This directly
+   confirms the CLAUDE.md correction above is needed** — Vaillant does speak
+   HVAC; eebus-go simply lacks those use cases.
+
+2. **Pick the lever.** Two distinct goals, both now confirmed possible:
+   - *Functional PV-surplus* (§1.3.1, the high-value goal): the real control
+     lever is **OSCF** (`…CompressorFlexibility`). It is the §1.3.1 mechanism
+     but is **absent from eebus-go** → fully custom SPINE. **MGCP** (grid power,
+     negative = export) is the data the HP's own optimizer reads to act on
+     surplus — lower-effort than OSCF and reuses the Measurement/
+     ElectricalConnection server features. **Recommend MGCP provider first.**
+   - *Display PV/battery* (§1.3.3): VAPD/VABD provider. Cosmetic (myVAILLANT
+     app); low priority but cheap once the provider-server scaffolding exists.
+3. **Spike the provider-server side** (none ship in eebus-go): a local
+   GridConnectionPoint / PVSystem entity exposing Measurement +
+   ElectricalConnection + DeviceConfiguration server features, fed from HA.
+4. New proto RPCs (`SetGridData` / `SetPVData`) both sides, regen Go + Python
+   per CLAUDE.md proto contract.
+5. HA side: config option to map existing PV/grid power sensors → push stream.
+6. HVAC/DHW setpoint control is a *separate, larger* track (needs four custom
+   SPINE use cases). Out of scope for the PV work; note it as a future milestone.

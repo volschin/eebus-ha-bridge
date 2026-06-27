@@ -76,5 +76,5 @@ docker-compose up -d eebus-bridge        # ghcr.io image, host networking
 
 - Releases are tag-triggered: pushing a `v*` tag builds multi-arch (amd64/arm64/armv7) Docker images to GHCR. `release-drafter` drafts notes on merge to main. Bump `version` in `manifest.json` for HA releases.
 - CI skips Go/proto jobs via path filters when only the other side changed. `paths-ignore` skips `**/*.md`.
-- Vaillant exposes no HVAC control (modes/setpoints) over EEBUS — out of scope by design; LPC + measurement only.
+- HVAC control (modes/setpoints) is out of scope for now — LPC + measurement only. Note: the Vaillant VR940 *does* expose HVAC/DHW config+setpoint use cases over EEBUS (confirmed via live discovery, `docs/vr940-usecase-dump.txt`); the blocker is that `enbility/eebus-go` ships no HVAC/setpoint use cases, only the energy domain. It also advertises MGCP/VAPD/VABD/OSCF (PV/grid/battery feed-in) but only as the *consumer* role, so feeding HA PV data would need custom SPINE *provider* features — see `docs/eebus-vaillant-improvements.md`.
 - Follow YAGNI: build only what a current use case needs. No speculative abstractions, config knobs, or use-case scaffolding for hardware/features not yet supported.
