@@ -21,7 +21,7 @@ options:
   GRPC_PORT: 50051
   EEBUS_PORT: 4712
   EEBUS_VENDOR: HomeAssistant
-  EEBUS_BRAND: eebus-bridge
+  EEBUS_BRAND: "Home Assistant"
   EEBUS_MODEL: eebus-bridge
   EEBUS_SERIAL: ""
 schema:
