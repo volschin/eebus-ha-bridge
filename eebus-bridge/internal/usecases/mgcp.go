@@ -87,6 +87,11 @@ func (p *MGCPProvider) UseCase() eebusapi.UseCaseInterface { return p }
 // AddFeatures attaches the server-side features to the grid entity and declares the
 // AC-total-power measurement. Called by Service.AddUseCase before AddUseCase().
 func (p *MGCPProvider) AddFeatures() {
+	// server.NewMeasurement/NewElectricalConnection only look up an existing
+	// server feature on the entity; they do not create it. Add them first.
+	p.gridEntity.GetOrAddFeature(model.FeatureTypeTypeMeasurement, model.RoleTypeServer)
+	p.gridEntity.GetOrAddFeature(model.FeatureTypeTypeElectricalConnection, model.RoleTypeServer)
+
 	meas, err := server.NewMeasurement(p.gridEntity)
 	if err != nil {
 		log.Printf("[MGCP] creating Measurement server feature failed: %v", err)

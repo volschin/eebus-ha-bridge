@@ -120,6 +120,13 @@ func main() {
 
 	bridgeSvc.Start()
 	log.Println("EEBUS bridge started")
+
+	// SPIKE: trust a known remote SKI at startup so a test container can complete
+	// the SHIP handshake without Home Assistant sending device.register_ski.
+	if cfg.Experimental.TrustSKI != "" {
+		bridgeSvc.RegisterRemoteSKI(cfg.Experimental.TrustSKI)
+		log.Printf("[EXP] auto-trusted remote SKI: %s", cfg.Experimental.TrustSKI)
+	}
 	if cfg.Logging.DebugEvents {
 		log.Println("[DEBUG] EEBUS event debug logging enabled; waiting for incoming callbacks")
 	}

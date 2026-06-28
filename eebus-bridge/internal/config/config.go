@@ -29,6 +29,11 @@ type ExperimentalConfig struct {
 	// power total (W; negative = export/surplus) so the path can be observed
 	// against real hardware without wiring Home Assistant. Spike-only.
 	MGCPTestPowerW float64 `yaml:"mgcp_test_power_w"`
+	// TrustSKI, when set, makes the bridge trust (RegisterRemoteSKI) this remote
+	// SKI at startup instead of waiting for Home Assistant to send it via gRPC.
+	// Lets a spike container complete the SHIP handshake with a known device
+	// (e.g. the VR940) in isolation for hardware testing. Spike-only.
+	TrustSKI string `yaml:"trust_ski"`
 }
 
 type GRPCConfig struct {
@@ -169,5 +174,8 @@ func applyEnvOverrides(cfg *Config) {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			cfg.Experimental.MGCPTestPowerW = f
 		}
+	}
+	if v := os.Getenv("EEBUS_EXP_TRUST_SKI"); v != "" {
+		cfg.Experimental.TrustSKI = v
 	}
 }
