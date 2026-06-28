@@ -115,9 +115,17 @@ doesn't expose it." Update the wording.
 3. **Spike the provider-server side** (none ship in eebus-go): a local
    GridConnectionPoint / PVSystem entity exposing Measurement +
    ElectricalConnection + DeviceConfiguration server features, fed from HA.
+   *Done (MGCP):* `internal/usecases/mgcp.go` serves scenarios 2/3/4 on a
+   local grid-connection-point, gated by `experimental.mgcp_provider`.
 4. New proto RPCs (`SetGridData` / `SetPVData`) both sides, regen Go + Python
    per CLAUDE.md proto contract.
+   *Done (grid):* `GridService.PublishGridData` (`grid_service.proto`) +
+   `internal/grpc/grid_service.go`; stubs regenerated both sides.
 5. HA side: config option to map existing PV/grid power sensors → push stream.
+   *Done:* options flow maps grid power (+ optional feed-in/consumption energy)
+   sensors; the coordinator normalises to W/Wh and pushes on every state change.
+   Remaining: live confirmation the commissioned VR940 acts on the data
+   (cylinder charging on simulated surplus), then VAPD/VABD for PV/battery.
 6. HVAC/DHW setpoint control is a *separate, larger* track (needs four custom
    SPINE use cases). Out of scope for the PV work; note it as a future milestone.
 

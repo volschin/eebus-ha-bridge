@@ -10,10 +10,31 @@ from typing import Any
 import grpc
 import grpc.aio
 
-from homeassistant.core import HomeAssistant
+from homeassistant.const import (
+    ATTR_UNIT_OF_MEASUREMENT,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+    UnitOfEnergy,
+    UnitOfPower,
+)
+from homeassistant.core import Event, HomeAssistant
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 _LOGGER = logging.getLogger(__name__)
+
+# Convert a Home Assistant grid sensor's value to the unit the MGCP provider
+# expects (power in W, energy in Wh) using its unit_of_measurement attribute.
+POWER_UNIT_TO_W: dict[str, float] = {
+    UnitOfPower.WATT: 1.0,
+    UnitOfPower.KILO_WATT: 1000.0,
+    UnitOfPower.MEGA_WATT: 1_000_000.0,
+}
+ENERGY_UNIT_TO_WH: dict[str, float] = {
+    UnitOfEnergy.WATT_HOUR: 1.0,
+    UnitOfEnergy.KILO_WATT_HOUR: 1000.0,
+    UnitOfEnergy.MEGA_WATT_HOUR: 1_000_000.0,
+}
 
 # Event streams deliver push updates; polling only reconciles state the
 # streams cannot carry (scoped energy, heartbeat, support flags).
@@ -66,6 +87,9 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         host: str,
         port: int,
         ski: str,
+        grid_power_entity: str | None = None,
+        grid_feed_in_energy_entity: str | None = None,
+        grid_consumption_energy_entity: str | None = None,
     ) -> None:
         """Initialize the coordinator."""
         super().__init__(
@@ -77,8 +101,13 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.host = host
         self.port = port
         self.ski = ski
+        # Optional grid sensors feeding the bridge MGCP provider (PV-surplus).
+        self.grid_power_entity = grid_power_entity
+        self.grid_feed_in_energy_entity = grid_feed_in_energy_entity
+        self.grid_consumption_energy_entity = grid_consumption_energy_entity
         self._channel: grpc.aio.Channel | None = None
         self._stream_tasks: list[asyncio.Task] = []
+        self._grid_unsub: Any = None
         self._was_unavailable: bool = False
         self._heartbeat_supported: bool | None = None
         self._lpc_supported: bool | None = None
@@ -725,6 +754,112 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return
             raise
 
+    @property
+    def grid_push_enabled(self) -> bool:
+        """Return True when a grid power sensor is mapped to the MGCP provider."""
+        return bool(self.grid_power_entity)
+
+    def _read_grid_value(
+        self, entity_id: str | None, unit_map: dict[str, float], kind: str
+    ) -> float | None:
+        """Read an HA sensor and normalize it to W (power) or Wh (energy).
+
+        Returns None when the entity is unset, missing, unavailable, or
+        non-numeric so the caller can omit it from the push.
+        """
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE, "", None):
+            return None
+        try:
+            value = float(state.state)
+        except (TypeError, ValueError):
+            _LOGGER.debug("Grid %s sensor %s has non-numeric state %r", kind, entity_id, state.state)
+            return None
+        unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
+        factor = unit_map.get(unit)
+        if factor is None:
+            _LOGGER.debug(
+                "Grid %s sensor %s has unknown unit %r; assuming base unit",
+                kind,
+                entity_id,
+                unit,
+            )
+            factor = 1.0
+        return value * factor
+
+    async def async_push_grid_data(self) -> None:
+        """Push the mapped grid sensors to the bridge MGCP provider.
+
+        Grid power is the surplus signal (negative = export); the energy totals
+        are optional. No-op when no grid power sensor is mapped or its value is
+        currently unavailable.
+        """
+        if not self.grid_power_entity:
+            return
+        power_w = self._read_grid_value(self.grid_power_entity, POWER_UNIT_TO_W, "power")
+        if power_w is None:
+            return
+        feed_in_wh = self._read_grid_value(
+            self.grid_feed_in_energy_entity, ENERGY_UNIT_TO_WH, "energy"
+        )
+        consumed_wh = self._read_grid_value(
+            self.grid_consumption_energy_entity, ENERGY_UNIT_TO_WH, "energy"
+        )
+
+        channel = await self._ensure_channel()
+        from . import proto_stubs
+
+        stub = proto_stubs.GridServiceStub(channel)
+        request = proto_stubs.GridData(power_w=power_w)
+        if feed_in_wh is not None:
+            request.feed_in_wh = feed_in_wh
+        if consumed_wh is not None:
+            request.consumed_wh = consumed_wh
+        try:
+            await stub.PublishGridData(request, timeout=RPC_TIMEOUT)
+            _LOGGER.debug(
+                "Pushed grid data: power=%.1fW feed_in=%s consumed=%s",
+                power_w,
+                feed_in_wh,
+                consumed_wh,
+            )
+        except grpc.aio.AioRpcError as err:
+            # UNIMPLEMENTED/UNAVAILABLE = provider disabled or bridge down; skip
+            # quietly so a missing grid provider never spams or fails HA.
+            if _is_unimplemented(err) or err.code() == grpc.StatusCode.UNAVAILABLE:
+                _LOGGER.debug("Grid provider not ready; skipping push: %s", _rpc_error_text(err))
+                return
+            _LOGGER.warning("Failed to push grid data: %s", _rpc_error_text(err))
+
+    def async_start_grid_push(self) -> None:
+        """Track mapped grid sensors and push their values to the bridge."""
+        if not self.grid_push_enabled:
+            return
+        tracked = [
+            entity_id
+            for entity_id in (
+                self.grid_power_entity,
+                self.grid_feed_in_energy_entity,
+                self.grid_consumption_energy_entity,
+            )
+            if entity_id
+        ]
+        self._grid_unsub = async_track_state_change_event(
+            self.hass, tracked, self._handle_grid_state_change
+        )
+        # Initial push so the provider has data before the first sensor change.
+        self._stream_tasks.append(
+            self.hass.async_create_background_task(
+                self.async_push_grid_data(), name=f"eebus_grid_initial_push_{self.ski}"
+            )
+        )
+
+    async def _handle_grid_state_change(self, _event: Event) -> None:
+        """Push grid data whenever a mapped sensor changes state."""
+        await self.async_push_grid_data()
+
     def async_start_streams(self) -> None:
         """Start background tasks consuming bridge event streams."""
         if self._stream_tasks:
@@ -885,6 +1020,9 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_shutdown(self) -> None:
         """Close gRPC channel and cancel stream tasks."""
+        if self._grid_unsub is not None:
+            self._grid_unsub()
+            self._grid_unsub = None
         for task in self._stream_tasks:
             task.cancel()
         self._stream_tasks.clear()

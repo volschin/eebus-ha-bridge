@@ -9,8 +9,16 @@ import grpc
 import grpc.aio
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
+from homeassistant.core import callback
 from homeassistant.helpers.selector import (
+    EntitySelector,
+    EntitySelectorConfig,
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
@@ -20,6 +28,9 @@ from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .const import (
     CONF_DEVICE_SKI,
+    CONF_GRID_CONSUMPTION_ENERGY_ENTITY,
+    CONF_GRID_FEED_IN_ENERGY_ENTITY,
+    CONF_GRID_POWER_ENTITY,
     CONF_GRPC_HOST,
     CONF_GRPC_PORT,
     DEFAULT_GRPC_PORT,
@@ -52,6 +63,12 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
     DOMAIN = DOMAIN
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> EebusOptionsFlow:
+        """Return the options flow for mapping grid sensors to the bridge."""
+        return EebusOptionsFlow()
 
     def __init__(self) -> None:
         """Initialize."""
@@ -238,3 +255,50 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
         )
+
+
+class EebusOptionsFlow(OptionsFlow):
+    """Map Home Assistant grid sensors to the bridge MGCP provider.
+
+    Lets the bridge act as the grid-connection-point data source so a heat pump
+    (e.g. Vaillant VR940) can run PV-surplus optimisation from HA's grid data.
+    Grid power is the surplus signal (negative = export); the energy totals are
+    optional. Leaving grid power empty disables the push.
+    """
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle the grid sensor mapping step."""
+        if user_input is not None:
+            # Drop empty selections so cleared fields are removed from options.
+            data = {key: value for key, value in user_input.items() if value}
+            return self.async_create_entry(title="", data=data)
+
+        options = self.config_entry.options
+
+        def _entity_selector(device_class: str) -> EntitySelector:
+            return EntitySelector(
+                EntitySelectorConfig(domain="sensor", device_class=device_class)
+            )
+
+        def _field(key: str) -> dict[str, Any]:
+            return {"suggested_value": options.get(key)}
+
+        schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_GRID_POWER_ENTITY,
+                    description=_field(CONF_GRID_POWER_ENTITY),
+                ): _entity_selector("power"),
+                vol.Optional(
+                    CONF_GRID_FEED_IN_ENERGY_ENTITY,
+                    description=_field(CONF_GRID_FEED_IN_ENERGY_ENTITY),
+                ): _entity_selector("energy"),
+                vol.Optional(
+                    CONF_GRID_CONSUMPTION_ENERGY_ENTITY,
+                    description=_field(CONF_GRID_CONSUMPTION_ENERGY_ENTITY),
+                ): _entity_selector("energy"),
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema)

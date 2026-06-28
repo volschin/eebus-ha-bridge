@@ -15,13 +15,6 @@ import (
 	"github.com/volschin/eebus-bridge/internal/usecases"
 )
 
-// SPIKE test sentinels for the MGCP provider energy scenarios (3 and 4), published
-// alongside MGCPTestPowerW so they can be spotted in a SHIP trace.
-const (
-	mgcpTestFeedInWh   float64 = 12340
-	mgcpTestConsumedWh float64 = 56780
-)
-
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
 	healthcheck := flag.Bool("healthcheck", false, "probe the gRPC health service and exit")
@@ -88,22 +81,7 @@ func main() {
 		} else {
 			mgcpProvider = usecases.NewMGCPProvider(gridEntity, bus, cfg.Logging.DebugEvents)
 			bridgeSvc.Service().AddUseCase(mgcpProvider.UseCase())
-			log.Println("[MGCP] experimental grid-connection-point provider registered")
-			if cfg.Experimental.MGCPTestPowerW != 0 {
-				// Publish all three mandatory scenarios with distinctive values so
-				// the path can be observed in a SHIP trace without wiring HA.
-				if err := mgcpProvider.PublishPower(cfg.Experimental.MGCPTestPowerW); err != nil {
-					log.Printf("[MGCP] publishing test power failed: %v", err)
-				}
-				if err := mgcpProvider.PublishEnergyFeedIn(mgcpTestFeedInWh); err != nil {
-					log.Printf("[MGCP] publishing test feed-in energy failed: %v", err)
-				}
-				if err := mgcpProvider.PublishEnergyConsumed(mgcpTestConsumedWh); err != nil {
-					log.Printf("[MGCP] publishing test consumed energy failed: %v", err)
-				}
-				log.Printf("[MGCP] published fixed test values: power=%.1fW feedIn=%.0fWh consumed=%.0fWh",
-					cfg.Experimental.MGCPTestPowerW, mgcpTestFeedInWh, mgcpTestConsumedWh)
-			}
+			log.Println("[MGCP] experimental grid-connection-point provider registered; awaiting grid data via GridService")
 		}
 	}
 	// Controllable systems revert an active LPC limit to its failsafe value when
@@ -121,10 +99,12 @@ func main() {
 	deviceSvc := bridgegrpc.NewDeviceService(bridgeSvc.Callbacks(), bus, ski, registry)
 	lpcSvc := bridgegrpc.NewLPCService(lpcWrapper, bus, registry)
 	monitoringSvc := bridgegrpc.NewMonitoringService(monitoringWrapper, bus, registry)
+	gridSvc := bridgegrpc.NewGridService(mgcpProvider)
 
 	pb.RegisterDeviceServiceServer(grpcSrv.GRPCServer(), deviceSvc)
 	pb.RegisterLPCServiceServer(grpcSrv.GRPCServer(), lpcSvc)
 	pb.RegisterMonitoringServiceServer(grpcSrv.GRPCServer(), monitoringSvc)
+	pb.RegisterGridServiceServer(grpcSrv.GRPCServer(), gridSvc)
 
 	go func() {
 		log.Printf("gRPC server listening on %s:%d", cfg.GRPC.Bind, cfg.GRPC.Port)

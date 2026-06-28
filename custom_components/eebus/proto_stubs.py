@@ -15,6 +15,8 @@ from .generated.eebus.v1.device_service_pb2 import (  # noqa: F401
     RegisterSKIRequest,
 )
 from .generated.eebus.v1.device_service_pb2_grpc import DeviceServiceStub  # noqa: F401
+from .generated.eebus.v1.grid_service_pb2 import GridData  # noqa: F401
+from .generated.eebus.v1.grid_service_pb2_grpc import GridServiceStub  # noqa: F401
 from .generated.eebus.v1.lpc_service_pb2 import (  # noqa: F401
     LPCEventType,
     WriteFailsafeLimitRequest,

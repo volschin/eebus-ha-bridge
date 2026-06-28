@@ -37,6 +37,19 @@
       "reconfigure_successful": "Reconfiguration successful."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Grid data for PV-surplus optimisation",
+        "description": "Map Home Assistant grid sensors so the bridge can feed the heat pump's energy management (e.g. charge the cylinder on PV surplus). Grid power is required; energy totals are optional. Leave grid power empty to disable.",
+        "data": {
+          "grid_power_entity": "Grid power sensor (negative = export/surplus)",
+          "grid_feed_in_energy_entity": "Grid feed-in energy sensor (optional)",
+          "grid_consumption_energy_entity": "Grid consumption energy sensor (optional)"
+        }
+      }
+    }
+  },
   "exceptions": {
     "bridge_unavailable": {
       "message": "EEBUS bridge at {host}:{port} unreachable."

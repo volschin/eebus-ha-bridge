@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package eebus.v1;
+
+option go_package = "github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1";
+
+import "eebus/v1/common.proto";
+
+// GridService drives the bridge's MGCP (Monitoring of Grid Connection Point)
+// provider. Home Assistant pushes the live grid situation so a consumer such as
+// the Vaillant VR940 can read it and run PV-surplus optimisation (§1.3.1).
+//
+// The bridge is the GridConnectionPoint data provider; HA calls PublishGridData
+// whenever a mapped grid sensor changes state. Unary (not streaming) to mirror
+// the LPC write path and survive reconnects without resubscription.
+service GridService {
+  rpc PublishGridData(GridData) returns (Empty);
+}
+
+message GridData {
+  // Momentary total active power at the grid connection point, in watts.
+  // Negative = export / PV surplus (MGCP scenario 2 convention).
+  double power_w = 1;
+  // Cumulative grid feed-in (export) energy in Wh (MGCP scenario 3). Optional;
+  // omit when Home Assistant has no feed-in energy sensor mapped.
+  optional double feed_in_wh = 2;
+  // Cumulative grid consumed (import) energy in Wh (MGCP scenario 4). Optional;
+  // omit when no consumption energy sensor is mapped.
+  optional double consumed_wh = 3;
+}

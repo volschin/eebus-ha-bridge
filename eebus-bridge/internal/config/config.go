@@ -25,10 +25,6 @@ type ExperimentalConfig struct {
 	// which advertises the MGCP MonitoringAppliance role) can read the grid /
 	// PV-surplus situation. SPIKE: see docs/eebus-vaillant-improvements.md.
 	MGCPProvider bool `yaml:"mgcp_provider"`
-	// MGCPTestPowerW, when non-zero, makes the provider publish this fixed AC
-	// power total (W; negative = export/surplus) so the path can be observed
-	// against real hardware without wiring Home Assistant. Spike-only.
-	MGCPTestPowerW float64 `yaml:"mgcp_test_power_w"`
 	// TrustSKI, when set, makes the bridge trust (RegisterRemoteSKI) this remote
 	// SKI at startup instead of waiting for Home Assistant to send it via gRPC.
 	// Lets a spike container complete the SHIP handshake with a known device
@@ -168,11 +164,6 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("EEBUS_EXP_MGCP_PROVIDER"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			cfg.Experimental.MGCPProvider = enabled
-		}
-	}
-	if v := os.Getenv("EEBUS_EXP_MGCP_TEST_POWER_W"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			cfg.Experimental.MGCPTestPowerW = f
 		}
 	}
 	if v := os.Getenv("EEBUS_EXP_TRUST_SKI"); v != "" {
