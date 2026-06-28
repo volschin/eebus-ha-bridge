@@ -76,7 +76,7 @@ func applyDefaults(cfg *Config) {
 		cfg.EEBUS.Vendor = "HomeAssistant"
 	}
 	if cfg.EEBUS.Brand == "" {
-		cfg.EEBUS.Brand = "eebus-bridge"
+		cfg.EEBUS.Brand = "Home Assistant"
 	}
 	if cfg.EEBUS.Model == "" {
 		cfg.EEBUS.Model = "eebus-bridge"
