@@ -1,8 +1,8 @@
 ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.20
-ARG EEBUS_BRIDGE_VERSION=v0.2.1
+ARG EEBUS_BRIDGE_VERSION=v0.5.3
 
 # --- Build stage ---
-FROM golang:1.26-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 ARG EEBUS_BRIDGE_VERSION
 RUN apk add --no-cache git

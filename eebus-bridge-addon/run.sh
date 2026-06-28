@@ -7,9 +7,16 @@ export EEBUS_BRAND=$(bashio::config "EEBUS_BRAND")
 export EEBUS_MODEL=$(bashio::config "EEBUS_MODEL")
 
 SERIAL=$(bashio::config "EEBUS_SERIAL")
-if bashio::var.has_value "${SERIAL}"; then
-    export EEBUS_SERIAL="${SERIAL}"
+if ! bashio::var.has_value "${SERIAL}"; then
+    # Bridge requires a serial; generate and persist a stable one in /data
+    SERIAL_FILE="/data/serial"
+    if [ ! -s "${SERIAL_FILE}" ]; then
+        head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n' > "${SERIAL_FILE}"
+    fi
+    SERIAL=$(cat "${SERIAL_FILE}")
+    bashio::log.info "No serial configured; using generated serial ${SERIAL}"
 fi
+export EEBUS_SERIAL="${SERIAL}"
 
 export EEBUS_CERT_STORAGE="/data/certs"
 mkdir -p "${EEBUS_CERT_STORAGE}"

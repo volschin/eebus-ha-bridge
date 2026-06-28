@@ -2,7 +2,7 @@ name: EEBUS Bridge
 description: >-
   EEBUS SHIP/SPINE bridge for heat pump communication.
   Provides gRPC interface for the EEBUS custom integration.
-version: 0.2.1
+version: 0.5.3
 slug: eebus_bridge
 init: false
 arch:
