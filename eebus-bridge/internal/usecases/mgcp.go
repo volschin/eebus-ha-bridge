@@ -29,16 +29,19 @@ var errMGCPNotInitialized = errors.New("mgcp provider not initialized")
 // GridConnectionPointOfPremises entity and serves grid power via a server-side
 // Measurement feature, so the heat pump can read the grid / PV-surplus situation.
 //
-// Only AC total power (MGCP scenario 2) is implemented for now — enough to validate
-// that a real VR940 discovers, binds and reads the value. See
-// docs/eebus-vaillant-improvements.md. Experimental; gated behind
-// config.Experimental.MGCPProvider.
+// Advertises the three mandatory MGCP scenarios — 2 (momentary AC total power),
+// 3 (total grid feed-in energy) and 4 (total grid consumed energy) — because a
+// consumer such as the VR940 ignores a grid source that does not expose the full
+// mandatory set. See docs/eebus-vaillant-improvements.md. Experimental; gated
+// behind config.Experimental.MGCPProvider.
 type MGCPProvider struct {
 	*usecase.UseCaseBase
 	bus        *eebus.EventBus
 	gridEntity spineapi.EntityLocalInterface
 	meas       *server.Measurement
-	powerID    *model.MeasurementIdType
+	powerID    *model.MeasurementIdType // scenario 2: AC total power (W)
+	feedInID   *model.MeasurementIdType // scenario 3: total grid feed-in energy (Wh)
+	consumedID *model.MeasurementIdType // scenario 4: total grid consumed energy (Wh)
 	debug      bool
 }
 
@@ -49,20 +52,19 @@ func NewMGCPProvider(gridEntity spineapi.EntityLocalInterface, bus *eebus.EventB
 	p := &MGCPProvider{bus: bus, gridEntity: gridEntity, debug: debug}
 
 	// Remote consumers are MonitoringAppliances; on EEBUS the appliance entity is
-	// typically modelled as a CEM. Scenario 2 (momentary grid power) is the
-	// mandatory minimum and requires the Measurement + ElectricalConnection server
-	// features.
+	// typically modelled as a CEM. Scenarios 2 (momentary power), 3 (feed-in energy)
+	// and 4 (consumed energy) are the mandatory set, each backed by the Measurement
+	// + ElectricalConnection server features.
 	validActorTypes := []model.UseCaseActorType{model.UseCaseActorTypeMonitoringAppliance}
 	validEntityTypes := []model.EntityTypeType{model.EntityTypeTypeCEM}
+	mandatoryFeatures := []model.FeatureTypeType{
+		model.FeatureTypeTypeMeasurement,
+		model.FeatureTypeTypeElectricalConnection,
+	}
 	scenarios := []eebusapi.UseCaseScenario{
-		{
-			Scenario:  model.UseCaseScenarioSupportType(2),
-			Mandatory: true,
-			ServerFeatures: []model.FeatureTypeType{
-				model.FeatureTypeTypeMeasurement,
-				model.FeatureTypeTypeElectricalConnection,
-			},
-		},
+		{Scenario: model.UseCaseScenarioSupportType(2), Mandatory: true, ServerFeatures: mandatoryFeatures},
+		{Scenario: model.UseCaseScenarioSupportType(3), Mandatory: true, ServerFeatures: mandatoryFeatures},
+		{Scenario: model.UseCaseScenarioSupportType(4), Mandatory: true, ServerFeatures: mandatoryFeatures},
 	}
 
 	p.UseCaseBase = usecase.NewUseCaseBase(
@@ -112,6 +114,30 @@ func (p *MGCPProvider) AddFeatures() {
 		return
 	}
 
+	// Scenario 3: total energy fed into the grid (export). ScopeType GridFeedIn,
+	// unit Wh — matches what the eebus-go MGCP consumer reads.
+	p.feedInID = meas.AddDescription(model.MeasurementDescriptionDataType{
+		MeasurementType: util.Ptr(model.MeasurementTypeTypeEnergy),
+		CommodityType:   util.Ptr(model.CommodityTypeTypeElectricity),
+		ScopeType:       util.Ptr(model.ScopeTypeTypeGridFeedIn),
+		Unit:            util.Ptr(model.UnitOfMeasurementTypeWh),
+	})
+	if p.feedInID == nil {
+		log.Printf("[MGCP] adding feed-in energy measurement description failed")
+	}
+
+	// Scenario 4: total energy consumed from the grid (import). ScopeType
+	// GridConsumption, unit Wh.
+	p.consumedID = meas.AddDescription(model.MeasurementDescriptionDataType{
+		MeasurementType: util.Ptr(model.MeasurementTypeTypeEnergy),
+		CommodityType:   util.Ptr(model.CommodityTypeTypeElectricity),
+		ScopeType:       util.Ptr(model.ScopeTypeTypeGridConsumption),
+		Unit:            util.Ptr(model.UnitOfMeasurementTypeWh),
+	})
+	if p.consumedID == nil {
+		log.Printf("[MGCP] adding consumed energy measurement description failed")
+	}
+
 	// ElectricalConnection is mandatory for scenario 2; provide a single connection
 	// and a parameter that links the power measurement to it so the consumer can
 	// resolve what the measurement refers to.
@@ -136,24 +162,60 @@ func (p *MGCPProvider) AddFeatures() {
 		log.Printf("[MGCP] adding electrical connection parameter description failed")
 	}
 
-	log.Printf("[MGCP] grid-connection-point provider features added (power measurementId=%d)", *p.powerID)
+	log.Printf("[MGCP] grid-connection-point provider features added (power=%d feedIn=%v consumed=%v)",
+		*p.powerID, idVal(p.feedInID), idVal(p.consumedID))
 }
 
-// PublishPower pushes the momentary total grid power (W; negative = export/surplus)
-// to subscribed consumers. Returns an error if the provider was not set up.
-func (p *MGCPProvider) PublishPower(watts float64) error {
-	if p.meas == nil || p.powerID == nil {
+func idVal(id *model.MeasurementIdType) int {
+	if id == nil {
+		return -1
+	}
+	return int(*id)
+}
+
+// publishMeasurement is the shared path for pushing one measurement value.
+func (p *MGCPProvider) publishMeasurement(id *model.MeasurementIdType, value float64) error {
+	if p.meas == nil || id == nil {
 		return errMGCPNotInitialized
 	}
-	err := p.meas.UpdateDataForId(model.MeasurementDataType{
+	return p.meas.UpdateDataForId(model.MeasurementDataType{
 		ValueType: util.Ptr(model.MeasurementValueTypeTypeValue),
-		Value:     model.NewScaledNumberType(watts),
-	}, nil, *p.powerID)
-	if err != nil {
+		Value:     model.NewScaledNumberType(value),
+	}, nil, *id)
+}
+
+// PublishPower pushes the momentary total grid power (W; negative = export/surplus,
+// scenario 2). Returns an error if the provider was not set up.
+func (p *MGCPProvider) PublishPower(watts float64) error {
+	if err := p.publishMeasurement(p.powerID, watts); err != nil {
 		return err
 	}
 	if p.debug {
 		log.Printf("[MGCP] published grid power: %.1f W", watts)
+	}
+	return nil
+}
+
+// PublishEnergyFeedIn pushes the cumulative grid feed-in (export) energy in Wh
+// (scenario 3).
+func (p *MGCPProvider) PublishEnergyFeedIn(wh float64) error {
+	if err := p.publishMeasurement(p.feedInID, wh); err != nil {
+		return err
+	}
+	if p.debug {
+		log.Printf("[MGCP] published grid feed-in energy: %.1f Wh", wh)
+	}
+	return nil
+}
+
+// PublishEnergyConsumed pushes the cumulative grid consumed (import) energy in Wh
+// (scenario 4).
+func (p *MGCPProvider) PublishEnergyConsumed(wh float64) error {
+	if err := p.publishMeasurement(p.consumedID, wh); err != nil {
+		return err
+	}
+	if p.debug {
+		log.Printf("[MGCP] published grid consumed energy: %.1f Wh", wh)
 	}
 	return nil
 }

@@ -120,3 +120,75 @@ doesn't expose it." Update the wording.
 5. HA side: config option to map existing PV/grid power sensors → push stream.
 6. HVAC/DHW setpoint control is a *separate, larger* track (needs four custom
    SPINE use cases). Out of scope for the PV work; note it as a future milestone.
+
+## MGCP provider hardware result + the commissioning gate (2026-06-28)
+
+The MGCP provider spike (`feat/mgcp-provider-spike`, PR #65) was deployed twice
+against the live VR940 and SHIP-traced:
+
+- The provider is **spec-complete**: entity[2] `GridConnectionPointOfPremises`
+  with Measurement/server + ElectricalConnection/server; useCaseData advertises
+  `GridConnectionPoint / monitoringOfGridConnectionPoint` scenarios [2,3,4]
+  (all three mandatory scenarios — power, grid feed-in Wh, grid consumed Wh).
+- VR940 reads our `nodeManagementUseCaseData`, fires `consumer support update`,
+  then **never sends a bindingRequest or subscription to entity[2] Measurement**
+  — it subscribes only to NodeManagement + DeviceDiagnosis. Published values
+  (-1234 W / 12340 Wh / 56780 Wh) never crossed the wire.
+- Adding the mandatory energy scenarios 3 & 4 changed nothing → the blocker is
+  **not** scenario completeness. Per eebus-go `ma/mgcp`, our advert is fully
+  conformant; binding/subscription is **application-driven, not automatic on
+  support-update**. VR940's app layer declines to consume an unsolicited grid
+  source.
+
+**The real gate is myVAILLANT app commissioning** (confirmed via the SOLARWATT
+Manager manual, which pairs a third-party HEMS to a Vaillant HP — the same role
+the bridge plays):
+
+1. The energy manager (our bridge) must appear in the myVAILLANT app under
+   **Settings → Network settings → EEBUS → Available devices**, be **Connected**
+   and confirmed **"Trust this device"** so it lands in **Trusted devices**.
+   This is an *app-side, user-confirmed* trust — distinct from the SHIP-level
+   SKI trust HA already establishes. (Mutual trust: both sides must trust.)
+2. **Settings → Controller → Energy management → activate the sliders for
+   Heating AND Hot water.** This is the application switch that makes the HP
+   actually bind/subscribe to an external grid connection point and run the
+   §1.3.1 PV-surplus cylinder charging. Without it the HP ignores the offered
+   MGCP grid source even when it sees the use case.
+
+Action items (next, in order):
+- ~~Verify the bridge presents the right device type/mDNS so it shows up in the
+  myVAILLANT app's EEBUS *Available devices* list as a manager.~~ **Done — the
+  bridge already advertises correctly (see below); no code change needed.**
+- User performs the two app-side steps above on the VR940 / myVAILLANT app
+  (cannot be done from the bridge).
+- Re-run the SHIP trace and confirm VR940 binds + subscribes to entity[2]
+  Measurement and reads the published grid power.
+
+### Device-type advertisement check (2026-06-28) — bridge is NOT the blocker
+
+Confirmed the bridge already presents itself as a proper EEBUS energy manager,
+so it will appear in and be trustable from the myVAILLANT app:
+
+- **DeviceType = `EnergyManagementSystem`** (`internal/eebus/service.go:37`,
+  passed to `api.NewConfiguration`) — the correct manager/HEMS type.
+- Identity from `config.EEBUS.*`: vendor `HomeAssistant`, brand `eebus-bridge`,
+  model `eebus-bridge`, serial `ha-001` → SHIP name
+  `d:_n:HomeAssistant_eebus-bridge-ha-001` (matches the captured trace).
+- Discoverable via `_ship._tcp` mDNS — both HA and the VR940 found it; SHIP
+  connected and SPINE discovery completed, so it is visible on the network.
+- Trust model: explicit SKI allow-list via `RegisterRemoteSKI` (HA-driven
+  `device.register_ski`, or the spike `experimental.trust_ski`), and
+  `Callbacks.AllowWaitingForTrust` returns `true` so inbound pairing requests
+  are accepted. Mutual SHIP trust already exists (the connection + discovery
+  prove it).
+
+Conclusion: **no bridge-side code change is required for discovery/trust.** The
+only remaining gate is the myVAILLANT app, user-side: confirm
+`HomeAssistant_eebus-bridge` under *Trusted devices*, then enable the
+**Energy management** sliders (Heating + Hot water). Optional polish: the
+generic `eebus-bridge` brand/model could be branded clearer in the app list,
+but it is not required for function.
+
+Caveat: evcc users report the VR940 advertises energy use cases it does not
+reliably deliver/consume (discussion #25058) — possible firmware-level limits
+even after correct commissioning.

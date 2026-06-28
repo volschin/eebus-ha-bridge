@@ -15,6 +15,13 @@ import (
 	"github.com/volschin/eebus-bridge/internal/usecases"
 )
 
+// SPIKE test sentinels for the MGCP provider energy scenarios (3 and 4), published
+// alongside MGCPTestPowerW so they can be spotted in a SHIP trace.
+const (
+	mgcpTestFeedInWh   float64 = 12340
+	mgcpTestConsumedWh float64 = 56780
+)
+
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
 	healthcheck := flag.Bool("healthcheck", false, "probe the gRPC health service and exit")
@@ -83,11 +90,19 @@ func main() {
 			bridgeSvc.Service().AddUseCase(mgcpProvider.UseCase())
 			log.Println("[MGCP] experimental grid-connection-point provider registered")
 			if cfg.Experimental.MGCPTestPowerW != 0 {
+				// Publish all three mandatory scenarios with distinctive values so
+				// the path can be observed in a SHIP trace without wiring HA.
 				if err := mgcpProvider.PublishPower(cfg.Experimental.MGCPTestPowerW); err != nil {
 					log.Printf("[MGCP] publishing test power failed: %v", err)
-				} else {
-					log.Printf("[MGCP] published fixed test power: %.1f W", cfg.Experimental.MGCPTestPowerW)
 				}
+				if err := mgcpProvider.PublishEnergyFeedIn(mgcpTestFeedInWh); err != nil {
+					log.Printf("[MGCP] publishing test feed-in energy failed: %v", err)
+				}
+				if err := mgcpProvider.PublishEnergyConsumed(mgcpTestConsumedWh); err != nil {
+					log.Printf("[MGCP] publishing test consumed energy failed: %v", err)
+				}
+				log.Printf("[MGCP] published fixed test values: power=%.1fW feedIn=%.0fWh consumed=%.0fWh",
+					cfg.Experimental.MGCPTestPowerW, mgcpTestFeedInWh, mgcpTestConsumedWh)
 			}
 		}
 	}
