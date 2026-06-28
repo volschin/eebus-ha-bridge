@@ -13,6 +13,22 @@ type Config struct {
 	EEBUS        EEBUSConfig        `yaml:"eebus"`
 	Certificates CertificatesConfig `yaml:"certificates"`
 	Logging      LoggingConfig      `yaml:"logging"`
+	Experimental ExperimentalConfig `yaml:"experimental"`
+}
+
+// ExperimentalConfig gates spike / not-yet-stable features. Everything here is
+// off by default and may change or be removed without notice.
+type ExperimentalConfig struct {
+	// MGCPProvider exposes a local GridConnectionPointOfPremises entity that
+	// advertises the Monitoring of Grid Connection Point (MGCP) use case and
+	// serves grid power/energy measurements, so a heat pump (e.g. Vaillant VR940,
+	// which advertises the MGCP MonitoringAppliance role) can read the grid /
+	// PV-surplus situation. SPIKE: see docs/eebus-vaillant-improvements.md.
+	MGCPProvider bool `yaml:"mgcp_provider"`
+	// MGCPTestPowerW, when non-zero, makes the provider publish this fixed AC
+	// power total (W; negative = export/surplus) so the path can be observed
+	// against real hardware without wiring Home Assistant. Spike-only.
+	MGCPTestPowerW float64 `yaml:"mgcp_test_power_w"`
 }
 
 type GRPCConfig struct {
@@ -142,6 +158,16 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("EEBUS_SHIP_TRACE"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			cfg.Logging.ShipTrace = enabled
+		}
+	}
+	if v := os.Getenv("EEBUS_EXP_MGCP_PROVIDER"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Experimental.MGCPProvider = enabled
+		}
+	}
+	if v := os.Getenv("EEBUS_EXP_MGCP_TEST_POWER_W"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.Experimental.MGCPTestPowerW = f
 		}
 	}
 }

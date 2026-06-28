@@ -71,6 +71,26 @@ func main() {
 	monitoringWrapper.Setup(localEntity)
 	bridgeSvc.Service().AddUseCase(lpcWrapper.UseCase())
 	bridgeSvc.Service().AddUseCase(monitoringWrapper.UseCase())
+
+	// SPIKE: experimental MGCP grid-connection-point provider. Off by default.
+	var mgcpProvider *usecases.MGCPProvider
+	if cfg.Experimental.MGCPProvider {
+		gridEntity := bridgeSvc.GridEntity()
+		if gridEntity == nil {
+			log.Println("[MGCP] experimental provider enabled but grid entity is unavailable; skipping")
+		} else {
+			mgcpProvider = usecases.NewMGCPProvider(gridEntity, bus, cfg.Logging.DebugEvents)
+			bridgeSvc.Service().AddUseCase(mgcpProvider.UseCase())
+			log.Println("[MGCP] experimental grid-connection-point provider registered")
+			if cfg.Experimental.MGCPTestPowerW != 0 {
+				if err := mgcpProvider.PublishPower(cfg.Experimental.MGCPTestPowerW); err != nil {
+					log.Printf("[MGCP] publishing test power failed: %v", err)
+				} else {
+					log.Printf("[MGCP] published fixed test power: %.1f W", cfg.Experimental.MGCPTestPowerW)
+				}
+			}
+		}
+	}
 	// Controllable systems revert an active LPC limit to its failsafe value when
 	// heartbeats stop arriving, so keep the local heartbeat running for the
 	// lifetime of the bridge.

@@ -21,13 +21,21 @@ type BridgeService struct {
 
 // NewBridgeService constructs a BridgeService from the given config, TLS certificate, and EventBus.
 func NewBridgeService(cfg *config.Config, cert tls.Certificate, bus *EventBus) (*BridgeService, error) {
+	entityTypes := []model.EntityTypeType{model.EntityTypeTypeCEM}
+	// SPIKE: the MGCP provider needs a local grid-connection-point entity to
+	// host the grid measurement server features. Only added when enabled so the
+	// default bridge keeps advertising just the CEM entity.
+	if cfg.Experimental.MGCPProvider {
+		entityTypes = append(entityTypes, model.EntityTypeTypeGridConnectionPointOfPremises)
+	}
+
 	eebusConfig, err := api.NewConfiguration(
 		cfg.EEBUS.Vendor,
 		cfg.EEBUS.Brand,
 		cfg.EEBUS.Model,
 		cfg.EEBUS.Serial,
 		model.DeviceTypeTypeEnergyManagementSystem,
-		[]model.EntityTypeType{model.EntityTypeTypeCEM},
+		entityTypes,
 		cfg.EEBUS.Port,
 		cert,
 		time.Second*4,
@@ -75,6 +83,12 @@ func (b *BridgeService) Service() api.ServiceInterface {
 // LocalEntity returns the local CEM entity used for registering use cases.
 func (b *BridgeService) LocalEntity() spineapi.EntityLocalInterface {
 	return b.service.LocalDevice().EntityForType(model.EntityTypeTypeCEM)
+}
+
+// GridEntity returns the local GridConnectionPointOfPremises entity used by the
+// experimental MGCP provider. Returns nil unless the entity was configured.
+func (b *BridgeService) GridEntity() spineapi.EntityLocalInterface {
+	return b.service.LocalDevice().EntityForType(model.EntityTypeTypeGridConnectionPointOfPremises)
 }
 
 // Callbacks returns the callback handler (also the ServiceReaderInterface implementation).
