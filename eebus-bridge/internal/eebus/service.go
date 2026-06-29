@@ -28,6 +28,15 @@ func NewBridgeService(cfg *config.Config, cert tls.Certificate, bus *EventBus) (
 	if cfg.Experimental.MGCPProvider {
 		entityTypes = append(entityTypes, model.EntityTypeTypeGridConnectionPointOfPremises)
 	}
+	// SPIKE: the VAPD/VABD providers need local PV-system / battery-system
+	// entities to host their display measurement server features. Only added when
+	// enabled so the default bridge keeps advertising just the CEM entity.
+	if cfg.Experimental.VAPDProvider {
+		entityTypes = append(entityTypes, model.EntityTypeTypePVSystem)
+	}
+	if cfg.Experimental.VABDProvider {
+		entityTypes = append(entityTypes, model.EntityTypeTypeElectricityStorageSystem)
+	}
 
 	eebusConfig, err := api.NewConfiguration(
 		cfg.EEBUS.Vendor,
@@ -89,6 +98,18 @@ func (b *BridgeService) LocalEntity() spineapi.EntityLocalInterface {
 // experimental MGCP provider. Returns nil unless the entity was configured.
 func (b *BridgeService) GridEntity() spineapi.EntityLocalInterface {
 	return b.service.LocalDevice().EntityForType(model.EntityTypeTypeGridConnectionPointOfPremises)
+}
+
+// PVEntity returns the local PVSystem entity used by the experimental VAPD
+// provider. Returns nil unless the entity was configured.
+func (b *BridgeService) PVEntity() spineapi.EntityLocalInterface {
+	return b.service.LocalDevice().EntityForType(model.EntityTypeTypePVSystem)
+}
+
+// BatteryEntity returns the local ElectricityStorageSystem entity used by the
+// experimental VABD provider. Returns nil unless the entity was configured.
+func (b *BridgeService) BatteryEntity() spineapi.EntityLocalInterface {
+	return b.service.LocalDevice().EntityForType(model.EntityTypeTypeElectricityStorageSystem)
 }
 
 // Callbacks returns the callback handler (also the ServiceReaderInterface implementation).

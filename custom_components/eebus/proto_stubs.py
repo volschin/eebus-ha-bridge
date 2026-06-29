@@ -27,3 +27,10 @@ from .generated.eebus.v1.monitoring_service_pb2 import (  # noqa: F401
 )
 from .generated.eebus.v1.lpc_service_pb2_grpc import LPCServiceStub  # noqa: F401
 from .generated.eebus.v1.monitoring_service_pb2_grpc import MonitoringServiceStub  # noqa: F401
+from .generated.eebus.v1.visualization_service_pb2 import (  # noqa: F401
+    BatteryData,
+    PVData,
+)
+from .generated.eebus.v1.visualization_service_pb2_grpc import (  # noqa: F401
+    VisualizationServiceStub,
+)

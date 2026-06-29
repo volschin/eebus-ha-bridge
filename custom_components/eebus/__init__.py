@@ -8,12 +8,19 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    CONF_BATTERY_CHARGED_ENERGY_ENTITY,
+    CONF_BATTERY_DISCHARGED_ENERGY_ENTITY,
+    CONF_BATTERY_POWER_ENTITY,
+    CONF_BATTERY_SOC_ENTITY,
     CONF_DEVICE_SKI,
     CONF_GRID_CONSUMPTION_ENERGY_ENTITY,
     CONF_GRID_FEED_IN_ENERGY_ENTITY,
     CONF_GRID_POWER_ENTITY,
     CONF_GRPC_HOST,
     CONF_GRPC_PORT,
+    CONF_PV_PEAK_POWER_ENTITY,
+    CONF_PV_POWER_ENTITY,
+    CONF_PV_YIELD_ENERGY_ENTITY,
     PLATFORMS,
 )
 from .coordinator import EebusCoordinator
@@ -34,10 +41,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> boo
         grid_power_entity=entry.options.get(CONF_GRID_POWER_ENTITY) or None,
         grid_feed_in_energy_entity=entry.options.get(CONF_GRID_FEED_IN_ENERGY_ENTITY) or None,
         grid_consumption_energy_entity=entry.options.get(CONF_GRID_CONSUMPTION_ENERGY_ENTITY) or None,
+        pv_power_entity=entry.options.get(CONF_PV_POWER_ENTITY) or None,
+        pv_yield_energy_entity=entry.options.get(CONF_PV_YIELD_ENERGY_ENTITY) or None,
+        pv_peak_power_entity=entry.options.get(CONF_PV_PEAK_POWER_ENTITY) or None,
+        battery_power_entity=entry.options.get(CONF_BATTERY_POWER_ENTITY) or None,
+        battery_charged_energy_entity=entry.options.get(CONF_BATTERY_CHARGED_ENERGY_ENTITY) or None,
+        battery_discharged_energy_entity=entry.options.get(CONF_BATTERY_DISCHARGED_ENERGY_ENTITY) or None,
+        battery_soc_entity=entry.options.get(CONF_BATTERY_SOC_ENTITY) or None,
     )
     await coordinator.async_config_entry_first_refresh()
     coordinator.async_start_streams()
     coordinator.async_start_grid_push()
+    coordinator.async_start_pv_push()
+    coordinator.async_start_battery_push()
 
     entry.runtime_data = coordinator
 

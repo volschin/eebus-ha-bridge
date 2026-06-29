@@ -25,6 +25,18 @@ type ExperimentalConfig struct {
 	// which advertises the MGCP MonitoringAppliance role) can read the grid /
 	// PV-surplus situation. SPIKE: see docs/eebus-vaillant-improvements.md.
 	MGCPProvider bool `yaml:"mgcp_provider"`
+	// VAPDProvider exposes a local PVSystem entity that advertises the
+	// Visualization of Aggregated Photovoltaic Data (VAPD) use case and serves PV
+	// power/yield/peak measurements, so a device (e.g. Vaillant VR940, which
+	// advertises the VAPD VisualizationAppliance role) can display the home's PV
+	// data. SPIKE: see docs/eebus-vaillant-improvements.md.
+	VAPDProvider bool `yaml:"vapd_provider"`
+	// VABDProvider exposes a local ElectricityStorageSystem entity that advertises
+	// the Visualization of Aggregated Battery Data (VABD) use case and serves
+	// battery power/energy/state-of-charge measurements, so a device (e.g. Vaillant
+	// VR940, which advertises the VABD VisualizationAppliance role) can display the
+	// home's battery state. SPIKE: see docs/eebus-vaillant-improvements.md.
+	VABDProvider bool `yaml:"vabd_provider"`
 	// TrustSKI, when set, makes the bridge trust (RegisterRemoteSKI) this remote
 	// SKI at startup instead of waiting for Home Assistant to send it via gRPC.
 	// Lets a spike container complete the SHIP handshake with a known device
@@ -164,6 +176,16 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("EEBUS_EXP_MGCP_PROVIDER"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			cfg.Experimental.MGCPProvider = enabled
+		}
+	}
+	if v := os.Getenv("EEBUS_EXP_VAPD_PROVIDER"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Experimental.VAPDProvider = enabled
+		}
+	}
+	if v := os.Getenv("EEBUS_EXP_VABD_PROVIDER"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Experimental.VABDProvider = enabled
 		}
 	}
 	if v := os.Getenv("EEBUS_EXP_TRUST_SKI"); v != "" {

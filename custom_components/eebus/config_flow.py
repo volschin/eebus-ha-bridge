@@ -27,12 +27,19 @@ from homeassistant.helpers.selector import (
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .const import (
+    CONF_BATTERY_CHARGED_ENERGY_ENTITY,
+    CONF_BATTERY_DISCHARGED_ENERGY_ENTITY,
+    CONF_BATTERY_POWER_ENTITY,
+    CONF_BATTERY_SOC_ENTITY,
     CONF_DEVICE_SKI,
     CONF_GRID_CONSUMPTION_ENERGY_ENTITY,
     CONF_GRID_FEED_IN_ENERGY_ENTITY,
     CONF_GRID_POWER_ENTITY,
     CONF_GRPC_HOST,
     CONF_GRPC_PORT,
+    CONF_PV_PEAK_POWER_ENTITY,
+    CONF_PV_POWER_ENTITY,
+    CONF_PV_YIELD_ENERGY_ENTITY,
     DEFAULT_GRPC_PORT,
     DOMAIN,
 )
@@ -258,18 +265,20 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class EebusOptionsFlow(OptionsFlow):
-    """Map Home Assistant grid sensors to the bridge MGCP provider.
+    """Map Home Assistant sensors to the bridge's EEBUS provider use cases.
 
-    Lets the bridge act as the grid-connection-point data source so a heat pump
-    (e.g. Vaillant VR940) can run PV-surplus optimisation from HA's grid data.
-    Grid power is the surplus signal (negative = export); the energy totals are
-    optional. Leaving grid power empty disables the push.
+    Grid sensors feed the MGCP provider so a heat pump (e.g. Vaillant VR940) can
+    run PV-surplus optimisation from HA's grid data (grid power, negative =
+    export). PV and battery sensors feed the VAPD/VABD display providers so the
+    device can show PV/battery data. Each section's power sensor is required to
+    enable that provider; the rest are optional. Leaving a power sensor empty
+    disables that push.
     """
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle the grid sensor mapping step."""
+        """Handle the sensor mapping step."""
         if user_input is not None:
             # Drop empty selections so cleared fields are removed from options.
             data = {key: value for key, value in user_input.items() if value}
@@ -299,6 +308,34 @@ class EebusOptionsFlow(OptionsFlow):
                     CONF_GRID_CONSUMPTION_ENERGY_ENTITY,
                     description=_field(CONF_GRID_CONSUMPTION_ENERGY_ENTITY),
                 ): _entity_selector("energy"),
+                vol.Optional(
+                    CONF_PV_POWER_ENTITY,
+                    description=_field(CONF_PV_POWER_ENTITY),
+                ): _entity_selector("power"),
+                vol.Optional(
+                    CONF_PV_YIELD_ENERGY_ENTITY,
+                    description=_field(CONF_PV_YIELD_ENERGY_ENTITY),
+                ): _entity_selector("energy"),
+                vol.Optional(
+                    CONF_PV_PEAK_POWER_ENTITY,
+                    description=_field(CONF_PV_PEAK_POWER_ENTITY),
+                ): _entity_selector("power"),
+                vol.Optional(
+                    CONF_BATTERY_POWER_ENTITY,
+                    description=_field(CONF_BATTERY_POWER_ENTITY),
+                ): _entity_selector("power"),
+                vol.Optional(
+                    CONF_BATTERY_CHARGED_ENERGY_ENTITY,
+                    description=_field(CONF_BATTERY_CHARGED_ENERGY_ENTITY),
+                ): _entity_selector("energy"),
+                vol.Optional(
+                    CONF_BATTERY_DISCHARGED_ENERGY_ENTITY,
+                    description=_field(CONF_BATTERY_DISCHARGED_ENERGY_ENTITY),
+                ): _entity_selector("energy"),
+                vol.Optional(
+                    CONF_BATTERY_SOC_ENTITY,
+                    description=_field(CONF_BATTERY_SOC_ENTITY),
+                ): _entity_selector("battery"),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)
