@@ -84,6 +84,32 @@ func main() {
 			log.Println("[MGCP] experimental grid-connection-point provider registered; awaiting grid data via GridService")
 		}
 	}
+
+	// SPIKE: experimental VAPD (PV) display provider. Off by default.
+	var vapdProvider *usecases.VAPDProvider
+	if cfg.Experimental.VAPDProvider {
+		pvEntity := bridgeSvc.PVEntity()
+		if pvEntity == nil {
+			log.Println("[VAPD] experimental provider enabled but PV entity is unavailable; skipping")
+		} else {
+			vapdProvider = usecases.NewVAPDProvider(pvEntity, bus, cfg.Logging.DebugEvents)
+			bridgeSvc.Service().AddUseCase(vapdProvider.UseCase())
+			log.Println("[VAPD] experimental PV-system provider registered; awaiting PV data via VisualizationService")
+		}
+	}
+
+	// SPIKE: experimental VABD (battery) display provider. Off by default.
+	var vabdProvider *usecases.VABDProvider
+	if cfg.Experimental.VABDProvider {
+		batteryEntity := bridgeSvc.BatteryEntity()
+		if batteryEntity == nil {
+			log.Println("[VABD] experimental provider enabled but battery entity is unavailable; skipping")
+		} else {
+			vabdProvider = usecases.NewVABDProvider(batteryEntity, bus, cfg.Logging.DebugEvents)
+			bridgeSvc.Service().AddUseCase(vabdProvider.UseCase())
+			log.Println("[VABD] experimental battery-system provider registered; awaiting battery data via VisualizationService")
+		}
+	}
 	// Controllable systems revert an active LPC limit to its failsafe value when
 	// heartbeats stop arriving, so keep the local heartbeat running for the
 	// lifetime of the bridge.
@@ -100,11 +126,13 @@ func main() {
 	lpcSvc := bridgegrpc.NewLPCService(lpcWrapper, bus, registry)
 	monitoringSvc := bridgegrpc.NewMonitoringService(monitoringWrapper, bus, registry)
 	gridSvc := bridgegrpc.NewGridService(mgcpProvider)
+	visualizationSvc := bridgegrpc.NewVisualizationService(vapdProvider, vabdProvider)
 
 	pb.RegisterDeviceServiceServer(grpcSrv.GRPCServer(), deviceSvc)
 	pb.RegisterLPCServiceServer(grpcSrv.GRPCServer(), lpcSvc)
 	pb.RegisterMonitoringServiceServer(grpcSrv.GRPCServer(), monitoringSvc)
 	pb.RegisterGridServiceServer(grpcSrv.GRPCServer(), gridSvc)
+	pb.RegisterVisualizationServiceServer(grpcSrv.GRPCServer(), visualizationSvc)
 
 	go func() {
 		log.Printf("gRPC server listening on %s:%d", cfg.GRPC.Bind, cfg.GRPC.Port)
