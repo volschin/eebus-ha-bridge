@@ -10,6 +10,18 @@ permissions:
   packages: write
 
 jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish GitHub release
+        # HACS reads published releases, not tags. Without this the integration
+        # never sees a new version even though the tag and image exist.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --generate-notes --latest --verify-tag
+
   publish-image:
     runs-on: ubuntu-latest
     steps:
