@@ -131,8 +131,16 @@ func main() {
 	pb.RegisterDeviceServiceServer(grpcSrv.GRPCServer(), deviceSvc)
 	pb.RegisterLPCServiceServer(grpcSrv.GRPCServer(), lpcSvc)
 	pb.RegisterMonitoringServiceServer(grpcSrv.GRPCServer(), monitoringSvc)
-	pb.RegisterGridServiceServer(grpcSrv.GRPCServer(), gridSvc)
-	pb.RegisterVisualizationServiceServer(grpcSrv.GRPCServer(), visualizationSvc)
+
+	// The grid/PV/battery publish RPCs inject values into EEBUS state that
+	// downstream equipment consumes, and the gRPC server has no transport auth.
+	// Only expose them when bound to loopback so a routable bind can't let any
+	// reachable client forge grid/PV/battery readings.
+	if bridgegrpc.RegisterPushServices(grpcSrv, cfg.GRPC.Bind, gridSvc, visualizationSvc) {
+		log.Println("Registered provider push services (grid/PV/battery) on loopback bind")
+	} else {
+		log.Printf("Refusing to register provider push services: gRPC bind %q is not loopback; grid/PV/battery publish RPCs disabled", cfg.GRPC.Bind)
+	}
 
 	go func() {
 		log.Printf("gRPC server listening on %s:%d", cfg.GRPC.Bind, cfg.GRPC.Port)

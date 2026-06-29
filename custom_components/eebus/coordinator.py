@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from datetime import timedelta
 from typing import Any
 
@@ -781,13 +782,21 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return bool(self.grid_power_entity)
 
     def _read_sensor_value(
-        self, entity_id: str | None, unit_map: dict[str, float], kind: str
+        self,
+        entity_id: str | None,
+        unit_map: dict[str, float],
+        kind: str,
+        *,
+        minimum: float | None = None,
+        maximum: float | None = None,
     ) -> float | None:
         """Read an HA sensor and normalize it via unit_map (W / Wh / %).
 
-        Returns None when the entity is unset, missing, unavailable, or
-        non-numeric so the caller can omit it from the push. ``kind`` is a short
-        descriptor (e.g. "grid power", "PV yield") used only for debug logging.
+        Returns None when the entity is unset, missing, unavailable,
+        non-numeric, non-finite (NaN/Inf), or outside ``[minimum, maximum]`` so
+        the caller can omit it from the push instead of advertising a bogus
+        reading to downstream equipment. ``kind`` is a short descriptor (e.g.
+        "grid power", "PV yield") used only for debug logging.
         """
         if not entity_id:
             return None
@@ -809,7 +818,23 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 unit,
             )
             factor = 1.0
-        return value * factor
+        result = value * factor
+        if not math.isfinite(result):
+            _LOGGER.debug("%s sensor %s produced non-finite value %r", kind, entity_id, result)
+            return None
+        if (minimum is not None and result < minimum) or (
+            maximum is not None and result > maximum
+        ):
+            _LOGGER.debug(
+                "%s sensor %s value %r out of range [%s, %s]; omitting",
+                kind,
+                entity_id,
+                result,
+                minimum,
+                maximum,
+            )
+            return None
+        return result
 
     async def async_push_grid_data(self) -> None:
         """Push the mapped grid sensors to the bridge MGCP provider.
@@ -824,10 +849,10 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if power_w is None:
             return
         feed_in_wh = self._read_sensor_value(
-            self.grid_feed_in_energy_entity, ENERGY_UNIT_TO_WH, "grid feed-in"
+            self.grid_feed_in_energy_entity, ENERGY_UNIT_TO_WH, "grid feed-in", minimum=0
         )
         consumed_wh = self._read_sensor_value(
-            self.grid_consumption_energy_entity, ENERGY_UNIT_TO_WH, "grid consumption"
+            self.grid_consumption_energy_entity, ENERGY_UNIT_TO_WH, "grid consumption", minimum=0
         )
 
         channel = await self._ensure_channel()
@@ -895,14 +920,16 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         if not self.pv_power_entity:
             return
-        power_w = self._read_sensor_value(self.pv_power_entity, POWER_UNIT_TO_W, "PV power")
+        power_w = self._read_sensor_value(
+            self.pv_power_entity, POWER_UNIT_TO_W, "PV power", minimum=0
+        )
         if power_w is None:
             return
         yield_wh = self._read_sensor_value(
-            self.pv_yield_energy_entity, ENERGY_UNIT_TO_WH, "PV yield"
+            self.pv_yield_energy_entity, ENERGY_UNIT_TO_WH, "PV yield", minimum=0
         )
         peak_power_w = self._read_sensor_value(
-            self.pv_peak_power_entity, POWER_UNIT_TO_W, "PV peak power"
+            self.pv_peak_power_entity, POWER_UNIT_TO_W, "PV peak power", minimum=0
         )
 
         channel = await self._ensure_channel()
@@ -972,12 +999,14 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if power_w is None:
             return
         charged_wh = self._read_sensor_value(
-            self.battery_charged_energy_entity, ENERGY_UNIT_TO_WH, "battery charged"
+            self.battery_charged_energy_entity, ENERGY_UNIT_TO_WH, "battery charged", minimum=0
         )
         discharged_wh = self._read_sensor_value(
-            self.battery_discharged_energy_entity, ENERGY_UNIT_TO_WH, "battery discharged"
+            self.battery_discharged_energy_entity, ENERGY_UNIT_TO_WH, "battery discharged", minimum=0
         )
-        soc_pct = self._read_sensor_value(self.battery_soc_entity, SOC_UNIT_TO_PCT, "battery SoC")
+        soc_pct = self._read_sensor_value(
+            self.battery_soc_entity, SOC_UNIT_TO_PCT, "battery SoC", minimum=0, maximum=100
+        )
 
         channel = await self._ensure_channel()
         from . import proto_stubs

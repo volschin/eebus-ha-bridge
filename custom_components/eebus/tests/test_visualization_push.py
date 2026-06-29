@@ -40,6 +40,42 @@ def test_read_sensor_value_normalizes_soc_percentage():
     assert coordinator._read_sensor_value("sensor.soc", SOC_UNIT_TO_PCT, "battery SoC") == 73.0
 
 
+def test_read_sensor_value_rejects_non_finite():
+    """NaN/Inf states are dropped rather than advertised downstream."""
+    coordinator = _make_coordinator(
+        {"sensor.bad": _state("nan", "%"), "sensor.inf": _state("inf", "%")}
+    )
+    assert coordinator._read_sensor_value("sensor.bad", SOC_UNIT_TO_PCT, "battery SoC") is None
+    assert coordinator._read_sensor_value("sensor.inf", SOC_UNIT_TO_PCT, "battery SoC") is None
+
+
+def test_read_sensor_value_enforces_range():
+    """Values outside [minimum, maximum] are omitted."""
+    coordinator = _make_coordinator(
+        {"sensor.soc": _state("250", "%"), "sensor.neg": _state("-5", "%")}
+    )
+    # SoC capped at 100; negative energy/power rejected by minimum=0.
+    assert (
+        coordinator._read_sensor_value(
+            "sensor.soc", SOC_UNIT_TO_PCT, "battery SoC", minimum=0, maximum=100
+        )
+        is None
+    )
+    assert (
+        coordinator._read_sensor_value(
+            "sensor.neg", SOC_UNIT_TO_PCT, "PV power", minimum=0
+        )
+        is None
+    )
+    # In-range value still passes.
+    assert (
+        coordinator._read_sensor_value(
+            "sensor.soc", SOC_UNIT_TO_PCT, "battery SoC", minimum=0, maximum=100
+        )
+        is None
+    )
+
+
 async def test_pv_push_skips_without_power_entity():
     """No PV power mapped: push is a no-op and never builds a stub."""
     coordinator = _make_coordinator({})
