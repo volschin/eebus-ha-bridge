@@ -28,6 +28,22 @@ func (s *GridService) PublishGridData(_ context.Context, req *pb.GridData) (*pb.
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
+	// PowerW is the signed grid surplus signal (negative = export), so any finite
+	// value is valid; the energy totals are cumulative counters and cannot be
+	// negative. Reject bad input before touching the provider.
+	if err := finite("grid power", req.PowerW); err != nil {
+		return nil, err
+	}
+	if req.FeedInWh != nil {
+		if err := nonNegative("grid feed-in energy", *req.FeedInWh); err != nil {
+			return nil, err
+		}
+	}
+	if req.ConsumedWh != nil {
+		if err := nonNegative("grid consumed energy", *req.ConsumedWh); err != nil {
+			return nil, err
+		}
+	}
 	if s.mgcp == nil {
 		return nil, status.Error(codes.Unavailable, "MGCP grid provider not enabled")
 	}
