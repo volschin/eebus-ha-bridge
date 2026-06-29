@@ -200,3 +200,28 @@ but it is not required for function.
 Caveat: evcc users report the VR940 advertises energy use cases it does not
 reliably deliver/consume (discussion #25058) — possible firmware-level limits
 even after correct commissioning.
+
+## VAPD/VABD display providers built (2026-06-29)
+
+The PV (VAPD) and battery (VABD) **provider** sides now exist on the bridge,
+mirroring the MGCP provider scaffolding (step 2/5 above):
+
+- `internal/usecases/vapd.go` — local **PVSystem** entity, actor `PVSystem`,
+  scenarios 1 (nominal peak power via DeviceConfiguration), 2 (AC total power),
+  3 (AC yield energy). Gated by `experimental.vapd_provider`.
+- `internal/usecases/vabd.go` — local **ElectricityStorageSystem** entity, actor
+  `BatterySystem`, scenarios 1 (power), 2 (charged Wh), 3 (discharged Wh),
+  4 (state of charge %). Gated by `experimental.vabd_provider`.
+- gRPC `VisualizationService.PublishPVData` / `PublishBatteryData`
+  (`visualization_service.proto`) + `internal/grpc/visualization_service.go`;
+  stubs regenerated both sides; `proto_stubs` re-exports `PVData`/`BatteryData`.
+
+Both accept the VR940's advertised `VisualizationAppliance` consumer role. This
+is a deployable increment **independent of HA push wiring**: enabling the flags
+lets a SHIP trace confirm whether the VR940 actually binds + subscribes to the
+PV/battery providers (the same open question that gates MGCP — see the
+commissioning gate and the evcc caveat above).
+
+Remaining for the full display pipe: HA-side coordinator push methods +
+options-flow sensor mapping (PV power/yield, battery power/energy/SoC), as was
+done for the grid sensors. Lower priority than confirming MGCP §1.3.1 acts.
