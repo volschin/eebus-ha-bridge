@@ -71,6 +71,19 @@ func main() {
 	monitoringWrapper.Setup(localEntity)
 	bridgeSvc.Service().AddUseCase(lpcWrapper.UseCase())
 	bridgeSvc.Service().AddUseCase(monitoringWrapper.UseCase())
+
+	// SPIKE: experimental MGCP grid-connection-point provider. Off by default.
+	var mgcpProvider *usecases.MGCPProvider
+	if cfg.Experimental.MGCPProvider {
+		gridEntity := bridgeSvc.GridEntity()
+		if gridEntity == nil {
+			log.Println("[MGCP] experimental provider enabled but grid entity is unavailable; skipping")
+		} else {
+			mgcpProvider = usecases.NewMGCPProvider(gridEntity, bus, cfg.Logging.DebugEvents)
+			bridgeSvc.Service().AddUseCase(mgcpProvider.UseCase())
+			log.Println("[MGCP] experimental grid-connection-point provider registered; awaiting grid data via GridService")
+		}
+	}
 	// Controllable systems revert an active LPC limit to its failsafe value when
 	// heartbeats stop arriving, so keep the local heartbeat running for the
 	// lifetime of the bridge.
@@ -86,10 +99,12 @@ func main() {
 	deviceSvc := bridgegrpc.NewDeviceService(bridgeSvc.Callbacks(), bus, ski, registry)
 	lpcSvc := bridgegrpc.NewLPCService(lpcWrapper, bus, registry)
 	monitoringSvc := bridgegrpc.NewMonitoringService(monitoringWrapper, bus, registry)
+	gridSvc := bridgegrpc.NewGridService(mgcpProvider)
 
 	pb.RegisterDeviceServiceServer(grpcSrv.GRPCServer(), deviceSvc)
 	pb.RegisterLPCServiceServer(grpcSrv.GRPCServer(), lpcSvc)
 	pb.RegisterMonitoringServiceServer(grpcSrv.GRPCServer(), monitoringSvc)
+	pb.RegisterGridServiceServer(grpcSrv.GRPCServer(), gridSvc)
 
 	go func() {
 		log.Printf("gRPC server listening on %s:%d", cfg.GRPC.Bind, cfg.GRPC.Port)
@@ -100,6 +115,13 @@ func main() {
 
 	bridgeSvc.Start()
 	log.Println("EEBUS bridge started")
+
+	// SPIKE: trust a known remote SKI at startup so a test container can complete
+	// the SHIP handshake without Home Assistant sending device.register_ski.
+	if cfg.Experimental.TrustSKI != "" {
+		bridgeSvc.RegisterRemoteSKI(cfg.Experimental.TrustSKI)
+		log.Printf("[EXP] auto-trusted remote SKI: %s", cfg.Experimental.TrustSKI)
+	}
 	if cfg.Logging.DebugEvents {
 		log.Println("[DEBUG] EEBUS event debug logging enabled; waiting for incoming callbacks")
 	}

@@ -17,3 +17,11 @@ eebus:
 certificates:
   auto_generate: true
   storage_path: "/data/certs"
+
+experimental:
+  # mgcp_provider exposes a local grid-connection-point so a heat pump (e.g.
+  # Vaillant VR940) can read the live grid / PV-surplus situation and run its
+  # own energy management. Home Assistant feeds the data via GridService.
+  # Requires myVAILLANT commissioning (trust + energy-management enabled) to
+  # take effect. Off by default.
+  mgcp_provider: false

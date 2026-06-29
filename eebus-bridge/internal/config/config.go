@@ -13,6 +13,23 @@ type Config struct {
 	EEBUS        EEBUSConfig        `yaml:"eebus"`
 	Certificates CertificatesConfig `yaml:"certificates"`
 	Logging      LoggingConfig      `yaml:"logging"`
+	Experimental ExperimentalConfig `yaml:"experimental"`
+}
+
+// ExperimentalConfig gates spike / not-yet-stable features. Everything here is
+// off by default and may change or be removed without notice.
+type ExperimentalConfig struct {
+	// MGCPProvider exposes a local GridConnectionPointOfPremises entity that
+	// advertises the Monitoring of Grid Connection Point (MGCP) use case and
+	// serves grid power/energy measurements, so a heat pump (e.g. Vaillant VR940,
+	// which advertises the MGCP MonitoringAppliance role) can read the grid /
+	// PV-surplus situation. SPIKE: see docs/eebus-vaillant-improvements.md.
+	MGCPProvider bool `yaml:"mgcp_provider"`
+	// TrustSKI, when set, makes the bridge trust (RegisterRemoteSKI) this remote
+	// SKI at startup instead of waiting for Home Assistant to send it via gRPC.
+	// Lets a spike container complete the SHIP handshake with a known device
+	// (e.g. the VR940) in isolation for hardware testing. Spike-only.
+	TrustSKI string `yaml:"trust_ski"`
 }
 
 type GRPCConfig struct {
@@ -143,5 +160,13 @@ func applyEnvOverrides(cfg *Config) {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			cfg.Logging.ShipTrace = enabled
 		}
+	}
+	if v := os.Getenv("EEBUS_EXP_MGCP_PROVIDER"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Experimental.MGCPProvider = enabled
+		}
+	}
+	if v := os.Getenv("EEBUS_EXP_TRUST_SKI"); v != "" {
+		cfg.Experimental.TrustSKI = v
 	}
 }

@@ -37,6 +37,19 @@
       "reconfigure_successful": "Rekonfiguration erfolgreich."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Netzdaten für PV-Überschuss-Optimierung",
+        "description": "Home-Assistant-Netzsensoren zuordnen, damit die Bridge das Energiemanagement der Wärmepumpe versorgt (z. B. Speicher bei PV-Überschuss laden). Netzleistung ist erforderlich; Energiezähler sind optional. Netzleistung leer lassen, um zu deaktivieren.",
+        "data": {
+          "grid_power_entity": "Netzleistungssensor (negativ = Einspeisung/Überschuss)",
+          "grid_feed_in_energy_entity": "Netz-Einspeisezähler (optional)",
+          "grid_consumption_energy_entity": "Netz-Bezugszähler (optional)"
+        }
+      }
+    }
+  },
   "exceptions": {
     "bridge_unavailable": {
       "message": "EEBUS Bridge unter {host}:{port} nicht erreichbar."

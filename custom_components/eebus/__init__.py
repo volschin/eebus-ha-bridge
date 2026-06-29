@@ -7,7 +7,15 @@ from typing import TYPE_CHECKING
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_DEVICE_SKI, CONF_GRPC_HOST, CONF_GRPC_PORT, PLATFORMS
+from .const import (
+    CONF_DEVICE_SKI,
+    CONF_GRID_CONSUMPTION_ENERGY_ENTITY,
+    CONF_GRID_FEED_IN_ENERGY_ENTITY,
+    CONF_GRID_POWER_ENTITY,
+    CONF_GRPC_HOST,
+    CONF_GRPC_PORT,
+    PLATFORMS,
+)
 from .coordinator import EebusCoordinator
 
 if TYPE_CHECKING:
@@ -23,9 +31,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> boo
         host=entry.data[CONF_GRPC_HOST],
         port=entry.data[CONF_GRPC_PORT],
         ski=entry.data[CONF_DEVICE_SKI],
+        grid_power_entity=entry.options.get(CONF_GRID_POWER_ENTITY) or None,
+        grid_feed_in_energy_entity=entry.options.get(CONF_GRID_FEED_IN_ENERGY_ENTITY) or None,
+        grid_consumption_energy_entity=entry.options.get(CONF_GRID_CONSUMPTION_ENERGY_ENTITY) or None,
     )
     await coordinator.async_config_entry_first_refresh()
     coordinator.async_start_streams()
+    coordinator.async_start_grid_push()
 
     entry.runtime_data = coordinator
 
