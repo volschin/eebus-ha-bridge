@@ -222,6 +222,14 @@ lets a SHIP trace confirm whether the VR940 actually binds + subscribes to the
 PV/battery providers (the same open question that gates MGCP — see the
 commissioning gate and the evcc caveat above).
 
-Remaining for the full display pipe: HA-side coordinator push methods +
-options-flow sensor mapping (PV power/yield, battery power/energy/SoC), as was
-done for the grid sensors. Lower priority than confirming MGCP §1.3.1 acts.
+**HA push wiring done** (commit `6b9c190`): `coordinator.async_push_pv_data` /
+`async_push_battery_data` with state-change tracking, `CONF_*` sensor-mapping
+constants, options-flow selectors (PV power/yield, battery power/energy/SoC),
+en/de/strings translations, and `test_visualization_push.py` — mirroring the
+grid push. Each provider enables only when its power sensor is mapped; optional
+fields are omitted (not zeroed) when unavailable.
+
+Remaining: empirical validation. Deploy with `vapd_provider` / `vabd_provider`
+flags on and SHIP-trace the VR940 to confirm it binds + subscribes to the
+PV/battery providers — the same open question gating MGCP §1.3.1 (does the HP
+actually act on pushed data?). Hardware/user step, not code.
