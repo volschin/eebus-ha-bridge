@@ -12,6 +12,7 @@ import grpc.aio
 
 from homeassistant.const import (
     ATTR_UNIT_OF_MEASUREMENT,
+    PERCENTAGE,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
     UnitOfEnergy,
@@ -35,6 +36,8 @@ ENERGY_UNIT_TO_WH: dict[str, float] = {
     UnitOfEnergy.KILO_WATT_HOUR: 1000.0,
     UnitOfEnergy.MEGA_WATT_HOUR: 1_000_000.0,
 }
+# State of charge is a plain percentage (0-100); no conversion needed.
+SOC_UNIT_TO_PCT: dict[str, float] = {PERCENTAGE: 1.0}
 
 # Event streams deliver push updates; polling only reconciles state the
 # streams cannot carry (scoped energy, heartbeat, support flags).
@@ -90,6 +93,13 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         grid_power_entity: str | None = None,
         grid_feed_in_energy_entity: str | None = None,
         grid_consumption_energy_entity: str | None = None,
+        pv_power_entity: str | None = None,
+        pv_yield_energy_entity: str | None = None,
+        pv_peak_power_entity: str | None = None,
+        battery_power_entity: str | None = None,
+        battery_charged_energy_entity: str | None = None,
+        battery_discharged_energy_entity: str | None = None,
+        battery_soc_entity: str | None = None,
     ) -> None:
         """Initialize the coordinator."""
         super().__init__(
@@ -105,9 +115,20 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.grid_power_entity = grid_power_entity
         self.grid_feed_in_energy_entity = grid_feed_in_energy_entity
         self.grid_consumption_energy_entity = grid_consumption_energy_entity
+        # Optional PV sensors feeding the bridge VAPD (display) provider.
+        self.pv_power_entity = pv_power_entity
+        self.pv_yield_energy_entity = pv_yield_energy_entity
+        self.pv_peak_power_entity = pv_peak_power_entity
+        # Optional battery sensors feeding the bridge VABD (display) provider.
+        self.battery_power_entity = battery_power_entity
+        self.battery_charged_energy_entity = battery_charged_energy_entity
+        self.battery_discharged_energy_entity = battery_discharged_energy_entity
+        self.battery_soc_entity = battery_soc_entity
         self._channel: grpc.aio.Channel | None = None
         self._stream_tasks: list[asyncio.Task] = []
         self._grid_unsub: Any = None
+        self._pv_unsub: Any = None
+        self._battery_unsub: Any = None
         self._was_unavailable: bool = False
         self._heartbeat_supported: bool | None = None
         self._lpc_supported: bool | None = None
@@ -759,13 +780,14 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return True when a grid power sensor is mapped to the MGCP provider."""
         return bool(self.grid_power_entity)
 
-    def _read_grid_value(
+    def _read_sensor_value(
         self, entity_id: str | None, unit_map: dict[str, float], kind: str
     ) -> float | None:
-        """Read an HA sensor and normalize it to W (power) or Wh (energy).
+        """Read an HA sensor and normalize it via unit_map (W / Wh / %).
 
         Returns None when the entity is unset, missing, unavailable, or
-        non-numeric so the caller can omit it from the push.
+        non-numeric so the caller can omit it from the push. ``kind`` is a short
+        descriptor (e.g. "grid power", "PV yield") used only for debug logging.
         """
         if not entity_id:
             return None
@@ -775,13 +797,13 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             value = float(state.state)
         except (TypeError, ValueError):
-            _LOGGER.debug("Grid %s sensor %s has non-numeric state %r", kind, entity_id, state.state)
+            _LOGGER.debug("%s sensor %s has non-numeric state %r", kind, entity_id, state.state)
             return None
         unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
         factor = unit_map.get(unit)
         if factor is None:
             _LOGGER.debug(
-                "Grid %s sensor %s has unknown unit %r; assuming base unit",
+                "%s sensor %s has unknown unit %r; assuming base unit",
                 kind,
                 entity_id,
                 unit,
@@ -798,14 +820,14 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         if not self.grid_power_entity:
             return
-        power_w = self._read_grid_value(self.grid_power_entity, POWER_UNIT_TO_W, "power")
+        power_w = self._read_sensor_value(self.grid_power_entity, POWER_UNIT_TO_W, "grid power")
         if power_w is None:
             return
-        feed_in_wh = self._read_grid_value(
-            self.grid_feed_in_energy_entity, ENERGY_UNIT_TO_WH, "energy"
+        feed_in_wh = self._read_sensor_value(
+            self.grid_feed_in_energy_entity, ENERGY_UNIT_TO_WH, "grid feed-in"
         )
-        consumed_wh = self._read_grid_value(
-            self.grid_consumption_energy_entity, ENERGY_UNIT_TO_WH, "energy"
+        consumed_wh = self._read_sensor_value(
+            self.grid_consumption_energy_entity, ENERGY_UNIT_TO_WH, "grid consumption"
         )
 
         channel = await self._ensure_channel()
@@ -859,6 +881,156 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _handle_grid_state_change(self, _event: Event) -> None:
         """Push grid data whenever a mapped sensor changes state."""
         await self.async_push_grid_data()
+
+    @property
+    def pv_push_enabled(self) -> bool:
+        """Return True when a PV power sensor is mapped to the VAPD provider."""
+        return bool(self.pv_power_entity)
+
+    async def async_push_pv_data(self) -> None:
+        """Push the mapped PV sensors to the bridge VAPD (display) provider.
+
+        PV power is required; yield energy and nominal peak power are optional.
+        No-op when no PV power sensor is mapped or its value is unavailable.
+        """
+        if not self.pv_power_entity:
+            return
+        power_w = self._read_sensor_value(self.pv_power_entity, POWER_UNIT_TO_W, "PV power")
+        if power_w is None:
+            return
+        yield_wh = self._read_sensor_value(
+            self.pv_yield_energy_entity, ENERGY_UNIT_TO_WH, "PV yield"
+        )
+        peak_power_w = self._read_sensor_value(
+            self.pv_peak_power_entity, POWER_UNIT_TO_W, "PV peak power"
+        )
+
+        channel = await self._ensure_channel()
+        from . import proto_stubs
+
+        stub = proto_stubs.VisualizationServiceStub(channel)
+        request = proto_stubs.PVData(power_w=power_w)
+        if yield_wh is not None:
+            request.yield_wh = yield_wh
+        if peak_power_w is not None:
+            request.peak_power_w = peak_power_w
+        try:
+            await stub.PublishPVData(request, timeout=RPC_TIMEOUT)
+            _LOGGER.debug(
+                "Pushed PV data: power=%.1fW yield=%s peak=%s",
+                power_w,
+                yield_wh,
+                peak_power_w,
+            )
+        except grpc.aio.AioRpcError as err:
+            if _is_unimplemented(err) or err.code() == grpc.StatusCode.UNAVAILABLE:
+                _LOGGER.debug("PV provider not ready; skipping push: %s", _rpc_error_text(err))
+                return
+            _LOGGER.warning("Failed to push PV data: %s", _rpc_error_text(err))
+
+    def async_start_pv_push(self) -> None:
+        """Track mapped PV sensors and push their values to the bridge."""
+        if not self.pv_push_enabled:
+            return
+        tracked = [
+            entity_id
+            for entity_id in (
+                self.pv_power_entity,
+                self.pv_yield_energy_entity,
+                self.pv_peak_power_entity,
+            )
+            if entity_id
+        ]
+        self._pv_unsub = async_track_state_change_event(
+            self.hass, tracked, self._handle_pv_state_change
+        )
+        self._stream_tasks.append(
+            self.hass.async_create_background_task(
+                self.async_push_pv_data(), name=f"eebus_pv_initial_push_{self.ski}"
+            )
+        )
+
+    async def _handle_pv_state_change(self, _event: Event) -> None:
+        """Push PV data whenever a mapped sensor changes state."""
+        await self.async_push_pv_data()
+
+    @property
+    def battery_push_enabled(self) -> bool:
+        """Return True when a battery power sensor is mapped to the VABD provider."""
+        return bool(self.battery_power_entity)
+
+    async def async_push_battery_data(self) -> None:
+        """Push the mapped battery sensors to the bridge VABD (display) provider.
+
+        Battery power is required; charged/discharged energy and state of charge
+        are optional. No-op when no battery power sensor is mapped or its value is
+        unavailable.
+        """
+        if not self.battery_power_entity:
+            return
+        power_w = self._read_sensor_value(self.battery_power_entity, POWER_UNIT_TO_W, "battery power")
+        if power_w is None:
+            return
+        charged_wh = self._read_sensor_value(
+            self.battery_charged_energy_entity, ENERGY_UNIT_TO_WH, "battery charged"
+        )
+        discharged_wh = self._read_sensor_value(
+            self.battery_discharged_energy_entity, ENERGY_UNIT_TO_WH, "battery discharged"
+        )
+        soc_pct = self._read_sensor_value(self.battery_soc_entity, SOC_UNIT_TO_PCT, "battery SoC")
+
+        channel = await self._ensure_channel()
+        from . import proto_stubs
+
+        stub = proto_stubs.VisualizationServiceStub(channel)
+        request = proto_stubs.BatteryData(power_w=power_w)
+        if charged_wh is not None:
+            request.charged_wh = charged_wh
+        if discharged_wh is not None:
+            request.discharged_wh = discharged_wh
+        if soc_pct is not None:
+            request.state_of_charge_pct = soc_pct
+        try:
+            await stub.PublishBatteryData(request, timeout=RPC_TIMEOUT)
+            _LOGGER.debug(
+                "Pushed battery data: power=%.1fW charged=%s discharged=%s soc=%s",
+                power_w,
+                charged_wh,
+                discharged_wh,
+                soc_pct,
+            )
+        except grpc.aio.AioRpcError as err:
+            if _is_unimplemented(err) or err.code() == grpc.StatusCode.UNAVAILABLE:
+                _LOGGER.debug("Battery provider not ready; skipping push: %s", _rpc_error_text(err))
+                return
+            _LOGGER.warning("Failed to push battery data: %s", _rpc_error_text(err))
+
+    def async_start_battery_push(self) -> None:
+        """Track mapped battery sensors and push their values to the bridge."""
+        if not self.battery_push_enabled:
+            return
+        tracked = [
+            entity_id
+            for entity_id in (
+                self.battery_power_entity,
+                self.battery_charged_energy_entity,
+                self.battery_discharged_energy_entity,
+                self.battery_soc_entity,
+            )
+            if entity_id
+        ]
+        self._battery_unsub = async_track_state_change_event(
+            self.hass, tracked, self._handle_battery_state_change
+        )
+        self._stream_tasks.append(
+            self.hass.async_create_background_task(
+                self.async_push_battery_data(), name=f"eebus_battery_initial_push_{self.ski}"
+            )
+        )
+
+    async def _handle_battery_state_change(self, _event: Event) -> None:
+        """Push battery data whenever a mapped sensor changes state."""
+        await self.async_push_battery_data()
 
     def async_start_streams(self) -> None:
         """Start background tasks consuming bridge event streams."""
@@ -1023,6 +1195,12 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._grid_unsub is not None:
             self._grid_unsub()
             self._grid_unsub = None
+        if self._pv_unsub is not None:
+            self._pv_unsub()
+            self._pv_unsub = None
+        if self._battery_unsub is not None:
+            self._battery_unsub()
+            self._battery_unsub = None
         for task in self._stream_tasks:
             task.cancel()
         self._stream_tasks.clear()

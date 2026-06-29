@@ -28,6 +28,8 @@ async def test_setup_entry():
         coordinator.async_config_entry_first_refresh = AsyncMock()
         coordinator.async_start_streams = MagicMock()
         coordinator.async_start_grid_push = MagicMock()
+        coordinator.async_start_pv_push = MagicMock()
+        coordinator.async_start_battery_push = MagicMock()
         mock_coordinator_cls.return_value = coordinator
 
         hass.config_entries.async_forward_entry_setups = AsyncMock()
@@ -39,6 +41,8 @@ async def test_setup_entry():
         coordinator.async_config_entry_first_refresh.assert_awaited_once()
         coordinator.async_start_streams.assert_called_once()
         coordinator.async_start_grid_push.assert_called_once()
+        coordinator.async_start_pv_push.assert_called_once()
+        coordinator.async_start_battery_push.assert_called_once()
 
 
 @pytest.mark.asyncio

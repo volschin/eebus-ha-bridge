@@ -40,12 +40,19 @@
   "options": {
     "step": {
       "init": {
-        "title": "Grid data for PV-surplus optimisation",
-        "description": "Map Home Assistant grid sensors so the bridge can feed the heat pump's energy management (e.g. charge the cylinder on PV surplus). Grid power is required; energy totals are optional. Leave grid power empty to disable.",
+        "title": "Energy data for the heat pump",
+        "description": "Map Home Assistant sensors so the bridge can feed the heat pump. Grid sensors drive PV-surplus optimisation (grid power, negative = export); PV and battery sensors are shown on the device's display. Each section's power sensor enables that provider; the rest are optional. Leave a power sensor empty to disable that push.",
         "data": {
           "grid_power_entity": "Grid power sensor (negative = export/surplus)",
           "grid_feed_in_energy_entity": "Grid feed-in energy sensor (optional)",
-          "grid_consumption_energy_entity": "Grid consumption energy sensor (optional)"
+          "grid_consumption_energy_entity": "Grid consumption energy sensor (optional)",
+          "pv_power_entity": "PV power sensor",
+          "pv_yield_energy_entity": "PV yield energy sensor (optional)",
+          "pv_peak_power_entity": "PV nominal peak power sensor (optional)",
+          "battery_power_entity": "Battery power sensor (negative = charging)",
+          "battery_charged_energy_entity": "Battery charged energy sensor (optional)",
+          "battery_discharged_energy_entity": "Battery discharged energy sensor (optional)",
+          "battery_soc_entity": "Battery state of charge sensor (optional)"
         }
       }
     }

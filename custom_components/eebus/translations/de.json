@@ -40,12 +40,19 @@
   "options": {
     "step": {
       "init": {
-        "title": "Netzdaten für PV-Überschuss-Optimierung",
-        "description": "Home-Assistant-Netzsensoren zuordnen, damit die Bridge das Energiemanagement der Wärmepumpe versorgt (z. B. Speicher bei PV-Überschuss laden). Netzleistung ist erforderlich; Energiezähler sind optional. Netzleistung leer lassen, um zu deaktivieren.",
+        "title": "Energiedaten für die Wärmepumpe",
+        "description": "Home-Assistant-Sensoren zuordnen, damit die Bridge die Wärmepumpe versorgt. Netzsensoren steuern die PV-Überschuss-Optimierung (Netzleistung, negativ = Einspeisung); PV- und Batteriesensoren werden auf dem Gerätedisplay angezeigt. Der Leistungssensor jedes Abschnitts aktiviert den jeweiligen Provider; die übrigen sind optional. Leistungssensor leer lassen, um den jeweiligen Push zu deaktivieren.",
         "data": {
           "grid_power_entity": "Netzleistungssensor (negativ = Einspeisung/Überschuss)",
           "grid_feed_in_energy_entity": "Netz-Einspeisezähler (optional)",
-          "grid_consumption_energy_entity": "Netz-Bezugszähler (optional)"
+          "grid_consumption_energy_entity": "Netz-Bezugszähler (optional)",
+          "pv_power_entity": "PV-Leistungssensor",
+          "pv_yield_energy_entity": "PV-Ertragszähler (optional)",
+          "pv_peak_power_entity": "PV-Nennleistungssensor (optional)",
+          "battery_power_entity": "Batterieleistungssensor (negativ = Laden)",
+          "battery_charged_energy_entity": "Batterie-Ladezähler (optional)",
+          "battery_discharged_energy_entity": "Batterie-Entladezähler (optional)",
+          "battery_soc_entity": "Batterie-Ladezustandssensor (optional)"
         }
       }
     }

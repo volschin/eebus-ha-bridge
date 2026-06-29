@@ -30,32 +30,32 @@ def _make_grid_coordinator(states, power=None, feed_in=None, consumed=None):
     return coordinator
 
 
-def test_read_grid_value_normalizes_power_units():
+def test_read_sensor_value_normalizes_power_units():
     """kW is scaled to W; W passes through; export stays negative."""
     coordinator = _make_grid_coordinator({"sensor.p": _state("-1.5", "kW")}, power="sensor.p")
-    assert coordinator._read_grid_value("sensor.p", POWER_UNIT_TO_W, "power") == -1500.0
+    assert coordinator._read_sensor_value("sensor.p", POWER_UNIT_TO_W, "power") == -1500.0
 
 
-def test_read_grid_value_normalizes_energy_units():
+def test_read_sensor_value_normalizes_energy_units():
     """kWh is scaled to Wh."""
     coordinator = _make_grid_coordinator({"sensor.e": _state("12.34", "kWh")})
-    assert coordinator._read_grid_value("sensor.e", ENERGY_UNIT_TO_WH, "energy") == 12340.0
+    assert coordinator._read_sensor_value("sensor.e", ENERGY_UNIT_TO_WH, "energy") == 12340.0
 
 
-def test_read_grid_value_unknown_unit_assumes_base():
+def test_read_sensor_value_unknown_unit_assumes_base():
     """Unknown unit falls back to the base unit (factor 1)."""
     coordinator = _make_grid_coordinator({"sensor.p": _state("42", None)})
-    assert coordinator._read_grid_value("sensor.p", POWER_UNIT_TO_W, "power") == 42.0
+    assert coordinator._read_sensor_value("sensor.p", POWER_UNIT_TO_W, "power") == 42.0
 
 
-def test_read_grid_value_unavailable_returns_none():
+def test_read_sensor_value_unavailable_returns_none():
     """Unavailable / non-numeric states yield None so the field is omitted."""
     coordinator = _make_grid_coordinator(
         {"sensor.u": _state("unavailable", "W"), "sensor.x": _state("foo", "W")}
     )
-    assert coordinator._read_grid_value("sensor.u", POWER_UNIT_TO_W, "power") is None
-    assert coordinator._read_grid_value("sensor.x", POWER_UNIT_TO_W, "power") is None
-    assert coordinator._read_grid_value(None, POWER_UNIT_TO_W, "power") is None
+    assert coordinator._read_sensor_value("sensor.u", POWER_UNIT_TO_W, "power") is None
+    assert coordinator._read_sensor_value("sensor.x", POWER_UNIT_TO_W, "power") is None
+    assert coordinator._read_sensor_value(None, POWER_UNIT_TO_W, "power") is None
 
 
 async def test_push_skips_without_power_entity():
