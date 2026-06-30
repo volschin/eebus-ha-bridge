@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -199,16 +200,38 @@ func (w *OHPCFWrapper) MinimalPauseDuration(entity spineapi.EntityRemoteInterfac
 	return w.uc.PowerConsumptionMinimalPauseDuration(entity)
 }
 
-// logResult logs a non-zero SPINE result for an async OHPCF control command.
-func logResult(action string) func(model.ResultDataType) {
-	return func(r model.ResultDataType) {
+// ohpcfWriteTimeout bounds how long a control write waits for the heat pump's
+// result before giving up. It is a var, not a const, so tests can shorten it.
+var ohpcfWriteTimeout = 10 * time.Second
+
+// awaitWrite issues an OHPCF control write and blocks until the remote heat pump
+// returns its result, mapping a rejection or a missing result to an error. The
+// write closure must invoke the supplied callback exactly once with the device's
+// ResultDataType (eebus-go guarantees this for a successfully sent command).
+//
+// Without this the bridge would report success as soon as the command was *sent*,
+// masking a device-side rejection (e.g. an uncommissioned heat pump) from the HA
+// caller. Mirrors evcc's server/eebus.Await (evcc-io/evcc#31350).
+func awaitWrite(action string, write func(func(model.ResultDataType)) (*model.MsgCounterType, error)) error {
+	res := make(chan model.ResultDataType, 1)
+
+	if _, err := write(func(r model.ResultDataType) { res <- r }); err != nil {
+		return err
+	}
+
+	select {
+	case r := <-res:
 		if r.ErrorNumber != nil && uint(*r.ErrorNumber) != 0 {
-			desc := ""
-			if r.Description != nil {
-				desc = string(*r.Description)
+			err := fmt.Errorf("ohpcf %s rejected by device: error=%d", action, *r.ErrorNumber)
+			if r.Description != nil && *r.Description != "" {
+				err = fmt.Errorf("%w (%s)", err, *r.Description)
 			}
-			log.Printf("[OHPCF] %s rejected by device: error=%d %s", action, *r.ErrorNumber, desc)
+			log.Printf("[OHPCF] %v", err)
+			return err
 		}
+		return nil
+	case <-time.After(ohpcfWriteTimeout):
+		return fmt.Errorf("ohpcf %s: timed out waiting for device result", action)
 	}
 }
 
@@ -221,8 +244,9 @@ func (w *OHPCFWrapper) Schedule(entity spineapi.EntityRemoteInterface, start tim
 	if start.IsZero() {
 		start = time.Now()
 	}
-	_, err := w.uc.SchedulePowerConsumptionProcess(entity, start, logResult("schedule"))
-	return err
+	return awaitWrite("schedule", func(cb func(model.ResultDataType)) (*model.MsgCounterType, error) {
+		return w.uc.SchedulePowerConsumptionProcess(entity, start, cb)
+	})
 }
 
 // Pause pauses the running optional power-consumption process.
@@ -230,8 +254,9 @@ func (w *OHPCFWrapper) Pause(entity spineapi.EntityRemoteInterface) error {
 	if w.uc == nil {
 		return errOHPCFNotInitialized
 	}
-	_, err := w.uc.PausePowerConsumptionProcess(entity, logResult("pause"))
-	return err
+	return awaitWrite("pause", func(cb func(model.ResultDataType)) (*model.MsgCounterType, error) {
+		return w.uc.PausePowerConsumptionProcess(entity, cb)
+	})
 }
 
 // Resume resumes a paused optional power-consumption process.
@@ -239,8 +264,9 @@ func (w *OHPCFWrapper) Resume(entity spineapi.EntityRemoteInterface) error {
 	if w.uc == nil {
 		return errOHPCFNotInitialized
 	}
-	_, err := w.uc.ResumePowerConsumptionProcess(entity, logResult("resume"))
-	return err
+	return awaitWrite("resume", func(cb func(model.ResultDataType)) (*model.MsgCounterType, error) {
+		return w.uc.ResumePowerConsumptionProcess(entity, cb)
+	})
 }
 
 // Abort aborts the optional power-consumption process.
@@ -248,6 +274,7 @@ func (w *OHPCFWrapper) Abort(entity spineapi.EntityRemoteInterface) error {
 	if w.uc == nil {
 		return errOHPCFNotInitialized
 	}
-	_, err := w.uc.AbortPowerConsumptionProcess(entity, logResult("abort"))
-	return err
+	return awaitWrite("abort", func(cb func(model.ResultDataType)) (*model.MsgCounterType, error) {
+		return w.uc.AbortPowerConsumptionProcess(entity, cb)
+	})
 }
