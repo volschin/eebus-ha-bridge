@@ -34,3 +34,10 @@ from .generated.eebus.v1.visualization_service_pb2 import (  # noqa: F401
 from .generated.eebus.v1.visualization_service_pb2_grpc import (  # noqa: F401
     VisualizationServiceStub,
 )
+from .generated.eebus.v1.ohpcf_service_pb2 import (  # noqa: F401
+    CompressorPowerConsumptionState,
+    ControlCompressorRequest,
+    OHPCFAction,
+    OHPCFEventType,
+)
+from .generated.eebus.v1.ohpcf_service_pb2_grpc import OHPCFServiceStub  # noqa: F401

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	shipapi "github.com/enbility/ship-go/api"
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
@@ -75,7 +76,7 @@ func TestIntegrationDeviceServiceRoundTrip(t *testing.T) {
 	// Allow server-side goroutine to register subscription before firing event.
 	time.Sleep(50 * time.Millisecond)
 
-	callbacks.RemoteSKIConnected(nil, "remote-ski-test")
+	callbacks.RemoteServiceConnected(nil, shipapi.ServiceIdentity{SKI: "remote-ski-test"})
 
 	evt, err := stream.Recv()
 	if err != nil {

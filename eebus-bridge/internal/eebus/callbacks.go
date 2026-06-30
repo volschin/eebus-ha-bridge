@@ -12,7 +12,7 @@ import (
 type Callbacks struct {
 	bus            *EventBus
 	mu             sync.RWMutex
-	discoveredSvcs []shipapi.RemoteService
+	discoveredSvcs []shipapi.RemoteMdnsService
 	debugEvents    bool
 }
 
@@ -27,11 +27,11 @@ func NewCallbacks(bus *EventBus, debugEvents bool) *Callbacks {
 // Compile-time assertion that Callbacks implements api.ServiceReaderInterface.
 var _ api.ServiceReaderInterface = (*Callbacks)(nil)
 
-// RemoteSKIConnected is called when a remote SKI connects.
-func (c *Callbacks) RemoteSKIConnected(service api.ServiceInterface, ski string) {
-	ski = NormalizeSKI(ski)
+// RemoteServiceConnected is called when a remote service connects.
+func (c *Callbacks) RemoteServiceConnected(_ api.ServiceInterface, identity shipapi.ServiceIdentity) {
+	ski := NormalizeSKI(identity.SKI)
 	if c.debugEvents {
-		log.Printf("[DEBUG] EEBUS callback: remote SKI connected: ski=%s", ski)
+		log.Printf("[DEBUG] EEBUS callback: remote service connected: ski=%s", ski)
 	}
 
 	c.bus.Publish(Event{
@@ -40,11 +40,11 @@ func (c *Callbacks) RemoteSKIConnected(service api.ServiceInterface, ski string)
 	})
 }
 
-// RemoteSKIDisconnected is called when a remote SKI disconnects.
-func (c *Callbacks) RemoteSKIDisconnected(service api.ServiceInterface, ski string) {
-	ski = NormalizeSKI(ski)
+// RemoteServiceDisconnected is called when a remote service disconnects.
+func (c *Callbacks) RemoteServiceDisconnected(_ api.ServiceInterface, identity shipapi.ServiceIdentity) {
+	ski := NormalizeSKI(identity.SKI)
 	if c.debugEvents {
-		log.Printf("[DEBUG] EEBUS callback: remote SKI disconnected: ski=%s", ski)
+		log.Printf("[DEBUG] EEBUS callback: remote service disconnected: ski=%s", ski)
 	}
 
 	c.bus.Publish(Event{
@@ -53,8 +53,8 @@ func (c *Callbacks) RemoteSKIDisconnected(service api.ServiceInterface, ski stri
 	})
 }
 
-// VisibleRemoteServicesUpdated is called when the list of visible remote services changes.
-func (c *Callbacks) VisibleRemoteServicesUpdated(service api.ServiceInterface, entries []shipapi.RemoteService) {
+// VisibleRemoteMdnsServicesUpdated is called when the list of visible remote mDNS services changes.
+func (c *Callbacks) VisibleRemoteMdnsServicesUpdated(_ api.ServiceInterface, entries []shipapi.RemoteMdnsService) {
 	if c.debugEvents {
 		log.Printf("[DEBUG] EEBUS callback: visible remote services updated: count=%d", len(entries))
 	}
@@ -68,14 +68,14 @@ func (c *Callbacks) VisibleRemoteServicesUpdated(service api.ServiceInterface, e
 	})
 }
 
-// ServiceShipIDUpdate is called when the SHIP ID of a remote service is reported.
-func (c *Callbacks) ServiceShipIDUpdate(ski string, shipID string) {
-	// no-op: SHIP IDs are informational only in this bridge
+// ServiceUpdated is called when a remote service's discovered details change.
+func (c *Callbacks) ServiceUpdated(_ shipapi.ServiceIdentity) {
+	// no-op: service detail updates are informational only in this bridge
 }
 
 // ServicePairingDetailUpdate is called when the pairing state of a remote service changes.
-func (c *Callbacks) ServicePairingDetailUpdate(ski string, detail *shipapi.ConnectionStateDetail) {
-	ski = NormalizeSKI(ski)
+func (c *Callbacks) ServicePairingDetailUpdate(identity shipapi.ServiceIdentity, detail *shipapi.ConnectionStateDetail) {
+	ski := NormalizeSKI(identity.SKI)
 	if c.debugEvents {
 		if detail != nil {
 			log.Printf("[DEBUG] EEBUS callback: pairing detail updated: ski=%s state=%v", ski, detail.State())
@@ -90,18 +90,32 @@ func (c *Callbacks) ServicePairingDetailUpdate(ski string, detail *shipapi.Conne
 	})
 }
 
-// AllowWaitingForTrust is called by the SHIP layer to determine whether to wait
-// for user trust before completing a connection. Always returns true so that
-// incoming pairing requests can be accepted via the bridge API.
-func (c *Callbacks) AllowWaitingForTrust(ski string) bool {
-	return true
+// ServiceAutoTrusted is called when a device is automatically trusted via SHIP pairing.
+func (c *Callbacks) ServiceAutoTrusted(_ api.ServiceInterface, identity shipapi.ServiceIdentity) {
+	if c.debugEvents {
+		log.Printf("[DEBUG] EEBUS callback: service auto-trusted: ski=%s", NormalizeSKI(identity.SKI))
+	}
+}
+
+// ServiceAutoTrustFailed is called when SHIP pairing fails for a device.
+func (c *Callbacks) ServiceAutoTrustFailed(_ api.ServiceInterface, identity shipapi.ServiceIdentity, reason error) {
+	if c.debugEvents {
+		log.Printf("[DEBUG] EEBUS callback: service auto-trust failed: ski=%s reason=%v", NormalizeSKI(identity.SKI), reason)
+	}
+}
+
+// ServiceAutoTrustRemoved is called when device trust is automatically removed.
+func (c *Callbacks) ServiceAutoTrustRemoved(_ api.ServiceInterface, identity shipapi.ServiceIdentity, reason string) {
+	if c.debugEvents {
+		log.Printf("[DEBUG] EEBUS callback: service auto-trust removed: ski=%s reason=%s", NormalizeSKI(identity.SKI), reason)
+	}
 }
 
 // DiscoveredServices returns a snapshot of the currently visible remote services.
-func (c *Callbacks) DiscoveredServices() []shipapi.RemoteService {
+func (c *Callbacks) DiscoveredServices() []shipapi.RemoteMdnsService {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	result := make([]shipapi.RemoteService, len(c.discoveredSvcs))
+	result := make([]shipapi.RemoteMdnsService, len(c.discoveredSvcs))
 	copy(result, c.discoveredSvcs)
 	return result
 }

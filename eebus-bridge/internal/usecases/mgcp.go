@@ -178,10 +178,13 @@ func (p *MGCPProvider) publishMeasurement(id *model.MeasurementIdType, value flo
 	if p.meas == nil || id == nil {
 		return errMGCPNotInitialized
 	}
-	return p.meas.UpdateDataForId(model.MeasurementDataType{
-		ValueType: util.Ptr(model.MeasurementValueTypeTypeValue),
-		Value:     model.NewScaledNumberType(value),
-	}, nil, *id)
+	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{{
+		Data: model.MeasurementDataType{
+			ValueType: util.Ptr(model.MeasurementValueTypeTypeValue),
+			Value:     model.NewScaledNumberType(value),
+		},
+		Id: *id,
+	}})
 }
 
 // PublishPower pushes the momentary total grid power (W; negative = export/surplus,

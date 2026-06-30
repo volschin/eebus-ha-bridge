@@ -7,6 +7,7 @@ import (
 
 	"github.com/enbility/eebus-go/api"
 	eebusservice "github.com/enbility/eebus-go/service"
+	shipapi "github.com/enbility/ship-go/api"
 	spineapi "github.com/enbility/spine-go/api"
 	"github.com/enbility/spine-go/model"
 	"github.com/volschin/eebus-bridge/internal/config"
@@ -43,11 +44,18 @@ func NewBridgeService(cfg *config.Config, cert tls.Certificate, bus *EventBus) (
 		cfg.EEBUS.Brand,
 		cfg.EEBUS.Model,
 		cfg.EEBUS.Serial,
+		// The bridge identifies as an energy-management system (HEMS).
+		[]shipapi.DeviceCategoryType{shipapi.DeviceCategoryTypeEnergyManagementSystem},
 		model.DeviceTypeTypeEnergyManagementSystem,
 		entityTypes,
 		cfg.EEBUS.Port,
 		cert,
 		time.Second*4,
+		// nil pairingConfig: the bridge uses explicit SKI allow-listing
+		// (RegisterRemoteService), not the SHIP CU QR-secret pairing flow.
+		nil,
+		// nil ringBuffer: in-memory SHIP digest buffer (no persistence).
+		nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating eebus config: %w", err)
@@ -55,6 +63,10 @@ func NewBridgeService(cfg *config.Config, cert tls.Certificate, bus *EventBus) (
 
 	callbacks := NewCallbacks(bus, cfg.Logging.DebugEvents)
 	svc := eebusservice.NewService(eebusConfig, callbacks)
+	// Preserve the bridge's "accept inbound pairing" behaviour. The old
+	// ServiceReaderInterface.AllowWaitingForTrust (always true) was removed; the
+	// equivalent is now an explicit service-level flag.
+	svc.UserIsAbleToApproveOrCancelPairingRequests(true)
 
 	// Forward ship-go/eebus-go internal logs (SHIP handshake errors, abort
 	// reasons) to the bridge logger when enabled. Default is silent.
@@ -75,8 +87,8 @@ func (b *BridgeService) Setup() error {
 }
 
 // Start begins accepting and initiating EEBUS connections.
-func (b *BridgeService) Start() {
-	b.service.Start()
+func (b *BridgeService) Start() error {
+	return b.service.Start()
 }
 
 // Shutdown gracefully stops the EEBUS service.
@@ -119,5 +131,5 @@ func (b *BridgeService) Callbacks() *Callbacks {
 
 // RegisterRemoteSKI marks a SKI as trusted and initiates a connection.
 func (b *BridgeService) RegisterRemoteSKI(ski string) {
-	b.service.RegisterRemoteSKI(ski)
+	b.service.RegisterRemoteService(shipapi.NewServiceIdentity(NormalizeSKI(ski), "", ""))
 }

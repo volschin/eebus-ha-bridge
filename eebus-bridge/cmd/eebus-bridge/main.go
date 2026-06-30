@@ -110,6 +110,17 @@ func main() {
 			log.Println("[VABD] experimental battery-system provider registered; awaiting battery data via VisualizationService")
 		}
 	}
+	// SPIKE: experimental OHPCF (heat-pump compressor flexibility) CEM client.
+	// Off by default. Reads the remote heat pump's optional-consumption offer and
+	// drives schedule/pause/resume/abort via OHPCFService.
+	var ohpcfWrapper *usecases.OHPCFWrapper
+	if cfg.Experimental.OHPCFClient {
+		ohpcfWrapper = usecases.NewOHPCFWrapper(bus, registry, cfg.Logging.DebugEvents)
+		ohpcfWrapper.Setup(localEntity)
+		bridgeSvc.Service().AddUseCase(ohpcfWrapper.UseCase())
+		log.Println("[OHPCF] experimental CEM client registered; awaiting remote compressor SmartEnergyManagementPs")
+	}
+
 	// Controllable systems revert an active LPC limit to its failsafe value when
 	// heartbeats stop arriving, so keep the local heartbeat running for the
 	// lifetime of the bridge.
@@ -127,10 +138,15 @@ func main() {
 	monitoringSvc := bridgegrpc.NewMonitoringService(monitoringWrapper, bus, registry)
 	gridSvc := bridgegrpc.NewGridService(mgcpProvider)
 	visualizationSvc := bridgegrpc.NewVisualizationService(vapdProvider, vabdProvider)
+	ohpcfSvc := bridgegrpc.NewOHPCFService(ohpcfWrapper, bus, registry)
 
 	pb.RegisterDeviceServiceServer(grpcSrv.GRPCServer(), deviceSvc)
 	pb.RegisterLPCServiceServer(grpcSrv.GRPCServer(), lpcSvc)
 	pb.RegisterMonitoringServiceServer(grpcSrv.GRPCServer(), monitoringSvc)
+	// OHPCF control (schedule/pause/resume/abort) is a command surface like LPC
+	// write, not a reading-injection provider, so it is registered alongside the
+	// other control services rather than behind the loopback push gate below.
+	pb.RegisterOHPCFServiceServer(grpcSrv.GRPCServer(), ohpcfSvc)
 
 	// The grid/PV/battery publish RPCs inject values into EEBUS state that
 	// downstream equipment consumes, and the gRPC server has no transport auth.
@@ -149,7 +165,9 @@ func main() {
 		}
 	}()
 
-	bridgeSvc.Start()
+	if err := bridgeSvc.Start(); err != nil {
+		log.Fatalf("EEBUS service start: %v", err)
+	}
 	log.Println("EEBUS bridge started")
 
 	// SPIKE: trust a known remote SKI at startup so a test container can complete

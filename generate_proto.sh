@@ -24,7 +24,8 @@ python -m grpc_tools.protoc \
   eebus/v1/lpc_service.proto \
   eebus/v1/monitoring_service.proto \
   eebus/v1/grid_service.proto \
-  eebus/v1/visualization_service.proto
+  eebus/v1/visualization_service.proto \
+  eebus/v1/ohpcf_service.proto
 
 touch "$OUT_DIR/__init__.py"
 touch "$OUT_DIR/eebus/__init__.py"
