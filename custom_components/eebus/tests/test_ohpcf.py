@@ -2,10 +2,12 @@
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import grpc
+import pytest
 from grpc.aio import AioRpcError, Metadata
+from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.eebus import proto_stubs
 from custom_components.eebus.coordinator import EebusCoordinator
@@ -110,3 +112,37 @@ def test_switch_turn_off_pauses_or_aborts():
     sw.coordinator.async_control_compressor.assert_awaited_once_with(
         proto_stubs.OHPCFAction.OHPCF_ACTION_ABORT
     )
+
+
+def test_control_compressor_wraps_rpc_error_as_ha_error():
+    """A device-side control rejection surfaces as HomeAssistantError, not a raw 500."""
+    c = _coordinator()
+    c._ensure_channel = AsyncMock(return_value=None)
+    err = AioRpcError(
+        grpc.StatusCode.INTERNAL,
+        Metadata(),
+        Metadata(),
+        details="ohpcf control: data not available",
+    )
+    stub = SimpleNamespace(ControlCompressorFlexibility=AsyncMock(side_effect=err))
+    with patch.object(proto_stubs, "OHPCFServiceStub", lambda _channel: stub):
+        with pytest.raises(HomeAssistantError) as exc:
+            asyncio.run(
+                c.async_control_compressor(proto_stubs.OHPCFAction.OHPCF_ACTION_SCHEDULE)
+            )
+    assert "data not available" in str(exc.value)
+
+
+def test_control_compressor_unimplemented_is_swallowed():
+    """UNIMPLEMENTED marks OHPCF unsupported and returns without raising."""
+    c = _coordinator()
+    c._ensure_channel = AsyncMock(return_value=None)
+    err = AioRpcError(
+        grpc.StatusCode.UNIMPLEMENTED, Metadata(), Metadata(), details="no ohpcf"
+    )
+    stub = SimpleNamespace(ControlCompressorFlexibility=AsyncMock(side_effect=err))
+    with patch.object(proto_stubs, "OHPCFServiceStub", lambda _channel: stub):
+        asyncio.run(
+            c.async_control_compressor(proto_stubs.OHPCFAction.OHPCF_ACTION_PAUSE)
+        )
+    assert c._ohpcf_supported is False

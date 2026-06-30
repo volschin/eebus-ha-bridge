@@ -20,6 +20,7 @@ from homeassistant.const import (
     UnitOfPower,
 )
 from homeassistant.core import Event, HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -806,7 +807,12 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "OHPCF control unsupported for SKI %s: %s", self.ski, err.details()
                 )
                 return
-            raise
+            # Surface device-side rejections (e.g. "data not available" when the
+            # compressor advertises no writable offer) as a clean HA error instead
+            # of bubbling a raw AioRpcError into an aiohttp 500 traceback.
+            raise HomeAssistantError(
+                f"Compressor flexibility control failed: {err.details()}"
+            ) from err
 
     async def async_start_heartbeat(self) -> None:
         """Start EEBUS heartbeat via gRPC."""
