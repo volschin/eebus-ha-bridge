@@ -134,6 +134,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._heartbeat_supported: bool | None = None
         self._lpc_supported: bool | None = None
         self._failsafe_supported: bool | None = None
+        self._ohpcf_supported: bool | None = None
         self._ski_registered: bool = False
         self._not_found_streak: int = 0
 
@@ -502,6 +503,14 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 device_stub, proto_stubs, allow_fallback=used_fallback
             )
 
+            # OHPCF (heat-pump compressor flexibility): read the compressor's
+            # optional-consumption offer. Unsupported/unavailable when the bridge
+            # OHPCF client is off; the entities then stay unavailable.
+            data["compressor_flexibility"] = await self._async_read_compressor_flexibility(
+                channel, proto_stubs, request
+            )
+            data["ohpcf_supported"] = self._ohpcf_supported
+
             if saw_not_found:
                 self._not_found_streak += 1
             else:
@@ -736,6 +745,65 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._lpc_supported = False
                 _LOGGER.info(
                     "LPC activation unsupported for SKI %s: %s", self.ski, err.details()
+                )
+                return
+            raise
+
+    async def _async_read_compressor_flexibility(
+        self, channel: grpc.aio.Channel, proto_stubs: Any, request: Any
+    ) -> dict[str, Any] | None:
+        """Read the OHPCF compressor flexibility offer/state, or None when off."""
+        from .generated.eebus.v1 import ohpcf_service_pb2 as ohpcf_pb2
+
+        try:
+            stub = proto_stubs.OHPCFServiceStub(channel)
+            flex = await stub.GetCompressorFlexibility(request, timeout=RPC_TIMEOUT)
+        except grpc.aio.AioRpcError as err:
+            if _is_unimplemented(err) or err.code() == grpc.StatusCode.UNAVAILABLE:
+                self._ohpcf_supported = False
+            else:
+                _LOGGER.debug(
+                    "EEBUS OHPCF read failed for SKI %s: %s",
+                    self.ski,
+                    _rpc_error_text(err),
+                )
+            return None
+
+        self._ohpcf_supported = True
+        return {
+            "available": flex.available,
+            "state": ohpcf_pb2.CompressorPowerConsumptionState.Name(flex.state),
+            "requested_power_estimate_w": (
+                flex.requested_power_estimate_w
+                if flex.HasField("requested_power_estimate_w")
+                else None
+            ),
+            "requested_power_max_w": (
+                flex.requested_power_max_w
+                if flex.HasField("requested_power_max_w")
+                else None
+            ),
+            "is_pausable": flex.is_pausable,
+            "is_stoppable": flex.is_stoppable,
+            "minimal_run_seconds": flex.minimal_run_seconds,
+            "minimal_pause_seconds": flex.minimal_pause_seconds,
+        }
+
+    async def async_control_compressor(self, action: int) -> None:
+        """Schedule/pause/resume/abort the compressor's optional consumption."""
+        channel = await self._ensure_channel()
+        from . import proto_stubs
+        stub = proto_stubs.OHPCFServiceStub(channel)
+        try:
+            await stub.ControlCompressorFlexibility(
+                proto_stubs.ControlCompressorRequest(ski=self.ski, action=action),
+                timeout=RPC_TIMEOUT,
+            )
+        except grpc.aio.AioRpcError as err:
+            if _is_unimplemented(err):
+                self._ohpcf_supported = False
+                _LOGGER.info(
+                    "OHPCF control unsupported for SKI %s: %s", self.ski, err.details()
                 )
                 return
             raise

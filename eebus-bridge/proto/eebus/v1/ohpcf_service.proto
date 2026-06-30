@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package eebus.v1;
+
+option go_package = "github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1";
+
+import "eebus/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+// OHPCFService drives the bridge's OHPCF (Optimization of Self-Consumption by
+// Heat Pump Compressor Flexibility, a.k.a. OSCF) CEM-client use case. The remote
+// heat pump's Compressor entity offers an optional power-consumption process; the
+// bridge (CEM) may schedule, pause, resume or abort it to soak up PV surplus
+// (§1.3.1). Home Assistant reads the offer and drives the control action.
+service OHPCFService {
+  // Current flexibility offer + process state for the compressor of a device.
+  rpc GetCompressorFlexibility(DeviceRequest) returns (CompressorFlexibility);
+  // Schedule / pause / resume / abort the optional power-consumption process.
+  rpc ControlCompressorFlexibility(ControlCompressorRequest) returns (Empty);
+  // Stream flexibility updates as the compressor's offer or state changes.
+  rpc SubscribeOHPCFEvents(DeviceRequest) returns (stream OHPCFEvent);
+}
+
+// CompressorPowerConsumptionState mirrors eebus-go's
+// CompressorPowerConsumptionStateType for the optional consumption process.
+enum CompressorPowerConsumptionState {
+  COMPRESSOR_STATE_UNSPECIFIED = 0;
+  COMPRESSOR_STATE_AVAILABLE = 1;  // offer present, not yet scheduled
+  COMPRESSOR_STATE_SCHEDULED = 2;
+  COMPRESSOR_STATE_RUNNING = 3;
+  COMPRESSOR_STATE_PAUSED = 4;
+  COMPRESSOR_STATE_COMPLETED = 5;
+  COMPRESSOR_STATE_STOPPED = 6;  // aborted
+}
+
+message CompressorFlexibility {
+  // Whether the compressor currently advertises an optional power consumption
+  // the CEM may schedule.
+  bool available = 1;
+  // Estimated power of the optional consumption, in watts. Omitted when no offer.
+  optional double requested_power_estimate_w = 2;
+  // Maximum power of the optional consumption, in watts. Omitted when no offer.
+  optional double requested_power_max_w = 3;
+  bool is_stoppable = 4;
+  bool is_pausable = 5;
+  CompressorPowerConsumptionState state = 6;
+  // Minimal run / pause durations the CEM must honour once it acts.
+  int64 minimal_run_seconds = 7;
+  int64 minimal_pause_seconds = 8;
+}
+
+enum OHPCFAction {
+  OHPCF_ACTION_UNSPECIFIED = 0;
+  // Start the optional consumption now, or at start_time when set.
+  OHPCF_ACTION_SCHEDULE = 1;
+  OHPCF_ACTION_PAUSE = 2;
+  OHPCF_ACTION_RESUME = 3;
+  OHPCF_ACTION_ABORT = 4;
+}
+
+message ControlCompressorRequest {
+  string ski = 1;
+  OHPCFAction action = 2;
+  // Optional start time for OHPCF_ACTION_SCHEDULE. When unset, start immediately.
+  google.protobuf.Timestamp start_time = 3;
+}
+
+enum OHPCFEventType {
+  OHPCF_EVENT_UNSPECIFIED = 0;
+  OHPCF_EVENT_SUPPORT_UPDATED = 1;
+  OHPCF_EVENT_STATE_UPDATED = 2;
+  OHPCF_EVENT_DATA_UPDATED = 3;
+}
+
+message OHPCFEvent {
+  string ski = 1;
+  OHPCFEventType event_type = 2;
+  CompressorFlexibility flexibility = 3;
+}

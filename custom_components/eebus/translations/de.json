@@ -90,7 +90,8 @@
     },
     "switch": {
       "lpc_active": { "name": "LPC aktiv" },
-      "heartbeat": { "name": "Heartbeat" }
+      "heartbeat": { "name": "Heartbeat" },
+      "compressor_flexibility": { "name": "Verdichter-Flexibilität" }
     },
     "binary_sensor": {
       "connected": { "name": "Verbunden" },

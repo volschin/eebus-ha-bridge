@@ -3,10 +3,13 @@ package usecases
 import (
 	"errors"
 	"log"
+	"time"
 
 	eebusapi "github.com/enbility/eebus-go/api"
+	ucapi "github.com/enbility/eebus-go/usecases/api"
 	cemohpcf "github.com/enbility/eebus-go/usecases/cem/ohpcf"
 	spineapi "github.com/enbility/spine-go/api"
+	"github.com/enbility/spine-go/model"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
 
@@ -113,4 +116,138 @@ func (w *OHPCFWrapper) OptionalPowerConsumptionAvailable(entity spineapi.EntityR
 		return false, errOHPCFNotInitialized
 	}
 	return w.uc.OptionalPowerConsumptionAvailable(entity)
+}
+
+// CompatibleEntity returns the first remote entity that actually supports the
+// OHPCF use case (the heat pump's Compressor entity) for the given SKI. A gateway
+// such as the Vaillant VR940 registers several entities under one device SKI;
+// RemoteEntitiesScenarios lists only entities that advertise OHPCF, so resolving
+// from it picks the Compressor rather than e.g. the monitoring meter (issue #47).
+// An empty ski matches the first OHPCF-capable entity of any device. Returns nil
+// when the use case is not set up or no compatible entity has been negotiated yet.
+func (w *OHPCFWrapper) CompatibleEntity(ski string) spineapi.EntityRemoteInterface {
+	if w.uc == nil {
+		return nil
+	}
+	want := eebus.NormalizeSKI(ski)
+	for _, rs := range w.uc.RemoteEntitiesScenarios() {
+		entity := rs.Entity
+		if entity == nil || entity.Device() == nil {
+			continue
+		}
+		if want == "" || eebus.NormalizeSKI(entity.Device().Ski()) == want {
+			return entity
+		}
+	}
+	return nil
+}
+
+// RequestedPowerEstimate returns the estimated power (W) of the offered optional
+// consumption.
+func (w *OHPCFWrapper) RequestedPowerEstimate(entity spineapi.EntityRemoteInterface) (float64, error) {
+	if w.uc == nil {
+		return 0, errOHPCFNotInitialized
+	}
+	return w.uc.RequestedPowerEstimate(entity)
+}
+
+// RequestedPowerMax returns the maximum power (W) of the offered optional consumption.
+func (w *OHPCFWrapper) RequestedPowerMax(entity spineapi.EntityRemoteInterface) (float64, error) {
+	if w.uc == nil {
+		return 0, errOHPCFNotInitialized
+	}
+	return w.uc.RequestedPowerMax(entity)
+}
+
+// ConsumptionIsStoppable reports whether the running process may be aborted.
+func (w *OHPCFWrapper) ConsumptionIsStoppable(entity spineapi.EntityRemoteInterface) (bool, error) {
+	if w.uc == nil {
+		return false, errOHPCFNotInitialized
+	}
+	return w.uc.ConsumptionIsStoppable(entity)
+}
+
+// ConsumptionIsPausable reports whether the running process may be paused.
+func (w *OHPCFWrapper) ConsumptionIsPausable(entity spineapi.EntityRemoteInterface) (bool, error) {
+	if w.uc == nil {
+		return false, errOHPCFNotInitialized
+	}
+	return w.uc.ConsumptionIsPausable(entity)
+}
+
+// ConsumptionState returns the current state of the optional consumption process.
+func (w *OHPCFWrapper) ConsumptionState(entity spineapi.EntityRemoteInterface) (ucapi.CompressorPowerConsumptionStateType, error) {
+	if w.uc == nil {
+		return "", errOHPCFNotInitialized
+	}
+	return w.uc.PowerConsumptionProcessState(entity)
+}
+
+// MinimalRunDuration returns the minimum run duration the CEM must honour.
+func (w *OHPCFWrapper) MinimalRunDuration(entity spineapi.EntityRemoteInterface) (time.Duration, error) {
+	if w.uc == nil {
+		return 0, errOHPCFNotInitialized
+	}
+	return w.uc.PowerConsumptionMinimalRunDuration(entity)
+}
+
+// MinimalPauseDuration returns the minimum pause duration the CEM must honour.
+func (w *OHPCFWrapper) MinimalPauseDuration(entity spineapi.EntityRemoteInterface) (time.Duration, error) {
+	if w.uc == nil {
+		return 0, errOHPCFNotInitialized
+	}
+	return w.uc.PowerConsumptionMinimalPauseDuration(entity)
+}
+
+// logResult logs a non-zero SPINE result for an async OHPCF control command.
+func logResult(action string) func(model.ResultDataType) {
+	return func(r model.ResultDataType) {
+		if r.ErrorNumber != nil && uint(*r.ErrorNumber) != 0 {
+			desc := ""
+			if r.Description != nil {
+				desc = string(*r.Description)
+			}
+			log.Printf("[OHPCF] %s rejected by device: error=%d %s", action, *r.ErrorNumber, desc)
+		}
+	}
+}
+
+// Schedule starts the optional power-consumption process, immediately when start
+// is zero or at the given time otherwise.
+func (w *OHPCFWrapper) Schedule(entity spineapi.EntityRemoteInterface, start time.Time) error {
+	if w.uc == nil {
+		return errOHPCFNotInitialized
+	}
+	if start.IsZero() {
+		start = time.Now()
+	}
+	_, err := w.uc.SchedulePowerConsumptionProcess(entity, start, logResult("schedule"))
+	return err
+}
+
+// Pause pauses the running optional power-consumption process.
+func (w *OHPCFWrapper) Pause(entity spineapi.EntityRemoteInterface) error {
+	if w.uc == nil {
+		return errOHPCFNotInitialized
+	}
+	_, err := w.uc.PausePowerConsumptionProcess(entity, logResult("pause"))
+	return err
+}
+
+// Resume resumes a paused optional power-consumption process.
+func (w *OHPCFWrapper) Resume(entity spineapi.EntityRemoteInterface) error {
+	if w.uc == nil {
+		return errOHPCFNotInitialized
+	}
+	_, err := w.uc.ResumePowerConsumptionProcess(entity, logResult("resume"))
+	return err
+}
+
+// Abort aborts the optional power-consumption process.
+func (w *OHPCFWrapper) Abort(entity spineapi.EntityRemoteInterface) error {
+	if w.uc == nil {
+		return errOHPCFNotInitialized
+	}
+	_, err := w.uc.AbortPowerConsumptionProcess(entity, logResult("abort"))
+	return err
 }
