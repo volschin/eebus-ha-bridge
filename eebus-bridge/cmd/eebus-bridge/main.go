@@ -56,6 +56,10 @@ func main() {
 		log.Fatalf("creating bridge service: %v", err)
 	}
 
+	// Let disconnect callbacks drop cached entity refs (set before service start,
+	// so no remote callback races the assignment).
+	bridgeSvc.Callbacks().SetRegistry(registry)
+
 	lpcWrapper := usecases.NewLPCWrapper(bus, registry, cfg.Logging.DebugEvents)
 	monitoringWrapper := usecases.NewMonitoringWrapper(bus, registry, cfg.Logging.DebugEvents)
 

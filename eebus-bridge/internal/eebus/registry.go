@@ -132,6 +132,27 @@ func (r *DeviceRegistry) RemoveDevice(ski string) {
 	r.mu.Unlock()
 }
 
+// ClearEntities drops the cached remote-device and remote-entity references for a
+// SKI on disconnect while keeping the discovered classification metadata
+// (brand/model/serial/type) and use-case list. Without this the registry would
+// keep serving stale EntityRemoteInterface pointers after a SHIP/SPINE
+// reconnect, so a subsequent OHPCF/LPC write would target an orphaned entity
+// instead of the one re-negotiated on re-pair. A later UseCaseEvent re-populates
+// the entities from fresh observations (cf. evcc-io/evcc#29628). No-op when the
+// SKI is unknown.
+func (r *DeviceRegistry) ClearEntities(ski string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ski = NormalizeSKI(ski)
+	info, ok := r.devices[ski]
+	if !ok {
+		return
+	}
+	info.RemoteDevice = nil
+	info.RemoteEntities = nil
+	r.devices[ski] = info
+}
+
 func (r *DeviceRegistry) GetDevice(ski string) (DeviceInfo, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

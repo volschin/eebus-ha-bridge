@@ -5,6 +5,7 @@ import (
 	"time"
 
 	shipapi "github.com/enbility/ship-go/api"
+	spineapi "github.com/enbility/spine-go/api"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
 
@@ -45,6 +46,30 @@ func TestCallbacksDispatchDisconnect(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout")
+	}
+}
+
+func TestCallbacksDisconnectClearsCachedEntities(t *testing.T) {
+	bus := eebus.NewEventBus()
+	reg := eebus.NewDeviceRegistry()
+	reg.AddDevice("test-ski-456", eebus.DeviceInfo{
+		Brand:          "Vaillant",
+		RemoteEntities: []spineapi.EntityRemoteInterface{nil},
+	})
+
+	cb := eebus.NewCallbacks(bus, false)
+	cb.SetRegistry(reg)
+	cb.RemoteServiceDisconnected(nil, shipapi.ServiceIdentity{SKI: "test-ski-456"})
+
+	info, ok := reg.GetDevice("test-ski-456")
+	if !ok {
+		t.Fatal("device metadata removed on disconnect; only entities should be cleared")
+	}
+	if len(info.RemoteEntities) != 0 {
+		t.Errorf("cached entities not cleared on disconnect: got %d", len(info.RemoteEntities))
+	}
+	if info.Brand != "Vaillant" {
+		t.Error("classification metadata must survive disconnect")
 	}
 }
 
