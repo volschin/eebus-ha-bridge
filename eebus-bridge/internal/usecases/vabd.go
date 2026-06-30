@@ -18,6 +18,16 @@ import (
 // local battery system.
 const vabdUseCaseSupportUpdate eebusapi.EventType = "bridge-vabd-provider-support-update"
 
+// VABD scenario numbers (UseCaseScenarioSupportType). Scenario indices are
+// use-case-scoped per the EEBUS UC spec, so name them rather than passing magic
+// numbers into the scenario declarations.
+const (
+	vabdScenarioMomentaryPower   model.UseCaseScenarioSupportType = 1 // momentary total AC power at the battery
+	vabdScenarioChargedEnergy    model.UseCaseScenarioSupportType = 2 // total energy charged into the battery
+	vabdScenarioDischargedEnergy model.UseCaseScenarioSupportType = 3 // total energy discharged from the battery
+	vabdScenarioStateOfCharge    model.UseCaseScenarioSupportType = 4 // state of charge as a percentage
+)
+
 var errVABDNotInitialized = errors.New("vabd provider not initialized")
 
 // VABDProvider is a SPIKE provider implementation of the EEBUS "Visualization of
@@ -62,10 +72,10 @@ func NewVABDProvider(batteryEntity spineapi.EntityLocalInterface, bus *eebus.Eve
 		model.FeatureTypeTypeElectricalConnection,
 	}
 	scenarios := []eebusapi.UseCaseScenario{
-		{Scenario: model.UseCaseScenarioSupportType(1), Mandatory: true, ServerFeatures: measFeatures},
-		{Scenario: model.UseCaseScenarioSupportType(2), ServerFeatures: measFeatures},
-		{Scenario: model.UseCaseScenarioSupportType(3), ServerFeatures: measFeatures},
-		{Scenario: model.UseCaseScenarioSupportType(4), Mandatory: true, ServerFeatures: measFeatures},
+		{Scenario: vabdScenarioMomentaryPower, Mandatory: true, ServerFeatures: measFeatures},
+		{Scenario: vabdScenarioChargedEnergy, ServerFeatures: measFeatures},
+		{Scenario: vabdScenarioDischargedEnergy, ServerFeatures: measFeatures},
+		{Scenario: vabdScenarioStateOfCharge, Mandatory: true, ServerFeatures: measFeatures},
 	}
 
 	p.UseCaseBase = usecase.NewUseCaseBase(

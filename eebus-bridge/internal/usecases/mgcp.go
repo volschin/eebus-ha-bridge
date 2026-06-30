@@ -18,6 +18,15 @@ import (
 // such as the Vaillant VR940 discovers and binds to our grid-connection-point).
 const mgcpUseCaseSupportUpdate eebusapi.EventType = "bridge-mgcp-provider-support-update"
 
+// MGCP scenario numbers (UseCaseScenarioSupportType). Scenario indices are
+// use-case-scoped per the EEBUS UC spec — the same integer means different things
+// in another use case — so name them here rather than passing magic numbers.
+const (
+	mgcpScenarioMomentaryPower model.UseCaseScenarioSupportType = 2 // momentary AC total power at the grid connection point
+	mgcpScenarioFeedInEnergy   model.UseCaseScenarioSupportType = 3 // total energy fed into the grid (export)
+	mgcpScenarioConsumedEnergy model.UseCaseScenarioSupportType = 4 // total energy consumed from the grid (import)
+)
+
 var errMGCPNotInitialized = errors.New("mgcp provider not initialized")
 
 // MGCPProvider is a SPIKE provider implementation of the EEBUS "Monitoring of Grid
@@ -62,9 +71,9 @@ func NewMGCPProvider(gridEntity spineapi.EntityLocalInterface, bus *eebus.EventB
 		model.FeatureTypeTypeElectricalConnection,
 	}
 	scenarios := []eebusapi.UseCaseScenario{
-		{Scenario: model.UseCaseScenarioSupportType(2), Mandatory: true, ServerFeatures: mandatoryFeatures},
-		{Scenario: model.UseCaseScenarioSupportType(3), Mandatory: true, ServerFeatures: mandatoryFeatures},
-		{Scenario: model.UseCaseScenarioSupportType(4), Mandatory: true, ServerFeatures: mandatoryFeatures},
+		{Scenario: mgcpScenarioMomentaryPower, Mandatory: true, ServerFeatures: mandatoryFeatures},
+		{Scenario: mgcpScenarioFeedInEnergy, Mandatory: true, ServerFeatures: mandatoryFeatures},
+		{Scenario: mgcpScenarioConsumedEnergy, Mandatory: true, ServerFeatures: mandatoryFeatures},
 	}
 
 	p.UseCaseBase = usecase.NewUseCaseBase(
