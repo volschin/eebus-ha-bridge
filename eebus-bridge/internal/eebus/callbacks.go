@@ -11,6 +11,7 @@ import (
 // Callbacks implements api.ServiceReaderInterface and dispatches events to the EventBus.
 type Callbacks struct {
 	bus            *EventBus
+	registry       *DeviceRegistry
 	mu             sync.RWMutex
 	discoveredSvcs []shipapi.RemoteMdnsService
 	debugEvents    bool
@@ -22,6 +23,13 @@ func NewCallbacks(bus *EventBus, debugEvents bool) *Callbacks {
 		bus:         bus,
 		debugEvents: debugEvents,
 	}
+}
+
+// SetRegistry attaches the device registry so disconnect events can drop cached
+// entity references. Call once at startup before the EEBUS service starts, so no
+// remote callback races the assignment.
+func (c *Callbacks) SetRegistry(registry *DeviceRegistry) {
+	c.registry = registry
 }
 
 // Compile-time assertion that Callbacks implements api.ServiceReaderInterface.
@@ -45,6 +53,12 @@ func (c *Callbacks) RemoteServiceDisconnected(_ api.ServiceInterface, identity s
 	ski := NormalizeSKI(identity.SKI)
 	if c.debugEvents {
 		log.Printf("[DEBUG] EEBUS callback: remote service disconnected: ski=%s", ski)
+	}
+
+	// Drop cached entity references so a later re-pair re-populates them from
+	// fresh observations instead of writing to an orphaned entity.
+	if c.registry != nil {
+		c.registry.ClearEntities(ski)
 	}
 
 	c.bus.Publish(Event{

@@ -3,6 +3,7 @@ package eebus_test
 import (
 	"testing"
 
+	spineapi "github.com/enbility/spine-go/api"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
 
@@ -32,6 +33,43 @@ func TestRegistryRemove(t *testing.T) {
 	_, ok := reg.GetDevice("ski-123")
 	if ok {
 		t.Error("device should have been removed")
+	}
+}
+
+func TestRegistryClearEntities(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	reg.AddDevice("ski-c", eebus.DeviceInfo{
+		Brand:          "Vaillant",
+		Model:          "VR940f",
+		UseCases:       []string{"ohpcf"},
+		RemoteEntities: []spineapi.EntityRemoteInterface{nil},
+	})
+
+	reg.ClearEntities("ski-c")
+
+	info, ok := reg.GetDevice("ski-c")
+	if !ok {
+		t.Fatal("device gone after ClearEntities; classification metadata must survive")
+	}
+	if len(info.RemoteEntities) != 0 {
+		t.Errorf("RemoteEntities = %d, want 0 (cleared)", len(info.RemoteEntities))
+	}
+	if info.RemoteDevice != nil {
+		t.Error("RemoteDevice not cleared")
+	}
+	if info.Brand != "Vaillant" || info.Model != "VR940f" {
+		t.Error("classification metadata must be preserved across disconnect")
+	}
+	if len(info.UseCases) != 1 {
+		t.Errorf("UseCases = %d, want 1 (preserved)", len(info.UseCases))
+	}
+}
+
+func TestRegistryClearEntitiesUnknownSKI(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	reg.ClearEntities("never-seen") // must not panic nor create an entry
+	if _, ok := reg.GetDevice("never-seen"); ok {
+		t.Error("ClearEntities must not create an entry for an unknown SKI")
 	}
 }
 
