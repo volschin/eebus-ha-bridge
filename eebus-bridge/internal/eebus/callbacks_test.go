@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	shipapi "github.com/enbility/ship-go/api"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
 
@@ -13,7 +14,7 @@ func TestCallbacksDispatchConnect(t *testing.T) {
 	defer bus.Unsubscribe(ch)
 
 	cb := eebus.NewCallbacks(bus, false)
-	cb.RemoteSKIConnected(nil, "test-ski-123")
+	cb.RemoteServiceConnected(nil, shipapi.ServiceIdentity{SKI: "test-ski-123"})
 
 	select {
 	case evt := <-ch:
@@ -35,7 +36,7 @@ func TestCallbacksDispatchDisconnect(t *testing.T) {
 	defer bus.Unsubscribe(ch)
 
 	cb := eebus.NewCallbacks(bus, false)
-	cb.RemoteSKIDisconnected(nil, "test-ski-456")
+	cb.RemoteServiceDisconnected(nil, shipapi.ServiceIdentity{SKI: "test-ski-456"})
 
 	select {
 	case evt := <-ch:
@@ -47,11 +48,24 @@ func TestCallbacksDispatchDisconnect(t *testing.T) {
 	}
 }
 
-func TestCallbacksAllowWaitingForTrust(t *testing.T) {
+func TestCallbacksVisibleServicesUpdated(t *testing.T) {
 	bus := eebus.NewEventBus()
-	cb := eebus.NewCallbacks(bus, false)
+	ch := bus.Subscribe()
+	defer bus.Unsubscribe(ch)
 
-	if !cb.AllowWaitingForTrust("any-ski") {
-		t.Error("AllowWaitingForTrust should return true")
+	cb := eebus.NewCallbacks(bus, false)
+	cb.VisibleRemoteMdnsServicesUpdated(nil, []shipapi.RemoteMdnsService{{Ski: "abc"}})
+
+	select {
+	case evt := <-ch:
+		if evt.Type != "discovery.updated" {
+			t.Errorf("Type = %q, want discovery.updated", evt.Type)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout")
+	}
+
+	if got := cb.DiscoveredServices(); len(got) != 1 || got[0].Ski != "abc" {
+		t.Errorf("DiscoveredServices() = %+v, want one entry with Ski=abc", got)
 	}
 }

@@ -179,10 +179,13 @@ func (p *VABDProvider) publishMeasurement(id *model.MeasurementIdType, value flo
 	if p.meas == nil || id == nil {
 		return errVABDNotInitialized
 	}
-	return p.meas.UpdateDataForId(model.MeasurementDataType{
-		ValueType: util.Ptr(model.MeasurementValueTypeTypeValue),
-		Value:     model.NewScaledNumberType(value),
-	}, nil, *id)
+	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{{
+		Data: model.MeasurementDataType{
+			ValueType: util.Ptr(model.MeasurementValueTypeTypeValue),
+			Value:     model.NewScaledNumberType(value),
+		},
+		Id: *id,
+	}})
 }
 
 // PublishPower pushes the momentary total battery power (W; scenario 1).

@@ -110,6 +110,16 @@ func main() {
 			log.Println("[VABD] experimental battery-system provider registered; awaiting battery data via VisualizationService")
 		}
 	}
+	// SPIKE: experimental OHPCF (heat-pump compressor flexibility) CEM client.
+	// Off by default. Read-only observer: confirms whether the remote heat pump
+	// binds + serves its SmartEnergyManagementPs feature before any control path.
+	if cfg.Experimental.OHPCFClient {
+		ohpcfWrapper := usecases.NewOHPCFWrapper(bus, registry, cfg.Logging.DebugEvents)
+		ohpcfWrapper.Setup(localEntity)
+		bridgeSvc.Service().AddUseCase(ohpcfWrapper.UseCase())
+		log.Println("[OHPCF] experimental CEM client registered; awaiting remote compressor SmartEnergyManagementPs")
+	}
+
 	// Controllable systems revert an active LPC limit to its failsafe value when
 	// heartbeats stop arriving, so keep the local heartbeat running for the
 	// lifetime of the bridge.
@@ -149,7 +159,9 @@ func main() {
 		}
 	}()
 
-	bridgeSvc.Start()
+	if err := bridgeSvc.Start(); err != nil {
+		log.Fatalf("EEBUS service start: %v", err)
+	}
 	log.Println("EEBUS bridge started")
 
 	// SPIKE: trust a known remote SKI at startup so a test container can complete

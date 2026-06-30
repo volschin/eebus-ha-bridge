@@ -106,7 +106,9 @@ doesn't expose it." Update the wording.
 2. **Pick the lever.** Two distinct goals, both now confirmed possible:
    - *Functional PV-surplus* (§1.3.1, the high-value goal): the real control
      lever is **OSCF** (`…CompressorFlexibility`). It is the §1.3.1 mechanism
-     but is **absent from eebus-go** → fully custom SPINE. **MGCP** (grid power,
+     but is **absent from eebus-go** → fully custom SPINE.
+     **(OUTDATED — see the 2026-06-30 OHPCF research section below: `cem/ohpcf`
+     now exists upstream + in evcc; no longer custom SPINE.)** **MGCP** (grid power,
      negative = export) is the data the HP's own optimizer reads to act on
      surplus — lower-effort than OSCF and reuses the Measurement/
      ElectricalConnection server features. **Recommend MGCP provider first.**
@@ -233,3 +235,64 @@ Remaining: empirical validation. Deploy with `vapd_provider` / `vabd_provider`
 flags on and SHIP-trace the VR940 to confirm it binds + subscribes to the
 PV/battery providers — the same open question gating MGCP §1.3.1 (does the HP
 actually act on pushed data?). Hardware/user step, not code.
+
+## OSCF/OHPCF is no longer "fully custom SPINE" (2026-06-30 research)
+
+**Supersedes the earlier claim** (steps 1/2/6 above: *"OSCF … absent from
+eebus-go → fully custom SPINE"*). That was true at v0.7.0 but is now outdated:
+upstream `enbility` **and** evcc are actively landing OHPCF
+(`optimizationOfSelfConsumptionByHeatPumpCompressorFlexibility`, also called
+OHPCF) as a first-class use case.
+
+### Role check — this is the *bridge's* side, not a provider we must invent
+
+Unlike MGCP/VAPD/VABD (VR940 = reader → bridge had to build the missing
+**provider/server**), for OHPCF the VR940 actor is the **Compressor**
+(flexibility provider/server) and the bridge is the **CEM** (client/controller).
+The use case the bridge needs is therefore `cem/ohpcf` — the **client** side —
+which matches the bridge's `EnergyManagementSystem` device type. We consume it,
+we don't have to author the SPINE server feature.
+
+### Existing code (do not write from scratch)
+
+| Repo / PR | What | State |
+|-----------|------|-------|
+| `enbility/spine-go` #80 — `SmartEnergyManagementPs` | SPINE data model OHPCF rides on (the missing piece that sank the first attempt) | **MERGED 2026-06-29** |
+| `enbility/eebus-go` #223 — *Implement cem/ohpcf* | the actual CEM-client use case, +1670 LOC, by `sthelen-enqs` | **OPEN, mergeable** |
+| `enbility/eebus-go` #228 / #226 | register OHPCF event handler; `ma/mdt` (Monitoring of DHW Temperature), both by `andig` (evcc lead) | **OPEN** |
+| `enbility/eebus-go` #122 — first OHPCF attempt (CEM client) | *"tested with a Vailant heatpump"*; closed because SPINE lacked partial-read/merge — exactly what #80 now fixes | CLOSED |
+| `evcc-io/evcc` `charger/eebus-ohpcf.go` (+`_test.go`, template) | **working reference**: models the compressor as an on/off switch — enable = schedule/resume the optional consumption, disable = pause/abort; `reboost` timer (default 10 min); uses `cem/ohpcf` + `ma/mdt` + `ma/mpc`; config = SKI + IP | shipped |
+| `enbility/devices` `model/smartenergymanagementps_*` | OHPCF validation + update logic | merged |
+
+evcc sources it today via a go.mod `replace github.com/enbility/eebus-go =>
+github.com/evcc-io/eebus-go` (fork commit 2026-06-27), because #223 is not yet on
+`enbility` main.
+
+### Two paths, and which is more promising
+
+- **Path A (sourcing, low effort):** add a go.mod `replace` to a branch that
+  carries `cem/ohpcf` (the #223 head branch, or evcc's fork) and import the use
+  case like LPC. Gives a working OHPCF *client* with almost no bridge code.
+- **Path B (application layer):** write `internal/usecases/ohpcf.go` +
+  a proto RPC (`SetCompressorFlexibility`/`SetHeatPumpFlex`) + HA wiring, using
+  evcc's `eebus-ohpcf.go` as the blueprint.
+
+They are **not alternatives** — B still needs `cem/ohpcf` underneath, so B
+without A means falling back to custom SPINE. **Path A is the more promising
+*next* step.** Same logic that gated MGCP/VAPD: it is unproven that the VR940
+actually binds/subscribes to OHPCF (evcc/evcc discussion #25058 reports VR940
+advertising energy use cases it does not reliably deliver, and the myVAILLANT
+commissioning gate likely applies here too). So spend the cheap move first:
+
+1. **Spike via Path A** — `replace`-pin `cem/ohpcf`, wire a minimal CEM-client
+   behind `experimental.ohpcf_client`, SHIP-trace the commissioned VR940 for a
+   `bindingRequest`/subscription to `SmartEnergyManagementPs`. Mirror the MGCP
+   spike exactly.
+2. **Only if the trace shows the HP binds + accepts schedule/pause** → invest in
+   Path B (stable proto RPC + HA options-flow lever for PV-surplus compressor
+   boost). Writing the full wiring before the trace risks 1600+ LOC for a path
+   the firmware may never consume.
+
+Caveat: #122 was Vaillant-tested, but the §1.3.1 commissioning gate (myVAILLANT
+*Trust* + Energy-management sliders) almost certainly applies to OHPCF as well —
+re-use the MGCP commissioning checklist before concluding the bridge is at fault.

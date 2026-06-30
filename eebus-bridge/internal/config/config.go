@@ -37,6 +37,13 @@ type ExperimentalConfig struct {
 	// VR940, which advertises the VABD VisualizationAppliance role) can display the
 	// home's battery state. SPIKE: see docs/eebus-vaillant-improvements.md.
 	VABDProvider bool `yaml:"vabd_provider"`
+	// OHPCFClient enables the CEM-client side of the Optimization of
+	// Self-Consumption by Heat Pump Compressor Flexibility (OHPCF, a.k.a. OSCF)
+	// use case. The bridge subscribes to a remote heat pump's Compressor /
+	// SmartEnergyManagementPs feature (e.g. Vaillant VR940). SPIKE: read-only
+	// observer to confirm the device binds + serves the feature before building
+	// the schedule/pause control path. See docs/eebus-vaillant-improvements.md.
+	OHPCFClient bool `yaml:"ohpcf_client"`
 	// TrustSKI, when set, makes the bridge trust (RegisterRemoteSKI) this remote
 	// SKI at startup instead of waiting for Home Assistant to send it via gRPC.
 	// Lets a spike container complete the SHIP handshake with a known device
@@ -186,6 +193,11 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("EEBUS_EXP_VABD_PROVIDER"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			cfg.Experimental.VABDProvider = enabled
+		}
+	}
+	if v := os.Getenv("EEBUS_EXP_OHPCF_CLIENT"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Experimental.OHPCFClient = enabled
 		}
 	}
 	if v := os.Getenv("EEBUS_EXP_TRUST_SKI"); v != "" {
