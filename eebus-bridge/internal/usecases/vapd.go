@@ -18,6 +18,15 @@ import (
 // local PV system.
 const vapdUseCaseSupportUpdate eebusapi.EventType = "bridge-vapd-provider-support-update"
 
+// VAPD scenario numbers (UseCaseScenarioSupportType). Scenario indices are
+// use-case-scoped per the EEBUS UC spec, so name them rather than passing magic
+// numbers into the scenario declarations.
+const (
+	vapdScenarioPeakPower      model.UseCaseScenarioSupportType = 1 // nominal peak power of the PV system (DeviceConfiguration)
+	vapdScenarioMomentaryPower model.UseCaseScenarioSupportType = 2 // momentary total AC power produced by the PV system
+	vapdScenarioYieldEnergy    model.UseCaseScenarioSupportType = 3 // total AC yield energy produced over the system's lifetime
+)
+
 var errVAPDNotInitialized = errors.New("vapd provider not initialized")
 
 // VAPDProvider is a SPIKE provider implementation of the EEBUS "Visualization of
@@ -61,9 +70,9 @@ func NewVAPDProvider(pvEntity spineapi.EntityLocalInterface, bus *eebus.EventBus
 		model.FeatureTypeTypeElectricalConnection,
 	}
 	scenarios := []eebusapi.UseCaseScenario{
-		{Scenario: model.UseCaseScenarioSupportType(1), Mandatory: true, ServerFeatures: []model.FeatureTypeType{model.FeatureTypeTypeDeviceConfiguration}},
-		{Scenario: model.UseCaseScenarioSupportType(2), Mandatory: true, ServerFeatures: measFeatures},
-		{Scenario: model.UseCaseScenarioSupportType(3), Mandatory: true, ServerFeatures: measFeatures},
+		{Scenario: vapdScenarioPeakPower, Mandatory: true, ServerFeatures: []model.FeatureTypeType{model.FeatureTypeTypeDeviceConfiguration}},
+		{Scenario: vapdScenarioMomentaryPower, Mandatory: true, ServerFeatures: measFeatures},
+		{Scenario: vapdScenarioYieldEnergy, Mandatory: true, ServerFeatures: measFeatures},
 	}
 
 	p.UseCaseBase = usecase.NewUseCaseBase(
