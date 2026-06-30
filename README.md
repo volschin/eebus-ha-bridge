@@ -127,7 +127,114 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 - HVAC-Steuerung (Betriebsmodi, Sollwerte) -- Vaillant exponiert diese nicht ueber EEBUS
 - Geraete ohne EEBUS-Schnittstelle
 
+## Energiemanagement mit EEBUS verstehen
+
+EEBUS ist mehr als die §14a-Notbremse. Mit den richtigen Hebeln wird die
+Waermepumpe zu einem steuerbaren Baustein im Hausenergie-Optimum: PV-Ueberschuss
+in den Warmwasser- und Pufferspeicher schieben, teure Netzbezugsspitzen kappen,
+guenstige Strompreisfenster nutzen. Wichtig ist zu verstehen, **wer was
+entscheidet** -- die Bridge, die Waermepumpe und ein Optimierer wie HAEO teilen
+sich die Arbeit.
+
+### Die zwei Steuerungs-Hebel
+
+**1. Direkte Begrenzung (LPC)** -- Du (bzw. eine HA-Automatisierung) setzt eine
+harte Leistungs-Obergrenze in Watt (`number.eebus_lpc_limit` + `switch.eebus_lpc_active`).
+Der Wert ist frei variabel, nicht nur die §14a-Stufe von 4,2 kW.
+
+> **Wichtig:** LPC ist eine *Decke*, kein *Boden*. Es begrenzt, was die
+> Waermepumpe maximal ziehen darf -- es **zwingt sie nicht** zum Verbrauch. Um
+> die WP aktiv zum Laden des Speichers bei Ueberschuss zu bewegen, brauchst du
+> den zweiten Hebel.
+
+**2. Kooperatives Netzsignal (MGCP-Grid-Provider, experimentell)** -- Die Bridge
+meldet der Waermepumpe die Bilanz am Hausanschluss (negativ = Einspeisung =
+Ueberschuss). Die Waermepumpe entscheidet dann mit ihrem **eigenen internen
+Optimierer** (Vaillant §1.3.1, "Energiemanagement"), ob sie Warmwasser- und
+Pufferspeicher mit dem Ueberschuss vorlaedt. Die Komfort- und Sicherheitslogik
+bleibt komplett in der WP.
+
+Die **+/- Grad-Einstellung in der myVAILLANT-App** ist dabei der eigentliche
+Aggressivitaets-Regler: Sie legt fest, wie weit die WP bei Ueberschuss die
+Soll-Temperaturen von Warmwasser und Heizung anhebt. Mehr Grad = mehr
+Speicherkapazitaet fuer Solarstrom, aber auch hoehere Bereitschaftsverluste.
+Diese Einstellung wird **in der App** vorgenommen, nicht ueber die Bridge --
+die Bridge liefert nur das Netzsignal, das den Optimierer ueberhaupt erst
+ausloest.
+
+### Voraussetzung: das Commissioning-Gate in der App
+
+Der §1.3.1-Pfad (Hebel 2) funktioniert erst, wenn die WP den Energiemanager
+app-seitig akzeptiert hat. Das ist ein **manueller Nutzerschritt**, der nicht
+von der Bridge erledigt werden kann:
+
+1. **myVAILLANT-App → Einstellungen → Netzwerk → EEBUS → Verfuegbare Geraete:**
+   die Bridge (`HomeAssistant_eebus-bridge`) auf **Vertrauenswuerdig** setzen,
+   sodass sie unter *Trusted devices* erscheint. (Das ist zusaetzlich zum
+   SHIP-/SKI-Vertrauen, das HA bereits herstellt -- beide Seiten muessen
+   vertrauen.)
+2. **Einstellungen → Regler → Energiemanagement:** die Schieber fuer **Heizung
+   UND Warmwasser** aktivieren. Erst dieser Schalter laesst die WP an ein
+   externes Netzsignal binden und das PV-Ueberschuss-Laden ausfuehren.
+3. **+/- Grad** fuer Warmwasser und Heizung nach Wunsch einstellen (s.o.).
+
+Ohne diese Schritte ignoriert die WP das Netzsignal, auch wenn die Bridge es
+korrekt sendet.
+
+> **Status:** Der MGCP-Grid-Provider ist experimentell
+> (`experimental.mgcp_provider`). Dass der VR940 das gesendete Netzsignal nach
+> korrektem Commissioning tatsaechlich konsumiert, ist noch nicht hardware-final
+> bestaetigt; einzelne evcc-Nutzer berichten von Firmware-Grenzen bei den
+> Energie-Use-Cases. LPC (Hebel 1) ist dagegen produktiv.
+
+### Wo HAEO ins Spiel kommt
+
+HAEO (Home Assistant Energy Optimization) bzw. ein gleichwertiger
+Home-Assistant-seitiger Energie-Optimierer (z. B. EMHASS) ist das **Gehirn**
+ueber den beiden Hebeln. Er nimmt
+Prognosen (PV-Ertrag, Strompreis/Tarif, Hauslast) und rechnet per
+Optimierung einen Fahrplan ueber einen Zeithorizont: *wann* und *wie viel*
+jeder steuerbare Verbraucher laufen soll. Die Bridge ist der **Aktor**, der
+diesen Plan in die WP uebersetzt.
+
+Arbeitsteilung im Gesamtsystem:
+
+| Komponente | Rolle | Entscheidet |
+|-----------|-------|-------------|
+| HAEO (Optimierer) | Planer | *Wann* und *wie viel* -- aus Prognose, Preis, Optimierung |
+| WP-interner Optimierer (§1.3.1) | Komfort | Speicher-Lade-Logik, +/- Grad, Vorlauf |
+| Bridge / LPC | Aktor / Schranke | Harte Grenzen, §14a, Plan-Umsetzung |
+
+Zwei typische Kopplungen:
+
+- **Fahrplan → LPC:** HAEO plant "WP zieht 12-14 Uhr X kW" → Automatisierung
+  schreibt `number.eebus_lpc_limit = X` und schaltet das Limit ein. Direkte,
+  vorhersehbare Steuerung.
+- **Ueberschuss-Fahrplan → Netzsignal + LPC-Deckel:** HAEO bestimmt das
+  Ueberschussfenster → die Bridge pusht das MGCP-Netzsignal, der WP-Optimierer
+  laedt den Speicher, und LPC dient als Deckel gegen ungewollte
+  Netzbezugsspitzen. Kooperativ, ueberlaesst der WP die Komfortlogik.
+
 ## Anwendungsbeispiele
+
+### HAEO-Fahrplan auf LPC mappen
+
+```yaml
+automation:
+  - alias: "HAEO-Plan an Waermepumpe"
+    trigger:
+      - platform: state
+        entity_id: sensor.haeo_wp_plan_power   # geplante WP-Leistung (W)
+    action:
+      - service: number.set_value
+        target:
+          entity_id: number.eebus_lpc_limit
+        data:
+          value: "{{ states('sensor.haeo_wp_plan_power') | float(0) }}"
+      - service: switch.turn_on
+        target:
+          entity_id: switch.eebus_lpc_active
+```
 
 ### PV-gefuehrte Lastbegrenzung
 
