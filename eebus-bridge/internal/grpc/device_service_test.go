@@ -72,6 +72,29 @@ func TestRegisterRemoteSKIAcceptsWellFormedSKI(t *testing.T) {
 	}
 }
 
+func TestRegisterRemoteSKINormalizesColonSeparatedSKI(t *testing.T) {
+	bus := eebus.NewEventBus()
+	callbacks := eebus.NewCallbacks(bus, false)
+	svc := bridgegrpc.NewDeviceService(callbacks, bus, "test-local-ski", eebus.NewDeviceRegistry())
+
+	ch := bus.Subscribe()
+	defer bus.Unsubscribe(ch)
+
+	colonSKI := "68:2f:70:8c:eb:a5:df:9a:dc:b9:e6:78:7e:a9:11:d9:fc:3a:c4:90"
+	if _, err := svc.RegisterRemoteSKI(context.Background(), &pb.RegisterSKIRequest{Ski: colonSKI}); err != nil {
+		t.Fatalf("RegisterRemoteSKI(colon-separated): %v", err)
+	}
+
+	select {
+	case evt := <-ch:
+		if evt.SKI != testValidSKI {
+			t.Errorf("published SKI = %q, want normalized %q", evt.SKI, testValidSKI)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for register event")
+	}
+}
+
 func TestUnregisterRemoteSKIRejectsMalformedSKI(t *testing.T) {
 	client := setupDeviceTest(t)
 
