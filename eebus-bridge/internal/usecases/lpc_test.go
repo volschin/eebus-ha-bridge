@@ -68,6 +68,24 @@ func TestLPCFailsafeDurationEventRouting(t *testing.T) {
 	}
 }
 
+func TestLPCHeartbeatEventRouting(t *testing.T) {
+	bus := eebus.NewEventBus()
+	ch := bus.Subscribe()
+	defer bus.Unsubscribe(ch)
+
+	lpcWrapper := usecases.NewLPCWrapper(bus, nil, false)
+	lpcWrapper.HandleEvent("ski-4", nil, nil, eglpc.DataUpdateHeartbeat)
+
+	select {
+	case evt := <-ch:
+		if evt.Type != "lpc.heartbeat_updated" {
+			t.Errorf("Type = %q, want lpc.heartbeat_updated", evt.Type)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for LPC heartbeat event")
+	}
+}
+
 func TestLPCHeartbeatWithoutLocalEntity(t *testing.T) {
 	// Without Setup() the wrapper has no local entity; heartbeat operations must
 	// fail gracefully rather than panic.
