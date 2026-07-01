@@ -116,28 +116,4 @@ jobs:
       - name: Check for stub drift
         run: git diff --exit-code custom_components/eebus/generated/
 
-  release-draft:
-    needs: [go, docker, test, proto-drift]
-    # Runs exactly once on push to main, only when all quality gates pass.
-    # Go, docker, and proto-drift may be skipped (no relevant files changed) — acceptable.
-    if: |
-      always() &&
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main' &&
-      (needs.go.result == 'success' || needs.go.result == 'skipped') &&
-      (needs.docker.result == 'success' || needs.docker.result == 'skipped') &&
-      (needs.proto-drift.result == 'success' || needs.proto-drift.result == 'skipped') &&
-      needs.test.result == 'success'
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: write
-      pull-requests: read
-    steps:
-      - name: Wait for HACS and Hassfest workflows
-        uses: int128/wait-for-workflows-action@456c3b39b5e122319b40ffad07b8179731f8291c # v1.82.0
-        with:
-          filter-workflow-name: "HACS,Hassfest"
-      - uses: release-drafter/release-drafter@4d75298e00d9e34c483e5ff8c68d0ea1c1940c1e # v7.5.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  
