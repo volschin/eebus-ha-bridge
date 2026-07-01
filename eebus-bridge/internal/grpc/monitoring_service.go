@@ -114,6 +114,20 @@ func (s *MonitoringService) GetMeasurements(_ context.Context, req *pb.DeviceReq
 		appendMeasurement(&measurements, now, "energy_produced", value, "kWh")
 	}
 
+	if values, err := s.monitoring.GenericMeasurements(req.Ski); err == nil {
+		seen := make(map[string]struct{}, len(measurements)+len(values))
+		for _, measurement := range measurements {
+			seen[measurement.Type] = struct{}{}
+		}
+		for _, value := range values {
+			if _, ok := seen[value.Type]; ok {
+				continue
+			}
+			appendMeasurement(&measurements, now, value.Type, value.Value, value.Unit)
+			seen[value.Type] = struct{}{}
+		}
+	}
+
 	if len(measurements) == 0 {
 		log.Printf("[DEBUG] Monitoring.GetMeasurements produced no entries: requested_ski=%s", req.Ski)
 		return nil, status.Error(codes.NotFound, "no monitoring measurements available for device")
@@ -183,6 +197,11 @@ func (s *MonitoringService) attachMeasurementPayload(event *pb.MeasurementEvent,
 }
 
 func (s *MonitoringService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, error) {
+	if s.monitoring != nil {
+		if entity := s.monitoring.CompatibleEntity(ski); entity != nil {
+			return entity, nil
+		}
+	}
 	if s.registry == nil {
 		return nil, status.Error(codes.Unavailable, "device registry not initialized")
 	}

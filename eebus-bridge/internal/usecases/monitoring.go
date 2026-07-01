@@ -2,11 +2,15 @@ package usecases
 
 import (
 	"errors"
+	"fmt"
 	"log"
+	"strings"
 
 	eebusapi "github.com/enbility/eebus-go/api"
+	"github.com/enbility/eebus-go/features/client"
 	mampc "github.com/enbility/eebus-go/usecases/ma/mpc"
 	spineapi "github.com/enbility/spine-go/api"
+	"github.com/enbility/spine-go/model"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
 
@@ -21,6 +25,16 @@ type MonitoringWrapper struct {
 }
 
 var errMonitoringNotInitialized = errors.New("monitoring use case not initialized")
+
+type GenericMeasurement struct {
+	Type       string
+	Value      float64
+	Unit       string
+	EntityType string
+	EntityAddr string
+	RawType    string
+	RawScope   string
+}
 
 // NewMonitoringWrapper creates a new MonitoringWrapper. Call Setup() before using the use case.
 func NewMonitoringWrapper(bus *eebus.EventBus, registry *eebus.DeviceRegistry, debugEvents bool) *MonitoringWrapper {
@@ -143,4 +157,165 @@ func (w *MonitoringWrapper) Frequency(entity spineapi.EntityRemoteInterface) (fl
 		return 0, errMonitoringNotInitialized
 	}
 	return w.uc.Frequency(entity)
+}
+
+func (w *MonitoringWrapper) CompatibleEntity(ski string) spineapi.EntityRemoteInterface {
+	if w.uc == nil {
+		return nil
+	}
+	want := eebus.NormalizeSKI(ski)
+	for _, rs := range w.uc.RemoteEntitiesScenarios() {
+		entity := rs.Entity
+		if entity == nil || entity.Device() == nil {
+			continue
+		}
+		if want == "" || eebus.NormalizeSKI(entity.Device().Ski()) == want {
+			return entity
+		}
+	}
+	return nil
+}
+
+func (w *MonitoringWrapper) GenericMeasurements(ski string) ([]GenericMeasurement, error) {
+	if w.uc == nil {
+		return nil, errMonitoringNotInitialized
+	}
+	if w.registry == nil {
+		return nil, errors.New("device registry not initialized")
+	}
+
+	entities := w.registry.Entities(ski)
+	if len(entities) == 0 && ski == "" {
+		for _, device := range w.registry.ListDevices() {
+			entities = append(entities, w.registry.Entities(device.SKI)...)
+		}
+	}
+
+	var out []GenericMeasurement
+	for _, entityInfo := range entities {
+		if entityInfo.Entity == nil || !hasMeasurementServer(entityInfo.Features) {
+			continue
+		}
+		measurements, err := w.measurementsForEntity(entityInfo)
+		if err != nil {
+			if w.debug {
+				log.Printf("[DEBUG] EEBUS generic measurement read failed: ski=%s entity=%s/%s err=%v", ski, entityInfo.Address, entityInfo.Type, err)
+			}
+			continue
+		}
+		out = append(out, measurements...)
+	}
+	if len(out) == 0 {
+		return nil, eebusapi.ErrDataNotAvailable
+	}
+	return out, nil
+}
+
+func (w *MonitoringWrapper) measurementsForEntity(entityInfo eebus.EntityInfo) ([]GenericMeasurement, error) {
+	meas, err := client.NewMeasurement(w.localEntity, entityInfo.Entity)
+	if err != nil {
+		return nil, err
+	}
+	descriptions, err := meas.GetDescriptionsForFilter(model.MeasurementDescriptionDataType{})
+	if err != nil {
+		return nil, err
+	}
+
+	var out []GenericMeasurement
+	for _, desc := range descriptions {
+		if desc.MeasurementId == nil {
+			continue
+		}
+		data, err := meas.GetDataForId(*desc.MeasurementId)
+		if err != nil || data == nil || data.Value == nil {
+			continue
+		}
+		if data.ValueState != nil && *data.ValueState != model.MeasurementValueStateTypeNormal {
+			continue
+		}
+		typ := classifyGenericMeasurement(entityInfo, desc)
+		unit := ""
+		if desc.Unit != nil {
+			unit = string(*desc.Unit)
+		}
+		out = append(out, GenericMeasurement{
+			Type:       typ,
+			Value:      data.Value.GetValue(),
+			Unit:       unit,
+			EntityType: entityInfo.Type,
+			EntityAddr: entityInfo.Address,
+			RawType:    stringPtrValue(desc.MeasurementType),
+			RawScope:   stringPtrValue(desc.ScopeType),
+		})
+	}
+	return out, nil
+}
+
+func hasMeasurementServer(features []string) bool {
+	for _, feature := range features {
+		if feature == "Measurement/server" {
+			return true
+		}
+	}
+	return false
+}
+
+func classifyGenericMeasurement(entity eebus.EntityInfo, desc model.MeasurementDescriptionDataType) string {
+	measurementType := stringPtrValue(desc.MeasurementType)
+	scope := stringPtrValue(desc.ScopeType)
+	entityType := strings.ToLower(entity.Type)
+
+	switch scope {
+	case string(model.ScopeTypeTypeDhwTemperature):
+		return "dhw_temperature"
+	case string(model.ScopeTypeTypeRoomAirTemperature):
+		return "room_temperature"
+	case string(model.ScopeTypeTypeOutsideAirTemperature):
+		return "outdoor_temperature"
+	case string(model.ScopeTypeTypeFlowTemperature):
+		return "flow_temperature"
+	case string(model.ScopeTypeTypeReturnTemperature):
+		return "return_temperature"
+	case string(model.ScopeTypeTypeComponentTemperature):
+		if entityType == "compressor" {
+			return "compressor_temperature"
+		}
+	}
+
+	if measurementType == string(model.MeasurementTypeTypeTemperature) {
+		switch entityType {
+		case "dhwcircuit":
+			return "dhw_temperature"
+		case "hvacroom":
+			return "room_temperature"
+		case "temperaturesensor":
+			return "outdoor_temperature"
+		case "compressor":
+			return "compressor_temperature"
+		}
+	}
+	if measurementType == string(model.MeasurementTypeTypePower) && entityType == "compressor" {
+		return "compressor_power"
+	}
+
+	rawType := measurementType
+	if rawType == "" {
+		rawType = "unknown"
+	}
+	rawScope := scope
+	if rawScope == "" {
+		rawScope = "unspecified"
+	}
+	rawEntity := strings.ToLower(entity.Type)
+	if rawEntity == "" {
+		rawEntity = "entity"
+	}
+	return fmt.Sprintf("raw_%s_%s_%s", rawEntity, rawType, rawScope)
+}
+
+func stringPtrValue[T ~string](ptr *T) string {
+	if ptr == nil {
+		return ""
+	}
+	return string(*ptr)
 }

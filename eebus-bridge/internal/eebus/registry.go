@@ -1,11 +1,20 @@
 package eebus
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 
 	spineapi "github.com/enbility/spine-go/api"
+	"github.com/enbility/spine-go/model"
 )
+
+type EntityInfo struct {
+	Address  string
+	Type     string
+	Features []string
+	Entity   spineapi.EntityRemoteInterface
+}
 
 type DeviceInfo struct {
 	SKI            string
@@ -16,6 +25,7 @@ type DeviceInfo struct {
 	UseCases       []string
 	RemoteDevice   spineapi.DeviceRemoteInterface
 	RemoteEntities []spineapi.EntityRemoteInterface
+	Entities       []EntityInfo
 }
 
 type DeviceRegistry struct {
@@ -82,6 +92,7 @@ func (r *DeviceRegistry) UpsertObservation(
 		if !alreadyPresent {
 			info.RemoteEntities = append(info.RemoteEntities, remoteEntity)
 		}
+		info.Entities = upsertEntityInfo(info.Entities, remoteEntity)
 	}
 
 	if useCase != "" {
@@ -150,6 +161,7 @@ func (r *DeviceRegistry) ClearEntities(ski string) {
 	}
 	info.RemoteDevice = nil
 	info.RemoteEntities = nil
+	info.Entities = nil
 	r.devices[ski] = info
 }
 
@@ -193,4 +205,84 @@ func (r *DeviceRegistry) FirstAvailableEntity() spineapi.EntityRemoteInterface {
 		}
 	}
 	return nil
+}
+
+func (r *DeviceRegistry) Entities(ski string) []EntityInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	ski = NormalizeSKI(ski)
+	info, ok := r.devices[ski]
+	if !ok {
+		return nil
+	}
+	return copyEntityInfos(info.Entities)
+}
+
+func (r *DeviceRegistry) FirstEntityForType(ski, entityType string) spineapi.EntityRemoteInterface {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	ski = NormalizeSKI(ski)
+	info, ok := r.devices[ski]
+	if !ok {
+		return nil
+	}
+	for _, entity := range info.Entities {
+		if entity.Type == entityType && entity.Entity != nil {
+			return entity.Entity
+		}
+	}
+	return nil
+}
+
+func upsertEntityInfo(entities []EntityInfo, entity spineapi.EntityRemoteInterface) []EntityInfo {
+	next := EntityInfo{
+		Address:  EntityAddressString(entity.Address()),
+		Type:     string(entity.EntityType()),
+		Features: FeatureStrings(entity.Features()),
+		Entity:   entity,
+	}
+	for idx, existing := range entities {
+		if existing.Entity == entity || (existing.Address != "" && existing.Address == next.Address) {
+			entities[idx] = next
+			return entities
+		}
+	}
+	return append(entities, next)
+}
+
+func copyEntityInfos(in []EntityInfo) []EntityInfo {
+	out := make([]EntityInfo, len(in))
+	for idx, entity := range in {
+		out[idx] = entity
+		out[idx].Features = append([]string(nil), entity.Features...)
+	}
+	return out
+}
+
+func EntityAddressString(addr *model.EntityAddressType) string {
+	if addr == nil || len(addr.Entity) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(addr.Entity))
+	for _, a := range addr.Entity {
+		parts = append(parts, fmt.Sprintf("%d", uint(a)))
+	}
+	return strings.Join(parts, ":")
+}
+
+func FeatureStrings(features []spineapi.FeatureRemoteInterface) []string {
+	result := make([]string, 0, len(features))
+	seen := make(map[string]struct{}, len(features))
+	for _, feature := range features {
+		if feature == nil {
+			continue
+		}
+		key := fmt.Sprintf("%s/%s", feature.Type(), feature.Role())
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, key)
+	}
+	return result
 }

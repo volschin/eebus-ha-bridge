@@ -5,6 +5,8 @@ from unittest.mock import MagicMock
 from custom_components.eebus.sensor import (
     EebusFailsafeDurationSensor,
     EebusFailsafeLimitSensor,
+    EebusMeasurementDescription,
+    EebusMeasurementSensor,
     EebusPowerSensor,
 )
 
@@ -68,3 +70,18 @@ def test_failsafe_duration_sensor_value():
     sensor = EebusFailsafeDurationSensor(coordinator)
     assert sensor.native_value == 7200
     assert sensor.native_unit_of_measurement == "s"
+
+
+def test_measurement_sensor_vaillant_temperature_value():
+    """Generic measurement sensor exposes mapped Vaillant temperatures."""
+    coordinator = MagicMock()
+    coordinator.data = {"dhw_temperature_c": 48.5, "connected": True}
+    coordinator.ski = "test-ski-123"
+    description = EebusMeasurementDescription(
+        key="dhw_temperature",
+        data_key="dhw_temperature_c",
+        translation_key="dhw_temperature",
+    )
+
+    sensor = EebusMeasurementSensor(coordinator, description)
+    assert sensor.native_value == 48.5
