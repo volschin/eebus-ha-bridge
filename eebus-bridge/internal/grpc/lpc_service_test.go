@@ -50,6 +50,43 @@ func TestSubscribeLPCEvents(t *testing.T) {
 	}
 }
 
+func TestSubscribeLPCEventsHeartbeat(t *testing.T) {
+	bus := eebus.NewEventBus()
+	svc := bridgegrpc.NewLPCService(nil, bus, eebus.NewDeviceRegistry())
+
+	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
+	pb.RegisterLPCServiceServer(srv.GRPCServer(), svc)
+	go srv.Start()
+	t.Cleanup(srv.Stop)
+
+	time.Sleep(100 * time.Millisecond)
+	conn, err := grpc.NewClient(srv.Addr(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	client := pb.NewLPCServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	stream, err := client.SubscribeLPCEvents(ctx, &pb.DeviceRequest{Ski: "test-ski"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	bus.Publish(eebus.Event{SKI: "test-ski", Type: "lpc.heartbeat_updated"})
+
+	evt, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("Recv: %v", err)
+	}
+	if evt.EventType != pb.LPCEventType_LPC_EVENT_HEARTBEAT_TIMEOUT {
+		t.Errorf("EventType = %v, want LPC_EVENT_HEARTBEAT_TIMEOUT", evt.EventType)
+	}
+}
+
 func TestHeartbeatHandlersValidation(t *testing.T) {
 	// nil lpc wrapper: handlers must report Unavailable, never panic.
 	svc := bridgegrpc.NewLPCService(nil, eebus.NewEventBus(), eebus.NewDeviceRegistry())

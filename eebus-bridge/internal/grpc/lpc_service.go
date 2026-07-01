@@ -194,6 +194,8 @@ func (s *LPCService) SubscribeLPCEvents(req *pb.DeviceRequest, stream pb.LPCServ
 				eventType = pb.LPCEventType_LPC_EVENT_LIMIT_UPDATED
 			case "lpc.failsafe_power_updated", "lpc.failsafe_duration_updated":
 				eventType = pb.LPCEventType_LPC_EVENT_FAILSAFE_UPDATED
+			case "lpc.heartbeat_updated":
+				eventType = pb.LPCEventType_LPC_EVENT_HEARTBEAT_TIMEOUT
 			default:
 				continue
 			}

@@ -75,6 +75,10 @@ func (w *LPCWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInterfa
 		eventType = "lpc.failsafe_duration_updated"
 	case eglpc.UseCaseSupportUpdate:
 		eventType = "lpc.use_case_support_updated"
+	case eglpc.DataUpdateHeartbeat:
+		// Per eebus-go: signals the remote entering or leaving failsafe state.
+		// No payload is attached; HA reconciles via GetHeartbeatStatus on refresh.
+		eventType = "lpc.heartbeat_updated"
 	default:
 		return
 	}
@@ -201,8 +205,16 @@ func (w *LPCWrapper) IsHeartbeatRunning() bool {
 	return w.localEntity.HeartbeatManager().IsHeartbeatRunning()
 }
 
-// IsHeartbeatWithinDuration reports whether the heartbeat is currently active.
-// The entity argument is accepted for API symmetry with per-remote callers.
-func (w *LPCWrapper) IsHeartbeatWithinDuration(_ spineapi.EntityRemoteInterface) bool {
-	return w.IsHeartbeatRunning()
+// IsHeartbeatWithinDuration reports whether entity (the remote controllable
+// system) has sent a DeviceDiagnosis heartbeat within the last 2 minutes.
+// This is distinct from IsHeartbeatRunning: that reports whether *we* are
+// still sending our own heartbeat (nearly always true), whereas this is the
+// actual §14a failsafe signal — a heat pump drops its LPC limit to the
+// configured failsafe value once its own heartbeat to us lapses, and this
+// method is how the bridge detects that has happened.
+func (w *LPCWrapper) IsHeartbeatWithinDuration(entity spineapi.EntityRemoteInterface) bool {
+	if w.uc == nil {
+		return false
+	}
+	return w.uc.IsHeartbeatWithinDuration(entity)
 }
