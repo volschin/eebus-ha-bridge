@@ -82,7 +82,9 @@
       "voltage_l2": { "name": "Spannung L2" },
       "voltage_l3": { "name": "Spannung L3" },
       "frequency": { "name": "Netzfrequenz" },
-      "energy_produced": { "name": "Eingespeiste Energie" }
+      "energy_produced": { "name": "Eingespeiste Energie" },
+      "failsafe_limit": { "name": "Failsafe-Limit" },
+      "failsafe_duration": { "name": "Failsafe-Mindestdauer" }
     },
     "number": {
       "lpc_limit": { "name": "LPC Limit" },

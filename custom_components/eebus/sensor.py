@@ -18,6 +18,7 @@ from homeassistant.const import (
     UnitOfEnergy,
     UnitOfFrequency,
     UnitOfPower,
+    UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -108,6 +109,8 @@ async def async_setup_entry(
         EebusEnergyConsumedHeatingSensor(coordinator),
         EebusEnergyConsumedDhwSensor(coordinator),
         EebusConsumptionLimitSensor(coordinator),
+        EebusFailsafeLimitSensor(coordinator),
+        EebusFailsafeDurationSensor(coordinator),
     ]
     entities.extend(
         EebusMeasurementSensor(coordinator, description)
@@ -246,3 +249,81 @@ class EebusConsumptionLimitSensor(EebusEntity, SensorEntity):
         if limit is None:
             return None
         return limit.get("value_watts")
+
+
+class EebusFailsafeLimitSensor(EebusEntity, SensorEntity):
+    """Read-only sensor showing the configured LPC failsafe power limit.
+
+    The corresponding number entity is disabled by default (Gold: less
+    popular entities disabled), so this diagnostic sensor is the only place
+    most users will ever see the value the device falls back to once its
+    heartbeat lapses.
+    """
+
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_translation_key = "failsafe_limit"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: EebusCoordinator) -> None:
+        """Initialize."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.ski}_failsafe_limit_diagnostic"
+
+    @property
+    def available(self) -> bool:
+        """Disable entity when failsafe is known to be unsupported."""
+        if not super().available:
+            return False
+        if self.coordinator.data is None:
+            return False
+        return self.coordinator.data.get("failsafe_supported") is not False
+
+    @property
+    def native_value(self) -> float | None:
+        """Return current failsafe limit in watts."""
+        if self.coordinator.data is None:
+            return None
+        failsafe = self.coordinator.data.get("failsafe_limit")
+        if failsafe is None:
+            return None
+        return failsafe.get("value_watts")
+
+
+class EebusFailsafeDurationSensor(EebusEntity, SensorEntity):
+    """Read-only sensor showing the configured LPC failsafe minimum duration.
+
+    No writable entity exists for this value; it is only otherwise
+    accessible via the gRPC GetFailsafeLimit call.
+    """
+
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_translation_key = "failsafe_duration"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: EebusCoordinator) -> None:
+        """Initialize."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.ski}_failsafe_duration"
+
+    @property
+    def available(self) -> bool:
+        """Disable entity when failsafe is known to be unsupported."""
+        if not super().available:
+            return False
+        if self.coordinator.data is None:
+            return False
+        return self.coordinator.data.get("failsafe_supported") is not False
+
+    @property
+    def native_value(self) -> float | None:
+        """Return current failsafe minimum duration in seconds."""
+        if self.coordinator.data is None:
+            return None
+        failsafe = self.coordinator.data.get("failsafe_limit")
+        if failsafe is None:
+            return None
+        return failsafe.get("duration_minimum_seconds")

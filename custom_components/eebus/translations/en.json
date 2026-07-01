@@ -82,7 +82,9 @@
       "voltage_l2": { "name": "Voltage L2" },
       "voltage_l3": { "name": "Voltage L3" },
       "frequency": { "name": "Grid Frequency" },
-      "energy_produced": { "name": "Energy Produced" }
+      "energy_produced": { "name": "Energy Produced" },
+      "failsafe_limit": { "name": "Failsafe Limit" },
+      "failsafe_duration": { "name": "Failsafe Minimum Duration" }
     },
     "number": {
       "lpc_limit": { "name": "LPC Limit" },
