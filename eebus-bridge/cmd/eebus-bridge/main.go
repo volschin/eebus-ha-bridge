@@ -135,6 +135,28 @@ func main() {
 	}
 	log.Println("Registered EEBUS use cases: LPC, Monitoring")
 
+	go func() {
+		ch := bus.Subscribe()
+		defer bus.Unsubscribe(ch)
+		for evt := range ch {
+			switch evt.Type {
+			case "device.register_ski":
+				bridgeSvc.RegisterRemoteSKI(evt.SKI)
+				log.Printf("Registered remote SKI: %s", evt.SKI)
+			case "device.unregister_ski":
+				// eebus-go's UnregisterRemoteService only notifies via
+				// ServicePairingDetailUpdate, not ServiceAutoTrustRemoved, so the
+				// registry is cleared explicitly here rather than relying on a
+				// callback (cf. ServiceAutoTrustRemoved in callbacks.go, which
+				// handles the remote-initiated revocation case).
+				bridgeSvc.UnregisterRemoteSKI(evt.SKI)
+				registry.RemoveDevice(evt.SKI)
+				bus.Publish(eebus.Event{SKI: evt.SKI, Type: "device.trust_removed"})
+				log.Printf("Unregistered remote SKI: %s", evt.SKI)
+			}
+		}
+	}()
+
 	grpcSrv := bridgegrpc.NewServer(cfg.GRPC.Bind, cfg.GRPC.Port, cfg.GRPC.EnableReflection)
 
 	deviceSvc := bridgegrpc.NewDeviceService(bridgeSvc.Callbacks(), bus, ski, registry)
@@ -183,28 +205,6 @@ func main() {
 	if cfg.Logging.DebugEvents {
 		log.Println("[DEBUG] EEBUS event debug logging enabled; waiting for incoming callbacks")
 	}
-
-	go func() {
-		ch := bus.Subscribe()
-		defer bus.Unsubscribe(ch)
-		for evt := range ch {
-			switch evt.Type {
-			case "device.register_ski":
-				bridgeSvc.RegisterRemoteSKI(evt.SKI)
-				log.Printf("Registered remote SKI: %s", evt.SKI)
-			case "device.unregister_ski":
-				// eebus-go's UnregisterRemoteService only notifies via
-				// ServicePairingDetailUpdate, not ServiceAutoTrustRemoved, so the
-				// registry is cleared explicitly here rather than relying on a
-				// callback (cf. ServiceAutoTrustRemoved in callbacks.go, which
-				// handles the remote-initiated revocation case).
-				bridgeSvc.UnregisterRemoteSKI(evt.SKI)
-				registry.RemoveDevice(evt.SKI)
-				bus.Publish(eebus.Event{SKI: evt.SKI, Type: "device.trust_removed"})
-				log.Printf("Unregistered remote SKI: %s", evt.SKI)
-			}
-		}
-	}()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

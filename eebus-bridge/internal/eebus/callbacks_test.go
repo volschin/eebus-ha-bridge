@@ -31,6 +31,19 @@ func TestCallbacksDispatchConnect(t *testing.T) {
 	}
 }
 
+func TestCallbacksConnectAddsDeviceToRegistry(t *testing.T) {
+	bus := eebus.NewEventBus()
+	reg := eebus.NewDeviceRegistry()
+	cb := eebus.NewCallbacks(bus, false)
+	cb.SetRegistry(reg)
+
+	cb.RemoteServiceConnected(nil, shipapi.ServiceIdentity{SKI: "test-ski-123"})
+
+	if _, ok := reg.GetDevice("test-ski-123"); !ok {
+		t.Fatal("connected remote service was not added to registry")
+	}
+}
+
 func TestCallbacksDispatchDisconnect(t *testing.T) {
 	bus := eebus.NewEventBus()
 	ch := bus.Subscribe()
