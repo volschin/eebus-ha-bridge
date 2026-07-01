@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/enbility/eebus-go v0.7.1-0.20260608105936-abdcf864d0cf
 	github.com/enbility/ship-go v0.6.1-0.20260518113001-134687068e3c
-	github.com/enbility/spine-go v0.7.1-0.20260520153416-0104ce40c885
+	github.com/enbility/spine-go v0.7.1-0.20260629113257-b3bcc643f323
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
