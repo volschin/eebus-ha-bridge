@@ -515,11 +515,12 @@ const file_eebus_v1_device_service_proto_rawDesc = "" +
 	"\x18DEVICE_EVENT_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16DEVICE_EVENT_CONNECTED\x10\x01\x12\x1d\n" +
 	"\x19DEVICE_EVENT_DISCONNECTED\x10\x02\x12\x1e\n" +
-	"\x1aDEVICE_EVENT_TRUST_REMOVED\x10\x032\xe1\x02\n" +
+	"\x1aDEVICE_EVENT_TRUST_REMOVED\x10\x032\xa7\x03\n" +
 	"\rDeviceService\x125\n" +
 	"\tGetStatus\x12\x0f.eebus.v1.Empty\x1a\x17.eebus.v1.ServiceStatus\x12G\n" +
 	"\x15ListDiscoveredDevices\x12\x0f.eebus.v1.Empty\x1a\x1d.eebus.v1.ListDevicesResponse\x12B\n" +
-	"\x11RegisterRemoteSKI\x12\x1c.eebus.v1.RegisterSKIRequest\x1a\x0f.eebus.v1.Empty\x12I\n" +
+	"\x11RegisterRemoteSKI\x12\x1c.eebus.v1.RegisterSKIRequest\x1a\x0f.eebus.v1.Empty\x12D\n" +
+	"\x13UnregisterRemoteSKI\x12\x1c.eebus.v1.RegisterSKIRequest\x1a\x0f.eebus.v1.Empty\x12I\n" +
 	"\x11ListPairedDevices\x12\x0f.eebus.v1.Empty\x1a#.eebus.v1.ListPairedDevicesResponse\x12A\n" +
 	"\x15SubscribeDeviceEvents\x12\x0f.eebus.v1.Empty\x1a\x15.eebus.v1.DeviceEvent0\x01B=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3"
 
@@ -555,15 +556,17 @@ var file_eebus_v1_device_service_proto_depIdxs = []int32{
 	8, // 3: eebus.v1.DeviceService.GetStatus:input_type -> eebus.v1.Empty
 	8, // 4: eebus.v1.DeviceService.ListDiscoveredDevices:input_type -> eebus.v1.Empty
 	4, // 5: eebus.v1.DeviceService.RegisterRemoteSKI:input_type -> eebus.v1.RegisterSKIRequest
-	8, // 6: eebus.v1.DeviceService.ListPairedDevices:input_type -> eebus.v1.Empty
-	8, // 7: eebus.v1.DeviceService.SubscribeDeviceEvents:input_type -> eebus.v1.Empty
-	1, // 8: eebus.v1.DeviceService.GetStatus:output_type -> eebus.v1.ServiceStatus
-	3, // 9: eebus.v1.DeviceService.ListDiscoveredDevices:output_type -> eebus.v1.ListDevicesResponse
-	8, // 10: eebus.v1.DeviceService.RegisterRemoteSKI:output_type -> eebus.v1.Empty
-	6, // 11: eebus.v1.DeviceService.ListPairedDevices:output_type -> eebus.v1.ListPairedDevicesResponse
-	7, // 12: eebus.v1.DeviceService.SubscribeDeviceEvents:output_type -> eebus.v1.DeviceEvent
-	8, // [8:13] is the sub-list for method output_type
-	3, // [3:8] is the sub-list for method input_type
+	4, // 6: eebus.v1.DeviceService.UnregisterRemoteSKI:input_type -> eebus.v1.RegisterSKIRequest
+	8, // 7: eebus.v1.DeviceService.ListPairedDevices:input_type -> eebus.v1.Empty
+	8, // 8: eebus.v1.DeviceService.SubscribeDeviceEvents:input_type -> eebus.v1.Empty
+	1, // 9: eebus.v1.DeviceService.GetStatus:output_type -> eebus.v1.ServiceStatus
+	3, // 10: eebus.v1.DeviceService.ListDiscoveredDevices:output_type -> eebus.v1.ListDevicesResponse
+	8, // 11: eebus.v1.DeviceService.RegisterRemoteSKI:output_type -> eebus.v1.Empty
+	8, // 12: eebus.v1.DeviceService.UnregisterRemoteSKI:output_type -> eebus.v1.Empty
+	6, // 13: eebus.v1.DeviceService.ListPairedDevices:output_type -> eebus.v1.ListPairedDevicesResponse
+	7, // 14: eebus.v1.DeviceService.SubscribeDeviceEvents:output_type -> eebus.v1.DeviceEvent
+	9, // [9:15] is the sub-list for method output_type
+	3, // [3:9] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
 	3, // [3:3] is the sub-list for extension extendee
 	0, // [0:3] is the sub-list for field type_name

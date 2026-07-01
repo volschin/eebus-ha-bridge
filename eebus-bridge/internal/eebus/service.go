@@ -133,3 +133,11 @@ func (b *BridgeService) Callbacks() *Callbacks {
 func (b *BridgeService) RegisterRemoteSKI(ski string) {
 	b.service.RegisterRemoteService(shipapi.NewServiceIdentity(NormalizeSKI(ski), "", ""))
 }
+
+// UnregisterRemoteSKI revokes trust for a SKI without touching the bridge's
+// own local identity, so a single stale/wrong device can be dropped without
+// forcing every other paired device to re-pair (unlike deleting internal/certs/,
+// which rotates the local SKI).
+func (b *BridgeService) UnregisterRemoteSKI(ski string) {
+	b.service.UnregisterRemoteService(shipapi.NewServiceIdentity(NormalizeSKI(ski), "", ""))
+}

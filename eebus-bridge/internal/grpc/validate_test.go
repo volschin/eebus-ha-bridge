@@ -34,6 +34,29 @@ func TestFiniteNonNegativePercent(t *testing.T) {
 	}
 }
 
+func TestValidSKI(t *testing.T) {
+	valid := "682f708ceba5df9adcb9e6787ea911d9fc3ac490"
+	if !validSKI(valid) {
+		t.Errorf("validSKI(%q) = false, want true", valid)
+	}
+	if !validSKI("682F708CEBA5DF9ADCB9E6787EA911D9FC3AC490") {
+		t.Error("validSKI should accept uppercase hex")
+	}
+
+	invalid := []string{
+		"",
+		"too-short",
+		valid + "a", // 41 chars
+		"682f708ceba5df9adcb9e6787ea911d9fc3ac49z",     // non-hex trailing char
+		"68:2f:70:8c:eb:a5:df:9a:dc:b9:e6:78:7e:a9:11", // colon-separated, wrong length
+	}
+	for _, ski := range invalid {
+		if validSKI(ski) {
+			t.Errorf("validSKI(%q) = true, want false", ski)
+		}
+	}
+}
+
 // Validation runs before the provider-nil check, so a nil provider still yields
 // InvalidArgument for bad input (rather than Unavailable).
 func TestPublishRPCsRejectInvalidValues(t *testing.T) {
