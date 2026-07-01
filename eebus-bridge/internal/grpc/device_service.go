@@ -5,6 +5,8 @@ import (
 
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/eebus"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type DeviceService struct {
@@ -43,7 +45,24 @@ func (s *DeviceService) ListDiscoveredDevices(_ context.Context, _ *pb.Empty) (*
 }
 
 func (s *DeviceService) RegisterRemoteSKI(_ context.Context, req *pb.RegisterSKIRequest) (*pb.Empty, error) {
-	s.bus.Publish(eebus.Event{SKI: req.Ski, Type: "device.register_ski"})
+	ski := normalizeSKIInput(req.Ski)
+	if !validSKI(ski) {
+		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
+	}
+	s.bus.Publish(eebus.Event{SKI: ski, Type: "device.register_ski"})
+	return &pb.Empty{}, nil
+}
+
+// UnregisterRemoteSKI revokes trust for a paired remote SKI without disturbing
+// the bridge's own local identity. This lets a stale or wrongly-paired device
+// be dropped without deleting internal/certs/ (which would rotate the local
+// SKI and force every other paired device to re-pair too).
+func (s *DeviceService) UnregisterRemoteSKI(_ context.Context, req *pb.RegisterSKIRequest) (*pb.Empty, error) {
+	ski := normalizeSKIInput(req.Ski)
+	if !validSKI(ski) {
+		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
+	}
+	s.bus.Publish(eebus.Event{SKI: ski, Type: "device.unregister_ski"})
 	return &pb.Empty{}, nil
 }
 
@@ -79,6 +98,8 @@ func (s *DeviceService) SubscribeDeviceEvents(_ *pb.Empty, stream pb.DeviceServi
 				eventType = pb.DeviceEventType_DEVICE_EVENT_CONNECTED
 			case "device.disconnected":
 				eventType = pb.DeviceEventType_DEVICE_EVENT_DISCONNECTED
+			case "device.trust_removed":
+				eventType = pb.DeviceEventType_DEVICE_EVENT_TRUST_REMOVED
 			default:
 				continue
 			}

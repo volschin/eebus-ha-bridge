@@ -50,6 +50,11 @@ class DeviceServiceStub(object):
                 request_serializer=eebus_dot_v1_dot_device__service__pb2.RegisterSKIRequest.SerializeToString,
                 response_deserializer=eebus_dot_v1_dot_common__pb2.Empty.FromString,
                 _registered_method=True)
+        self.UnregisterRemoteSKI = channel.unary_unary(
+                '/eebus.v1.DeviceService/UnregisterRemoteSKI',
+                request_serializer=eebus_dot_v1_dot_device__service__pb2.RegisterSKIRequest.SerializeToString,
+                response_deserializer=eebus_dot_v1_dot_common__pb2.Empty.FromString,
+                _registered_method=True)
         self.ListPairedDevices = channel.unary_unary(
                 '/eebus.v1.DeviceService/ListPairedDevices',
                 request_serializer=eebus_dot_v1_dot_common__pb2.Empty.SerializeToString,
@@ -83,6 +88,12 @@ class DeviceServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def UnregisterRemoteSKI(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def ListPairedDevices(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -110,6 +121,11 @@ def add_DeviceServiceServicer_to_server(servicer, server):
             ),
             'RegisterRemoteSKI': grpc.unary_unary_rpc_method_handler(
                     servicer.RegisterRemoteSKI,
+                    request_deserializer=eebus_dot_v1_dot_device__service__pb2.RegisterSKIRequest.FromString,
+                    response_serializer=eebus_dot_v1_dot_common__pb2.Empty.SerializeToString,
+            ),
+            'UnregisterRemoteSKI': grpc.unary_unary_rpc_method_handler(
+                    servicer.UnregisterRemoteSKI,
                     request_deserializer=eebus_dot_v1_dot_device__service__pb2.RegisterSKIRequest.FromString,
                     response_serializer=eebus_dot_v1_dot_common__pb2.Empty.SerializeToString,
             ),
@@ -203,6 +219,33 @@ class DeviceService(object):
             request,
             target,
             '/eebus.v1.DeviceService/RegisterRemoteSKI',
+            eebus_dot_v1_dot_device__service__pb2.RegisterSKIRequest.SerializeToString,
+            eebus_dot_v1_dot_common__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UnregisterRemoteSKI(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/eebus.v1.DeviceService/UnregisterRemoteSKI',
             eebus_dot_v1_dot_device__service__pb2.RegisterSKIRequest.SerializeToString,
             eebus_dot_v1_dot_common__pb2.Empty.FromString,
             options,

@@ -73,6 +73,42 @@ func TestCallbacksDisconnectClearsCachedEntities(t *testing.T) {
 	}
 }
 
+func TestCallbacksTrustRemovedClearsCachedEntitiesAndPublishes(t *testing.T) {
+	bus := eebus.NewEventBus()
+	ch := bus.Subscribe()
+	defer bus.Unsubscribe(ch)
+
+	reg := eebus.NewDeviceRegistry()
+	reg.AddDevice("test-ski-789", eebus.DeviceInfo{
+		Brand:          "Vaillant",
+		RemoteEntities: []spineapi.EntityRemoteInterface{nil},
+	})
+
+	cb := eebus.NewCallbacks(bus, false)
+	cb.SetRegistry(reg)
+	cb.ServiceAutoTrustRemoved(nil, shipapi.ServiceIdentity{SKI: "test-ski-789"}, "remote revoked")
+
+	info, ok := reg.GetDevice("test-ski-789")
+	if !ok {
+		t.Fatal("device metadata removed on trust removal; only entities should be cleared")
+	}
+	if len(info.RemoteEntities) != 0 {
+		t.Errorf("cached entities not cleared on trust removal: got %d", len(info.RemoteEntities))
+	}
+
+	select {
+	case evt := <-ch:
+		if evt.Type != "device.trust_removed" {
+			t.Errorf("Type = %q, want device.trust_removed", evt.Type)
+		}
+		if evt.SKI != "TEST-SKI-789" {
+			t.Errorf("SKI = %q, want TEST-SKI-789", evt.SKI)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for trust_removed event")
+	}
+}
+
 func TestCallbacksVisibleServicesUpdated(t *testing.T) {
 	bus := eebus.NewEventBus()
 	ch := bus.Subscribe()

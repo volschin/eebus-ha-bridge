@@ -118,11 +118,25 @@ func (c *Callbacks) ServiceAutoTrustFailed(_ api.ServiceInterface, identity ship
 	}
 }
 
-// ServiceAutoTrustRemoved is called when device trust is automatically removed.
+// ServiceAutoTrustRemoved is called when device trust is automatically
+// removed (e.g. the remote revokes pairing, or an explicit unregister).
+// Without this the registry kept serving stale EntityRemoteInterface pointers
+// after trust was revoked, the same failure mode RemoteServiceDisconnected
+// already guards against, just triggered by a different SHIP event.
 func (c *Callbacks) ServiceAutoTrustRemoved(_ api.ServiceInterface, identity shipapi.ServiceIdentity, reason string) {
+	ski := NormalizeSKI(identity.SKI)
 	if c.debugEvents {
-		log.Printf("[DEBUG] EEBUS callback: service auto-trust removed: ski=%s reason=%s", NormalizeSKI(identity.SKI), reason)
+		log.Printf("[DEBUG] EEBUS callback: service auto-trust removed: ski=%s reason=%s", ski, reason)
 	}
+
+	if c.registry != nil {
+		c.registry.ClearEntities(ski)
+	}
+
+	c.bus.Publish(Event{
+		SKI:  ski,
+		Type: "device.trust_removed",
+	})
 }
 
 // DiscoveredServices returns a snapshot of the currently visible remote services.

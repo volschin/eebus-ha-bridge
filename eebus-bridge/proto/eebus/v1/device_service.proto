@@ -10,6 +10,7 @@ service DeviceService {
   rpc GetStatus(Empty) returns (ServiceStatus);
   rpc ListDiscoveredDevices(Empty) returns (ListDevicesResponse);
   rpc RegisterRemoteSKI(RegisterSKIRequest) returns (Empty);
+  rpc UnregisterRemoteSKI(RegisterSKIRequest) returns (Empty);
   rpc ListPairedDevices(Empty) returns (ListPairedDevicesResponse);
   rpc SubscribeDeviceEvents(Empty) returns (stream DeviceEvent);
 }
