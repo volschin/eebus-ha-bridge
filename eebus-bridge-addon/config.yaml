@@ -1,0 +1,33 @@
+name: EEBUS Bridge
+description: >-
+  EEBUS SHIP/SPINE bridge for heat pump communication.
+  Provides gRPC interface for the EEBUS custom integration.
+version: 0.5.3
+slug: eebus_bridge
+init: false
+arch:
+  - amd64
+  - aarch64
+host_network: true
+ports:
+  50051/tcp: null
+  4712/tcp: null
+ports_description:
+  50051/tcp: gRPC API (used by the HA integration)
+  4712/tcp: EEBUS SHIP protocol
+map:
+  - addon_config:rw
+options:
+  GRPC_PORT: 50051
+  EEBUS_PORT: 4712
+  EEBUS_VENDOR: HomeAssistant
+  EEBUS_BRAND: "Home Assistant"
+  EEBUS_MODEL: eebus-bridge
+  EEBUS_SERIAL: ""
+schema:
+  GRPC_PORT: port
+  EEBUS_PORT: port
+  EEBUS_VENDOR: str
+  EEBUS_BRAND: str
+  EEBUS_MODEL: str
+  EEBUS_SERIAL: str?
