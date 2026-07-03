@@ -116,7 +116,7 @@ func run(
 			return err
 		}
 		if clearScreen && !first {
-			fmt.Fprint(out, "\033[H\033[2J")
+			_, _ = fmt.Fprint(out, "\033[H\033[2J")
 		}
 		renderSnapshot(out, snap)
 		first = false
@@ -256,21 +256,21 @@ func shouldReportErr(err error, debug bool) bool {
 
 func renderSnapshot(out io.Writer, snap *snapshot) {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "EEBUS watch")
-	fmt.Fprintln(w, "===========")
-	fmt.Fprintf(w, "Bridge\t%s:%d\n", snap.Host, snap.Port)
-	fmt.Fprintf(w, "Running\t%t\n", snap.Connected)
-	fmt.Fprintf(w, "Local SKI\t%s\n", blankIfEmpty(snap.LocalSKI))
-	fmt.Fprintf(w, "Requested SKI\t%s\n", blankIfEmpty(snap.RequestedSKI))
-	fmt.Fprintf(w, "Selected SKI\t%s\n", blankIfEmpty(snap.SelectedSKI))
-	fmt.Fprintf(w, "Register sent\t%t\n", snap.Registered)
-	fmt.Fprintf(w, "Discovered devices\t%d\n", len(snap.Discovered))
-	fmt.Fprintf(w, "Paired devices\t%d\n", len(snap.PairedDevices))
+	_, _ = fmt.Fprintln(w, "EEBUS watch")
+	_, _ = fmt.Fprintln(w, "===========")
+	_, _ = fmt.Fprintf(w, "Bridge\t%s:%d\n", snap.Host, snap.Port)
+	_, _ = fmt.Fprintf(w, "Running\t%t\n", snap.Connected)
+	_, _ = fmt.Fprintf(w, "Local SKI\t%s\n", blankIfEmpty(snap.LocalSKI))
+	_, _ = fmt.Fprintf(w, "Requested SKI\t%s\n", blankIfEmpty(snap.RequestedSKI))
+	_, _ = fmt.Fprintf(w, "Selected SKI\t%s\n", blankIfEmpty(snap.SelectedSKI))
+	_, _ = fmt.Fprintf(w, "Register sent\t%t\n", snap.Registered)
+	_, _ = fmt.Fprintf(w, "Discovered devices\t%d\n", len(snap.Discovered))
+	_, _ = fmt.Fprintf(w, "Paired devices\t%d\n", len(snap.PairedDevices))
 
 	if len(snap.Discovered) > 0 {
-		fmt.Fprintln(w, "\nDiscovered devices")
-		fmt.Fprintln(w, "------------------")
-		fmt.Fprintln(w, "SKI\tBrand\tModel\tSerial\tType\tHost")
+		_, _ = fmt.Fprintln(w, "\nDiscovered devices")
+		_, _ = fmt.Fprintln(w, "------------------")
+		_, _ = fmt.Fprintln(w, "SKI\tBrand\tModel\tSerial\tType\tHost")
 		devices := append([]*pb.DiscoveredDevice(nil), snap.Discovered...)
 		sort.Slice(devices, func(i, j int) bool {
 			return devices[i].GetSki() < devices[j].GetSki()
@@ -279,7 +279,7 @@ func renderSnapshot(out io.Writer, snap *snapshot) {
 			if device == nil {
 				continue
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 				blankIfEmpty(device.GetSki()),
 				blankIfEmpty(device.GetBrand()),
 				blankIfEmpty(device.GetModel()),
@@ -289,15 +289,15 @@ func renderSnapshot(out io.Writer, snap *snapshot) {
 			)
 		}
 	} else {
-		fmt.Fprintln(w, "\nDiscovered devices")
-		fmt.Fprintln(w, "------------------")
-		fmt.Fprintln(w, "No visible SHIP/mDNS devices")
+		_, _ = fmt.Fprintln(w, "\nDiscovered devices")
+		_, _ = fmt.Fprintln(w, "------------------")
+		_, _ = fmt.Fprintln(w, "No visible SHIP/mDNS devices")
 	}
 
 	if len(snap.PairedDevices) > 0 {
-		fmt.Fprintln(w, "\nPaired devices")
-		fmt.Fprintln(w, "--------------")
-		fmt.Fprintln(w, "SKI\tBrand\tModel\tSerial\tType\tUse cases")
+		_, _ = fmt.Fprintln(w, "\nPaired devices")
+		_, _ = fmt.Fprintln(w, "--------------")
+		_, _ = fmt.Fprintln(w, "SKI\tBrand\tModel\tSerial\tType\tUse cases")
 		devices := append([]*pb.PairedDevice(nil), snap.PairedDevices...)
 		sort.Slice(devices, func(i, j int) bool {
 			return devices[i].GetSki() < devices[j].GetSki()
@@ -306,7 +306,7 @@ func renderSnapshot(out io.Writer, snap *snapshot) {
 			if device == nil {
 				continue
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 				blankIfEmpty(device.GetSki()),
 				blankIfEmpty(device.GetBrand()),
 				blankIfEmpty(device.GetModel()),
@@ -316,36 +316,36 @@ func renderSnapshot(out io.Writer, snap *snapshot) {
 			)
 		}
 	} else {
-		fmt.Fprintln(w, "\nPaired devices")
-		fmt.Fprintln(w, "--------------")
-		fmt.Fprintln(w, "No paired devices available")
+		_, _ = fmt.Fprintln(w, "\nPaired devices")
+		_, _ = fmt.Fprintln(w, "--------------")
+		_, _ = fmt.Fprintln(w, "No paired devices available")
 	}
 
-	fmt.Fprintln(w, "\nMeasurements")
-	fmt.Fprintln(w, "------------")
+	_, _ = fmt.Fprintln(w, "\nMeasurements")
+	_, _ = fmt.Fprintln(w, "------------")
 	if len(snap.Measurements) == 0 {
-		fmt.Fprintln(w, "No monitoring measurements available")
+		_, _ = fmt.Fprintln(w, "No monitoring measurements available")
 	} else {
-		fmt.Fprintln(w, "Type\tValue\tUnit\tTimestamp")
+		_, _ = fmt.Fprintln(w, "Type\tValue\tUnit\tTimestamp")
 		for _, row := range sortedMeasurements(snap.Measurements) {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", row.Type, row.Value, row.Unit, row.Timestamp)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", row.Type, row.Value, row.Unit, row.Timestamp)
 		}
 	}
 
-	fmt.Fprintln(w, "\nState")
-	fmt.Fprintln(w, "-----")
+	_, _ = fmt.Fprintln(w, "\nState")
+	_, _ = fmt.Fprintln(w, "-----")
 	emptyState := true
 	if snap.Power != nil {
 		emptyState = false
-		fmt.Fprintf(w, "Power\t%.1f W\n", snap.Power.GetWatts())
+		_, _ = fmt.Fprintf(w, "Power\t%.1f W\n", snap.Power.GetWatts())
 	}
 	if snap.Energy != nil {
 		emptyState = false
-		fmt.Fprintf(w, "Energy consumed\t%.3f kWh\n", snap.Energy.GetKilowattHours())
+		_, _ = fmt.Fprintf(w, "Energy consumed\t%.3f kWh\n", snap.Energy.GetKilowattHours())
 	}
 	if snap.Consumption != nil {
 		emptyState = false
-		fmt.Fprintf(w, "LPC limit\t%.1f W (active=%t changeable=%t)\n",
+		_, _ = fmt.Fprintf(w, "LPC limit\t%.1f W (active=%t changeable=%t)\n",
 			snap.Consumption.GetValueWatts(),
 			snap.Consumption.GetIsActive(),
 			snap.Consumption.GetIsChangeable(),
@@ -353,21 +353,21 @@ func renderSnapshot(out io.Writer, snap *snapshot) {
 	}
 	if snap.Failsafe != nil {
 		emptyState = false
-		fmt.Fprintf(w, "Failsafe\t%.1f W / %d s\n",
+		_, _ = fmt.Fprintf(w, "Failsafe\t%.1f W / %d s\n",
 			snap.Failsafe.GetValueWatts(),
 			snap.Failsafe.GetDurationMinimumSeconds(),
 		)
 	}
 	if snap.Heartbeat != nil {
 		emptyState = false
-		fmt.Fprintf(w, "Heartbeat\trunning=%t within_duration=%t\n",
+		_, _ = fmt.Fprintf(w, "Heartbeat\trunning=%t within_duration=%t\n",
 			snap.Heartbeat.GetRunning(),
 			snap.Heartbeat.GetWithinDuration(),
 		)
 	}
 	if snap.Flexibility != nil {
 		emptyState = false
-		fmt.Fprintf(w, "OHPCF\tavailable=%t state=%s stoppable=%t pausable=%t min_run=%ds min_pause=%ds\n",
+		_, _ = fmt.Fprintf(w, "OHPCF\tavailable=%t state=%s stoppable=%t pausable=%t min_run=%ds min_pause=%ds\n",
 			snap.Flexibility.GetAvailable(),
 			snap.Flexibility.GetState().String(),
 			snap.Flexibility.GetIsStoppable(),
@@ -377,14 +377,14 @@ func renderSnapshot(out io.Writer, snap *snapshot) {
 		)
 	}
 	if emptyState {
-		fmt.Fprintln(w, "No readable state values")
+		_, _ = fmt.Fprintln(w, "No readable state values")
 	}
 
 	if len(snap.Errors) > 0 {
-		fmt.Fprintln(w, "\nErrors")
-		fmt.Fprintln(w, "------")
+		_, _ = fmt.Fprintln(w, "\nErrors")
+		_, _ = fmt.Fprintln(w, "------")
 		for _, item := range snap.Errors {
-			fmt.Fprintf(w, "%s\n", item)
+			_, _ = fmt.Fprintf(w, "%s\n", item)
 		}
 	}
 
