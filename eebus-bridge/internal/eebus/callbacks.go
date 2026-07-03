@@ -42,6 +42,10 @@ func (c *Callbacks) RemoteServiceConnected(_ api.ServiceInterface, identity ship
 		log.Printf("[DEBUG] EEBUS callback: remote service connected: ski=%s", ski)
 	}
 
+	if c.registry != nil {
+		c.registry.AddDevice(ski, DeviceInfo{SKI: ski})
+	}
+
 	c.bus.Publish(Event{
 		SKI:  ski,
 		Type: "device.connected",

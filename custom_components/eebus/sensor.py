@@ -18,6 +18,7 @@ from homeassistant.const import (
     UnitOfEnergy,
     UnitOfFrequency,
     UnitOfPower,
+    UnitOfTemperature,
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
@@ -39,6 +40,66 @@ class EebusMeasurementDescription(SensorEntityDescription):
 # (unavailable) otherwise. Disabled by default to avoid cluttering devices (e.g.
 # single-phase heat pumps) that never populate them.
 MEASUREMENT_SENSORS: tuple[EebusMeasurementDescription, ...] = (
+    EebusMeasurementDescription(
+        key="dhw_temperature",
+        data_key="dhw_temperature_c",
+        translation_key="dhw_temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    EebusMeasurementDescription(
+        key="room_temperature",
+        data_key="room_temperature_c",
+        translation_key="room_temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    EebusMeasurementDescription(
+        key="outdoor_temperature",
+        data_key="outdoor_temperature_c",
+        translation_key="outdoor_temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    EebusMeasurementDescription(
+        key="flow_temperature",
+        data_key="flow_temperature_c",
+        translation_key="flow_temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_registry_enabled_default=False,
+    ),
+    EebusMeasurementDescription(
+        key="return_temperature",
+        data_key="return_temperature_c",
+        translation_key="return_temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_registry_enabled_default=False,
+    ),
+    EebusMeasurementDescription(
+        key="compressor_temperature",
+        data_key="compressor_temperature_c",
+        translation_key="compressor_temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_registry_enabled_default=False,
+    ),
+    EebusMeasurementDescription(
+        key="compressor_power",
+        data_key="compressor_power_w",
+        translation_key="compressor_power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_registry_enabled_default=False,
+    ),
     *(
         EebusMeasurementDescription(
             key=f"power_l{phase}",

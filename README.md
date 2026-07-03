@@ -57,6 +57,22 @@ Alternativ als Binary:
 ./eebus-bridge --config config.yaml
 ```
 
+### Diagnose: Live-Watcher
+
+Zum schnellen Pruefen, welche Daten die Bridge aktuell liefert, gibt es jetzt
+einen Live-Watcher im Stil eines Terminal-Dashboards:
+
+```bash
+cd eebus-bridge
+go run ./cmd/eebus-watch --host 127.0.0.1 --port 50051 --ski <REMOTE-SKI>
+```
+
+Ohne `--ski` nimmt das Tool automatisch das erste gepaarte Geraet. Mit
+`--register --ski <REMOTE-SKI>` registriert es den SKI bei der laufenden Bridge,
+damit der SHIP/EEBUS-Verbindungsaufbau angestossen wird. Mit `--once` gibt es
+nur einen Snapshot aus, mit `--debug` werden auch `NotFound`-/`Unavailable`-
+Fehler angezeigt, und mit `--no-clear` bleibt der Verlauf im Terminal sichtbar.
+
 ## Einrichtung
 
 1. **Settings** > **Devices & Services** > **Add Integration**

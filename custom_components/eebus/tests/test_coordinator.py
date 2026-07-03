@@ -268,6 +268,9 @@ def test_extract_flat_measurements_maps_types():
         _entry("voltage_l3", 231.2),
         _entry("frequency", 50.0),
         _entry("energy_produced", 12.3),
+        _entry("dhw_temperature", 48.5),
+        _entry("outdoor_temperature", 7.0),
+        _entry("compressor_power", 900.0),
         # Unrelated / scoped types are ignored by the flat extractor.
         _entry("energy_consumed", 99.0),
     ]
@@ -278,6 +281,9 @@ def test_extract_flat_measurements_maps_types():
         "voltage_l3_v": 231.2,
         "frequency_hz": 50.0,
         "energy_produced_kwh": 12.3,
+        "dhw_temperature_c": 48.5,
+        "outdoor_temperature_c": 7.0,
+        "compressor_power_w": 900.0,
     }
 
 

@@ -146,3 +146,14 @@ func TestRegistryListDevices(t *testing.T) {
 		t.Errorf("len(devices) = %d, want 2", len(devices))
 	}
 }
+
+func TestRegistryEntityHelpersEmpty(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+
+	if entities := reg.Entities("unknown"); len(entities) != 0 {
+		t.Errorf("Entities unknown = %d, want 0", len(entities))
+	}
+	if entity := reg.FirstEntityForType("unknown", "HeatPumpAppliance"); entity != nil {
+		t.Error("FirstEntityForType unknown returned entity")
+	}
+}

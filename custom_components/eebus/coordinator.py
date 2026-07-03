@@ -64,6 +64,13 @@ FLAT_MEASUREMENT_TYPE_TO_KEY: dict[str, str] = {
     "voltage_l3": "voltage_l3_v",
     "frequency": "frequency_hz",
     "energy_produced": "energy_produced_kwh",
+    "dhw_temperature": "dhw_temperature_c",
+    "room_temperature": "room_temperature_c",
+    "outdoor_temperature": "outdoor_temperature_c",
+    "flow_temperature": "flow_temperature_c",
+    "return_temperature": "return_temperature_c",
+    "compressor_temperature": "compressor_temperature_c",
+    "compressor_power": "compressor_power_w",
 }
 FLAT_MEASUREMENT_KEYS: tuple[str, ...] = tuple(FLAT_MEASUREMENT_TYPE_TO_KEY.values())
 
