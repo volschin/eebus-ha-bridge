@@ -2,5 +2,15 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "local>olcond/renovate-config"
+  ],
+  "packageRules": [
+    {
+      // Pin tracks unmerged upstream feature branch `implement-cem-ohpcf`
+      // (enbility/eebus-go#223), which `dev` HEAD does not contain. A digest
+      // bump to `dev` deletes usecases/cem/ohpcf and breaks OHPCF control.
+      // Re-enable once #223 merges upstream.
+      "matchPackageNames": ["github.com/enbility/eebus-go"],
+      "enabled": false
+    }
   ]
 }
