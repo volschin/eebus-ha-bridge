@@ -91,16 +91,27 @@
       "frequency": { "name": "Netzfrequenz" },
       "energy_produced": { "name": "Eingespeiste Energie" },
       "failsafe_limit": { "name": "Failsafe-Limit" },
-      "failsafe_duration": { "name": "Failsafe-Mindestdauer" }
+      "failsafe_duration": { "name": "Failsafe-Mindestdauer" },
+      "compressor_flexibility_power_estimate": { "name": "Verdichter-Flexibilität Geschätzte Leistung" },
+      "compressor_flexibility_power_max": { "name": "Verdichter-Flexibilität Maximale Leistung" }
     },
     "number": {
       "lpc_limit": { "name": "LPC Limit" },
       "failsafe_limit": { "name": "Failsafe Limit" }
     },
+    "select": {
+      "compressor_flexibility": {
+        "name": "Verdichter-Flexibilität",
+        "state": {
+          "on": "Ein",
+          "paused": "Pausiert",
+          "off": "Aus"
+        }
+      }
+    },
     "switch": {
       "lpc_active": { "name": "LPC aktiv" },
-      "heartbeat": { "name": "Heartbeat" },
-      "compressor_flexibility": { "name": "Verdichter-Flexibilität" }
+      "heartbeat": { "name": "Heartbeat" }
     },
     "binary_sensor": {
       "connected": { "name": "Verbunden" },

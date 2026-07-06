@@ -91,16 +91,27 @@
       "frequency": { "name": "Grid Frequency" },
       "energy_produced": { "name": "Energy Produced" },
       "failsafe_limit": { "name": "Failsafe Limit" },
-      "failsafe_duration": { "name": "Failsafe Minimum Duration" }
+      "failsafe_duration": { "name": "Failsafe Minimum Duration" },
+      "compressor_flexibility_power_estimate": { "name": "Compressor Flexibility Power Estimate" },
+      "compressor_flexibility_power_max": { "name": "Compressor Flexibility Power Max" }
     },
     "number": {
       "lpc_limit": { "name": "LPC Limit" },
       "failsafe_limit": { "name": "Failsafe Limit" }
     },
+    "select": {
+      "compressor_flexibility": {
+        "name": "Compressor Flexibility",
+        "state": {
+          "on": "On",
+          "paused": "Paused",
+          "off": "Off"
+        }
+      }
+    },
     "switch": {
       "lpc_active": { "name": "LPC Active" },
-      "heartbeat": { "name": "Heartbeat" },
-      "compressor_flexibility": { "name": "Compressor Flexibility" }
+      "heartbeat": { "name": "Heartbeat" }
     },
     "binary_sensor": {
       "connected": { "name": "Connected" },
