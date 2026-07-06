@@ -18,6 +18,11 @@ certificates:
   auto_generate: true
   storage_path: "/data/certs"
 
+ohpcf:
+  # enabled turns on the CEM client for Optimization of Self-Consumption by Heat
+  # Pump Compressor Flexibility (OHPCF). On by default; set to false to disable.
+  enabled: true
+
 experimental:
   # mgcp_provider exposes a local grid-connection-point so a heat pump (e.g.
   # Vaillant VR940) can read the live grid / PV-surplus situation and run its

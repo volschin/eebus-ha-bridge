@@ -114,15 +114,15 @@ func main() {
 			log.Println("[VABD] experimental battery-system provider registered; awaiting battery data via VisualizationService")
 		}
 	}
-	// SPIKE: experimental OHPCF (heat-pump compressor flexibility) CEM client.
-	// Off by default. Reads the remote heat pump's optional-consumption offer and
-	// drives schedule/pause/resume/abort via OHPCFService.
+	// OHPCF (heat-pump compressor flexibility) CEM client. On by default; reads
+	// the remote heat pump's optional-consumption offer and drives
+	// schedule/pause/resume/abort via OHPCFService.
 	var ohpcfWrapper *usecases.OHPCFWrapper
-	if cfg.Experimental.OHPCFClient {
+	if *cfg.OHPCF.Enabled {
 		ohpcfWrapper = usecases.NewOHPCFWrapper(bus, registry, cfg.Logging.DebugEvents)
 		ohpcfWrapper.Setup(localEntity)
 		bridgeSvc.Service().AddUseCase(ohpcfWrapper.UseCase())
-		log.Println("[OHPCF] experimental CEM client registered; awaiting remote compressor SmartEnergyManagementPs")
+		log.Println("[OHPCF] CEM client registered; awaiting remote compressor SmartEnergyManagementPs")
 	}
 
 	// Controllable systems revert an active LPC limit to its failsafe value when
