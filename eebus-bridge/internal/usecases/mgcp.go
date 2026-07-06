@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"errors"
+	"fmt"
 	"log"
 
 	eebusapi "github.com/enbility/eebus-go/api"
@@ -87,6 +88,7 @@ func NewMGCPProvider(gridEntity spineapi.EntityLocalInterface, bus *eebus.EventB
 		mgcpUseCaseSupportUpdate,
 		validActorTypes,
 		validEntityTypes,
+		false,
 	)
 	return p
 }
@@ -97,7 +99,7 @@ func (p *MGCPProvider) UseCase() eebusapi.UseCaseInterface { return p }
 
 // AddFeatures attaches the server-side features to the grid entity and declares the
 // AC-total-power measurement. Called by Service.AddUseCase before AddUseCase().
-func (p *MGCPProvider) AddFeatures() {
+func (p *MGCPProvider) AddFeatures() error {
 	// server.NewMeasurement/NewElectricalConnection only look up an existing
 	// server feature on the entity; they do not create it. Add them first.
 	p.gridEntity.GetOrAddFeature(model.FeatureTypeTypeMeasurement, model.RoleTypeServer)
@@ -105,8 +107,7 @@ func (p *MGCPProvider) AddFeatures() {
 
 	meas, err := server.NewMeasurement(p.gridEntity)
 	if err != nil {
-		log.Printf("[MGCP] creating Measurement server feature failed: %v", err)
-		return
+		return fmt.Errorf("[MGCP] creating Measurement server feature failed: %w", err)
 	}
 	p.meas = meas
 
@@ -119,8 +120,7 @@ func (p *MGCPProvider) AddFeatures() {
 		Unit:            util.Ptr(model.UnitOfMeasurementTypeW),
 	})
 	if p.powerID == nil {
-		log.Printf("[MGCP] adding power measurement description failed")
-		return
+		return errors.New("[MGCP] adding power measurement description failed")
 	}
 
 	// Scenario 3: total energy fed into the grid (export). ScopeType GridFeedIn,
@@ -152,8 +152,7 @@ func (p *MGCPProvider) AddFeatures() {
 	// resolve what the measurement refers to.
 	ec, err := server.NewElectricalConnection(p.gridEntity)
 	if err != nil {
-		log.Printf("[MGCP] creating ElectricalConnection server feature failed: %v", err)
-		return
+		return fmt.Errorf("[MGCP] creating ElectricalConnection server feature failed: %w", err)
 	}
 	connID := util.Ptr(model.ElectricalConnectionIdType(0))
 	if err := ec.AddDescription(model.ElectricalConnectionDescriptionDataType{
@@ -173,6 +172,7 @@ func (p *MGCPProvider) AddFeatures() {
 
 	log.Printf("[MGCP] grid-connection-point provider features added (power=%d feedIn=%v consumed=%v)",
 		*p.powerID, idVal(p.feedInID), idVal(p.consumedID))
+	return nil
 }
 
 func idVal(id *model.MeasurementIdType) int {

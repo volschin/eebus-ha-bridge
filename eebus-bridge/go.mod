@@ -3,7 +3,7 @@ module github.com/volschin/eebus-bridge
 go 1.25.0
 
 require (
-	github.com/enbility/eebus-go v0.7.1-0.20260608105936-abdcf864d0cf
+	github.com/enbility/eebus-go v0.7.1-0.20260706105148-69719d143633
 	github.com/enbility/ship-go v0.6.1-0.20260518113001-134687068e3c
 	github.com/enbility/spine-go v0.7.1-0.20260629113257-b3bcc643f323
 	google.golang.org/grpc v1.81.1

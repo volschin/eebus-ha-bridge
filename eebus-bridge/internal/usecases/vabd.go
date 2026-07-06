@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"errors"
+	"fmt"
 	"log"
 
 	eebusapi "github.com/enbility/eebus-go/api"
@@ -89,6 +90,7 @@ func NewVABDProvider(batteryEntity spineapi.EntityLocalInterface, bus *eebus.Eve
 		vabdUseCaseSupportUpdate,
 		validActorTypes,
 		validEntityTypes,
+		false,
 	)
 	return p
 }
@@ -100,7 +102,7 @@ func (p *VABDProvider) UseCase() eebusapi.UseCaseInterface { return p }
 // AddFeatures attaches the server-side features to the battery entity and declares
 // the power/energy/state-of-charge measurements. Called by Service.AddUseCase
 // before AddUseCase().
-func (p *VABDProvider) AddFeatures() {
+func (p *VABDProvider) AddFeatures() error {
 	// server.New* only look up an existing server feature on the entity; they do
 	// not create it. Add them first.
 	p.batteryEntity.GetOrAddFeature(model.FeatureTypeTypeMeasurement, model.RoleTypeServer)
@@ -108,8 +110,7 @@ func (p *VABDProvider) AddFeatures() {
 
 	meas, err := server.NewMeasurement(p.batteryEntity)
 	if err != nil {
-		log.Printf("[VABD] creating Measurement server feature failed: %v", err)
-		return
+		return fmt.Errorf("[VABD] creating Measurement server feature failed: %w", err)
 	}
 	p.meas = meas
 
@@ -121,8 +122,7 @@ func (p *VABDProvider) AddFeatures() {
 		Unit:            util.Ptr(model.UnitOfMeasurementTypeW),
 	})
 	if p.powerID == nil {
-		log.Printf("[VABD] adding power measurement description failed")
-		return
+		return errors.New("[VABD] adding power measurement description failed")
 	}
 
 	// Scenario 2: total energy charged into the battery.
@@ -161,8 +161,7 @@ func (p *VABDProvider) AddFeatures() {
 	// connection and link the power measurement to it.
 	ec, err := server.NewElectricalConnection(p.batteryEntity)
 	if err != nil {
-		log.Printf("[VABD] creating ElectricalConnection server feature failed: %v", err)
-		return
+		return fmt.Errorf("[VABD] creating ElectricalConnection server feature failed: %w", err)
 	}
 	connID := util.Ptr(model.ElectricalConnectionIdType(0))
 	if err := ec.AddDescription(model.ElectricalConnectionDescriptionDataType{
@@ -182,6 +181,7 @@ func (p *VABDProvider) AddFeatures() {
 
 	log.Printf("[VABD] battery-system provider features added (power=%d charged=%v discharged=%v soc=%v)",
 		*p.powerID, idVal(p.chargedID), idVal(p.dischargedID), idVal(p.socID))
+	return nil
 }
 
 // publishMeasurement is the shared path for pushing one measurement value.

@@ -236,16 +236,21 @@ func awaitWrite(action string, write func(func(model.ResultDataType)) (*model.Ms
 }
 
 // Schedule starts the optional power-consumption process, immediately when start
-// is zero or at the given time otherwise.
+// is zero (or in the past) or after the given time otherwise. eebus-go's
+// SchedulePowerConsumptionProcess takes a relative delay, not an absolute time, so
+// convert here to keep the gRPC contract (absolute start time) unchanged.
 func (w *OHPCFWrapper) Schedule(entity spineapi.EntityRemoteInterface, start time.Time) error {
 	if w.uc == nil {
 		return errOHPCFNotInitialized
 	}
-	if start.IsZero() {
-		start = time.Now()
+	var startIn time.Duration
+	if !start.IsZero() {
+		if d := time.Until(start); d > 0 {
+			startIn = d
+		}
 	}
 	return awaitWrite("schedule", func(cb func(model.ResultDataType)) (*model.MsgCounterType, error) {
-		return w.uc.SchedulePowerConsumptionProcess(entity, start, cb)
+		return w.uc.SchedulePowerConsumptionProcess(entity, startIn, cb)
 	})
 }
 

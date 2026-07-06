@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"errors"
+	"fmt"
 	"log"
 
 	eebusapi "github.com/enbility/eebus-go/api"
@@ -86,6 +87,7 @@ func NewVAPDProvider(pvEntity spineapi.EntityLocalInterface, bus *eebus.EventBus
 		vapdUseCaseSupportUpdate,
 		validActorTypes,
 		validEntityTypes,
+		false,
 	)
 	return p
 }
@@ -97,7 +99,7 @@ func (p *VAPDProvider) UseCase() eebusapi.UseCaseInterface { return p }
 // AddFeatures attaches the server-side features to the PV entity and declares the
 // power/yield measurements and the peak-power configuration key. Called by
 // Service.AddUseCase before AddUseCase().
-func (p *VAPDProvider) AddFeatures() {
+func (p *VAPDProvider) AddFeatures() error {
 	// server.New* only look up an existing server feature on the entity; they do
 	// not create it. Add them first.
 	p.pvEntity.GetOrAddFeature(model.FeatureTypeTypeMeasurement, model.RoleTypeServer)
@@ -106,8 +108,7 @@ func (p *VAPDProvider) AddFeatures() {
 
 	meas, err := server.NewMeasurement(p.pvEntity)
 	if err != nil {
-		log.Printf("[VAPD] creating Measurement server feature failed: %v", err)
-		return
+		return fmt.Errorf("[VAPD] creating Measurement server feature failed: %w", err)
 	}
 	p.meas = meas
 
@@ -119,8 +120,7 @@ func (p *VAPDProvider) AddFeatures() {
 		Unit:            util.Ptr(model.UnitOfMeasurementTypeW),
 	})
 	if p.powerID == nil {
-		log.Printf("[VAPD] adding power measurement description failed")
-		return
+		return errors.New("[VAPD] adding power measurement description failed")
 	}
 
 	// Scenario 3: total AC yield energy produced over the system's lifetime.
@@ -138,8 +138,7 @@ func (p *VAPDProvider) AddFeatures() {
 	// connection and link the power measurement to it.
 	ec, err := server.NewElectricalConnection(p.pvEntity)
 	if err != nil {
-		log.Printf("[VAPD] creating ElectricalConnection server feature failed: %v", err)
-		return
+		return fmt.Errorf("[VAPD] creating ElectricalConnection server feature failed: %w", err)
 	}
 	connID := util.Ptr(model.ElectricalConnectionIdType(0))
 	if err := ec.AddDescription(model.ElectricalConnectionDescriptionDataType{
@@ -176,6 +175,7 @@ func (p *VAPDProvider) AddFeatures() {
 
 	log.Printf("[VAPD] PV-system provider features added (power=%d yield=%v peak=%v)",
 		*p.powerID, idVal(p.yieldID), keyIDVal(p.peakID))
+	return nil
 }
 
 func keyIDVal(id *model.DeviceConfigurationKeyIdType) int {
