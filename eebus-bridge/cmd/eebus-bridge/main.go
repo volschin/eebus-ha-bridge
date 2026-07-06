@@ -73,8 +73,12 @@ func main() {
 	}
 	lpcWrapper.Setup(localEntity)
 	monitoringWrapper.Setup(localEntity)
-	bridgeSvc.Service().AddUseCase(lpcWrapper.UseCase())
-	bridgeSvc.Service().AddUseCase(monitoringWrapper.UseCase())
+	if err := bridgeSvc.Service().AddUseCase(lpcWrapper.UseCase()); err != nil {
+		log.Fatalf("adding LPC use case: %v", err)
+	}
+	if err := bridgeSvc.Service().AddUseCase(monitoringWrapper.UseCase()); err != nil {
+		log.Fatalf("adding monitoring use case: %v", err)
+	}
 
 	// SPIKE: experimental MGCP grid-connection-point provider. Off by default.
 	var mgcpProvider *usecases.MGCPProvider
@@ -84,7 +88,9 @@ func main() {
 			log.Println("[MGCP] experimental provider enabled but grid entity is unavailable; skipping")
 		} else {
 			mgcpProvider = usecases.NewMGCPProvider(gridEntity, bus, cfg.Logging.DebugEvents)
-			bridgeSvc.Service().AddUseCase(mgcpProvider.UseCase())
+			if err := bridgeSvc.Service().AddUseCase(mgcpProvider.UseCase()); err != nil {
+				log.Fatalf("adding MGCP use case: %v", err)
+			}
 			log.Println("[MGCP] experimental grid-connection-point provider registered; awaiting grid data via GridService")
 		}
 	}
@@ -97,7 +103,9 @@ func main() {
 			log.Println("[VAPD] experimental provider enabled but PV entity is unavailable; skipping")
 		} else {
 			vapdProvider = usecases.NewVAPDProvider(pvEntity, bus, cfg.Logging.DebugEvents)
-			bridgeSvc.Service().AddUseCase(vapdProvider.UseCase())
+			if err := bridgeSvc.Service().AddUseCase(vapdProvider.UseCase()); err != nil {
+				log.Fatalf("adding VAPD use case: %v", err)
+			}
 			log.Println("[VAPD] experimental PV-system provider registered; awaiting PV data via VisualizationService")
 		}
 	}
@@ -110,7 +118,9 @@ func main() {
 			log.Println("[VABD] experimental provider enabled but battery entity is unavailable; skipping")
 		} else {
 			vabdProvider = usecases.NewVABDProvider(batteryEntity, bus, cfg.Logging.DebugEvents)
-			bridgeSvc.Service().AddUseCase(vabdProvider.UseCase())
+			if err := bridgeSvc.Service().AddUseCase(vabdProvider.UseCase()); err != nil {
+				log.Fatalf("adding VABD use case: %v", err)
+			}
 			log.Println("[VABD] experimental battery-system provider registered; awaiting battery data via VisualizationService")
 		}
 	}
@@ -121,7 +131,9 @@ func main() {
 	if *cfg.OHPCF.Enabled {
 		ohpcfWrapper = usecases.NewOHPCFWrapper(bus, registry, cfg.Logging.DebugEvents)
 		ohpcfWrapper.Setup(localEntity)
-		bridgeSvc.Service().AddUseCase(ohpcfWrapper.UseCase())
+		if err := bridgeSvc.Service().AddUseCase(ohpcfWrapper.UseCase()); err != nil {
+			log.Fatalf("adding OHPCF use case: %v", err)
+		}
 		log.Println("[OHPCF] CEM client registered; awaiting remote compressor SmartEnergyManagementPs")
 	}
 
