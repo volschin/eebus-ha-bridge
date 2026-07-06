@@ -13,7 +13,18 @@ type Config struct {
 	EEBUS        EEBUSConfig        `yaml:"eebus"`
 	Certificates CertificatesConfig `yaml:"certificates"`
 	Logging      LoggingConfig      `yaml:"logging"`
+	OHPCF        OHPCFConfig        `yaml:"ohpcf"`
 	Experimental ExperimentalConfig `yaml:"experimental"`
+}
+
+// OHPCFConfig controls the Optimization of Self-Consumption by Heat Pump
+// Compressor Flexibility (OHPCF, a.k.a. OSCF) CEM client, which subscribes to a
+// remote heat pump's Compressor / SmartEnergyManagementPs feature (e.g. Vaillant
+// VR940) and drives schedule/pause/resume/abort via OHPCFService.
+type OHPCFConfig struct {
+	// Enabled turns the OHPCF client on or off. On by default; set to false to
+	// disable.
+	Enabled *bool `yaml:"enabled"`
 }
 
 // ExperimentalConfig gates spike / not-yet-stable features. Everything here is
@@ -37,13 +48,6 @@ type ExperimentalConfig struct {
 	// VR940, which advertises the VABD VisualizationAppliance role) can display the
 	// home's battery state. SPIKE: see docs/eebus-vaillant-improvements.md.
 	VABDProvider bool `yaml:"vabd_provider"`
-	// OHPCFClient enables the CEM-client side of the Optimization of
-	// Self-Consumption by Heat Pump Compressor Flexibility (OHPCF, a.k.a. OSCF)
-	// use case. The bridge subscribes to a remote heat pump's Compressor /
-	// SmartEnergyManagementPs feature (e.g. Vaillant VR940). SPIKE: read-only
-	// observer to confirm the device binds + serves the feature before building
-	// the schedule/pause control path. See docs/eebus-vaillant-improvements.md.
-	OHPCFClient bool `yaml:"ohpcf_client"`
 	// TrustSKI, when set, makes the bridge trust (RegisterRemoteSKI) this remote
 	// SKI at startup instead of waiting for Home Assistant to send it via gRPC.
 	// Lets a spike container complete the SHIP handshake with a known device
@@ -123,6 +127,10 @@ func applyDefaults(cfg *Config) {
 	if !cfg.Certificates.AutoGenerate && cfg.Certificates.CertFile == "" {
 		cfg.Certificates.AutoGenerate = true
 	}
+	if cfg.OHPCF.Enabled == nil {
+		enabled := true
+		cfg.OHPCF.Enabled = &enabled
+	}
 }
 
 func applyEnvOverrides(cfg *Config) {
@@ -195,9 +203,9 @@ func applyEnvOverrides(cfg *Config) {
 			cfg.Experimental.VABDProvider = enabled
 		}
 	}
-	if v := os.Getenv("EEBUS_EXP_OHPCF_CLIENT"); v != "" {
+	if v := os.Getenv("EEBUS_OHPCF_ENABLED"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
-			cfg.Experimental.OHPCFClient = enabled
+			cfg.OHPCF.Enabled = &enabled
 		}
 	}
 	if v := os.Getenv("EEBUS_EXP_TRUST_SKI"); v != "" {

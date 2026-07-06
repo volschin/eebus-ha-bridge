@@ -115,7 +115,7 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 | `number.eebus_failsafe_limit` | number | Failsafe-Grenze (W), standardmaessig deaktiviert |
 | `switch.eebus_lpc_active` | switch | Limit aktivieren/deaktivieren |
 | `switch.eebus_heartbeat` | switch | Heartbeat an/aus, standardmaessig deaktiviert |
-| `select.eebus_compressor_flexibility` | select | OHPCF-Verdichter-Flexibilitaet: `on`/`paused`/`off`, nur vorhanden wenn WP ein Angebot meldet (experimentell) |
+| `select.eebus_compressor_flexibility` | select | OHPCF-Verdichter-Flexibilitaet: `on`/`paused`/`off`, nur vorhanden wenn WP ein Angebot meldet |
 
 ### Diagnose
 

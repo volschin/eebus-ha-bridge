@@ -19,10 +19,9 @@ import (
 // EventBus. The bridge plays the CEM (controller/client) actor; the remote heat
 // pump's Compressor entity is the flexibility provider.
 //
-// SPIKE: this is the CEM-client side of §1.3.1 PV-surplus compressor control.
-// Currently a read-only observer used to confirm whether the VR940 actually binds
-// and serves its SmartEnergyManagementPs feature. The schedule/pause/resume/abort
-// control path is intentionally not wired yet (see docs/eebus-vaillant-improvements.md).
+// This is the CEM-client side of §1.3.1 PV-surplus compressor control: it reads
+// the remote offer/state and drives schedule/pause/resume/abort via OHPCFService
+// (see docs/eebus-vaillant-improvements.md).
 type OHPCFWrapper struct {
 	uc          *cemohpcf.OHPCF
 	bus         *eebus.EventBus

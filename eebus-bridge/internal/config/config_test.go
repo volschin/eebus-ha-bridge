@@ -75,6 +75,50 @@ func TestDefaults(t *testing.T) {
 	if !cfg.Certificates.AutoGenerate {
 		t.Error("default Certificates.AutoGenerate = false, want true")
 	}
+	if cfg.OHPCF.Enabled == nil || !*cfg.OHPCF.Enabled {
+		t.Error("default OHPCF.Enabled = false, want true")
+	}
+}
+
+func TestOHPCFDisable(t *testing.T) {
+	yaml := `
+ohpcf:
+  enabled: false
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.LoadFromFile(path)
+	if err != nil {
+		t.Fatalf("LoadFromFile failed: %v", err)
+	}
+
+	if cfg.OHPCF.Enabled == nil || *cfg.OHPCF.Enabled {
+		t.Error("OHPCF.Enabled = true, want false")
+	}
+}
+
+func TestOHPCFEnvOverride(t *testing.T) {
+	yaml := `{}`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("EEBUS_OHPCF_ENABLED", "false")
+
+	cfg, err := config.LoadFromFile(path)
+	if err != nil {
+		t.Fatalf("LoadFromFile failed: %v", err)
+	}
+
+	if cfg.OHPCF.Enabled == nil || *cfg.OHPCF.Enabled {
+		t.Error("env override OHPCF.Enabled = true, want false")
+	}
 }
 
 func TestEnvOverride(t *testing.T) {
