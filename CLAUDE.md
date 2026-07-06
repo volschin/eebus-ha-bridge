@@ -61,7 +61,7 @@ docker-compose up -d eebus-bridge        # ghcr.io image, host networking
 
 ### Python integration
 - `coordinator.py` (`EebusCoordinator`) — central hub. Primary path is gRPC **streaming** (push); on stream failure it falls back to **polling** (`POLL_INTERVAL = 5min`) and reconnects the stream in the background. Polling only reconciles state streams can't carry (scoped energy, heartbeat, support flags). `FLAT_MEASUREMENT_TYPE_TO_KEY` maps bridge `GetMeasurements` entry types to per-phase/grid sensor keys.
-- Platforms: `sensor`, `number`, `switch`, `binary_sensor` — all read coordinator data; `entity.py` is the shared base.
+- Platforms: `sensor`, `number`, `switch`, `select`, `binary_sensor` — all read coordinator data; `entity.py` is the shared base. `select.eebus_compressor_flexibility` exposes OHPCF's `on`/`paused`/`off` as three distinct options — a plain switch collapses PAUSED into the same state as AVAILABLE/COMPLETED/STOPPED, losing the running-vs-stopped distinction.
 - `config_flow.py` — bridge host/port + device SKI pairing. `iot_class: local_push`, `quality_scale: gold` (see `quality_scale.yaml`).
 - Tests use HA fixtures in `conftest.py`; protobuf messages must be real generated types, not duck-typed namespaces.
 

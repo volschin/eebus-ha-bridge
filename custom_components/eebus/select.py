@@ -1,0 +1,116 @@
+"""Select entities for EEBUS integration."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from homeassistant.components.select import SelectEntity
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .coordinator import EebusCoordinator
+from .entity import EebusEntity
+
+PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling
+
+# Compressor-flexibility process states that count as "on" (consuming or about to).
+_OHPCF_ON_STATES = {"COMPRESSOR_STATE_RUNNING", "COMPRESSOR_STATE_SCHEDULED"}
+_OHPCF_PAUSED_STATE = "COMPRESSOR_STATE_PAUSED"
+
+OPTION_ON = "on"
+OPTION_PAUSED = "paused"
+OPTION_OFF = "off"
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up EEBUS select entities."""
+    coordinator: EebusCoordinator = entry.runtime_data
+    entities: list[SelectEntity] = []
+    # OHPCF compressor-flexibility control is only offered when the bridge's OHPCF
+    # client is active and a compatible heat pump was found.
+    if coordinator.data and coordinator.data.get("ohpcf_supported"):
+        entities.append(EebusCompressorFlexibilitySelect(coordinator))
+    async_add_entities(entities)
+
+
+class EebusCompressorFlexibilitySelect(EebusEntity, SelectEntity):
+    """Select driving the heat-pump compressor's optional power consumption (OHPCF).
+
+    A plain on/off switch collapses PAUSED into "off" alongside AVAILABLE,
+    COMPLETED and STOPPED, losing the distinction between a paused and a
+    stopped process. This select exposes it as a third option instead.
+
+    on     = schedule (or resume) the optional consumption to soak up PV surplus.
+    paused = pause the running process.
+    off    = abort the process (or the implicit state when no offer is running).
+
+    Gold: translation_key, entity_category CONFIG.
+    """
+
+    _attr_translation_key = "compressor_flexibility"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_options = [OPTION_ON, OPTION_PAUSED, OPTION_OFF]
+
+    def __init__(self, coordinator: EebusCoordinator) -> None:
+        """Initialize."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.ski}_compressor_flexibility"
+
+    def _flex(self) -> dict[str, Any] | None:
+        if self.coordinator.data is None:
+            return None
+        return self.coordinator.data.get("compressor_flexibility")
+
+    @property
+    def available(self) -> bool:
+        """Available only while the compressor advertises a flexibility offer."""
+        return super().available and self._flex() is not None
+
+    @property
+    def current_option(self) -> str | None:
+        """Return on/paused/off depending on the process state."""
+        flex = self._flex()
+        if flex is None:
+            return None
+        state = flex.get("state")
+        if state in _OHPCF_ON_STATES:
+            return OPTION_ON
+        if state == _OHPCF_PAUSED_STATE:
+            return OPTION_PAUSED
+        return OPTION_OFF
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Expose the process constraints the CEM must honour once it acts."""
+        flex = self._flex()
+        if flex is None:
+            return None
+        return {
+            "is_stoppable": flex.get("is_stoppable"),
+            "minimal_run_seconds": flex.get("minimal_run_seconds"),
+            "minimal_pause_seconds": flex.get("minimal_pause_seconds"),
+        }
+
+    async def async_select_option(self, option: str) -> None:
+        """Schedule/resume, pause, or abort the optional power consumption."""
+        from . import proto_stubs
+
+        flex = self._flex() or {}
+        if option == OPTION_ON:
+            action = (
+                proto_stubs.OHPCFAction.OHPCF_ACTION_RESUME
+                if flex.get("state") == _OHPCF_PAUSED_STATE
+                else proto_stubs.OHPCFAction.OHPCF_ACTION_SCHEDULE
+            )
+        elif option == OPTION_PAUSED:
+            action = proto_stubs.OHPCFAction.OHPCF_ACTION_PAUSE
+        else:
+            action = proto_stubs.OHPCFAction.OHPCF_ACTION_ABORT
+        await self.coordinator.async_control_compressor(action)
+        await self.coordinator.async_request_refresh()

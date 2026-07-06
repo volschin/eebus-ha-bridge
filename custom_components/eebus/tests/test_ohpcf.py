@@ -12,7 +12,8 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from custom_components.eebus import proto_stubs
 from custom_components.eebus.coordinator import EebusCoordinator
 from custom_components.eebus.generated.eebus.v1 import ohpcf_service_pb2 as ohpcf_pb2
-from custom_components.eebus.switch import EebusCompressorFlexibilitySwitch
+from custom_components.eebus.select import EebusCompressorFlexibilitySelect
+from custom_components.eebus.sensor import EebusCompressorFlexibilityStatusSensor
 
 
 def _coordinator(ski="test-ski"):
@@ -66,52 +67,88 @@ def test_read_compressor_flexibility_unavailable_marks_unsupported():
     assert c._ohpcf_supported is False
 
 
-def _switch_with(flex):
-    sw = EebusCompressorFlexibilitySwitch.__new__(EebusCompressorFlexibilitySwitch)
-    sw.coordinator = SimpleNamespace(
+def _select_with(flex):
+    sel = EebusCompressorFlexibilitySelect.__new__(EebusCompressorFlexibilitySelect)
+    sel.coordinator = SimpleNamespace(
         data={"compressor_flexibility": flex},
         async_control_compressor=AsyncMock(),
         async_request_refresh=AsyncMock(),
     )
-    return sw
+    return sel
 
 
-def test_switch_is_on_for_running_state():
-    """Switch reports on while scheduled or running."""
-    assert _switch_with({"state": "COMPRESSOR_STATE_RUNNING"}).is_on is True
-    assert _switch_with({"state": "COMPRESSOR_STATE_SCHEDULED"}).is_on is True
-    assert _switch_with({"state": "COMPRESSOR_STATE_AVAILABLE"}).is_on is False
-    assert _switch_with(None).is_on is None
+def test_select_current_option_distinguishes_paused_from_off():
+    """Select reports on/paused/off as three distinct options, not a binary collapse."""
+    assert _select_with({"state": "COMPRESSOR_STATE_RUNNING"}).current_option == "on"
+    assert _select_with({"state": "COMPRESSOR_STATE_SCHEDULED"}).current_option == "on"
+    assert _select_with({"state": "COMPRESSOR_STATE_PAUSED"}).current_option == "paused"
+    assert _select_with({"state": "COMPRESSOR_STATE_AVAILABLE"}).current_option == "off"
+    assert _select_with({"state": "COMPRESSOR_STATE_STOPPED"}).current_option == "off"
+    assert _select_with(None).current_option is None
 
 
-def test_switch_turn_on_schedules():
-    """Turn-on schedules when not paused, resumes when paused."""
-    sw = _switch_with({"state": "COMPRESSOR_STATE_AVAILABLE"})
-    asyncio.run(sw.async_turn_on())
-    sw.coordinator.async_control_compressor.assert_awaited_once_with(
+def test_select_option_on_schedules_or_resumes():
+    """Selecting 'on' schedules when not paused, resumes when paused."""
+    sel = _select_with({"state": "COMPRESSOR_STATE_AVAILABLE"})
+    asyncio.run(sel.async_select_option("on"))
+    sel.coordinator.async_control_compressor.assert_awaited_once_with(
         proto_stubs.OHPCFAction.OHPCF_ACTION_SCHEDULE
     )
 
-    sw = _switch_with({"state": "COMPRESSOR_STATE_PAUSED"})
-    asyncio.run(sw.async_turn_on())
-    sw.coordinator.async_control_compressor.assert_awaited_once_with(
+    sel = _select_with({"state": "COMPRESSOR_STATE_PAUSED"})
+    asyncio.run(sel.async_select_option("on"))
+    sel.coordinator.async_control_compressor.assert_awaited_once_with(
         proto_stubs.OHPCFAction.OHPCF_ACTION_RESUME
     )
 
 
-def test_switch_turn_off_pauses_or_aborts():
-    """Turn-off pauses when pausable, otherwise aborts."""
-    sw = _switch_with({"is_pausable": True})
-    asyncio.run(sw.async_turn_off())
-    sw.coordinator.async_control_compressor.assert_awaited_once_with(
+def test_select_option_paused_pauses():
+    """Selecting 'paused' issues a pause regardless of is_pausable (device rejects if unsupported)."""
+    sel = _select_with({"is_pausable": True})
+    asyncio.run(sel.async_select_option("paused"))
+    sel.coordinator.async_control_compressor.assert_awaited_once_with(
         proto_stubs.OHPCFAction.OHPCF_ACTION_PAUSE
     )
 
-    sw = _switch_with({"is_pausable": False})
-    asyncio.run(sw.async_turn_off())
-    sw.coordinator.async_control_compressor.assert_awaited_once_with(
+
+def test_select_option_off_aborts():
+    """Selecting 'off' aborts the process."""
+    sel = _select_with({"state": "COMPRESSOR_STATE_RUNNING"})
+    asyncio.run(sel.async_select_option("off"))
+    sel.coordinator.async_control_compressor.assert_awaited_once_with(
         proto_stubs.OHPCFAction.OHPCF_ACTION_ABORT
     )
+
+
+def test_select_extra_state_attributes_exposes_constraints():
+    """Process constraints (stoppable, min run/pause) surface as attributes."""
+    sel = _select_with(
+        {"is_stoppable": False, "minimal_run_seconds": 600, "minimal_pause_seconds": 300}
+    )
+    attrs = sel.extra_state_attributes
+    assert attrs == {
+        "is_stoppable": False,
+        "minimal_run_seconds": 600,
+        "minimal_pause_seconds": 300,
+    }
+    assert _select_with(None).extra_state_attributes is None
+
+
+def _status_sensor_with(flex):
+    sensor = EebusCompressorFlexibilityStatusSensor.__new__(EebusCompressorFlexibilityStatusSensor)
+    sensor.coordinator = SimpleNamespace(data={"compressor_flexibility": flex})
+    return sensor
+
+
+def test_status_sensor_maps_raw_states():
+    """Status sensor surfaces all six raw states, unlike the collapsed select."""
+    assert _status_sensor_with({"state": "COMPRESSOR_STATE_AVAILABLE"}).native_value == "available"
+    assert _status_sensor_with({"state": "COMPRESSOR_STATE_SCHEDULED"}).native_value == "scheduled"
+    assert _status_sensor_with({"state": "COMPRESSOR_STATE_RUNNING"}).native_value == "running"
+    assert _status_sensor_with({"state": "COMPRESSOR_STATE_PAUSED"}).native_value == "paused"
+    assert _status_sensor_with({"state": "COMPRESSOR_STATE_COMPLETED"}).native_value == "completed"
+    assert _status_sensor_with({"state": "COMPRESSOR_STATE_STOPPED"}).native_value == "stopped"
+    assert _status_sensor_with(None).native_value is None
 
 
 def test_control_compressor_wraps_rpc_error_as_validation_error():
