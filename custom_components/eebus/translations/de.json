@@ -92,6 +92,17 @@
       "energy_produced": { "name": "Eingespeiste Energie" },
       "failsafe_limit": { "name": "Failsafe-Limit" },
       "failsafe_duration": { "name": "Failsafe-Mindestdauer" },
+      "compressor_flexibility_status": {
+        "name": "Verdichter-Flexibilität Status",
+        "state": {
+          "available": "Verfügbar",
+          "scheduled": "Geplant",
+          "running": "Läuft",
+          "paused": "Pausiert",
+          "completed": "Abgeschlossen",
+          "stopped": "Gestoppt"
+        }
+      },
       "compressor_flexibility_power_estimate": { "name": "Verdichter-Flexibilität Geschätzte Leistung" },
       "compressor_flexibility_power_max": { "name": "Verdichter-Flexibilität Maximale Leistung" }
     },

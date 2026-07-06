@@ -172,6 +172,7 @@ async def async_setup_entry(
         EebusConsumptionLimitSensor(coordinator),
         EebusFailsafeLimitSensor(coordinator),
         EebusFailsafeDurationSensor(coordinator),
+        EebusCompressorFlexibilityStatusSensor(coordinator),
         EebusCompressorFlexibilityPowerEstimateSensor(coordinator),
         EebusCompressorFlexibilityPowerMaxSensor(coordinator),
     ]
@@ -390,6 +391,57 @@ class EebusFailsafeDurationSensor(EebusEntity, SensorEntity):
         if failsafe is None:
             return None
         return failsafe.get("duration_minimum_seconds")
+
+
+_OHPCF_STATUS_OPTIONS = [
+    "available",
+    "scheduled",
+    "running",
+    "paused",
+    "completed",
+    "stopped",
+]
+_OHPCF_STATE_PREFIX = "COMPRESSOR_STATE_"
+
+
+class EebusCompressorFlexibilityStatusSensor(EebusEntity, SensorEntity):
+    """Diagnostic sensor for the OHPCF compressor's raw process status.
+
+    The compressor_flexibility select folds five of the six process states
+    into on/paused/off for control purposes; this exposes the raw state
+    (available/scheduled/running/paused/completed/stopped) for visibility.
+    """
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = _OHPCF_STATUS_OPTIONS
+    _attr_translation_key = "compressor_flexibility_status"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: EebusCoordinator) -> None:
+        """Initialize."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.ski}_compressor_flexibility_status"
+
+    @property
+    def available(self) -> bool:
+        """Available only while the compressor advertises a flexibility offer."""
+        if not super().available:
+            return False
+        if self.coordinator.data is None:
+            return False
+        return self.coordinator.data.get("compressor_flexibility") is not None
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the raw process state, lower-cased and without the enum prefix."""
+        if self.coordinator.data is None:
+            return None
+        flex = self.coordinator.data.get("compressor_flexibility")
+        if flex is None:
+            return None
+        state = flex.get("state", "")
+        option = state.removeprefix(_OHPCF_STATE_PREFIX).lower()
+        return option if option in _OHPCF_STATUS_OPTIONS else None
 
 
 class EebusCompressorFlexibilityPowerEstimateSensor(EebusEntity, SensorEntity):

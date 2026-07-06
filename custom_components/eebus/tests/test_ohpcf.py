@@ -13,6 +13,7 @@ from custom_components.eebus import proto_stubs
 from custom_components.eebus.coordinator import EebusCoordinator
 from custom_components.eebus.generated.eebus.v1 import ohpcf_service_pb2 as ohpcf_pb2
 from custom_components.eebus.select import EebusCompressorFlexibilitySelect
+from custom_components.eebus.sensor import EebusCompressorFlexibilityStatusSensor
 
 
 def _coordinator(ski="test-ski"):
@@ -131,6 +132,23 @@ def test_select_extra_state_attributes_exposes_constraints():
         "minimal_pause_seconds": 300,
     }
     assert _select_with(None).extra_state_attributes is None
+
+
+def _status_sensor_with(flex):
+    sensor = EebusCompressorFlexibilityStatusSensor.__new__(EebusCompressorFlexibilityStatusSensor)
+    sensor.coordinator = SimpleNamespace(data={"compressor_flexibility": flex})
+    return sensor
+
+
+def test_status_sensor_maps_raw_states():
+    """Status sensor surfaces all six raw states, unlike the collapsed select."""
+    assert _status_sensor_with({"state": "COMPRESSOR_STATE_AVAILABLE"}).native_value == "available"
+    assert _status_sensor_with({"state": "COMPRESSOR_STATE_SCHEDULED"}).native_value == "scheduled"
+    assert _status_sensor_with({"state": "COMPRESSOR_STATE_RUNNING"}).native_value == "running"
+    assert _status_sensor_with({"state": "COMPRESSOR_STATE_PAUSED"}).native_value == "paused"
+    assert _status_sensor_with({"state": "COMPRESSOR_STATE_COMPLETED"}).native_value == "completed"
+    assert _status_sensor_with({"state": "COMPRESSOR_STATE_STOPPED"}).native_value == "stopped"
+    assert _status_sensor_with(None).native_value is None
 
 
 def test_control_compressor_wraps_rpc_error_as_validation_error():

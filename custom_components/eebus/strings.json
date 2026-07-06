@@ -92,6 +92,17 @@
       "energy_produced": { "name": "Energy Produced" },
       "failsafe_limit": { "name": "Failsafe Limit" },
       "failsafe_duration": { "name": "Failsafe Minimum Duration" },
+      "compressor_flexibility_status": {
+        "name": "Compressor Flexibility Status",
+        "state": {
+          "available": "Available",
+          "scheduled": "Scheduled",
+          "running": "Running",
+          "paused": "Paused",
+          "completed": "Completed",
+          "stopped": "Stopped"
+        }
+      },
       "compressor_flexibility_power_estimate": { "name": "Compressor Flexibility Power Estimate" },
       "compressor_flexibility_power_max": { "name": "Compressor Flexibility Power Max" }
     },
