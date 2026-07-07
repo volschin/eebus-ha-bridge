@@ -52,7 +52,8 @@ class EebusLPCActiveSwitch(EebusEntity, SwitchEntity):
         limit = self.coordinator.data.get("consumption_limit")
         if limit is None:
             return None
-        return limit.get("is_active")
+        is_active = limit.get("is_active")
+        return None if is_active is None else bool(is_active)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Activate LPC limit."""
@@ -88,7 +89,8 @@ class EebusHeartbeatSwitch(EebusEntity, SwitchEntity):
         hb = self.coordinator.data.get("heartbeat_status")
         if hb is None:
             return None
-        return hb.get("running")
+        running = hb.get("running")
+        return None if running is None else bool(running)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Start heartbeat."""

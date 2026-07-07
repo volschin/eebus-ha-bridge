@@ -55,7 +55,8 @@ class EebusLPCLimitNumber(EebusEntity, NumberEntity):
         limit = self.coordinator.data.get("consumption_limit")
         if limit is None:
             return None
-        return limit.get("value_watts")
+        value = limit.get("value_watts")
+        return None if value is None else float(value)
 
     @property
     def available(self) -> bool:
@@ -101,7 +102,8 @@ class EebusFailsafeLimitNumber(EebusEntity, NumberEntity):
         failsafe = self.coordinator.data.get("failsafe_limit")
         if failsafe is None:
             return None
-        return failsafe.get("value_watts")
+        value = failsafe.get("value_watts")
+        return None if value is None else float(value)
 
     @property
     def available(self) -> bool:

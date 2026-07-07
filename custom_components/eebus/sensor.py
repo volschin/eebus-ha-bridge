@@ -312,7 +312,8 @@ class EebusConsumptionLimitSensor(EebusEntity, SensorEntity):
         limit = self.coordinator.data.get("consumption_limit")
         if limit is None:
             return None
-        return limit.get("value_watts")
+        value = limit.get("value_watts")
+        return None if value is None else float(value)
 
 
 class EebusFailsafeLimitSensor(EebusEntity, SensorEntity):
@@ -352,7 +353,8 @@ class EebusFailsafeLimitSensor(EebusEntity, SensorEntity):
         failsafe = self.coordinator.data.get("failsafe_limit")
         if failsafe is None:
             return None
-        return failsafe.get("value_watts")
+        value = failsafe.get("value_watts")
+        return None if value is None else float(value)
 
 
 class EebusFailsafeDurationSensor(EebusEntity, SensorEntity):
@@ -390,7 +392,8 @@ class EebusFailsafeDurationSensor(EebusEntity, SensorEntity):
         failsafe = self.coordinator.data.get("failsafe_limit")
         if failsafe is None:
             return None
-        return failsafe.get("duration_minimum_seconds")
+        value = failsafe.get("duration_minimum_seconds")
+        return None if value is None else float(value)
 
 
 _OHPCF_STATUS_OPTIONS = [
@@ -481,7 +484,8 @@ class EebusCompressorFlexibilityPowerEstimateSensor(EebusEntity, SensorEntity):
         flex = self.coordinator.data.get("compressor_flexibility")
         if flex is None:
             return None
-        return flex.get("requested_power_estimate_w")
+        value = flex.get("requested_power_estimate_w")
+        return None if value is None else float(value)
 
 
 class EebusCompressorFlexibilityPowerMaxSensor(EebusEntity, SensorEntity):
@@ -516,4 +520,5 @@ class EebusCompressorFlexibilityPowerMaxSensor(EebusEntity, SensorEntity):
         flex = self.coordinator.data.get("compressor_flexibility")
         if flex is None:
             return None
-        return flex.get("requested_power_max_w")
+        value = flex.get("requested_power_max_w")
+        return None if value is None else float(value)
