@@ -26,6 +26,8 @@ After any `.proto` change, regenerate **both**. CI's `proto-drift` job regenerat
 
 `generate_proto.sh` pins `grpcio-tools==1.78.0` and rewrites absolute `from eebus.v1 import` to relative imports so stubs load inside the `custom_components.eebus` package. Use `proto_stubs.py` re-exports, not deep imports into `generated/`.
 
+`proto_stubs.py` re-exports need an explicit `__all__` (mypy `--strict` implies `no_implicit_reexport`) and grpc Stub classes must be constructed through its `*_service_stub(channel)` factory functions, not called directly — grpcio-tools emits untyped stub classes, so the one unavoidable `type: ignore[no-untyped-call]` per stub lives there instead of at every call site. `custom_components.eebus.generated.*` is exempted from strict mypy in `pyproject.toml` (vendored, not hand-maintained).
+
 ### grpcio version pin
 
 HA Core pins `grpcio==1.78.0` in `package_constraints.txt`. The manifest floor (`requirements` in `manifest.json`) and `generate_proto.sh`'s `grpcio-tools` version must match HA's pin, or the embedded `GRPC_GENERATED_VERSION` exceeds HA's runtime grpcio and install fails (issue #22). `.github/workflows/grpcio-sync.yml` automates bumping these when HA changes the pin. When touching grpc deps, keep `manifest.json`, `generate_proto.sh`, and the bump workflow aligned.
@@ -38,6 +40,7 @@ PYTHONPATH=. pytest                              # all tests (asyncio_mode=auto)
 PYTHONPATH=. pytest custom_components/eebus/tests/test_coordinator.py::test_name  # single test
 PYTHONPATH=. pytest --cov --cov-report=term-missing
 ruff check custom_components/                    # lint (line-length 120, py312 target)
+mypy custom_components/eebus                     # strict type check (see quality_scale.yaml: strict-typing)
 bash generate_proto.sh                           # regenerate Python stubs
 ```
 
@@ -62,7 +65,7 @@ docker-compose up -d eebus-bridge        # ghcr.io image, host networking
 ### Python integration
 - `coordinator.py` (`EebusCoordinator`) — central hub. Primary path is gRPC **streaming** (push); on stream failure it falls back to **polling** (`POLL_INTERVAL = 5min`) and reconnects the stream in the background. Polling only reconciles state streams can't carry (scoped energy, heartbeat, support flags). `FLAT_MEASUREMENT_TYPE_TO_KEY` maps bridge `GetMeasurements` entry types to per-phase/grid sensor keys.
 - Platforms: `sensor`, `number`, `switch`, `select`, `binary_sensor` — all read coordinator data; `entity.py` is the shared base. `select.eebus_compressor_flexibility` exposes OHPCF's `on`/`paused`/`off` as three distinct options — a plain switch collapses PAUSED into the same state as AVAILABLE/COMPLETED/STOPPED, losing the running-vs-stopped distinction.
-- `config_flow.py` — bridge host/port + device SKI pairing. `iot_class: local_push`, `quality_scale: gold` (see `quality_scale.yaml`).
+- `config_flow.py` — bridge host/port + device SKI pairing. `iot_class: local_push`, `quality_scale: platinum` (see `quality_scale.yaml`).
 - Tests use HA fixtures in `conftest.py`; protobuf messages must be real generated types, not duck-typed namespaces.
 
 ### Go bridge
