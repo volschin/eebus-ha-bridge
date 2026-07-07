@@ -1,7 +1,14 @@
 """Convenience re-exports for generated protobuf stubs.
 
 Run `generate_proto.sh` to regenerate after proto changes.
+
+mypy's `--strict` implies `no_implicit_reexport`: a plain `from x import y`
+here does not make `y` part of this module's public API as far as mypy is
+concerned, so callers importing it back out get `attr-defined` errors. The
+explicit `__all__` below is what actually re-exports these names.
 """
+
+import grpc.aio
 
 from .generated.eebus.v1.common_pb2 import (  # noqa: F401
     DeviceRequest,
@@ -41,3 +48,62 @@ from .generated.eebus.v1.ohpcf_service_pb2 import (  # noqa: F401
     OHPCFEventType,
 )
 from .generated.eebus.v1.ohpcf_service_pb2_grpc import OHPCFServiceStub  # noqa: F401
+
+
+def device_service_stub(channel: grpc.aio.Channel) -> DeviceServiceStub:
+    """Build a DeviceServiceStub.
+
+    grpcio-tools emits untyped stub classes (no mypy_grpc plugin in
+    generate_proto.sh), so the constructor call is untyped from mypy's
+    point of view. Contained here instead of at each of the ~20 call
+    sites in coordinator.py/config_flow.py.
+    """
+    return DeviceServiceStub(channel)  # type: ignore[no-untyped-call]
+
+
+def monitoring_service_stub(channel: grpc.aio.Channel) -> MonitoringServiceStub:
+    return MonitoringServiceStub(channel)  # type: ignore[no-untyped-call]
+
+
+def lpc_service_stub(channel: grpc.aio.Channel) -> LPCServiceStub:
+    return LPCServiceStub(channel)  # type: ignore[no-untyped-call]
+
+
+def ohpcf_service_stub(channel: grpc.aio.Channel) -> OHPCFServiceStub:
+    return OHPCFServiceStub(channel)  # type: ignore[no-untyped-call]
+
+
+def grid_service_stub(channel: grpc.aio.Channel) -> GridServiceStub:
+    return GridServiceStub(channel)  # type: ignore[no-untyped-call]
+
+
+def visualization_service_stub(channel: grpc.aio.Channel) -> VisualizationServiceStub:
+    return VisualizationServiceStub(channel)  # type: ignore[no-untyped-call]
+
+
+__all__ = [
+    "BatteryData",
+    "CompressorPowerConsumptionState",
+    "ControlCompressorRequest",
+    "DeviceEventType",
+    "DeviceRequest",
+    "DeviceServiceStub",
+    "Empty",
+    "GridData",
+    "GridServiceStub",
+    "LPCEventType",
+    "LPCServiceStub",
+    "LoadLimit",
+    "MeasurementEntry",
+    "MeasurementEventType",
+    "MonitoringServiceStub",
+    "OHPCFAction",
+    "OHPCFEventType",
+    "OHPCFServiceStub",
+    "PVData",
+    "PowerMeasurement",
+    "RegisterSKIRequest",
+    "VisualizationServiceStub",
+    "WriteFailsafeLimitRequest",
+    "WriteLoadLimitRequest",
+]

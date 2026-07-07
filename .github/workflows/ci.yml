@@ -90,9 +90,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-asyncio pytest-cov ruff homeassistant voluptuous grpcio protobuf pip-audit
+          pip install pytest pytest-asyncio pytest-cov ruff mypy grpc-stubs homeassistant voluptuous grpcio protobuf pip-audit
       - name: Lint with ruff
         run: ruff check custom_components/
+      - name: Type check with mypy
+        run: mypy custom_components/eebus
       - name: Audit production dependencies
         run: |
           pip-audit --requirement /dev/stdin <<'EOF'

@@ -24,7 +24,7 @@ def _coordinator(ski="test-ski"):
 
 
 def _fake_proto(stub):
-    return SimpleNamespace(OHPCFServiceStub=lambda _channel: stub)
+    return SimpleNamespace(ohpcf_service_stub=lambda _channel: stub)
 
 
 def test_read_compressor_flexibility_maps_fields():

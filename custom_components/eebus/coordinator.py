@@ -6,7 +6,8 @@ import asyncio
 import logging
 import math
 from datetime import timedelta
-from typing import Any
+from types import ModuleType
+from typing import TYPE_CHECKING, Any
 
 import grpc
 import grpc.aio
@@ -21,8 +22,14 @@ from homeassistant.const import (
 )
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import (
+    EventStateChangedData,
+    async_track_state_change_event,
+)
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+
+if TYPE_CHECKING:
+    from . import proto_stubs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -134,7 +141,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.battery_discharged_energy_entity = battery_discharged_energy_entity
         self.battery_soc_entity = battery_soc_entity
         self._channel: grpc.aio.Channel | None = None
-        self._stream_tasks: list[asyncio.Task] = []
+        self._stream_tasks: list[asyncio.Task[None]] = []
         self._grid_unsub: Any = None
         self._pv_unsub: Any = None
         self._battery_unsub: Any = None
@@ -158,7 +165,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             channel = await self._ensure_channel()
             from . import proto_stubs
 
-            device_stub = proto_stubs.DeviceServiceStub(channel)
+            device_stub = proto_stubs.device_service_stub(channel)
             status = await device_stub.GetStatus(proto_stubs.Empty())
 
             if not self._ski_registered:
@@ -179,7 +186,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self.ski,
                 )
 
-            monitoring_stub = proto_stubs.MonitoringServiceStub(channel)
+            monitoring_stub = proto_stubs.monitoring_service_stub(channel)
             request = proto_stubs.DeviceRequest(ski=self.ski)
             fallback_request = proto_stubs.DeviceRequest(ski="")
             used_fallback = False
@@ -329,7 +336,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data["energy_consumed_kwh"] = None
 
             try:
-                lpc_stub = proto_stubs.LPCServiceStub(channel)
+                lpc_stub = proto_stubs.lpc_service_stub(channel)
                 limit = await lpc_stub.GetConsumptionLimit(
                     request, timeout=RPC_TIMEOUT
                 )
@@ -387,7 +394,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         self._lpc_supported = False
 
             try:
-                lpc_stub = proto_stubs.LPCServiceStub(channel)
+                lpc_stub = proto_stubs.lpc_service_stub(channel)
                 failsafe = await lpc_stub.GetFailsafeLimit(
                     request, timeout=RPC_TIMEOUT
                 )
@@ -441,7 +448,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         self._failsafe_supported = False
 
             try:
-                lpc_stub = proto_stubs.LPCServiceStub(channel)
+                lpc_stub = proto_stubs.lpc_service_stub(channel)
                 hb = await lpc_stub.GetHeartbeatStatus(
                     request, timeout=RPC_TIMEOUT
                 )
@@ -550,7 +557,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return data
         except grpc.aio.AioRpcError as err:
             if self._channel is not None:
-                await self._channel.close()
+                await self._channel.close(None)
                 self._channel = None
             self._not_found_streak = 0
 
@@ -609,18 +616,12 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return info or None
 
     async def _async_register_remote_ski(
-        self, device_stub: Any, proto_stubs: Any, force: bool
+        self, device_stub: Any, proto_stubs_module: ModuleType, force: bool
     ) -> None:
         """Register remote SKI with bridge, optionally forcing re-registration."""
         try:
-            register_request_cls = getattr(proto_stubs, "RegisterSKIRequest", None)
-            if register_request_cls is None:
-                from .generated.eebus.v1.device_service_pb2 import (
-                    RegisterSKIRequest as register_request_cls,
-                )
-
             await device_stub.RegisterRemoteSKI(
-                register_request_cls(ski=self.ski), timeout=RPC_TIMEOUT
+                proto_stubs_module.RegisterSKIRequest(ski=self.ski), timeout=RPC_TIMEOUT
             )
             self._ski_registered = True
             if force:
@@ -690,7 +691,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Write LPC consumption limit via gRPC."""
         channel = await self._ensure_channel()
         from . import proto_stubs
-        stub = proto_stubs.LPCServiceStub(channel)
+        stub = proto_stubs.lpc_service_stub(channel)
         try:
             await stub.WriteConsumptionLimit(
                 proto_stubs.WriteLoadLimitRequest(
@@ -712,7 +713,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Write failsafe limit via gRPC."""
         channel = await self._ensure_channel()
         from . import proto_stubs
-        stub = proto_stubs.LPCServiceStub(channel)
+        stub = proto_stubs.lpc_service_stub(channel)
         try:
             await stub.WriteFailsafeLimit(
                 proto_stubs.WriteFailsafeLimitRequest(
@@ -734,7 +735,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Activate or deactivate LPC limit via gRPC."""
         channel = await self._ensure_channel()
         from . import proto_stubs
-        stub = proto_stubs.LPCServiceStub(channel)
+        stub = proto_stubs.lpc_service_stub(channel)
         current = await stub.GetConsumptionLimit(
             proto_stubs.DeviceRequest(ski=self.ski), timeout=RPC_TIMEOUT
         )
@@ -764,7 +765,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         from .generated.eebus.v1 import ohpcf_service_pb2 as ohpcf_pb2
 
         try:
-            stub = proto_stubs.OHPCFServiceStub(channel)
+            stub = proto_stubs.ohpcf_service_stub(channel)
             flex = await stub.GetCompressorFlexibility(request, timeout=RPC_TIMEOUT)
         except grpc.aio.AioRpcError as err:
             if _is_unimplemented(err) or err.code() == grpc.StatusCode.UNAVAILABLE:
@@ -797,11 +798,11 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "minimal_pause_seconds": flex.minimal_pause_seconds,
         }
 
-    async def async_control_compressor(self, action: int) -> None:
+    async def async_control_compressor(self, action: proto_stubs.OHPCFAction) -> None:
         """Schedule/pause/resume/abort the compressor's optional consumption."""
         channel = await self._ensure_channel()
         from . import proto_stubs
-        stub = proto_stubs.OHPCFServiceStub(channel)
+        stub = proto_stubs.ohpcf_service_stub(channel)
         try:
             await stub.ControlCompressorFlexibility(
                 proto_stubs.ControlCompressorRequest(ski=self.ski, action=action),
@@ -826,7 +827,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Start EEBUS heartbeat via gRPC."""
         channel = await self._ensure_channel()
         from . import proto_stubs
-        stub = proto_stubs.LPCServiceStub(channel)
+        stub = proto_stubs.lpc_service_stub(channel)
         try:
             await stub.StartHeartbeat(
                 proto_stubs.DeviceRequest(ski=self.ski), timeout=RPC_TIMEOUT
@@ -844,7 +845,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Stop EEBUS heartbeat via gRPC."""
         channel = await self._ensure_channel()
         from . import proto_stubs
-        stub = proto_stubs.LPCServiceStub(channel)
+        stub = proto_stubs.lpc_service_stub(channel)
         try:
             await stub.StopHeartbeat(
                 proto_stubs.DeviceRequest(ski=self.ski), timeout=RPC_TIMEOUT
@@ -891,7 +892,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.debug("%s sensor %s has non-numeric state %r", kind, entity_id, state.state)
             return None
         unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
-        factor = unit_map.get(unit)
+        factor = unit_map.get(unit) if isinstance(unit, str) else None
         if factor is None:
             _LOGGER.debug(
                 "%s sensor %s has unknown unit %r; assuming base unit",
@@ -940,7 +941,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         channel = await self._ensure_channel()
         from . import proto_stubs
 
-        stub = proto_stubs.GridServiceStub(channel)
+        stub = proto_stubs.grid_service_stub(channel)
         request = proto_stubs.GridData(power_w=power_w)
         if feed_in_wh is not None:
             request.feed_in_wh = feed_in_wh
@@ -985,7 +986,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         )
 
-    async def _handle_grid_state_change(self, _event: Event) -> None:
+    async def _handle_grid_state_change(self, _event: Event[EventStateChangedData]) -> None:
         """Push grid data whenever a mapped sensor changes state."""
         await self.async_push_grid_data()
 
@@ -1017,7 +1018,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         channel = await self._ensure_channel()
         from . import proto_stubs
 
-        stub = proto_stubs.VisualizationServiceStub(channel)
+        stub = proto_stubs.visualization_service_stub(channel)
         request = proto_stubs.PVData(power_w=power_w)
         if yield_wh is not None:
             request.yield_wh = yield_wh
@@ -1059,7 +1060,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         )
 
-    async def _handle_pv_state_change(self, _event: Event) -> None:
+    async def _handle_pv_state_change(self, _event: Event[EventStateChangedData]) -> None:
         """Push PV data whenever a mapped sensor changes state."""
         await self.async_push_pv_data()
 
@@ -1093,7 +1094,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         channel = await self._ensure_channel()
         from . import proto_stubs
 
-        stub = proto_stubs.VisualizationServiceStub(channel)
+        stub = proto_stubs.visualization_service_stub(channel)
         request = proto_stubs.BatteryData(power_w=power_w)
         if charged_wh is not None:
             request.charged_wh = charged_wh
@@ -1139,7 +1140,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         )
 
-    async def _handle_battery_state_change(self, _event: Event) -> None:
+    async def _handle_battery_state_change(self, _event: Event[EventStateChangedData]) -> None:
         """Push battery data whenever a mapped sensor changes state."""
         await self.async_push_battery_data()
 
@@ -1187,7 +1188,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         from . import proto_stubs
 
         async def consume(channel: grpc.aio.Channel) -> None:
-            stub = proto_stubs.DeviceServiceStub(channel)
+            stub = proto_stubs.device_service_stub(channel)
             async for event in stub.SubscribeDeviceEvents(proto_stubs.Empty()):
                 self._handle_device_event(event)
 
@@ -1197,7 +1198,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         from . import proto_stubs
 
         async def consume(channel: grpc.aio.Channel) -> None:
-            stub = proto_stubs.LPCServiceStub(channel)
+            stub = proto_stubs.lpc_service_stub(channel)
             async for event in stub.SubscribeLPCEvents(
                 proto_stubs.DeviceRequest(ski=self.ski)
             ):
@@ -1209,7 +1210,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         from . import proto_stubs
 
         async def consume(channel: grpc.aio.Channel) -> None:
-            stub = proto_stubs.MonitoringServiceStub(channel)
+            stub = proto_stubs.monitoring_service_stub(channel)
             async for event in stub.SubscribeMeasurements(
                 proto_stubs.DeviceRequest(ski=self.ski)
             ):
@@ -1316,5 +1317,5 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             task.cancel()
         self._stream_tasks.clear()
         if self._channel is not None:
-            await self._channel.close()
+            await self._channel.close(None)
             self._channel = None

@@ -89,18 +89,18 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
         try:
             from . import proto_stubs
 
-            stub = proto_stubs.DeviceServiceStub(channel)
+            stub = proto_stubs.device_service_stub(channel)
             status = await stub.GetStatus(
                 proto_stubs.Empty(), timeout=CONFIG_RPC_TIMEOUT
             )
-            return status.local_ski
+            return str(status.local_ski)
         except Exception:  # noqa: BLE001
             _LOGGER.debug(
                 "No EEBUS bridge reachable at %s:%s", host, port, exc_info=True
             )
             return None
         finally:
-            await channel.close()
+            await channel.close(None)
 
     async def _async_list_discovered_skis(self) -> list[SelectOptionDict]:
         """Fetch discovered devices from the bridge for the SKI picker."""
@@ -108,7 +108,7 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
         try:
             from . import proto_stubs
 
-            stub = proto_stubs.DeviceServiceStub(channel)
+            stub = proto_stubs.device_service_stub(channel)
             response = await stub.ListDiscoveredDevices(
                 proto_stubs.Empty(), timeout=CONFIG_RPC_TIMEOUT
             )
@@ -126,7 +126,7 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
             _LOGGER.debug("Listing discovered devices failed", exc_info=True)
             return []
         finally:
-            await channel.close()
+            await channel.close(None)
 
     async def async_step_zeroconf(
         self, discovery_info: ZeroconfServiceInfo

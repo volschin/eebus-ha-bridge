@@ -20,3 +20,18 @@ exclude_lines = [
 target-version = "py312"
 line-length = 120
 exclude = ["custom_components/eebus/generated"]
+
+[tool.mypy]
+# Must track the newest Python in CI's test matrix (not this repo's own
+# target-version): mypy parses installed third-party sources like
+# homeassistant, which use syntax gated to whatever CPython they require.
+python_version = "3.14"
+strict = true
+exclude = ["custom_components/eebus/tests"]
+
+[[tool.mypy.overrides]]
+# grpcio-tools/mypy-protobuf generated code; not hand-maintained, no point
+# holding it to --strict (untyped grpc stub classes, Message subclasses
+# mypy can't fully resolve without the mypy-protobuf grpc plugin).
+module = "eebus.generated.*"
+ignore_errors = true
