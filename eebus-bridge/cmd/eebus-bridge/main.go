@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
@@ -79,6 +80,7 @@ func main() {
 	if err := bridgeSvc.Service().AddUseCase(monitoringWrapper.UseCase()); err != nil {
 		log.Fatalf("adding monitoring use case: %v", err)
 	}
+	registeredUseCases := []string{"LPC", "Monitoring"}
 
 	// SPIKE: experimental MGCP grid-connection-point provider. Off by default.
 	var mgcpProvider *usecases.MGCPProvider
@@ -92,6 +94,7 @@ func main() {
 				log.Fatalf("adding MGCP use case: %v", err)
 			}
 			log.Println("[MGCP] experimental grid-connection-point provider registered; awaiting grid data via GridService")
+			registeredUseCases = append(registeredUseCases, "MGCP")
 		}
 	}
 
@@ -107,6 +110,7 @@ func main() {
 				log.Fatalf("adding VAPD use case: %v", err)
 			}
 			log.Println("[VAPD] experimental PV-system provider registered; awaiting PV data via VisualizationService")
+			registeredUseCases = append(registeredUseCases, "VAPD")
 		}
 	}
 
@@ -122,6 +126,7 @@ func main() {
 				log.Fatalf("adding VABD use case: %v", err)
 			}
 			log.Println("[VABD] experimental battery-system provider registered; awaiting battery data via VisualizationService")
+			registeredUseCases = append(registeredUseCases, "VABD")
 		}
 	}
 	// OHPCF (heat-pump compressor flexibility) CEM client. On by default; reads
@@ -135,6 +140,7 @@ func main() {
 			log.Fatalf("adding OHPCF use case: %v", err)
 		}
 		log.Println("[OHPCF] CEM client registered; awaiting remote compressor SmartEnergyManagementPs")
+		registeredUseCases = append(registeredUseCases, "OHPCF")
 	}
 
 	// Controllable systems revert an active LPC limit to its failsafe value when
@@ -145,7 +151,7 @@ func main() {
 	} else {
 		log.Println("Started LPC heartbeat")
 	}
-	log.Println("Registered EEBUS use cases: LPC, Monitoring")
+	log.Printf("Registered EEBUS use cases: %s", strings.Join(registeredUseCases, ", "))
 
 	go func() {
 		ch := bus.Subscribe()
