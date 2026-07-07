@@ -1,0 +1,170 @@
+name: Fehlerbericht
+description: Etwas an der EEBUS-Integration oder der Bridge funktioniert nicht wie erwartet.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke fuer den Bericht. Je vollstaendiger die Angaben unten, desto
+        schneller laesst sich die Ursache eingrenzen -- bei EEBUS/SHIP-Problemen
+        steckt der eigentliche Fehler fast immer im Bridge-Log, nicht im HA-Log.
+
+        Siehe auch den [Troubleshooting-Abschnitt im README](https://github.com/volschin/eebus-ha-bridge#troubleshooting) --
+        moeglicherweise ist der Fall dort schon dokumentiert.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Beschreibung
+      description: Was ist passiert? Was haettest du stattdessen erwartet?
+      placeholder: |
+        Erwartet: ...
+        Tatsaechlich: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Schritte zur Reproduktion
+      description: Moeglichst konkret, inkl. Reihenfolge (z. B. "Integration neu geladen", "myVAILLANT-App geoeffnet", ...).
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: input
+    id: integration-version
+    attributes:
+      label: Integration-Version
+      description: |
+        HACS: **Einstellungen > Geraete & Dienste > HACS > EEBUS** -- Version steht dort.
+        Ohne HACS: Datei `custom_components/eebus/manifest.json` oeffnen, Feld `"version"`.
+      placeholder: "z. B. 0.9.4"
+    validations:
+      required: true
+
+  - type: input
+    id: bridge-version
+    attributes:
+      label: Bridge-Version / Image-Tag
+      description: |
+        `docker inspect --format='{{"{{"}}.Config.Image{{"}}"}}' eebus-bridge`
+        (bei `docker-compose` heisst der Containername ggf. anders, siehe `docker ps`).
+      placeholder: "z. B. ghcr.io/volschin/eebus-bridge:v0.9.4"
+    validations:
+      required: true
+
+  - type: input
+    id: ha-version
+    attributes:
+      label: Home Assistant Core Version
+      description: "**Einstellungen > System > Allgemein**, ganz unten."
+      placeholder: "z. B. 2026.2.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: gateway
+    attributes:
+      label: EEBUS-Gateway
+      options:
+        - VR921
+        - VR920
+        - VR940f
+        - Anderes / unbekannt
+    validations:
+      required: true
+
+  - type: input
+    id: heatpump
+    attributes:
+      label: Waermepumpen-Modell
+      placeholder: "z. B. Vaillant aroTHERM plus"
+
+  - type: textarea
+    id: bridge-config
+    attributes:
+      label: Bridge-Konfiguration (config.yaml)
+      description: |
+        Inhalt von `eebus-bridge/config.yaml` (bzw. dem gemounteten Config-File).
+        **Keine Zertifikate/SKI einfuegen** -- nur die Struktur/Werte, keine geheimen Inhalte aus `certificates.storage_path`.
+      render: yaml
+
+  - type: textarea
+    id: bridge-logs
+    attributes:
+      label: Bridge-Logs
+      description: |
+        `docker logs eebus-bridge --tail 200`
+
+        Bei Verbindungs-/Pairing-Problemen (Reconnect-Schleife, "Trusted" wird nie erreicht)
+        vorher SHIP-Logging aktivieren, dann reproduzieren und die Logs erneut ziehen:
+
+        ```yaml
+        logging:
+          ship_log: true     # Debug/Info/Error inkl. Abbruchgrund
+          # ship_trace: true # rohe SHIP-Pakete, sehr ausfuehrlich -- nur bei Bedarf
+        ```
+
+        oder per Env-Variable (z. B. in `docker-compose.yml`): `EEBUS_SHIP_LOG=true`.
+        Danach im Log nach `[SHIP DEBUG]` / `[SHIP ERROR]` suchen.
+      render: shell
+
+  - type: textarea
+    id: ha-logs
+    attributes:
+      label: Home-Assistant-Log (Integration, Debug-Level)
+      description: |
+        In `configuration.yaml`:
+
+        ```yaml
+        logger:
+          default: warning
+          logs:
+            custom_components.eebus: debug
+        ```
+
+        HA neu starten (oder **Entwicklerwerkzeuge > YAML > Logger neu laden**), Fehler
+        reproduzieren, danach unter **Einstellungen > System > Protokolle** filtern
+        nach `custom_components.eebus` und den relevanten Ausschnitt hier einfuegen.
+      render: shell
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: HA-Diagnosedatei
+      description: |
+        **Einstellungen > Geraete & Dienste > EEBUS > Geraet > drei Punkte > Diagnose herunterladen.**
+        Enthaelt den letzten Coordinator-Datenstand (SKI ist bereits redigiert). Datei hier
+        per Drag & Drop anhaengen oder Inhalt einfuegen.
+
+  - type: textarea
+    id: live-watcher
+    attributes:
+      label: Live-Watcher-Ausgabe (optional, bei Verbindungs-/Datenproblemen)
+      description: |
+        Zeigt in Echtzeit, was die Bridge fuer ein Geraet liefert -- oft schneller
+        zu lesen als rohe Logs:
+
+        ```bash
+        cd eebus-bridge
+        go run ./cmd/eebus-watch --host 127.0.0.1 --port 50051 --ski <REMOTE-SKI> --debug --once
+        ```
+
+        Ohne `--ski` wird automatisch das erste gepaarte Geraet genommen. `--debug`
+        zeigt zusaetzlich `NotFound`/`Unavailable`-Fehler.
+      render: shell
+
+  - type: checkboxes
+    id: network-checklist
+    attributes:
+      label: Netzwerk-Checkliste
+      description: Vor allem bei Discovery-/Pairing-Problemen relevant.
+      options:
+        - label: "Bridge laeuft mit `network_mode: host` (mDNS-Discovery braucht das, siehe `docker-compose.yml`)"
+        - label: HA und Bridge sind im selben Netzwerksegment (kein VLAN-Split, keine mDNS-Filterung)
+        - label: Am Gateway ist aktuell **keine andere** EEBUS-Verbindung aktiv (z. B. kein paralleler Energiemanager wie die sensoNET-Cloud -- Vaillant-Gateways erlauben nur eine)
