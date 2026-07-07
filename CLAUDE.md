@@ -34,6 +34,13 @@ HA Core pins `grpcio==1.78.0` in `package_constraints.txt`. The manifest floor (
 
 ## Commands
 
+### Python dev environment
+No `[project]` deps in `pyproject.toml` — it's tool config only (pytest/coverage/ruff/mypy sections). Install the same set CI installs:
+```bash
+pip install pytest pytest-asyncio pytest-cov ruff mypy grpc-stubs homeassistant voluptuous grpcio protobuf
+```
+`homeassistant` is a heavy dependency (pulls in most of HA core); expect a multi-minute install. It's needed for imports only (`DataUpdateCoordinator`, `Event`, etc.) — tests are plain unit tests against `unittest.mock.MagicMock`, not a running `hass` instance, so no `pytest-homeassistant-custom-component` fixture package is used.
+
 ### Python (run from repo root)
 ```bash
 PYTHONPATH=. pytest                              # all tests (asyncio_mode=auto)
@@ -66,18 +73,34 @@ docker-compose up -d eebus-bridge        # ghcr.io image, host networking
 - `coordinator.py` (`EebusCoordinator`) — central hub. Primary path is gRPC **streaming** (push); on stream failure it falls back to **polling** (`POLL_INTERVAL = 5min`) and reconnects the stream in the background. Polling only reconciles state streams can't carry (scoped energy, heartbeat, support flags). `FLAT_MEASUREMENT_TYPE_TO_KEY` maps bridge `GetMeasurements` entry types to per-phase/grid sensor keys.
 - Platforms: `sensor`, `number`, `switch`, `select`, `binary_sensor` — all read coordinator data; `entity.py` is the shared base. `select.eebus_compressor_flexibility` exposes OHPCF's `on`/`paused`/`off` as three distinct options — a plain switch collapses PAUSED into the same state as AVAILABLE/COMPLETED/STOPPED, losing the running-vs-stopped distinction.
 - `config_flow.py` — bridge host/port + device SKI pairing. `iot_class: local_push`, `quality_scale: platinum` (see `quality_scale.yaml`).
-- Tests use HA fixtures in `conftest.py`; protobuf messages must be real generated types, not duck-typed namespaces.
+- Tests are plain unit tests (`unittest.mock.MagicMock` for HA objects, no running `hass` instance); `conftest.py` is currently empty. Protobuf messages must be real generated types, not duck-typed namespaces — mypy/tests will reject a hand-rolled stand-in.
 
 ### Go bridge
-- `cmd/eebus-bridge/main.go` — entrypoint, wires config + service + gRPC server.
+- `cmd/eebus-bridge/main.go` — entrypoint, wires config + service + gRPC server. `cmd/eebus-watch/` is a standalone terminal live-viewer for manual testing against a running bridge (see README).
 - `internal/eebus/` — `service.go` embeds eebus-go; `registry.go` (DeviceRegistry, shared across use cases), `eventbus.go` (fan-out to gRPC streams), `callbacks.go` (SPINE event handlers).
-- `internal/usecases/` — `lpc.go` (Limitation of Power Consumption, §14a), `monitoring.go` (measurements), `classification.go` (device mfr/model from EEBUS DeviceClassification). eebus-go validates entity compatibility **per use case**: multi-entity gateways need use-case-aware entity resolution, not just registry lookup (issue #47 — `CompatibleEntity` resolver).
-- `internal/grpc/` — service impls (`device_service.go`, `lpc_service.go`, `monitoring_service.go`) + `server.go`.
+- `internal/usecases/` — one file per EEBUS use case, split by role:
+  - **Consumer** (bridge reads from the device): `lpc.go` (Limitation of Power Consumption, §14a), `monitoring.go` (measurements), `classification.go` (device mfr/model from EEBUS DeviceClassification), `ohpcf.go` (Optimization of Self-Consumption by Heat Pump Compressor Flexibility — CEM client, schedule/pause/resume/abort).
+  - **Provider** (bridge feeds data *to* the device, sourced from HA sensors) — all experimental/off-by-default, see `docs/eebus-vaillant-improvements.md`: `mgcp.go` (grid connection point — power/energy), `vapd.go` (aggregated PV data), `vabd.go` (aggregated battery data).
+  - eebus-go validates entity compatibility **per use case**: multi-entity gateways need use-case-aware entity resolution, not just registry lookup (issue #47 — `CompatibleEntity` resolver).
+- `internal/grpc/` — service impls, one per proto service (`device_service.go`, `lpc_service.go`, `monitoring_service.go`, `ohpcf_service.go`, `grid_service.go` (MGCP), `visualization_service.go` (VAPD/VABD)) + `server.go`.
 - `internal/certs/` — auto-generated TLS certs define the bridge SKI. Deleting them changes the SKI and forces re-pairing.
 
 ## Conventions
 
-- Releases are tag-triggered: pushing a `v*` tag builds multi-arch (amd64/arm64/armv7) Docker images to GHCR. `release-drafter` drafts notes on merge to main. Bump `version` in `manifest.json` for HA releases.
+- Releases are tag-triggered: pushing a `v*` tag builds multi-arch (amd64/arm64/armv7) Docker images to GHCR. `release-drafter` drafts notes on merge to main. **Bumping `version` in `manifest.json` and pushing the `v*` tag is a maintainer release step, done in its own commit after a PR merges — don't bump it as part of a feature/fix PR.**
 - CI skips Go/proto jobs via path filters when only the other side changed. `paths-ignore` skips `**/*.md`.
-- HVAC control (modes/setpoints) is out of scope for now — LPC + measurement only. Note: the Vaillant VR940 *does* expose HVAC/DHW config+setpoint use cases over EEBUS (confirmed via live discovery, `docs/vr940-usecase-dump.txt`); the blocker is that `enbility/eebus-go` ships no HVAC/setpoint use cases, only the energy domain. It also advertises MGCP/VAPD/VABD/OSCF (PV/grid/battery feed-in) but only as the *consumer* role, so feeding HA PV data would need custom SPINE *provider* features — see `docs/eebus-vaillant-improvements.md`.
+- HVAC control (modes/setpoints) is out of scope for now — LPC + measurement only. Note: the Vaillant VR940 *does* expose HVAC/DHW config+setpoint use cases over EEBUS (confirmed via live discovery, `docs/vr940-usecase-dump.txt`); the blocker is that `enbility/eebus-go` ships no HVAC/setpoint use cases, only the energy domain.
 - Follow YAGNI: build only what a current use case needs. No speculative abstractions, config knobs, or use-case scaffolding for hardware/features not yet supported.
+- `custom_components/eebus/quality_scale.yaml` is not decorative — it's checked against HA's [quality scale rules](https://www.home-assistant.io/docs/quality_scale/). Currently platinum (all rules `done` or `exempt`, see comments for the exempt reasoning). A PR that adds a new entity, config-flow step, or exception path should update the relevant rule/comment, not silently leave it stale.
+
+## Before opening a PR
+
+`ci.yml` runs ruff, mypy, pytest+coverage, `go vet`+`golangci-lint`+`go test -race`+`govulncheck`, hadolint (Dockerfile), and `proto-drift` if `.proto` files changed; `hassfest.yml` and `hacs.yml` separately validate the HA integration's manifest/structure. Run the relevant subset locally first — a red CI run on someone else's PR is a slow way to find out ruff/mypy/`go vet` would have caught it in ten seconds:
+- Python changes: `ruff check custom_components/`, `mypy custom_components/eebus`, `PYTHONPATH=. pytest`.
+- Go changes: `go vet ./...` and `make test`, from `eebus-bridge/`.
+- `.proto` changes: regenerate **both** stub sets (`make proto` in `eebus-bridge/`, `bash generate_proto.sh` from repo root) and commit the diff — `proto-drift` CI fails otherwise.
+- New/changed config knob, entity, or service call: check whether `quality_scale.yaml`, README (feature list / troubleshooting), or `docs/` need a matching update.
+
+## Hardware testing gotcha
+
+Vaillant EEBUS gateways accept only **one** active EEBUS/SHIP connection at a time. If you're testing against real hardware and the bridge can't reach `Trusted` state (endless reconnect loop), check first whether another energy manager (e.g. the myVAILLANT sensoNET cloud client) is already holding that slot — this is a device limitation, not a bug in this code, and burns a lot of debugging time if you don't know about it. Enable `logging.ship_log: true` (see README Troubleshooting) to confirm from the abort reason before digging further.
