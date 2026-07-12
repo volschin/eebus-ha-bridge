@@ -54,6 +54,11 @@ type ExperimentalConfig struct {
 	// which setpoints/modes a gateway (e.g. Vaillant VR940) exposes for control.
 	// Stage 1 of the HVAC control spike; sends SPINE reads only, never writes.
 	HvacProbe bool `yaml:"hvac_probe"`
+	// HvacProbeBind is stage 2 of the HVAC control spike: in addition to the
+	// reads, request a SPINE binding to each remote Setpoint/HVAC server
+	// feature (the precondition for writes) and log whether the device accepts
+	// it. Requires HvacProbe. Still performs no writes.
+	HvacProbeBind bool `yaml:"hvac_probe_bind"`
 	// TrustSKI, when set, makes the bridge trust (RegisterRemoteSKI) this remote
 	// SKI at startup instead of waiting for Home Assistant to send it via gRPC.
 	// Lets a spike container complete the SHIP handshake with a known device
@@ -212,6 +217,11 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("EEBUS_EXP_HVAC_PROBE"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			cfg.Experimental.HvacProbe = enabled
+		}
+	}
+	if v := os.Getenv("EEBUS_EXP_HVAC_PROBE_BIND"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Experimental.HvacProbeBind = enabled
 		}
 	}
 	if v := os.Getenv("EEBUS_OHPCF_ENABLED"); v != "" {

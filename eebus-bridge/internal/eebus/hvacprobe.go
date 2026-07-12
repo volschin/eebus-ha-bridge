@@ -24,12 +24,21 @@ import (
 // declares writable before we attempt any write.
 //
 // Gated behind experimental.hvac_probe; sends only SPINE read commands, never
-// writes, subscribes or binds.
+// writes or subscribes. Stage 2 (experimental.hvac_probe_bind, EnableBind)
+// additionally requests a binding to each remote Setpoint/HVAC server feature
+// — the precondition for any SPINE write — and reports whether the device
+// accepts it. Still no writes.
 type HvacProbe struct {
 	mu          sync.Mutex
 	localEntity spineapi.EntityLocalInterface
 	probed      map[string]bool
 	logf        func(format string, args ...any)
+
+	// bindEnabled turns on the stage-2 binding attempt. resultHooked tracks
+	// which local client features already log incoming SPINE result messages
+	// (accept/deny replies to the bind requests).
+	bindEnabled  bool
+	resultHooked map[model.FeatureTypeType]bool
 
 	// pollInterval/pollTimeout control how long collectData waits for read
 	// responses to land in the remote feature caches. Overridden in tests.
@@ -65,6 +74,7 @@ func NewHvacProbe(logf func(format string, args ...any)) *HvacProbe {
 	}
 	return &HvacProbe{
 		probed:       make(map[string]bool),
+		resultHooked: make(map[model.FeatureTypeType]bool),
 		logf:         logf,
 		pollInterval: 2 * time.Second,
 		pollTimeout:  30 * time.Second,
@@ -124,6 +134,27 @@ func (p *HvacProbe) ProbeOnce(ski string, device spineapi.DeviceRemoteInterface)
 	if len(pending) > 0 {
 		go p.collectData(ski, pending)
 	}
+
+	p.mu.Lock()
+	bind := p.bindEnabled
+	p.mu.Unlock()
+	if bind {
+		if requested := p.bindAll(ski, local, targets); len(requested) > 0 {
+			go p.collectBindResults(ski, requested)
+		}
+	}
+}
+
+// EnableBind arms stage 2: ProbeOnce additionally requests a binding to each
+// remote Setpoint/HVAC server feature. Call alongside Setup, before the
+// service starts.
+func (p *HvacProbe) EnableBind() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	p.bindEnabled = true
+	p.mu.Unlock()
 }
 
 // probeTarget is one remote Setpoint/HVAC server feature to interrogate.
@@ -190,6 +221,104 @@ func (p *HvacProbe) requestAll(ski string, local spineapi.EntityLocalInterface, 
 		}
 	}
 	return pending
+}
+
+// pendingBind tracks one bind request awaiting confirmation.
+type pendingBind struct {
+	target       probeTarget
+	localFeature spineapi.FeatureLocalInterface
+}
+
+// bindAll requests a binding from the local client feature to each remote
+// Setpoint/HVAC server feature. Acceptance is confirmed asynchronously: on an
+// accept result spine-go records the binding, which collectBindResults
+// observes via HasBindingToRemote. A result callback per local feature logs
+// the raw accept/deny replies (including the deny error number).
+func (p *HvacProbe) bindAll(ski string, local spineapi.EntityLocalInterface, targets []probeTarget) []pendingBind {
+	var requested []pendingBind
+	for _, t := range targets {
+		featureType := t.feature.Type()
+		localFeature := local.FeatureOfTypeAndRole(featureType, model.RoleTypeClient)
+		if localFeature == nil {
+			continue
+		}
+		p.hookResultLogging(ski, featureType, localFeature)
+
+		remoteAddr := t.feature.Address()
+		if localFeature.HasBindingToRemote(remoteAddr) {
+			p.logf("[HVACPROBE] ski=%s entity=%s bind %s: already bound", ski, t.entityAddr, featureType)
+			continue
+		}
+		msgCounter, err := localFeature.BindToRemote(remoteAddr)
+		if err != nil {
+			p.logf("[HVACPROBE] ski=%s entity=%s bind %s request failed: %s",
+				ski, t.entityAddr, featureType, errorTypeString(err))
+			continue
+		}
+		counter := uint64(0)
+		if msgCounter != nil {
+			counter = uint64(*msgCounter)
+		}
+		p.logf("[HVACPROBE] ski=%s entity=%s bind %s requested (msgCounter=%d)",
+			ski, t.entityAddr, featureType, counter)
+		requested = append(requested, pendingBind{target: t, localFeature: localFeature})
+	}
+	return requested
+}
+
+// hookResultLogging logs every SPINE result message arriving at a local
+// client feature once per feature type. Bind accept/deny replies surface here
+// with their error number (0 = accepted).
+func (p *HvacProbe) hookResultLogging(ski string, featureType model.FeatureTypeType, localFeature spineapi.FeatureLocalInterface) {
+	p.mu.Lock()
+	hooked := p.resultHooked[featureType]
+	if !hooked {
+		p.resultHooked[featureType] = true
+	}
+	p.mu.Unlock()
+	if hooked {
+		return
+	}
+	localFeature.AddResultCallback(func(msg spineapi.ResponseMessage) {
+		result, ok := msg.Data.(*model.ResultDataType)
+		if !ok {
+			return
+		}
+		errno := int64(-1)
+		if result.ErrorNumber != nil {
+			errno = int64(*result.ErrorNumber)
+		}
+		desc := ""
+		if result.Description != nil {
+			desc = " " + string(*result.Description)
+		}
+		p.logf("[HVACPROBE] ski=%s feature=%s result msgCounterRef=%d errorNumber=%d%s",
+			ski, featureType, uint64(msg.MsgCounterReference), errno, desc)
+	})
+}
+
+// collectBindResults polls until each requested binding is confirmed or the
+// timeout passes. A missing confirmation means the device denied or ignored
+// the bind - the result log above carries the deny error number if one came.
+func (p *HvacProbe) collectBindResults(ski string, pending []pendingBind) {
+	deadline := time.Now().Add(p.pollTimeout)
+	for len(pending) > 0 && time.Now().Before(deadline) {
+		time.Sleep(p.pollInterval)
+		remaining := pending[:0]
+		for _, b := range pending {
+			if b.localFeature.HasBindingToRemote(b.target.feature.Address()) {
+				p.logf("[HVACPROBE] ski=%s entity=%s bind %s ACCEPTED",
+					ski, b.target.entityAddr, b.target.feature.Type())
+				continue
+			}
+			remaining = append(remaining, b)
+		}
+		pending = remaining
+	}
+	for _, b := range pending {
+		p.logf("[HVACPROBE] ski=%s entity=%s bind %s NOT confirmed within %s (denied or ignored; see result log)",
+			ski, b.target.entityAddr, b.target.feature.Type(), p.pollTimeout)
+	}
 }
 
 // collectData polls the remote feature caches until every requested function

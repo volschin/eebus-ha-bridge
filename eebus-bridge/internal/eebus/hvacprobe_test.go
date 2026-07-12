@@ -147,4 +147,63 @@ func TestHvacProbeRequestsAndDedups(t *testing.T) {
 	}
 }
 
+func TestHvacProbeBindRequestsAndConfirms(t *testing.T) {
+	logf, lines := collectLogf()
+	p := NewHvacProbe(logf)
+	p.pollInterval = 5 * time.Millisecond
+	p.pollTimeout = 200 * time.Millisecond
+
+	remoteAddr := &model.FeatureAddressType{
+		Device:  ptr(model.AddressDeviceType("d0")),
+		Entity:  []model.AddressEntityType{4},
+		Feature: ptr(model.AddressFeatureType(1)),
+	}
+	remoteFeature := mocks.NewFeatureRemoteInterface(t)
+	remoteFeature.On("String").Return("setpoint-server-feature").Maybe()
+	remoteFeature.On("Type").Return(model.FeatureTypeTypeSetpoint).Maybe()
+	remoteFeature.On("Address").Return(remoteAddr).Maybe()
+	remoteFeature.On("Operations").Return(map[model.FunctionType]spineapi.OperationsInterface{}).Maybe()
+	remoteFeature.On("DataCopy", mock.Anything).Return(nil).Maybe()
+
+	counter := model.MsgCounterType(7)
+	var (
+		boundMu sync.Mutex
+		bound   bool
+	)
+	localFeature := mocks.NewFeatureLocalInterface(t)
+	localFeature.On("RequestRemoteData", mock.Anything, nil, nil, remoteFeature).Return(&counter, nil)
+	localFeature.On("AddResultCallback", mock.Anything).Return()
+	localFeature.On("HasBindingToRemote", remoteAddr).Return(func(*model.FeatureAddressType) bool {
+		boundMu.Lock()
+		defer boundMu.Unlock()
+		return bound
+	}).Maybe()
+	localFeature.On("BindToRemote", remoteAddr).Run(func(mock.Arguments) {
+		boundMu.Lock()
+		bound = true // simulate the device accepting the binding
+		boundMu.Unlock()
+	}).Return(&counter, nil)
+
+	local := mocks.NewEntityLocalInterface(t)
+	local.On("GetOrAddFeature", mock.Anything, mock.Anything).Return(localFeature).Maybe()
+	local.On("FeatureOfTypeAndRole", model.FeatureTypeTypeSetpoint, model.RoleTypeClient).Return(localFeature).Maybe()
+	p.Setup(local)
+	p.EnableBind()
+
+	device := buildProbeDeviceMock(t, "ABCD1234", remoteFeature)
+	p.ProbeOnce("ABCD1234", device)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		out := strings.Join(lines(), "\n")
+		if strings.Contains(out, "bind Setpoint requested") && strings.Contains(out, "bind Setpoint ACCEPTED") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("probe never confirmed binding:\n%s", out)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func ptr[T any](v T) *T { return &v }

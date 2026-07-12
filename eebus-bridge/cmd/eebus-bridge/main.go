@@ -160,6 +160,12 @@ func main() {
 	if cfg.Experimental.HvacProbe {
 		eebus.DefaultHvacProbe().Setup(localEntity)
 		log.Println("[HVACPROBE] experimental HVAC/DHW read probe armed; will dump Setpoint/HVAC data on device connect")
+		if cfg.Experimental.HvacProbeBind {
+			eebus.DefaultHvacProbe().EnableBind()
+			log.Println("[HVACPROBE] stage-2 bind armed; will request Setpoint/HVAC bindings on device connect")
+		}
+	} else if cfg.Experimental.HvacProbeBind {
+		log.Println("[HVACPROBE] hvac_probe_bind requires hvac_probe; bind stage not armed")
 	}
 
 	// Controllable systems revert an active LPC limit to its failsafe value when
