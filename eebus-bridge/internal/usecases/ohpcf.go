@@ -211,10 +211,10 @@ var ohpcfWriteTimeout = 10 * time.Second
 // Without this the bridge would report success as soon as the command was *sent*,
 // masking a device-side rejection (e.g. an uncommissioned heat pump) from the HA
 // caller. Mirrors evcc's server/eebus.Await (evcc-io/evcc#31350).
-func awaitWrite(action string, write func(func(model.ResultDataType)) (*model.MsgCounterType, error)) error {
+func awaitWrite(action string, write func(func(model.ResultDataType, model.MsgCounterType)) (*model.MsgCounterType, error)) error {
 	res := make(chan model.ResultDataType, 1)
 
-	if _, err := write(func(r model.ResultDataType) { res <- r }); err != nil {
+	if _, err := write(func(r model.ResultDataType, _ model.MsgCounterType) { res <- r }); err != nil {
 		return err
 	}
 
@@ -248,7 +248,7 @@ func (w *OHPCFWrapper) Schedule(entity spineapi.EntityRemoteInterface, start tim
 			startIn = d
 		}
 	}
-	return awaitWrite("schedule", func(cb func(model.ResultDataType)) (*model.MsgCounterType, error) {
+	return awaitWrite("schedule", func(cb func(model.ResultDataType, model.MsgCounterType)) (*model.MsgCounterType, error) {
 		return w.uc.SchedulePowerConsumptionProcess(entity, startIn, cb)
 	})
 }
@@ -258,7 +258,7 @@ func (w *OHPCFWrapper) Pause(entity spineapi.EntityRemoteInterface) error {
 	if w.uc == nil {
 		return errOHPCFNotInitialized
 	}
-	return awaitWrite("pause", func(cb func(model.ResultDataType)) (*model.MsgCounterType, error) {
+	return awaitWrite("pause", func(cb func(model.ResultDataType, model.MsgCounterType)) (*model.MsgCounterType, error) {
 		return w.uc.PausePowerConsumptionProcess(entity, cb)
 	})
 }
@@ -268,7 +268,7 @@ func (w *OHPCFWrapper) Resume(entity spineapi.EntityRemoteInterface) error {
 	if w.uc == nil {
 		return errOHPCFNotInitialized
 	}
-	return awaitWrite("resume", func(cb func(model.ResultDataType)) (*model.MsgCounterType, error) {
+	return awaitWrite("resume", func(cb func(model.ResultDataType, model.MsgCounterType)) (*model.MsgCounterType, error) {
 		return w.uc.ResumePowerConsumptionProcess(entity, cb)
 	})
 }
@@ -278,7 +278,7 @@ func (w *OHPCFWrapper) Abort(entity spineapi.EntityRemoteInterface) error {
 	if w.uc == nil {
 		return errOHPCFNotInitialized
 	}
-	return awaitWrite("abort", func(cb func(model.ResultDataType)) (*model.MsgCounterType, error) {
+	return awaitWrite("abort", func(cb func(model.ResultDataType, model.MsgCounterType)) (*model.MsgCounterType, error) {
 		return w.uc.AbortPowerConsumptionProcess(entity, cb)
 	})
 }

@@ -13,8 +13,8 @@ func ptr[T any](v T) *T { return &v }
 
 // awaitWrite must return nil when the device replies with a zero (accepted) result.
 func TestAwaitWriteAccepted(t *testing.T) {
-	err := awaitWrite("schedule", func(cb func(model.ResultDataType)) (*model.MsgCounterType, error) {
-		cb(model.ResultDataType{}) // ErrorNumber nil == success
+	err := awaitWrite("schedule", func(cb func(model.ResultDataType, model.MsgCounterType)) (*model.MsgCounterType, error) {
+		cb(model.ResultDataType{}, model.MsgCounterType(0)) // ErrorNumber nil == success
 		return ptr(model.MsgCounterType(1)), nil
 	})
 	if err != nil {
@@ -25,11 +25,11 @@ func TestAwaitWriteAccepted(t *testing.T) {
 // awaitWrite must surface a device-side rejection (non-zero ErrorNumber) as an
 // error carrying the action, the error code, and the description.
 func TestAwaitWriteRejected(t *testing.T) {
-	err := awaitWrite("schedule", func(cb func(model.ResultDataType)) (*model.MsgCounterType, error) {
+	err := awaitWrite("schedule", func(cb func(model.ResultDataType, model.MsgCounterType)) (*model.MsgCounterType, error) {
 		cb(model.ResultDataType{
 			ErrorNumber: ptr(model.ErrorNumberType(7)),
 			Description: ptr(model.DescriptionType("not commissioned")),
-		})
+		}, model.MsgCounterType(0))
 		return ptr(model.MsgCounterType(1)), nil
 	})
 	if err == nil {
@@ -47,7 +47,7 @@ func TestAwaitWriteRejected(t *testing.T) {
 func TestAwaitWriteSendError(t *testing.T) {
 	sentinel := errors.New("send failed")
 	called := false
-	err := awaitWrite("pause", func(cb func(model.ResultDataType)) (*model.MsgCounterType, error) {
+	err := awaitWrite("pause", func(cb func(model.ResultDataType, model.MsgCounterType)) (*model.MsgCounterType, error) {
 		_ = cb
 		called = true
 		return nil, sentinel
@@ -68,7 +68,7 @@ func TestAwaitWriteTimeout(t *testing.T) {
 	defer func() { ohpcfWriteTimeout = prev }()
 
 	start := time.Now()
-	err := awaitWrite("abort", func(cb func(model.ResultDataType)) (*model.MsgCounterType, error) {
+	err := awaitWrite("abort", func(cb func(model.ResultDataType, model.MsgCounterType)) (*model.MsgCounterType, error) {
 		_ = cb // never invoked: simulates an unresponsive device
 		return ptr(model.MsgCounterType(1)), nil
 	})
