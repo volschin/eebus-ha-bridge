@@ -2,6 +2,7 @@ package eebus_test
 
 import (
 	"testing"
+	"time"
 
 	spineapi "github.com/enbility/spine-go/api"
 	"github.com/volschin/eebus-bridge/internal/eebus"
@@ -155,5 +156,32 @@ func TestRegistryEntityHelpersEmpty(t *testing.T) {
 	}
 	if entity := reg.FirstEntityForType("unknown", "HeatPumpAppliance"); entity != nil {
 		t.Error("FirstEntityForType unknown returned entity")
+	}
+}
+
+func TestMonitoringStaleNoTrustedDevice(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	if reg.MonitoringStale(0) {
+		t.Error("MonitoringStale should be false with no trusted device, regardless of threshold")
+	}
+}
+
+func TestMonitoringStaleWithinThreshold(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	reg.AddDevice("ski-1", eebus.DeviceInfo{Brand: "Vaillant"})
+	reg.RecordMonitoringSuccess()
+
+	if reg.MonitoringStale(time.Minute) {
+		t.Error("MonitoringStale should be false right after a recorded success")
+	}
+}
+
+func TestMonitoringStaleExceedsThreshold(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	reg.AddDevice("ski-1", eebus.DeviceInfo{Brand: "Vaillant"})
+	reg.RecordMonitoringSuccess()
+
+	if !reg.MonitoringStale(0) {
+		t.Error("MonitoringStale should be true once elapsed time exceeds a zero threshold")
 	}
 }

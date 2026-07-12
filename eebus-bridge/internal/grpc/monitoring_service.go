@@ -199,6 +199,9 @@ func (s *MonitoringService) attachMeasurementPayload(event *pb.MeasurementEvent,
 func (s *MonitoringService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, error) {
 	if s.monitoring != nil {
 		if entity := s.monitoring.CompatibleEntity(ski); entity != nil {
+			if s.registry != nil {
+				s.registry.RecordMonitoringSuccess()
+			}
 			return entity, nil
 		}
 	}
