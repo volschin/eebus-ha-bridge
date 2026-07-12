@@ -48,6 +48,12 @@ type ExperimentalConfig struct {
 	// VR940, which advertises the VABD VisualizationAppliance role) can display the
 	// home's battery state. SPIKE: see docs/eebus-vaillant-improvements.md.
 	VABDProvider bool `yaml:"vabd_provider"`
+	// HvacProbe enables the read-only HVAC/DHW diagnostic probe: on device
+	// connect it requests all Setpoint/HVAC data from remote DHWCircuit/HVACRoom
+	// entities and logs values plus advertised read/write operations, to map
+	// which setpoints/modes a gateway (e.g. Vaillant VR940) exposes for control.
+	// Stage 1 of the HVAC control spike; sends SPINE reads only, never writes.
+	HvacProbe bool `yaml:"hvac_probe"`
 	// TrustSKI, when set, makes the bridge trust (RegisterRemoteSKI) this remote
 	// SKI at startup instead of waiting for Home Assistant to send it via gRPC.
 	// Lets a spike container complete the SHIP handshake with a known device
@@ -201,6 +207,11 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("EEBUS_EXP_VABD_PROVIDER"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			cfg.Experimental.VABDProvider = enabled
+		}
+	}
+	if v := os.Getenv("EEBUS_EXP_HVAC_PROBE"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Experimental.HvacProbe = enabled
 		}
 	}
 	if v := os.Getenv("EEBUS_OHPCF_ENABLED"); v != "" {

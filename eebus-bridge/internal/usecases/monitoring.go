@@ -71,6 +71,8 @@ func (w *MonitoringWrapper) HandleEvent(ski string, device spineapi.DeviceRemote
 	if w.debug {
 		eebus.DefaultUseCaseDiscovery().LogOnce(ski, device)
 	}
+	// No-op unless the experimental HVAC probe was armed in main.
+	eebus.DefaultHvacProbe().ProbeOnce(ski, device)
 
 	if w.registry != nil {
 		w.registry.UpsertObservation(ski, device, entity, "monitoring")

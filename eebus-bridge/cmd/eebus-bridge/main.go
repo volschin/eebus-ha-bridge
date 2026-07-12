@@ -154,6 +154,14 @@ func main() {
 		registeredUseCases = append(registeredUseCases, "OHPCF")
 	}
 
+	// SPIKE: experimental read-only HVAC/DHW probe. Off by default. Must be armed
+	// before Start so its Setpoint/HVAC client features are part of the announced
+	// feature map.
+	if cfg.Experimental.HvacProbe {
+		eebus.DefaultHvacProbe().Setup(localEntity)
+		log.Println("[HVACPROBE] experimental HVAC/DHW read probe armed; will dump Setpoint/HVAC data on device connect")
+	}
+
 	// Controllable systems revert an active LPC limit to its failsafe value when
 	// heartbeats stop arriving, so keep the local heartbeat running for the
 	// lifetime of the bridge.
