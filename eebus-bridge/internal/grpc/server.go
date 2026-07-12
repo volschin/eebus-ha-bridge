@@ -13,6 +13,7 @@ import (
 
 type Server struct {
 	grpcServer *grpc.Server
+	healthSrv  *health.Server
 	listener   net.Listener
 	bind       string
 	port       int
@@ -32,9 +33,21 @@ func NewServer(bind string, port int, enableReflection bool) *Server {
 
 	return &Server{
 		grpcServer: grpcServer,
+		healthSrv:  healthSrv,
 		bind:       bind,
 		port:       port,
 	}
+}
+
+// SetHealthy toggles the gRPC health status the Docker HEALTHCHECK probes.
+// Used by the monitoring watchdog to surface a stuck SPINE entity binding
+// before it force-exits the process for a restart.
+func (s *Server) SetHealthy(healthy bool) {
+	status := grpc_health_v1.HealthCheckResponse_SERVING
+	if !healthy {
+		status = grpc_health_v1.HealthCheckResponse_NOT_SERVING
+	}
+	s.healthSrv.SetServingStatus("", status)
 }
 
 func (s *Server) GRPCServer() *grpc.Server {

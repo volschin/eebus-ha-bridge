@@ -360,6 +360,14 @@ Anschliessend im Bridge-Log nach `[SHIP DEBUG]`/`[SHIP ERROR]` suchen, z. B.:
 - EEBUS-Messwerte kommen ca. alle 60 Sekunden
 - Pruefen ob `binary_sensor.eebus_connected` "on" ist
 - Bridge-Log auf Fehlermeldungen pruefen
+- Ein eingebauter Watchdog erkennt selbststaendig, wenn nach einem SHIP-Reconnect
+  die SPINE-Entity-Bindung haengen bleibt (Symptom: `no compatible entity` /
+  `no remote entity found` im Log trotz getrustetem Geraet). Bleiben laenger als
+  10 Minuten keine erfolgreichen Messwert-Reads aus, meldet der Docker
+  `HEALTHCHECK` den Container als unhealthy und die Bridge beendet sich selbst
+  fuer einen Neustart (`restart: unless-stopped` in `docker-compose.yml` startet
+  sie automatisch neu). Kein manuelles Eingreifen noetig; bei Bedarf laesst sich
+  der Status vorab pruefen mit `docker inspect --format='{{.State.Health.Status}}' eebus-bridge`.
 
 </details>
 

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	spineapi "github.com/enbility/spine-go/api"
 	"github.com/enbility/spine-go/model"
@@ -29,14 +31,37 @@ type DeviceInfo struct {
 }
 
 type DeviceRegistry struct {
-	mu      sync.RWMutex
-	devices map[string]DeviceInfo
+	mu                    sync.RWMutex
+	devices               map[string]DeviceInfo
+	lastMonitoringSuccess atomic.Int64 // unix nano; set at construction so a stuck startup also counts as stale
 }
 
 func NewDeviceRegistry() *DeviceRegistry {
-	return &DeviceRegistry{
+	r := &DeviceRegistry{
 		devices: make(map[string]DeviceInfo),
 	}
+	r.lastMonitoringSuccess.Store(time.Now().UnixNano())
+	return r
+}
+
+// RecordMonitoringSuccess marks that a remote entity was just successfully
+// resolved for a live monitoring read. Call only on a real eebus-go scenario
+// match (not a registry cache hit), so a stuck SPINE entity binding after
+// reconnect is actually detected instead of masked by stale cached entities.
+func (r *DeviceRegistry) RecordMonitoringSuccess() {
+	r.lastMonitoringSuccess.Store(time.Now().UnixNano())
+}
+
+// MonitoringStale reports whether monitoring reads have produced no
+// successful entity resolution for longer than threshold, while at least one
+// device is trusted. Returns false with no trusted device, since a bridge
+// that has never been paired isn't a monitoring outage.
+func (r *DeviceRegistry) MonitoringStale(threshold time.Duration) bool {
+	if len(r.ListDevices()) == 0 {
+		return false
+	}
+	last := time.Unix(0, r.lastMonitoringSuccess.Load())
+	return time.Since(last) > threshold
 }
 
 // NormalizeSKI canonicalizes a SKI for use as a registry key: uppercase, no

@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/certs"
@@ -15,6 +16,16 @@ import (
 	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
 	"github.com/volschin/eebus-bridge/internal/usecases"
 )
+
+// monitoringStaleThreshold bounds how long a trusted device may go without a
+// successful Monitoring entity resolution before the watchdog restarts the
+// process. Reconnects (SHIP re-pair) can leave the SPINE entity binding stuck
+// with no error logged, silently starving Home Assistant of data; a restart
+// forces a clean re-handshake. The device normally pushes updates ~every 60s,
+// so 10min gives ample margin against brief legitimate gaps.
+const monitoringStaleThreshold = 10 * time.Minute
+
+const watchdogInterval = 30 * time.Second
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
@@ -223,6 +234,21 @@ func main() {
 	if cfg.Logging.DebugEvents {
 		log.Println("[DEBUG] EEBUS event debug logging enabled; waiting for incoming callbacks")
 	}
+
+	go func() {
+		ticker := time.NewTicker(watchdogInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			stale := registry.MonitoringStale(monitoringStaleThreshold)
+			grpcSrv.SetHealthy(!stale)
+			if stale {
+				log.Fatalf(
+					"monitoring watchdog: no successful entity resolution for a trusted device in over %s; exiting for restart",
+					monitoringStaleThreshold,
+				)
+			}
+		}
+	}()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
