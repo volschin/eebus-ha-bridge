@@ -166,6 +166,12 @@ func main() {
 			if cfg.Experimental.HvacProbeWrite {
 				eebus.DefaultHvacProbe().EnableWrite()
 				log.Println("[HVACPROBE] stage-3 write armed; will echo-write current setpoint data after accepted bind (values unchanged)")
+				if cfg.Experimental.HvacProbeWriteDelta {
+					eebus.DefaultHvacProbe().EnableWriteDelta()
+					log.Println("[HVACPROBE] stage-3b delta armed; will change DHW setpoint one step, confirm, and restore")
+				}
+			} else if cfg.Experimental.HvacProbeWriteDelta {
+				log.Println("[HVACPROBE] hvac_probe_write_delta requires hvac_probe_write; delta stage not armed")
 			}
 		} else if cfg.Experimental.HvacProbeWrite {
 			log.Println("[HVACPROBE] hvac_probe_write requires hvac_probe_bind; write stage not armed")
