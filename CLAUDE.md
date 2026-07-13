@@ -93,6 +93,17 @@ docker-compose up -d eebus-bridge        # ghcr.io image, host networking
 - Follow YAGNI: build only what a current use case needs. No speculative abstractions, config knobs, or use-case scaffolding for hardware/features not yet supported.
 - `custom_components/eebus/quality_scale.yaml` is not decorative — it's checked against HA's [quality scale rules](https://www.home-assistant.io/docs/quality_scale/). Currently platinum (all rules `done` or `exempt`, see comments for the exempt reasoning). A PR that adds a new entity, config-flow step, or exception path should update the relevant rule/comment, not silently leave it stale.
 
+## Delegating implementation to Codex
+
+Implementation tasks are generally delegated to Codex; Claude acts as architect and reviewer. Standard flow:
+
+1. **Claude** writes the requirements/design (what to build, constraints, acceptance criteria).
+2. `/codex:rescue --background <task>` — Codex implements.
+3. `/codex:result` — fetch the result.
+4. **Claude** verifies: inspect `git diff`, run the relevant tests/linters.
+5. `/codex:review --base main` — independent Codex review of the change.
+6. **Claude** fixes review findings directly, or delegates them back with `/codex:rescue --resume`.
+
 ## Before opening a PR
 
 `ci.yml` runs ruff, mypy, pytest+coverage, `go vet`+`golangci-lint`+`go test -race`+`govulncheck`, hadolint (Dockerfile), and `proto-drift` if `.proto` files changed; `hassfest.yml` and `hacs.yml` separately validate the HA integration's manifest/structure. Run the relevant subset locally first — a red CI run on someone else's PR is a slow way to find out ruff/mypy/`go vet` would have caught it in ten seconds:
