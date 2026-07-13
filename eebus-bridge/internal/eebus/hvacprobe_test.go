@@ -72,6 +72,7 @@ func TestHvacProbeSkipsDeviceWithoutHvacFeatures(t *testing.T) {
 
 	local := mocks.NewEntityLocalInterface(t)
 	local.On("GetOrAddFeature", mock.Anything, mock.Anything).Return(nil).Maybe()
+	local.On("AddUseCaseSupport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 	p.Setup(local)
 
 	entity := mocks.NewEntityRemoteInterface(t)
@@ -116,6 +117,7 @@ func TestHvacProbeRequestsAndDedups(t *testing.T) {
 
 	local := mocks.NewEntityLocalInterface(t)
 	local.On("GetOrAddFeature", mock.Anything, mock.Anything).Return(localFeature).Maybe()
+	local.On("AddUseCaseSupport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 	local.On("FeatureOfTypeAndRole", model.FeatureTypeTypeSetpoint, model.RoleTypeClient).Return(localFeature).Maybe()
 	p.Setup(local)
 
@@ -186,6 +188,7 @@ func TestHvacProbeBindRequestsAndConfirms(t *testing.T) {
 
 	local := mocks.NewEntityLocalInterface(t)
 	local.On("GetOrAddFeature", mock.Anything, mock.Anything).Return(localFeature).Maybe()
+	local.On("AddUseCaseSupport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 	local.On("FeatureOfTypeAndRole", model.FeatureTypeTypeSetpoint, model.RoleTypeClient).Return(localFeature).Maybe()
 	p.Setup(local)
 	p.EnableBind()
@@ -203,6 +206,44 @@ func TestHvacProbeBindRequestsAndConfirms(t *testing.T) {
 			t.Fatalf("probe never confirmed binding:\n%s", out)
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestHvacProbeSetupAdvertisesClientUseCases(t *testing.T) {
+	p := NewHvacProbe(func(string, ...any) {})
+
+	var (
+		mu         sync.Mutex
+		advertised []model.UseCaseNameType
+	)
+	local := mocks.NewEntityLocalInterface(t)
+	local.On("GetOrAddFeature", mock.Anything, mock.Anything).Return(nil).Maybe()
+	local.On("AddUseCaseSupport",
+		model.UseCaseActorTypeConfigurationAppliance,
+		mock.Anything, mock.Anything, mock.Anything, true, mock.Anything,
+	).Run(func(args mock.Arguments) {
+		mu.Lock()
+		advertised = append(advertised, args.Get(1).(model.UseCaseNameType))
+		mu.Unlock()
+	}).Return()
+
+	p.Setup(local)
+
+	want := []model.UseCaseNameType{
+		model.UseCaseNameTypeConfigurationOfDhwSystemFunction,
+		model.UseCaseNameTypeConfigurationOfDhwTemperature,
+		model.UseCaseNameTypeConfigurationOfRoomHeatingSystemFunction,
+		model.UseCaseNameTypeConfigurationOfRoomHeatingTemperature,
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(advertised) != len(want) {
+		t.Fatalf("advertised %d use cases %v, want %d", len(advertised), advertised, len(want))
+	}
+	for i, name := range want {
+		if advertised[i] != name {
+			t.Errorf("use case %d = %s, want %s", i, advertised[i], name)
+		}
 	}
 }
 

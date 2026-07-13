@@ -87,10 +87,27 @@ var defaultHvacProbe = NewHvacProbe(nil)
 // wrappers, mirroring DefaultUseCaseDiscovery.
 func DefaultHvacProbe() *HvacProbe { return defaultHvacProbe }
 
+// hvacProbeUseCases lists the client-side (ConfigurationAppliance actor)
+// counterparts of the configurationOf* use cases the VR940 advertises on its
+// DHWCircuit/HVACRoom entities (docs/vr940-usecase-dump.txt). Stage 2b:
+// announcing these in the bridge's NodeManagement use-case data tests whether
+// the VR940 gates bind acceptance on the partner declaring matching client
+// use cases. Scenario lists mirror what the device advertises.
+var hvacProbeUseCases = []struct {
+	name      model.UseCaseNameType
+	scenarios []model.UseCaseScenarioSupportType
+}{
+	{model.UseCaseNameTypeConfigurationOfDhwSystemFunction, []model.UseCaseScenarioSupportType{1, 2, 3}},
+	{model.UseCaseNameTypeConfigurationOfDhwTemperature, []model.UseCaseScenarioSupportType{1}},
+	{model.UseCaseNameTypeConfigurationOfRoomHeatingSystemFunction, []model.UseCaseScenarioSupportType{1}},
+	{model.UseCaseNameTypeConfigurationOfRoomHeatingTemperature, []model.UseCaseScenarioSupportType{1}},
+}
+
 // Setup arms the probe: it registers Setpoint and HVAC client features on the
 // local entity (required as SPINE sender addresses for the read requests) and
-// must therefore run before the EEBUS service starts announcing its feature
-// map. Not calling Setup leaves ProbeOnce a no-op.
+// advertises the matching ConfigurationAppliance client use cases. Both change
+// the announced NodeManagement data, so Setup must run before the EEBUS
+// service starts. Not calling Setup leaves ProbeOnce a no-op.
 func (p *HvacProbe) Setup(localEntity spineapi.EntityLocalInterface) {
 	if p == nil || localEntity == nil {
 		return
@@ -100,6 +117,16 @@ func (p *HvacProbe) Setup(localEntity spineapi.EntityLocalInterface) {
 	p.localEntity = localEntity
 	localEntity.GetOrAddFeature(model.FeatureTypeTypeSetpoint, model.RoleTypeClient)
 	localEntity.GetOrAddFeature(model.FeatureTypeTypeHvac, model.RoleTypeClient)
+	for _, uc := range hvacProbeUseCases {
+		localEntity.AddUseCaseSupport(
+			model.UseCaseActorTypeConfigurationAppliance,
+			uc.name,
+			model.SpecificationVersionType("1.0.0"),
+			"release",
+			true,
+			uc.scenarios,
+		)
+	}
 }
 
 // ProbeOnce probes a remote device the first time it appears with at least one
