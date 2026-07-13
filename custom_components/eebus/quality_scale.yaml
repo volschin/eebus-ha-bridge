@@ -49,13 +49,15 @@ rules:
   docs-supported-devices: done
   docs-supported-functions:
     status: done
-    comment: README lists the DHW water heater, boost, room-heating climate control, and their device-provided constraints/options.
+    comment: README lists the DHW water heater, boost, room-heating climate control, device operating state diagnostic, and device-provided constraints/options.
   docs-troubleshooting: done
   docs-use-cases: done
   dynamic-devices:
     status: exempt
     comment: One EEBUS device per config entry.
-  entity-category: done
+  entity-category:
+    status: done
+    comment: Read-only operational state and limit/status entities are categorized as diagnostics.
   entity-device-class: done
   entity-disabled-by-default: done
   entity-translations: done
