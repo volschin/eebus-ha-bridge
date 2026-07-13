@@ -59,6 +59,8 @@ func (w *LPCWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInterfa
 	if w.debug {
 		eebus.DefaultUseCaseDiscovery().LogOnce(ski, device)
 	}
+	// No-op unless the experimental HVAC probe was armed in main.
+	eebus.DefaultHvacProbe().ProbeOnce(ski, device)
 
 	if w.registry != nil {
 		w.registry.UpsertObservation(ski, device, entity, "lpc")

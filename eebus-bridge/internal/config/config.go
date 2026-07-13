@@ -48,6 +48,33 @@ type ExperimentalConfig struct {
 	// VR940, which advertises the VABD VisualizationAppliance role) can display the
 	// home's battery state. SPIKE: see docs/eebus-vaillant-improvements.md.
 	VABDProvider bool `yaml:"vabd_provider"`
+	// HvacProbe enables the read-only HVAC/DHW diagnostic probe: on device
+	// connect it requests all Setpoint/HVAC data from remote DHWCircuit/HVACRoom
+	// entities and logs values plus advertised read/write operations, to map
+	// which setpoints/modes a gateway (e.g. Vaillant VR940) exposes for control.
+	// Stage 1 of the HVAC control spike; sends SPINE reads only, never writes.
+	HvacProbe bool `yaml:"hvac_probe"`
+	// HvacProbeBind is stage 2 of the HVAC control spike: in addition to the
+	// reads, request a SPINE binding to each remote Setpoint/HVAC server
+	// feature (the precondition for writes) and log whether the device accepts
+	// it. Requires HvacProbe. Still performs no writes.
+	HvacProbeBind bool `yaml:"hvac_probe_bind"`
+	// HvacProbeWrite is stage 3 of the HVAC control spike: after a Setpoint
+	// binding was accepted, write the device's own current SetpointListData
+	// back unchanged (echo write) and log whether the device accepts the write
+	// command. Values are not modified, so no temperature changes. Requires
+	// HvacProbe and HvacProbeBind.
+	HvacProbeWrite bool `yaml:"hvac_probe_write"`
+	// HvacProbeWriteDeltaSKI is stage 3b of the HVAC control spike, scoped to
+	// exactly the device with this SKI: on its DHWCircuit entity, instead of
+	// the echo write, change the dhwTemperature setpoint by one advertised
+	// constraint step, re-read to confirm the device applied it, then restore
+	// the original value and confirm again. The setpoint deviates from its
+	// original value only for the few seconds between the two writes.
+	// Fail-closed: without a matching SKI, a dhwTemperature-scoped setpoint
+	// description, complete constraints and writable operations, nothing is
+	// written. Requires HvacProbe, HvacProbeBind and HvacProbeWrite.
+	HvacProbeWriteDeltaSKI string `yaml:"hvac_probe_write_delta_ski"`
 	// TrustSKI, when set, makes the bridge trust (RegisterRemoteSKI) this remote
 	// SKI at startup instead of waiting for Home Assistant to send it via gRPC.
 	// Lets a spike container complete the SHIP handshake with a known device
@@ -202,6 +229,24 @@ func applyEnvOverrides(cfg *Config) {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			cfg.Experimental.VABDProvider = enabled
 		}
+	}
+	if v := os.Getenv("EEBUS_EXP_HVAC_PROBE"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Experimental.HvacProbe = enabled
+		}
+	}
+	if v := os.Getenv("EEBUS_EXP_HVAC_PROBE_BIND"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Experimental.HvacProbeBind = enabled
+		}
+	}
+	if v := os.Getenv("EEBUS_EXP_HVAC_PROBE_WRITE"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Experimental.HvacProbeWrite = enabled
+		}
+	}
+	if v := os.Getenv("EEBUS_EXP_HVAC_PROBE_WRITE_DELTA_SKI"); v != "" {
+		cfg.Experimental.HvacProbeWriteDeltaSKI = v
 	}
 	if v := os.Getenv("EEBUS_OHPCF_ENABLED"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
