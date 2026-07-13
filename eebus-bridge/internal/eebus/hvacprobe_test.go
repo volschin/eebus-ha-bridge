@@ -226,6 +226,151 @@ func TestHvacProbeBindRequestsAndConfirms(t *testing.T) {
 	}
 }
 
+func TestHvacProbeEchoWriteAfterBindAccept(t *testing.T) {
+	logf, lines := collectLogf()
+	p := NewHvacProbe(logf)
+	p.pollInterval = 5 * time.Millisecond
+	p.pollTimeout = 500 * time.Millisecond
+	p.EnableBind()
+	p.EnableWrite()
+
+	remoteAddr := &model.FeatureAddressType{
+		Device:  ptr(model.AddressDeviceType("d0")),
+		Entity:  []model.AddressEntityType{4},
+		Feature: ptr(model.AddressFeatureType(1)),
+	}
+	localAddr := &model.FeatureAddressType{
+		Device:  ptr(model.AddressDeviceType("bridge")),
+		Entity:  []model.AddressEntityType{1},
+		Feature: ptr(model.AddressFeatureType(2)),
+	}
+	setpointData := &model.SetpointListDataType{
+		SetpointData: []model.SetpointDataType{
+			{SetpointId: ptr(model.SetpointIdType(1)), Value: model.NewScaledNumberType(50)},
+		},
+	}
+
+	writeCounter := model.MsgCounterType(9)
+	var (
+		writeMu  sync.Mutex
+		writeCmd *model.CmdType
+	)
+	sender := mocks.NewSenderInterface(t)
+	sender.On("Write", localAddr, remoteAddr, mock.Anything).Run(func(args mock.Arguments) {
+		cmd := args.Get(2).(model.CmdType)
+		writeMu.Lock()
+		writeCmd = &cmd
+		writeMu.Unlock()
+	}).Return(&writeCounter, nil)
+	deviceRemote := mocks.NewDeviceRemoteInterface(t)
+	deviceRemote.On("Sender").Return(sender).Maybe()
+
+	remoteFeature := mocks.NewFeatureRemoteInterface(t)
+	remoteFeature.On("String").Return("setpoint-server-feature").Maybe()
+	remoteFeature.On("Type").Return(model.FeatureTypeTypeSetpoint).Maybe()
+	remoteFeature.On("Address").Return(remoteAddr).Maybe()
+	remoteFeature.On("Operations").Return(map[model.FunctionType]spineapi.OperationsInterface{}).Maybe()
+	remoteFeature.On("DataCopy", model.FunctionTypeSetpointListData).Return(setpointData).Maybe()
+	remoteFeature.On("DataCopy", mock.Anything).Return(nil).Maybe()
+	remoteFeature.On("Device").Return(deviceRemote).Maybe()
+
+	bindCounter := model.MsgCounterType(7)
+	var (
+		cbMu           sync.Mutex
+		nmCallback     func(spineapi.ResponseMessage)
+		clientCallback func(spineapi.ResponseMessage)
+	)
+	localFeature := mocks.NewFeatureLocalInterface(t)
+	localFeature.On("RequestRemoteData", mock.Anything, nil, nil, remoteFeature).Return(&bindCounter, nil)
+	localFeature.On("AddResultCallback", mock.Anything).Run(func(args mock.Arguments) {
+		cbMu.Lock()
+		clientCallback = args.Get(0).(func(spineapi.ResponseMessage))
+		cbMu.Unlock()
+	}).Return()
+	localFeature.On("HasBindingToRemote", remoteAddr).Return(false).Maybe()
+	localFeature.On("BindToRemote", remoteAddr).Return(&bindCounter, nil)
+	localFeature.On("Address").Return(localAddr).Maybe()
+
+	nm := mocks.NewNodeManagementInterface(t)
+	nm.On("AddResultCallback", mock.Anything).Run(func(args mock.Arguments) {
+		cbMu.Lock()
+		nmCallback = args.Get(0).(func(spineapi.ResponseMessage))
+		cbMu.Unlock()
+	}).Return()
+	deviceLocal := mocks.NewDeviceLocalInterface(t)
+	deviceLocal.On("NodeManagement").Return(nm).Maybe()
+
+	local := mocks.NewEntityLocalInterface(t)
+	local.On("GetOrAddFeature", mock.Anything, mock.Anything).Return(localFeature).Maybe()
+	local.On("AddUseCaseSupport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	local.On("FeatureOfTypeAndRole", model.FeatureTypeTypeSetpoint, model.RoleTypeClient).Return(localFeature).Maybe()
+	local.On("Device").Return(deviceLocal).Maybe()
+	p.Setup(local)
+
+	device := buildProbeDeviceMock(t, "ABCD1234", remoteFeature)
+	p.ProbeOnce("ABCD1234", device)
+
+	// Device accepts the binding via a NodeManagement result.
+	cbMu.Lock()
+	cb := nmCallback
+	cbMu.Unlock()
+	if cb == nil {
+		t.Fatal("probe never registered a NodeManagement result callback")
+	}
+	cb(spineapi.ResponseMessage{
+		MsgCounterReference: bindCounter,
+		Data:                &model.ResultDataType{ErrorNumber: ptr(model.ErrorNumberType(0))},
+	})
+
+	// Wait for the echo write to be sent, then answer it on the client feature.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		out := strings.Join(lines(), "\n")
+		if strings.Contains(out, "write Setpoint sent") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("probe never sent the echo write:\n%s", out)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cbMu.Lock()
+	ccb := clientCallback
+	cbMu.Unlock()
+	if ccb == nil {
+		t.Fatal("probe never registered a client feature result callback")
+	}
+	ccb(spineapi.ResponseMessage{
+		MsgCounterReference: writeCounter,
+		Data:                &model.ResultDataType{ErrorNumber: ptr(model.ErrorNumberType(0))},
+	})
+
+	for {
+		out := strings.Join(lines(), "\n")
+		if strings.Contains(out, "write Setpoint ACCEPTED") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("probe never confirmed the write:\n%s", out)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// The write must echo the device's own data unchanged.
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	if writeCmd == nil || writeCmd.SetpointListData == nil {
+		t.Fatal("write command carried no setpointListData")
+	}
+	got := writeCmd.SetpointListData.SetpointData
+	if len(got) != 1 || got[0].SetpointId == nil || *got[0].SetpointId != 1 {
+		t.Errorf("echo write data = %+v, want the device's setpointId 1 unchanged", got)
+	}
+	if got[0].Value == nil || got[0].Value.GetValue() != 50 {
+		t.Errorf("echo write value = %+v, want unchanged 50", got[0].Value)
+	}
+}
+
 func TestHvacProbeSetupAdvertisesClientUseCases(t *testing.T) {
 	p := NewHvacProbe(func(string, ...any) {})
 

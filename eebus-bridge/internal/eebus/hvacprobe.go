@@ -27,7 +27,10 @@ import (
 // writes or subscribes. Stage 2 (experimental.hvac_probe_bind, EnableBind)
 // additionally requests a binding to each remote Setpoint/HVAC server feature
 // — the precondition for any SPINE write — and reports whether the device
-// accepts it. Still no writes.
+// accepts it. Stage 3 (experimental.hvac_probe_write, EnableWrite) sends one
+// echo write per accepted Setpoint binding: it writes the device's own current
+// SetpointListData back unchanged, so the write path is exercised without
+// altering any temperature, and reports the device's accept/deny result.
 type HvacProbe struct {
 	mu          sync.Mutex
 	localEntity spineapi.EntityLocalInterface
@@ -46,6 +49,15 @@ type HvacProbe struct {
 	resultHooked map[model.FeatureTypeType]bool
 	nmHooked     bool
 	bindResults  map[uint64]int64
+
+	// writeEnabled turns on the stage-3 echo write. featureResults collects,
+	// per msgCounterReference, the errorNumber of result messages arriving at
+	// the local client features: unlike binds, a write is a direct
+	// client-to-server command, so the device addresses its result to the
+	// sending client feature. bindResults is still polled as a fallback in
+	// case a device routes the write result via NodeManagement instead.
+	writeEnabled   bool
+	featureResults map[uint64]int64
 
 	// pollInterval/pollTimeout control how long collectData waits for read
 	// responses to land in the remote feature caches. Overridden in tests.
@@ -80,12 +92,13 @@ func NewHvacProbe(logf func(format string, args ...any)) *HvacProbe {
 		logf = log.Printf
 	}
 	return &HvacProbe{
-		probed:       make(map[string]bool),
-		resultHooked: make(map[model.FeatureTypeType]bool),
-		bindResults:  make(map[uint64]int64),
-		logf:         logf,
-		pollInterval: 2 * time.Second,
-		pollTimeout:  30 * time.Second,
+		probed:         make(map[string]bool),
+		resultHooked:   make(map[model.FeatureTypeType]bool),
+		bindResults:    make(map[uint64]int64),
+		featureResults: make(map[uint64]int64),
+		logf:           logf,
+		pollInterval:   2 * time.Second,
+		pollTimeout:    30 * time.Second,
 	}
 }
 
@@ -192,6 +205,18 @@ func (p *HvacProbe) EnableBind() {
 	p.mu.Unlock()
 }
 
+// EnableWrite arms stage 3: after a Setpoint binding is ACCEPTED, the probe
+// writes the device's current SetpointListData back unchanged and reports the
+// result. Requires EnableBind; without an accepted binding no write is sent.
+func (p *HvacProbe) EnableWrite() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	p.writeEnabled = true
+	p.mu.Unlock()
+}
+
 // probeTarget is one remote Setpoint/HVAC server feature to interrogate.
 type probeTarget struct {
 	entityAddr string
@@ -258,10 +283,12 @@ func (p *HvacProbe) requestAll(ski string, local spineapi.EntityLocalInterface, 
 	return pending
 }
 
-// pendingBind tracks one bind request awaiting confirmation.
+// pendingBind tracks one bind request awaiting confirmation. localFeature is
+// kept so the stage-3 write can reuse the bound client feature as sender.
 type pendingBind struct {
-	target     probeTarget
-	msgCounter uint64
+	target       probeTarget
+	localFeature spineapi.FeatureLocalInterface
+	msgCounter   uint64
 }
 
 // bindAll requests a binding from the local client feature to each remote
@@ -299,7 +326,7 @@ func (p *HvacProbe) bindAll(ski string, local spineapi.EntityLocalInterface, tar
 		}
 		p.logf("[HVACPROBE] ski=%s entity=%s bind %s requested (msgCounter=%d)",
 			ski, t.entityAddr, featureType, counter)
-		requested = append(requested, pendingBind{target: t, msgCounter: counter})
+		requested = append(requested, pendingBind{target: t, localFeature: localFeature, msgCounter: counter})
 	}
 	return requested
 }
@@ -350,6 +377,9 @@ func (p *HvacProbe) hookResultLogging(ski string, featureType model.FeatureTypeT
 		if result.ErrorNumber != nil {
 			errno = int64(*result.ErrorNumber)
 		}
+		p.mu.Lock()
+		p.featureResults[uint64(msg.MsgCounterReference)] = errno
+		p.mu.Unlock()
 		desc := ""
 		if result.Description != nil {
 			desc = " " + string(*result.Description)
@@ -378,6 +408,12 @@ func (p *HvacProbe) collectBindResults(ski string, pending []pendingBind) {
 			if errno == 0 {
 				p.logf("[HVACPROBE] ski=%s entity=%s bind %s ACCEPTED (msgCounter=%d)",
 					ski, b.target.entityAddr, b.target.feature.Type(), b.msgCounter)
+				p.mu.Lock()
+				write := p.writeEnabled
+				p.mu.Unlock()
+				if write && b.target.feature.Type() == model.FeatureTypeTypeSetpoint {
+					go p.attemptSetpointEchoWrite(ski, b)
+				}
 			} else {
 				p.logf("[HVACPROBE] ski=%s entity=%s bind %s DENIED errorNumber=%d (msgCounter=%d)",
 					ski, b.target.entityAddr, b.target.feature.Type(), errno, b.msgCounter)
@@ -389,6 +425,88 @@ func (p *HvacProbe) collectBindResults(ski string, pending []pendingBind) {
 		p.logf("[HVACPROBE] ski=%s entity=%s bind %s NOT answered within %s",
 			ski, b.target.entityAddr, b.target.feature.Type(), p.pollTimeout)
 	}
+}
+
+// attemptSetpointEchoWrite is stage 3: once the device accepted the Setpoint
+// binding, wait for its SetpointListData to arrive in the remote feature
+// cache, then write that exact data back. The values are unchanged, so the
+// device's temperature configuration is untouched — the point is whether the
+// write command itself is ACCEPTED (result errorNumber 0) or denied, which is
+// the last open question before building a real configurationOf* use case.
+func (p *HvacProbe) attemptSetpointEchoWrite(ski string, b pendingBind) {
+	data := p.waitForSetpointData(b.target)
+	if data == nil {
+		p.logf("[HVACPROBE] ski=%s entity=%s write skipped: no setpointListData within %s",
+			ski, b.target.entityAddr, p.pollTimeout)
+		return
+	}
+	if len(data.SetpointData) == 0 {
+		p.logf("[HVACPROBE] ski=%s entity=%s write skipped: setpointListData has no entries", ski, b.target.entityAddr)
+		return
+	}
+
+	payload, err := json.Marshal(data)
+	if err != nil {
+		payload = []byte(fmt.Sprintf("%+v", data))
+	}
+	p.logf("[HVACPROBE] ski=%s entity=%s echo-writing current setpointListData (values unchanged): %s",
+		ski, b.target.entityAddr, payload)
+
+	cmd := model.CmdType{SetpointListData: data}
+	msgCounter, werr := b.target.feature.Device().Sender().Write(b.localFeature.Address(), b.target.feature.Address(), cmd)
+	if werr != nil {
+		p.logf("[HVACPROBE] ski=%s entity=%s write Setpoint send failed: %v", ski, b.target.entityAddr, werr)
+		return
+	}
+	counter := uint64(0)
+	if msgCounter != nil {
+		counter = uint64(*msgCounter)
+	}
+	p.logf("[HVACPROBE] ski=%s entity=%s write Setpoint sent (msgCounter=%d)", ski, b.target.entityAddr, counter)
+
+	deadline := time.Now().Add(p.pollTimeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(p.pollInterval)
+		p.mu.Lock()
+		errno, ok := p.featureResults[counter]
+		if !ok {
+			// Fallback: some routing puts results on NodeManagement instead.
+			errno, ok = p.bindResults[counter]
+		}
+		p.mu.Unlock()
+		if !ok {
+			continue
+		}
+		if errno == 0 {
+			p.logf("[HVACPROBE] ski=%s entity=%s write Setpoint ACCEPTED (msgCounter=%d)",
+				ski, b.target.entityAddr, counter)
+		} else {
+			p.logf("[HVACPROBE] ski=%s entity=%s write Setpoint DENIED errorNumber=%d (msgCounter=%d)",
+				ski, b.target.entityAddr, errno, counter)
+		}
+		return
+	}
+	p.logf("[HVACPROBE] ski=%s entity=%s write Setpoint NOT answered within %s",
+		ski, b.target.entityAddr, p.pollTimeout)
+}
+
+// waitForSetpointData polls the remote feature cache until SetpointListData is
+// available or the poll timeout passes. Returns nil on timeout or type
+// mismatch.
+func (p *HvacProbe) waitForSetpointData(t probeTarget) *model.SetpointListDataType {
+	deadline := time.Now().Add(p.pollTimeout)
+	for time.Now().Before(deadline) {
+		raw := t.feature.DataCopy(model.FunctionTypeSetpointListData)
+		if raw != nil && !isNilPointer(raw) {
+			data, ok := raw.(*model.SetpointListDataType)
+			if !ok {
+				return nil
+			}
+			return data
+		}
+		time.Sleep(p.pollInterval)
+	}
+	return nil
 }
 
 // collectData polls the remote feature caches until every requested function

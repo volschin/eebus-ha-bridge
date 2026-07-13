@@ -59,6 +59,12 @@ type ExperimentalConfig struct {
 	// feature (the precondition for writes) and log whether the device accepts
 	// it. Requires HvacProbe. Still performs no writes.
 	HvacProbeBind bool `yaml:"hvac_probe_bind"`
+	// HvacProbeWrite is stage 3 of the HVAC control spike: after a Setpoint
+	// binding was accepted, write the device's own current SetpointListData
+	// back unchanged (echo write) and log whether the device accepts the write
+	// command. Values are not modified, so no temperature changes. Requires
+	// HvacProbe and HvacProbeBind.
+	HvacProbeWrite bool `yaml:"hvac_probe_write"`
 	// TrustSKI, when set, makes the bridge trust (RegisterRemoteSKI) this remote
 	// SKI at startup instead of waiting for Home Assistant to send it via gRPC.
 	// Lets a spike container complete the SHIP handshake with a known device
@@ -222,6 +228,11 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("EEBUS_EXP_HVAC_PROBE_BIND"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			cfg.Experimental.HvacProbeBind = enabled
+		}
+	}
+	if v := os.Getenv("EEBUS_EXP_HVAC_PROBE_WRITE"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Experimental.HvacProbeWrite = enabled
 		}
 	}
 	if v := os.Getenv("EEBUS_OHPCF_ENABLED"); v != "" {
