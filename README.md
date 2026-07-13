@@ -14,6 +14,8 @@ Lokale Integration von EEBUS-faehigen Waermepumpen in Home Assistant ueber das *
 - **Heartbeat-Ueberwachung** -- Sicherheitsrelevanter EEBUS-Heartbeat mit Failsafe-Fallback
 - **Warmwasser-Solltemperatur** -- Lokales Lesen und Setzen des vom Geraet
   angebotenen DHW-Sollwerts mit dynamischen Min/Max/Schritt-Grenzen
+- **Warmwasser-Boost und Betriebsart** -- Lokales Aktivieren der Einmalladung
+  und Auswahl der vom Geraet angebotenen DHW-Betriebsarten
 - **Energy Dashboard** -- Volle Integration mit dem HA Energy Dashboard
 - **Erweiterbar** -- Architektur vorbereitet fuer zukuenftige EEBUS-HVAC-Use-Cases
 
@@ -99,6 +101,7 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 - **Leistungsmessung:** Event-basiert (ca. alle 60s vom Inverter)
 - **LPC-Limits:** Event-basiert (bei Aenderung)
 - **Warmwasser-Solltemperatur:** Event-basiert (bei Aenderung)
+- **Warmwasser-Boost/Betriebsart:** Event-basiert (bei Aenderung)
 - **Heartbeat:** Alle 4 Sekunden (im Bridge, nicht in HA)
 
 ## Verfuegbare Entities
@@ -119,6 +122,8 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 | `number.eebus_dhw_setpoint` | number | Warmwasser-Solltemperatur; Bereich und Schrittweite kommen vom Geraet |
 | `switch.eebus_lpc_active` | switch | Limit aktivieren/deaktivieren |
 | `switch.eebus_heartbeat` | switch | Heartbeat an/aus, standardmaessig deaktiviert |
+| `switch.eebus_dhw_boost` | switch | Warmwasser-Einmalladung aktivieren/deaktivieren |
+| `select.eebus_dhw_operation_mode` | select | Warmwasser-Betriebsart; Optionen kommen vom Geraet |
 | `select.eebus_compressor_flexibility` | select | OHPCF-Verdichter-Flexibilitaet: `on`/`paused`/`off`, nur vorhanden wenn WP ein Angebot meldet |
 
 ### Diagnose
@@ -147,7 +152,7 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 
 ### Nicht unterstuetzt
 
-- Raumheizungs-Sollwerte, Betriebsmodi und DHW-Boost -- noch nicht produktiv verdrahtet
+- Raumheizungs-Sollwerte und Raumheizungs-Betriebsmodi -- noch nicht produktiv verdrahtet
 - Geraete ohne EEBUS-Schnittstelle
 
 ## Energiemanagement mit EEBUS verstehen

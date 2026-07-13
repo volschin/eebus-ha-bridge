@@ -13,6 +13,10 @@ service DHWService {
   rpc GetDHWSetpoint(DeviceRequest) returns (DHWSetpoint);
   rpc SetDHWSetpoint(SetDHWSetpointRequest) returns (Empty);
   rpc SubscribeDHWEvents(DeviceRequest) returns (stream DHWEvent);
+  rpc GetDHWSystemFunction(DeviceRequest) returns (DHWSystemFunctionState);
+  rpc SetDHWBoost(SetDHWBoostRequest) returns (Empty);
+  rpc SetDHWOperationMode(SetDHWOperationModeRequest) returns (Empty);
+  rpc SubscribeDHWSystemFunctionEvents(DeviceRequest) returns (stream DHWSystemFunctionEvent);
 }
 
 message DHWSetpoint {
@@ -38,4 +42,42 @@ message DHWEvent {
   string ski = 1;
   DHWEventType event_type = 2;
   DHWSetpoint setpoint = 3;
+}
+
+enum DHWBoostStatus {
+  DHW_BOOST_STATUS_UNSPECIFIED = 0;
+  DHW_BOOST_STATUS_INACTIVE = 1;
+  DHW_BOOST_STATUS_ACTIVE = 2;
+  DHW_BOOST_STATUS_RUNNING = 3;
+  DHW_BOOST_STATUS_FINISHED = 4;
+}
+
+message DHWSystemFunctionState {
+  DHWBoostStatus boost_status = 1;
+  bool boost_writable = 2;
+  string operation_mode = 3;
+  repeated string available_modes = 4;
+  bool mode_writable = 5;
+}
+
+message SetDHWBoostRequest {
+  string ski = 1;
+  bool active = 2;
+}
+
+message SetDHWOperationModeRequest {
+  string ski = 1;
+  string mode = 2;
+}
+
+enum DHWSystemFunctionEventType {
+  DHW_SYSTEM_FUNCTION_EVENT_UNSPECIFIED = 0;
+  DHW_SYSTEM_FUNCTION_EVENT_SUPPORT_UPDATED = 1;
+  DHW_SYSTEM_FUNCTION_EVENT_STATE_UPDATED = 2;
+}
+
+message DHWSystemFunctionEvent {
+  string ski = 1;
+  DHWSystemFunctionEventType event_type = 2;
+  DHWSystemFunctionState state = 3;
 }

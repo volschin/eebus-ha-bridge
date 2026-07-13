@@ -70,6 +70,110 @@ func (DHWEventType) EnumDescriptor() ([]byte, []int) {
 	return file_eebus_v1_dhw_service_proto_rawDescGZIP(), []int{0}
 }
 
+type DHWBoostStatus int32
+
+const (
+	DHWBoostStatus_DHW_BOOST_STATUS_UNSPECIFIED DHWBoostStatus = 0
+	DHWBoostStatus_DHW_BOOST_STATUS_INACTIVE    DHWBoostStatus = 1
+	DHWBoostStatus_DHW_BOOST_STATUS_ACTIVE      DHWBoostStatus = 2
+	DHWBoostStatus_DHW_BOOST_STATUS_RUNNING     DHWBoostStatus = 3
+	DHWBoostStatus_DHW_BOOST_STATUS_FINISHED    DHWBoostStatus = 4
+)
+
+// Enum value maps for DHWBoostStatus.
+var (
+	DHWBoostStatus_name = map[int32]string{
+		0: "DHW_BOOST_STATUS_UNSPECIFIED",
+		1: "DHW_BOOST_STATUS_INACTIVE",
+		2: "DHW_BOOST_STATUS_ACTIVE",
+		3: "DHW_BOOST_STATUS_RUNNING",
+		4: "DHW_BOOST_STATUS_FINISHED",
+	}
+	DHWBoostStatus_value = map[string]int32{
+		"DHW_BOOST_STATUS_UNSPECIFIED": 0,
+		"DHW_BOOST_STATUS_INACTIVE":    1,
+		"DHW_BOOST_STATUS_ACTIVE":      2,
+		"DHW_BOOST_STATUS_RUNNING":     3,
+		"DHW_BOOST_STATUS_FINISHED":    4,
+	}
+)
+
+func (x DHWBoostStatus) Enum() *DHWBoostStatus {
+	p := new(DHWBoostStatus)
+	*p = x
+	return p
+}
+
+func (x DHWBoostStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DHWBoostStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_eebus_v1_dhw_service_proto_enumTypes[1].Descriptor()
+}
+
+func (DHWBoostStatus) Type() protoreflect.EnumType {
+	return &file_eebus_v1_dhw_service_proto_enumTypes[1]
+}
+
+func (x DHWBoostStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DHWBoostStatus.Descriptor instead.
+func (DHWBoostStatus) EnumDescriptor() ([]byte, []int) {
+	return file_eebus_v1_dhw_service_proto_rawDescGZIP(), []int{1}
+}
+
+type DHWSystemFunctionEventType int32
+
+const (
+	DHWSystemFunctionEventType_DHW_SYSTEM_FUNCTION_EVENT_UNSPECIFIED     DHWSystemFunctionEventType = 0
+	DHWSystemFunctionEventType_DHW_SYSTEM_FUNCTION_EVENT_SUPPORT_UPDATED DHWSystemFunctionEventType = 1
+	DHWSystemFunctionEventType_DHW_SYSTEM_FUNCTION_EVENT_STATE_UPDATED   DHWSystemFunctionEventType = 2
+)
+
+// Enum value maps for DHWSystemFunctionEventType.
+var (
+	DHWSystemFunctionEventType_name = map[int32]string{
+		0: "DHW_SYSTEM_FUNCTION_EVENT_UNSPECIFIED",
+		1: "DHW_SYSTEM_FUNCTION_EVENT_SUPPORT_UPDATED",
+		2: "DHW_SYSTEM_FUNCTION_EVENT_STATE_UPDATED",
+	}
+	DHWSystemFunctionEventType_value = map[string]int32{
+		"DHW_SYSTEM_FUNCTION_EVENT_UNSPECIFIED":     0,
+		"DHW_SYSTEM_FUNCTION_EVENT_SUPPORT_UPDATED": 1,
+		"DHW_SYSTEM_FUNCTION_EVENT_STATE_UPDATED":   2,
+	}
+)
+
+func (x DHWSystemFunctionEventType) Enum() *DHWSystemFunctionEventType {
+	p := new(DHWSystemFunctionEventType)
+	*p = x
+	return p
+}
+
+func (x DHWSystemFunctionEventType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DHWSystemFunctionEventType) Descriptor() protoreflect.EnumDescriptor {
+	return file_eebus_v1_dhw_service_proto_enumTypes[2].Descriptor()
+}
+
+func (DHWSystemFunctionEventType) Type() protoreflect.EnumType {
+	return &file_eebus_v1_dhw_service_proto_enumTypes[2]
+}
+
+func (x DHWSystemFunctionEventType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DHWSystemFunctionEventType.Descriptor instead.
+func (DHWSystemFunctionEventType) EnumDescriptor() ([]byte, []int) {
+	return file_eebus_v1_dhw_service_proto_rawDescGZIP(), []int{2}
+}
+
 type DHWSetpoint struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ValueCelsius  float64                `protobuf:"fixed64,1,opt,name=value_celsius,json=valueCelsius,proto3" json:"value_celsius,omitempty"`
@@ -258,6 +362,246 @@ func (x *DHWEvent) GetSetpoint() *DHWSetpoint {
 	return nil
 }
 
+type DHWSystemFunctionState struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	BoostStatus    DHWBoostStatus         `protobuf:"varint,1,opt,name=boost_status,json=boostStatus,proto3,enum=eebus.v1.DHWBoostStatus" json:"boost_status,omitempty"`
+	BoostWritable  bool                   `protobuf:"varint,2,opt,name=boost_writable,json=boostWritable,proto3" json:"boost_writable,omitempty"`
+	OperationMode  string                 `protobuf:"bytes,3,opt,name=operation_mode,json=operationMode,proto3" json:"operation_mode,omitempty"`
+	AvailableModes []string               `protobuf:"bytes,4,rep,name=available_modes,json=availableModes,proto3" json:"available_modes,omitempty"`
+	ModeWritable   bool                   `protobuf:"varint,5,opt,name=mode_writable,json=modeWritable,proto3" json:"mode_writable,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DHWSystemFunctionState) Reset() {
+	*x = DHWSystemFunctionState{}
+	mi := &file_eebus_v1_dhw_service_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DHWSystemFunctionState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DHWSystemFunctionState) ProtoMessage() {}
+
+func (x *DHWSystemFunctionState) ProtoReflect() protoreflect.Message {
+	mi := &file_eebus_v1_dhw_service_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DHWSystemFunctionState.ProtoReflect.Descriptor instead.
+func (*DHWSystemFunctionState) Descriptor() ([]byte, []int) {
+	return file_eebus_v1_dhw_service_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *DHWSystemFunctionState) GetBoostStatus() DHWBoostStatus {
+	if x != nil {
+		return x.BoostStatus
+	}
+	return DHWBoostStatus_DHW_BOOST_STATUS_UNSPECIFIED
+}
+
+func (x *DHWSystemFunctionState) GetBoostWritable() bool {
+	if x != nil {
+		return x.BoostWritable
+	}
+	return false
+}
+
+func (x *DHWSystemFunctionState) GetOperationMode() string {
+	if x != nil {
+		return x.OperationMode
+	}
+	return ""
+}
+
+func (x *DHWSystemFunctionState) GetAvailableModes() []string {
+	if x != nil {
+		return x.AvailableModes
+	}
+	return nil
+}
+
+func (x *DHWSystemFunctionState) GetModeWritable() bool {
+	if x != nil {
+		return x.ModeWritable
+	}
+	return false
+}
+
+type SetDHWBoostRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ski           string                 `protobuf:"bytes,1,opt,name=ski,proto3" json:"ski,omitempty"`
+	Active        bool                   `protobuf:"varint,2,opt,name=active,proto3" json:"active,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetDHWBoostRequest) Reset() {
+	*x = SetDHWBoostRequest{}
+	mi := &file_eebus_v1_dhw_service_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetDHWBoostRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetDHWBoostRequest) ProtoMessage() {}
+
+func (x *SetDHWBoostRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_eebus_v1_dhw_service_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetDHWBoostRequest.ProtoReflect.Descriptor instead.
+func (*SetDHWBoostRequest) Descriptor() ([]byte, []int) {
+	return file_eebus_v1_dhw_service_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *SetDHWBoostRequest) GetSki() string {
+	if x != nil {
+		return x.Ski
+	}
+	return ""
+}
+
+func (x *SetDHWBoostRequest) GetActive() bool {
+	if x != nil {
+		return x.Active
+	}
+	return false
+}
+
+type SetDHWOperationModeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ski           string                 `protobuf:"bytes,1,opt,name=ski,proto3" json:"ski,omitempty"`
+	Mode          string                 `protobuf:"bytes,2,opt,name=mode,proto3" json:"mode,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetDHWOperationModeRequest) Reset() {
+	*x = SetDHWOperationModeRequest{}
+	mi := &file_eebus_v1_dhw_service_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetDHWOperationModeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetDHWOperationModeRequest) ProtoMessage() {}
+
+func (x *SetDHWOperationModeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_eebus_v1_dhw_service_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetDHWOperationModeRequest.ProtoReflect.Descriptor instead.
+func (*SetDHWOperationModeRequest) Descriptor() ([]byte, []int) {
+	return file_eebus_v1_dhw_service_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *SetDHWOperationModeRequest) GetSki() string {
+	if x != nil {
+		return x.Ski
+	}
+	return ""
+}
+
+func (x *SetDHWOperationModeRequest) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+type DHWSystemFunctionEvent struct {
+	state         protoimpl.MessageState     `protogen:"open.v1"`
+	Ski           string                     `protobuf:"bytes,1,opt,name=ski,proto3" json:"ski,omitempty"`
+	EventType     DHWSystemFunctionEventType `protobuf:"varint,2,opt,name=event_type,json=eventType,proto3,enum=eebus.v1.DHWSystemFunctionEventType" json:"event_type,omitempty"`
+	State         *DHWSystemFunctionState    `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DHWSystemFunctionEvent) Reset() {
+	*x = DHWSystemFunctionEvent{}
+	mi := &file_eebus_v1_dhw_service_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DHWSystemFunctionEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DHWSystemFunctionEvent) ProtoMessage() {}
+
+func (x *DHWSystemFunctionEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_eebus_v1_dhw_service_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DHWSystemFunctionEvent.ProtoReflect.Descriptor instead.
+func (*DHWSystemFunctionEvent) Descriptor() ([]byte, []int) {
+	return file_eebus_v1_dhw_service_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *DHWSystemFunctionEvent) GetSki() string {
+	if x != nil {
+		return x.Ski
+	}
+	return ""
+}
+
+func (x *DHWSystemFunctionEvent) GetEventType() DHWSystemFunctionEventType {
+	if x != nil {
+		return x.EventType
+	}
+	return DHWSystemFunctionEventType_DHW_SYSTEM_FUNCTION_EVENT_UNSPECIFIED
+}
+
+func (x *DHWSystemFunctionEvent) GetState() *DHWSystemFunctionState {
+	if x != nil {
+		return x.State
+	}
+	return nil
+}
+
 var File_eebus_v1_dhw_service_proto protoreflect.FileDescriptor
 
 const file_eebus_v1_dhw_service_proto_rawDesc = "" +
@@ -278,16 +622,47 @@ const file_eebus_v1_dhw_service_proto_rawDesc = "" +
 	"\x03ski\x18\x01 \x01(\tR\x03ski\x125\n" +
 	"\n" +
 	"event_type\x18\x02 \x01(\x0e2\x16.eebus.v1.DHWEventTypeR\teventType\x121\n" +
-	"\bsetpoint\x18\x03 \x01(\v2\x15.eebus.v1.DHWSetpointR\bsetpoint*h\n" +
+	"\bsetpoint\x18\x03 \x01(\v2\x15.eebus.v1.DHWSetpointR\bsetpoint\"\xf1\x01\n" +
+	"\x16DHWSystemFunctionState\x12;\n" +
+	"\fboost_status\x18\x01 \x01(\x0e2\x18.eebus.v1.DHWBoostStatusR\vboostStatus\x12%\n" +
+	"\x0eboost_writable\x18\x02 \x01(\bR\rboostWritable\x12%\n" +
+	"\x0eoperation_mode\x18\x03 \x01(\tR\roperationMode\x12'\n" +
+	"\x0favailable_modes\x18\x04 \x03(\tR\x0eavailableModes\x12#\n" +
+	"\rmode_writable\x18\x05 \x01(\bR\fmodeWritable\">\n" +
+	"\x12SetDHWBoostRequest\x12\x10\n" +
+	"\x03ski\x18\x01 \x01(\tR\x03ski\x12\x16\n" +
+	"\x06active\x18\x02 \x01(\bR\x06active\"B\n" +
+	"\x1aSetDHWOperationModeRequest\x12\x10\n" +
+	"\x03ski\x18\x01 \x01(\tR\x03ski\x12\x12\n" +
+	"\x04mode\x18\x02 \x01(\tR\x04mode\"\xa7\x01\n" +
+	"\x16DHWSystemFunctionEvent\x12\x10\n" +
+	"\x03ski\x18\x01 \x01(\tR\x03ski\x12C\n" +
+	"\n" +
+	"event_type\x18\x02 \x01(\x0e2$.eebus.v1.DHWSystemFunctionEventTypeR\teventType\x126\n" +
+	"\x05state\x18\x03 \x01(\v2 .eebus.v1.DHWSystemFunctionStateR\x05state*h\n" +
 	"\fDHWEventType\x12\x19\n" +
 	"\x15DHW_EVENT_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19DHW_EVENT_SUPPORT_UPDATED\x10\x01\x12\x1e\n" +
-	"\x1aDHW_EVENT_SETPOINT_UPDATED\x10\x022\xd7\x01\n" +
+	"\x1aDHW_EVENT_SETPOINT_UPDATED\x10\x02*\xab\x01\n" +
+	"\x0eDHWBoostStatus\x12 \n" +
+	"\x1cDHW_BOOST_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19DHW_BOOST_STATUS_INACTIVE\x10\x01\x12\x1b\n" +
+	"\x17DHW_BOOST_STATUS_ACTIVE\x10\x02\x12\x1c\n" +
+	"\x18DHW_BOOST_STATUS_RUNNING\x10\x03\x12\x1d\n" +
+	"\x19DHW_BOOST_STATUS_FINISHED\x10\x04*\xa3\x01\n" +
+	"\x1aDHWSystemFunctionEventType\x12)\n" +
+	"%DHW_SYSTEM_FUNCTION_EVENT_UNSPECIFIED\x10\x00\x12-\n" +
+	")DHW_SYSTEM_FUNCTION_EVENT_SUPPORT_UPDATED\x10\x01\x12+\n" +
+	"'DHW_SYSTEM_FUNCTION_EVENT_STATE_UPDATED\x10\x022\x97\x04\n" +
 	"\n" +
 	"DHWService\x12@\n" +
 	"\x0eGetDHWSetpoint\x12\x17.eebus.v1.DeviceRequest\x1a\x15.eebus.v1.DHWSetpoint\x12B\n" +
 	"\x0eSetDHWSetpoint\x12\x1f.eebus.v1.SetDHWSetpointRequest\x1a\x0f.eebus.v1.Empty\x12C\n" +
-	"\x12SubscribeDHWEvents\x12\x17.eebus.v1.DeviceRequest\x1a\x12.eebus.v1.DHWEvent0\x01B=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3"
+	"\x12SubscribeDHWEvents\x12\x17.eebus.v1.DeviceRequest\x1a\x12.eebus.v1.DHWEvent0\x01\x12Q\n" +
+	"\x14GetDHWSystemFunction\x12\x17.eebus.v1.DeviceRequest\x1a .eebus.v1.DHWSystemFunctionState\x12<\n" +
+	"\vSetDHWBoost\x12\x1c.eebus.v1.SetDHWBoostRequest\x1a\x0f.eebus.v1.Empty\x12L\n" +
+	"\x13SetDHWOperationMode\x12$.eebus.v1.SetDHWOperationModeRequest\x1a\x0f.eebus.v1.Empty\x12_\n" +
+	" SubscribeDHWSystemFunctionEvents\x12\x17.eebus.v1.DeviceRequest\x1a .eebus.v1.DHWSystemFunctionEvent0\x01B=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3"
 
 var (
 	file_eebus_v1_dhw_service_proto_rawDescOnce sync.Once
@@ -301,30 +676,47 @@ func file_eebus_v1_dhw_service_proto_rawDescGZIP() []byte {
 	return file_eebus_v1_dhw_service_proto_rawDescData
 }
 
-var file_eebus_v1_dhw_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_eebus_v1_dhw_service_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_eebus_v1_dhw_service_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_eebus_v1_dhw_service_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_eebus_v1_dhw_service_proto_goTypes = []any{
-	(DHWEventType)(0),             // 0: eebus.v1.DHWEventType
-	(*DHWSetpoint)(nil),           // 1: eebus.v1.DHWSetpoint
-	(*SetDHWSetpointRequest)(nil), // 2: eebus.v1.SetDHWSetpointRequest
-	(*DHWEvent)(nil),              // 3: eebus.v1.DHWEvent
-	(*DeviceRequest)(nil),         // 4: eebus.v1.DeviceRequest
-	(*Empty)(nil),                 // 5: eebus.v1.Empty
+	(DHWEventType)(0),                  // 0: eebus.v1.DHWEventType
+	(DHWBoostStatus)(0),                // 1: eebus.v1.DHWBoostStatus
+	(DHWSystemFunctionEventType)(0),    // 2: eebus.v1.DHWSystemFunctionEventType
+	(*DHWSetpoint)(nil),                // 3: eebus.v1.DHWSetpoint
+	(*SetDHWSetpointRequest)(nil),      // 4: eebus.v1.SetDHWSetpointRequest
+	(*DHWEvent)(nil),                   // 5: eebus.v1.DHWEvent
+	(*DHWSystemFunctionState)(nil),     // 6: eebus.v1.DHWSystemFunctionState
+	(*SetDHWBoostRequest)(nil),         // 7: eebus.v1.SetDHWBoostRequest
+	(*SetDHWOperationModeRequest)(nil), // 8: eebus.v1.SetDHWOperationModeRequest
+	(*DHWSystemFunctionEvent)(nil),     // 9: eebus.v1.DHWSystemFunctionEvent
+	(*DeviceRequest)(nil),              // 10: eebus.v1.DeviceRequest
+	(*Empty)(nil),                      // 11: eebus.v1.Empty
 }
 var file_eebus_v1_dhw_service_proto_depIdxs = []int32{
-	0, // 0: eebus.v1.DHWEvent.event_type:type_name -> eebus.v1.DHWEventType
-	1, // 1: eebus.v1.DHWEvent.setpoint:type_name -> eebus.v1.DHWSetpoint
-	4, // 2: eebus.v1.DHWService.GetDHWSetpoint:input_type -> eebus.v1.DeviceRequest
-	2, // 3: eebus.v1.DHWService.SetDHWSetpoint:input_type -> eebus.v1.SetDHWSetpointRequest
-	4, // 4: eebus.v1.DHWService.SubscribeDHWEvents:input_type -> eebus.v1.DeviceRequest
-	1, // 5: eebus.v1.DHWService.GetDHWSetpoint:output_type -> eebus.v1.DHWSetpoint
-	5, // 6: eebus.v1.DHWService.SetDHWSetpoint:output_type -> eebus.v1.Empty
-	3, // 7: eebus.v1.DHWService.SubscribeDHWEvents:output_type -> eebus.v1.DHWEvent
-	5, // [5:8] is the sub-list for method output_type
-	2, // [2:5] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	0,  // 0: eebus.v1.DHWEvent.event_type:type_name -> eebus.v1.DHWEventType
+	3,  // 1: eebus.v1.DHWEvent.setpoint:type_name -> eebus.v1.DHWSetpoint
+	1,  // 2: eebus.v1.DHWSystemFunctionState.boost_status:type_name -> eebus.v1.DHWBoostStatus
+	2,  // 3: eebus.v1.DHWSystemFunctionEvent.event_type:type_name -> eebus.v1.DHWSystemFunctionEventType
+	6,  // 4: eebus.v1.DHWSystemFunctionEvent.state:type_name -> eebus.v1.DHWSystemFunctionState
+	10, // 5: eebus.v1.DHWService.GetDHWSetpoint:input_type -> eebus.v1.DeviceRequest
+	4,  // 6: eebus.v1.DHWService.SetDHWSetpoint:input_type -> eebus.v1.SetDHWSetpointRequest
+	10, // 7: eebus.v1.DHWService.SubscribeDHWEvents:input_type -> eebus.v1.DeviceRequest
+	10, // 8: eebus.v1.DHWService.GetDHWSystemFunction:input_type -> eebus.v1.DeviceRequest
+	7,  // 9: eebus.v1.DHWService.SetDHWBoost:input_type -> eebus.v1.SetDHWBoostRequest
+	8,  // 10: eebus.v1.DHWService.SetDHWOperationMode:input_type -> eebus.v1.SetDHWOperationModeRequest
+	10, // 11: eebus.v1.DHWService.SubscribeDHWSystemFunctionEvents:input_type -> eebus.v1.DeviceRequest
+	3,  // 12: eebus.v1.DHWService.GetDHWSetpoint:output_type -> eebus.v1.DHWSetpoint
+	11, // 13: eebus.v1.DHWService.SetDHWSetpoint:output_type -> eebus.v1.Empty
+	5,  // 14: eebus.v1.DHWService.SubscribeDHWEvents:output_type -> eebus.v1.DHWEvent
+	6,  // 15: eebus.v1.DHWService.GetDHWSystemFunction:output_type -> eebus.v1.DHWSystemFunctionState
+	11, // 16: eebus.v1.DHWService.SetDHWBoost:output_type -> eebus.v1.Empty
+	11, // 17: eebus.v1.DHWService.SetDHWOperationMode:output_type -> eebus.v1.Empty
+	9,  // 18: eebus.v1.DHWService.SubscribeDHWSystemFunctionEvents:output_type -> eebus.v1.DHWSystemFunctionEvent
+	12, // [12:19] is the sub-list for method output_type
+	5,  // [5:12] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_eebus_v1_dhw_service_proto_init() }
@@ -338,8 +730,8 @@ func file_eebus_v1_dhw_service_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_eebus_v1_dhw_service_proto_rawDesc), len(file_eebus_v1_dhw_service_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   3,
+			NumEnums:      3,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

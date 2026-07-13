@@ -25,7 +25,11 @@
     },
     "switch": {
       "lpc_active": { "default": "mdi:power-plug" },
-      "heartbeat": { "default": "mdi:heart-pulse" }
+      "heartbeat": { "default": "mdi:heart-pulse" },
+      "dhw_boost": { "default": "mdi:water-boiler" }
+    },
+    "select": {
+      "dhw_operation_mode": { "default": "mdi:water-boiler-auto" }
     },
     "binary_sensor": {
       "connected": { "default": "mdi:lan-connect" },
