@@ -1498,6 +1498,19 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._push_data({"energy_consumed_kwh": event.energy.kilowatt_hours})
             else:
                 self.hass.async_create_task(self.async_request_refresh())
+        elif (
+            event_type
+            == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED
+        ):
+            if event.HasField("measurement"):
+                self._push_data({"dhw_temperature_c": event.measurement.value})
+            else:
+                self.hass.async_create_task(self.async_request_refresh())
+        elif (
+            event_type
+            == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_DHW_TEMPERATURE_SUPPORT_UPDATED
+        ):
+            self.hass.async_create_task(self.async_request_refresh())
 
     def _handle_dhw_event(self, event: Any) -> None:
         from . import proto_stubs

@@ -25,9 +25,11 @@ const (
 type MeasurementEventType int32
 
 const (
-	MeasurementEventType_MEASUREMENT_EVENT_UNSPECIFIED    MeasurementEventType = 0
-	MeasurementEventType_MEASUREMENT_EVENT_POWER_UPDATED  MeasurementEventType = 1
-	MeasurementEventType_MEASUREMENT_EVENT_ENERGY_UPDATED MeasurementEventType = 2
+	MeasurementEventType_MEASUREMENT_EVENT_UNSPECIFIED                     MeasurementEventType = 0
+	MeasurementEventType_MEASUREMENT_EVENT_POWER_UPDATED                   MeasurementEventType = 1
+	MeasurementEventType_MEASUREMENT_EVENT_ENERGY_UPDATED                  MeasurementEventType = 2
+	MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED         MeasurementEventType = 3
+	MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_SUPPORT_UPDATED MeasurementEventType = 4
 )
 
 // Enum value maps for MeasurementEventType.
@@ -36,11 +38,15 @@ var (
 		0: "MEASUREMENT_EVENT_UNSPECIFIED",
 		1: "MEASUREMENT_EVENT_POWER_UPDATED",
 		2: "MEASUREMENT_EVENT_ENERGY_UPDATED",
+		3: "MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED",
+		4: "MEASUREMENT_EVENT_DHW_TEMPERATURE_SUPPORT_UPDATED",
 	}
 	MeasurementEventType_value = map[string]int32{
-		"MEASUREMENT_EVENT_UNSPECIFIED":    0,
-		"MEASUREMENT_EVENT_POWER_UPDATED":  1,
-		"MEASUREMENT_EVENT_ENERGY_UPDATED": 2,
+		"MEASUREMENT_EVENT_UNSPECIFIED":                     0,
+		"MEASUREMENT_EVENT_POWER_UPDATED":                   1,
+		"MEASUREMENT_EVENT_ENERGY_UPDATED":                  2,
+		"MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED":         3,
+		"MEASUREMENT_EVENT_DHW_TEMPERATURE_SUPPORT_UPDATED": 4,
 	}
 )
 
@@ -175,6 +181,7 @@ type MeasurementEvent struct {
 	//
 	//	*MeasurementEvent_Power
 	//	*MeasurementEvent_Energy
+	//	*MeasurementEvent_Measurement
 	Data          isMeasurementEvent_Data `protobuf_oneof:"data"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -249,6 +256,15 @@ func (x *MeasurementEvent) GetEnergy() *EnergyMeasurement {
 	return nil
 }
 
+func (x *MeasurementEvent) GetMeasurement() *MeasurementEntry {
+	if x != nil {
+		if x, ok := x.Data.(*MeasurementEvent_Measurement); ok {
+			return x.Measurement
+		}
+	}
+	return nil
+}
+
 type isMeasurementEvent_Data interface {
 	isMeasurementEvent_Data()
 }
@@ -261,9 +277,15 @@ type MeasurementEvent_Energy struct {
 	Energy *EnergyMeasurement `protobuf:"bytes,4,opt,name=energy,proto3,oneof"`
 }
 
+type MeasurementEvent_Measurement struct {
+	Measurement *MeasurementEntry `protobuf:"bytes,5,opt,name=measurement,proto3,oneof"`
+}
+
 func (*MeasurementEvent_Power) isMeasurementEvent_Data() {}
 
 func (*MeasurementEvent_Energy) isMeasurementEvent_Data() {}
+
+func (*MeasurementEvent_Measurement) isMeasurementEvent_Data() {}
 
 var File_eebus_v1_monitoring_service_proto protoreflect.FileDescriptor
 
@@ -274,18 +296,21 @@ const file_eebus_v1_monitoring_service_proto_rawDesc = "" +
 	"\x0ekilowatt_hours\x18\x01 \x01(\x01R\rkilowattHours\x128\n" +
 	"\ttimestamp\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"Q\n" +
 	"\x0fMeasurementList\x12>\n" +
-	"\fmeasurements\x18\x01 \x03(\v2\x1a.eebus.v1.MeasurementEntryR\fmeasurements\"\xd6\x01\n" +
+	"\fmeasurements\x18\x01 \x03(\v2\x1a.eebus.v1.MeasurementEntryR\fmeasurements\"\x96\x02\n" +
 	"\x10MeasurementEvent\x12\x10\n" +
 	"\x03ski\x18\x01 \x01(\tR\x03ski\x12=\n" +
 	"\n" +
 	"event_type\x18\x02 \x01(\x0e2\x1e.eebus.v1.MeasurementEventTypeR\teventType\x122\n" +
 	"\x05power\x18\x03 \x01(\v2\x1a.eebus.v1.PowerMeasurementH\x00R\x05power\x125\n" +
-	"\x06energy\x18\x04 \x01(\v2\x1b.eebus.v1.EnergyMeasurementH\x00R\x06energyB\x06\n" +
-	"\x04data*\x84\x01\n" +
+	"\x06energy\x18\x04 \x01(\v2\x1b.eebus.v1.EnergyMeasurementH\x00R\x06energy\x12>\n" +
+	"\vmeasurement\x18\x05 \x01(\v2\x1a.eebus.v1.MeasurementEntryH\x00R\vmeasurementB\x06\n" +
+	"\x04data*\xea\x01\n" +
 	"\x14MeasurementEventType\x12!\n" +
 	"\x1dMEASUREMENT_EVENT_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fMEASUREMENT_EVENT_POWER_UPDATED\x10\x01\x12$\n" +
-	" MEASUREMENT_EVENT_ENERGY_UPDATED\x10\x022\xc1\x02\n" +
+	" MEASUREMENT_EVENT_ENERGY_UPDATED\x10\x02\x12-\n" +
+	")MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED\x10\x03\x125\n" +
+	"1MEASUREMENT_EVENT_DHW_TEMPERATURE_SUPPORT_UPDATED\x10\x042\xc1\x02\n" +
 	"\x11MonitoringService\x12J\n" +
 	"\x13GetPowerConsumption\x12\x17.eebus.v1.DeviceRequest\x1a\x1a.eebus.v1.PowerMeasurement\x12I\n" +
 	"\x11GetEnergyConsumed\x12\x17.eebus.v1.DeviceRequest\x1a\x1b.eebus.v1.EnergyMeasurement\x12E\n" +
@@ -317,24 +342,25 @@ var file_eebus_v1_monitoring_service_proto_goTypes = []any{
 	(*DeviceRequest)(nil),         // 7: eebus.v1.DeviceRequest
 }
 var file_eebus_v1_monitoring_service_proto_depIdxs = []int32{
-	4, // 0: eebus.v1.EnergyMeasurement.timestamp:type_name -> google.protobuf.Timestamp
-	5, // 1: eebus.v1.MeasurementList.measurements:type_name -> eebus.v1.MeasurementEntry
-	0, // 2: eebus.v1.MeasurementEvent.event_type:type_name -> eebus.v1.MeasurementEventType
-	6, // 3: eebus.v1.MeasurementEvent.power:type_name -> eebus.v1.PowerMeasurement
-	1, // 4: eebus.v1.MeasurementEvent.energy:type_name -> eebus.v1.EnergyMeasurement
-	7, // 5: eebus.v1.MonitoringService.GetPowerConsumption:input_type -> eebus.v1.DeviceRequest
-	7, // 6: eebus.v1.MonitoringService.GetEnergyConsumed:input_type -> eebus.v1.DeviceRequest
-	7, // 7: eebus.v1.MonitoringService.GetMeasurements:input_type -> eebus.v1.DeviceRequest
-	7, // 8: eebus.v1.MonitoringService.SubscribeMeasurements:input_type -> eebus.v1.DeviceRequest
-	6, // 9: eebus.v1.MonitoringService.GetPowerConsumption:output_type -> eebus.v1.PowerMeasurement
-	1, // 10: eebus.v1.MonitoringService.GetEnergyConsumed:output_type -> eebus.v1.EnergyMeasurement
-	2, // 11: eebus.v1.MonitoringService.GetMeasurements:output_type -> eebus.v1.MeasurementList
-	3, // 12: eebus.v1.MonitoringService.SubscribeMeasurements:output_type -> eebus.v1.MeasurementEvent
-	9, // [9:13] is the sub-list for method output_type
-	5, // [5:9] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	4,  // 0: eebus.v1.EnergyMeasurement.timestamp:type_name -> google.protobuf.Timestamp
+	5,  // 1: eebus.v1.MeasurementList.measurements:type_name -> eebus.v1.MeasurementEntry
+	0,  // 2: eebus.v1.MeasurementEvent.event_type:type_name -> eebus.v1.MeasurementEventType
+	6,  // 3: eebus.v1.MeasurementEvent.power:type_name -> eebus.v1.PowerMeasurement
+	1,  // 4: eebus.v1.MeasurementEvent.energy:type_name -> eebus.v1.EnergyMeasurement
+	5,  // 5: eebus.v1.MeasurementEvent.measurement:type_name -> eebus.v1.MeasurementEntry
+	7,  // 6: eebus.v1.MonitoringService.GetPowerConsumption:input_type -> eebus.v1.DeviceRequest
+	7,  // 7: eebus.v1.MonitoringService.GetEnergyConsumed:input_type -> eebus.v1.DeviceRequest
+	7,  // 8: eebus.v1.MonitoringService.GetMeasurements:input_type -> eebus.v1.DeviceRequest
+	7,  // 9: eebus.v1.MonitoringService.SubscribeMeasurements:input_type -> eebus.v1.DeviceRequest
+	6,  // 10: eebus.v1.MonitoringService.GetPowerConsumption:output_type -> eebus.v1.PowerMeasurement
+	1,  // 11: eebus.v1.MonitoringService.GetEnergyConsumed:output_type -> eebus.v1.EnergyMeasurement
+	2,  // 12: eebus.v1.MonitoringService.GetMeasurements:output_type -> eebus.v1.MeasurementList
+	3,  // 13: eebus.v1.MonitoringService.SubscribeMeasurements:output_type -> eebus.v1.MeasurementEvent
+	10, // [10:14] is the sub-list for method output_type
+	6,  // [6:10] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_eebus_v1_monitoring_service_proto_init() }
@@ -346,6 +372,7 @@ func file_eebus_v1_monitoring_service_proto_init() {
 	file_eebus_v1_monitoring_service_proto_msgTypes[2].OneofWrappers = []any{
 		(*MeasurementEvent_Power)(nil),
 		(*MeasurementEvent_Energy)(nil),
+		(*MeasurementEvent_Measurement)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

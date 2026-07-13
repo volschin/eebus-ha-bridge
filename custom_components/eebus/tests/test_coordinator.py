@@ -296,3 +296,23 @@ def test_extract_flat_measurements_ignores_blank_and_missing():
     ]
     result = EebusCoordinator._extract_flat_measurements(entries)
     assert result == {"power_l1_w": 0.0}
+
+
+def test_dhw_temperature_measurement_event_pushes_value():
+    """MDT stream events update the DHW actual-temperature sensor directly."""
+    coordinator, _ = _make_coordinator(data={"connected": True})
+    pushed = {}
+    coordinator.async_set_updated_data = pushed.update
+    event = monitoring_service_pb2.MeasurementEvent(
+        ski="test-ski",
+        event_type=(
+            monitoring_service_pb2.MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED
+        ),
+        measurement=proto_stubs.MeasurementEntry(
+            type="dhw_temperature", value=49.5, unit="degC"
+        ),
+    )
+
+    coordinator._handle_measurement_event(event)
+
+    assert pushed["dhw_temperature_c"] == 49.5

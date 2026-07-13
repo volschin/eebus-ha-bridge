@@ -18,12 +18,22 @@ import (
 type MonitoringService struct {
 	pb.UnimplementedMonitoringServiceServer
 	monitoring *usecases.MonitoringWrapper
+	dhw        dhwTemperatureReader
 	bus        *eebus.EventBus
 	registry   *eebus.DeviceRegistry
 }
 
-func NewMonitoringService(monitoring *usecases.MonitoringWrapper, bus *eebus.EventBus, registry *eebus.DeviceRegistry) *MonitoringService {
-	return &MonitoringService{monitoring: monitoring, bus: bus, registry: registry}
+type dhwTemperatureReader interface {
+	Temperature(string) (float64, error)
+}
+
+func NewMonitoringService(
+	monitoring *usecases.MonitoringWrapper,
+	dhw dhwTemperatureReader,
+	bus *eebus.EventBus,
+	registry *eebus.DeviceRegistry,
+) *MonitoringService {
+	return &MonitoringService{monitoring: monitoring, dhw: dhw, bus: bus, registry: registry}
 }
 
 func (s *MonitoringService) GetPowerConsumption(_ context.Context, req *pb.DeviceRequest) (*pb.PowerMeasurement, error) {
@@ -114,6 +124,12 @@ func (s *MonitoringService) GetMeasurements(_ context.Context, req *pb.DeviceReq
 		appendMeasurement(&measurements, now, "energy_produced", value, "kWh")
 	}
 
+	if s.dhw != nil {
+		if value, err := s.dhw.Temperature(req.Ski); err == nil {
+			appendMeasurement(&measurements, now, "dhw_temperature", value, "degC")
+		}
+	}
+
 	if values, err := s.monitoring.GenericMeasurements(req.Ski); err == nil {
 		seen := make(map[string]struct{}, len(measurements)+len(values))
 		for _, measurement := range measurements {
@@ -156,6 +172,10 @@ func (s *MonitoringService) SubscribeMeasurements(req *pb.DeviceRequest, stream 
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_POWER_UPDATED
 			case "monitoring.energy_consumed_updated":
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_ENERGY_UPDATED
+			case "dhw.temperature_updated":
+				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED
+			case "dhw.monitoring_support_updated":
+				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_SUPPORT_UPDATED
 			default:
 				continue
 			}
@@ -175,9 +195,6 @@ func (s *MonitoringService) SubscribeMeasurements(req *pb.DeviceRequest, stream 
 // read failure the event is sent without a payload and the client falls back to
 // a refresh. Reuses the SKI-resolve + nil-entity fallback of the Get* readers.
 func (s *MonitoringService) attachMeasurementPayload(event *pb.MeasurementEvent, ski string, eventType pb.MeasurementEventType) {
-	if s.monitoring == nil {
-		return
-	}
 	switch eventType {
 	case pb.MeasurementEventType_MEASUREMENT_EVENT_POWER_UPDATED:
 		if value, err := s.readPower(ski); err == nil {
@@ -192,6 +209,17 @@ func (s *MonitoringService) attachMeasurementPayload(event *pb.MeasurementEvent,
 				KilowattHours: value,
 				Timestamp:     timestamppb.Now(),
 			}}
+		}
+	case pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED:
+		if s.dhw != nil {
+			if value, err := s.dhw.Temperature(ski); err == nil {
+				event.Data = &pb.MeasurementEvent_Measurement{Measurement: &pb.MeasurementEntry{
+					Type:      "dhw_temperature",
+					Value:     value,
+					Unit:      "degC",
+					Timestamp: timestamppb.Now(),
+				}}
+			}
 		}
 	}
 }
