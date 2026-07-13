@@ -708,7 +708,7 @@ func newOverrunHarness(t *testing.T, opts overrunHarnessOptions) *overrunHarness
 		Feature: ptr(model.AddressFeatureType(4)),
 	}
 
-	status := model.HvacOverrunStatusTypeInactive
+	status := opts.initialStatus
 	var (
 		mu     sync.Mutex
 		writes []model.HvacOverrunStatusType
@@ -757,11 +757,14 @@ func newOverrunHarness(t *testing.T, opts overrunHarnessOptions) *overrunHarness
 	remoteFeature.On("DataCopy", model.FunctionTypeHvacOverrunListData).Return(func(model.FunctionType) any {
 		mu.Lock()
 		defer mu.Unlock()
-		return &model.HvacOverrunListDataType{HvacOverrunData: []model.HvacOverrunDataType{{
+		entry := model.HvacOverrunDataType{
 			OverrunId:                 ptr(model.HvacOverrunIdType(9)),
-			OverrunStatus:             ptr(status),
 			IsOverrunStatusChangeable: opts.changeable,
-		}}}
+		}
+		if !opts.nilStatus {
+			entry.OverrunStatus = ptr(status)
+		}
+		return &model.HvacOverrunListDataType{HvacOverrunData: []model.HvacOverrunDataType{entry}}
 	}).Maybe()
 	remoteFeature.On("DataCopy", mock.Anything).Return(nil).Maybe()
 	remoteFeature.On("Device").Return(deviceRemote).Maybe()
@@ -836,13 +839,18 @@ type overrunHarnessOptions struct {
 	descriptions *model.HvacOverrunDescriptionListDataType
 	changeable   *bool
 	ackWrites    bool
+	// initialStatus is the overrun status the device reports before any probe
+	// write; nilStatus makes the device report no status at all.
+	initialStatus model.HvacOverrunStatusType
+	nilStatus     bool
 }
 
 func defaultOverrunOptions() overrunHarnessOptions {
 	return overrunHarnessOptions{
-		remoteSKI:   "ABCD1234",
-		expectedSKI: "ABCD1234",
-		writeOp:     true,
+		remoteSKI:     "ABCD1234",
+		expectedSKI:   "ABCD1234",
+		writeOp:       true,
+		initialStatus: model.HvacOverrunStatusTypeInactive,
 		descriptions: &model.HvacOverrunDescriptionListDataType{HvacOverrunDescriptionData: []model.HvacOverrunDescriptionDataType{{
 			OverrunId: ptr(model.HvacOverrunIdType(9)), OverrunType: ptr(model.HvacOverrunTypeTypeOneTimeDhw),
 		}}},
@@ -897,6 +905,12 @@ func TestHvacProbeOverrunWriteFailsClosed(t *testing.T) {
 				{OverrunId: ptr(model.HvacOverrunIdType(10)), OverrunType: ptr(model.HvacOverrunTypeTypeOneTimeDhw)},
 			}}
 		}, "need exactly one oneTimeDhw"},
+		{"boost already running", func(o *overrunHarnessOptions) {
+			o.initialStatus = model.HvacOverrunStatusTypeRunning
+		}, "status=running is not inactive/finished"},
+		{"status missing", func(o *overrunHarnessOptions) {
+			o.nilStatus = true
+		}, "status=<nil> is not inactive/finished"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -538,6 +538,19 @@ func (p *HvacProbe) runOverrunWriteTest(ski string, b pendingBind) {
 			ski, b.target.entityAddr, id)
 		return
 	}
+	// A boost that is already active/running was started outside the probe
+	// (app, panel); the final cancel would kill it. Only test from a resting
+	// state, and treat an unknown status as unsafe.
+	if entry.OverrunStatus == nil ||
+		(*entry.OverrunStatus != model.HvacOverrunStatusTypeInactive && *entry.OverrunStatus != model.HvacOverrunStatusTypeFinished) {
+		status := "<nil>"
+		if entry.OverrunStatus != nil {
+			status = string(*entry.OverrunStatus)
+		}
+		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s boost test skipped: overrunId=%d status=%s is not inactive/finished",
+			ski, b.target.entityAddr, id, status)
+		return
+	}
 	list := p.waitForOverrunData(b.target)
 	if list == nil {
 		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s boost test skipped: no hvacOverrunListData within %s",
