@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package eebus.v1;
+
+option go_package = "github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1";
+
+import "eebus/v1/common.proto";
+
+// HVACService exposes the room-heating Configuration use cases validated
+// against the Vaillant VR940 HVACRoom entity.
+service HVACService {
+  rpc GetRoomHeating(DeviceRequest) returns (RoomHeatingState);
+  rpc SetRoomHeatingTemperature(SetRoomHeatingTemperatureRequest) returns (Empty);
+  rpc SetRoomHeatingMode(SetRoomHeatingModeRequest) returns (Empty);
+  rpc SubscribeRoomHeatingEvents(DeviceRequest) returns (stream RoomHeatingEvent);
+}
+
+message RoomHeatingState {
+  optional double current_temperature_celsius = 1;
+  RoomHeatingSetpoint setpoint = 2;
+  RoomHeatingSystemFunction system_function = 3;
+}
+
+message RoomHeatingSetpoint {
+  double value_celsius = 1;
+  double min_celsius = 2;
+  double max_celsius = 3;
+  double step_celsius = 4;
+  bool writable = 5;
+}
+
+message RoomHeatingSystemFunction {
+  string operation_mode = 1;
+  repeated string available_modes = 2;
+  bool mode_writable = 3;
+}
+
+message SetRoomHeatingTemperatureRequest {
+  string ski = 1;
+  double value_celsius = 2;
+}
+
+message SetRoomHeatingModeRequest {
+  string ski = 1;
+  string mode = 2;
+}
+
+enum RoomHeatingEventType {
+  ROOM_HEATING_EVENT_UNSPECIFIED = 0;
+  ROOM_HEATING_EVENT_SUPPORT_UPDATED = 1;
+  ROOM_HEATING_EVENT_CURRENT_TEMPERATURE_UPDATED = 2;
+  ROOM_HEATING_EVENT_SETPOINT_UPDATED = 3;
+  ROOM_HEATING_EVENT_SYSTEM_FUNCTION_UPDATED = 4;
+}
+
+message RoomHeatingEvent {
+  string ski = 1;
+  RoomHeatingEventType event_type = 2;
+  RoomHeatingState state = 3;
+}

@@ -24,7 +24,7 @@ func (f fakeDHWTemperatureReader) Temperature(string) (float64, error) {
 
 func TestSubscribeMeasurements(t *testing.T) {
 	bus := eebus.NewEventBus()
-	svc := bridgegrpc.NewMonitoringService(nil, nil, nil, nil, bus, eebus.NewDeviceRegistry())
+	svc := bridgegrpc.NewMonitoringService(nil, nil, nil, nil, nil, nil, bus, eebus.NewDeviceRegistry())
 
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterMonitoringServiceServer(srv.GRPCServer(), svc)
@@ -66,6 +66,8 @@ func TestGetMeasurementsIncludesTemperatureUseCases(t *testing.T) {
 		fakeDHWTemperatureReader{value: 48.5},
 		fakeDHWTemperatureReader{value: 21.25},
 		fakeDHWTemperatureReader{value: 7.75},
+		fakeDHWTemperatureReader{value: 42.5},
+		fakeDHWTemperatureReader{value: 37.25},
 		eebus.NewEventBus(),
 		eebus.NewDeviceRegistry(),
 	)
@@ -74,7 +76,7 @@ func TestGetMeasurementsIncludesTemperatureUseCases(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeasurements() error = %v", err)
 	}
-	if len(result.Measurements) != 3 {
+	if len(result.Measurements) != 5 {
 		t.Fatalf("GetMeasurements() = %+v", result.Measurements)
 	}
 	want := []struct {
@@ -84,6 +86,8 @@ func TestGetMeasurementsIncludesTemperatureUseCases(t *testing.T) {
 		{typ: "dhw_temperature", value: 48.5},
 		{typ: "room_temperature", value: 21.25},
 		{typ: "outdoor_temperature", value: 7.75},
+		{typ: "flow_temperature", value: 42.5},
+		{typ: "return_temperature", value: 37.25},
 	}
 	for index, expected := range want {
 		measurement := result.Measurements[index]
@@ -100,6 +104,8 @@ func TestSubscribeMeasurementsIncludesTemperaturePayloads(t *testing.T) {
 		fakeDHWTemperatureReader{value: 49},
 		fakeDHWTemperatureReader{value: 20.5},
 		fakeDHWTemperatureReader{value: 6.5},
+		fakeDHWTemperatureReader{value: 43},
+		fakeDHWTemperatureReader{value: 38},
 		bus,
 		eebus.NewDeviceRegistry(),
 	)
@@ -134,6 +140,8 @@ func TestSubscribeMeasurementsIncludesTemperaturePayloads(t *testing.T) {
 		{"dhw.temperature_updated", pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED, "dhw_temperature", 49},
 		{"room.temperature_updated", pb.MeasurementEventType_MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED, "room_temperature", 20.5},
 		{"outdoor.temperature_updated", pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED, "outdoor_temperature", 6.5},
+		{"monitoring.flow_temperature_updated", pb.MeasurementEventType_MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED, "flow_temperature", 43},
+		{"monitoring.return_temperature_updated", pb.MeasurementEventType_MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED, "return_temperature", 38},
 	}
 	for _, tt := range tests {
 		bus.Publish(eebus.Event{SKI: "test-ski", Type: tt.bridgeEvent})

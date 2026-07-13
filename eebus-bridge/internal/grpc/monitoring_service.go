@@ -21,6 +21,8 @@ type MonitoringService struct {
 	dhw        temperatureReader
 	room       temperatureReader
 	outdoor    temperatureReader
+	flow       temperatureReader
+	returnTemp temperatureReader
 	bus        *eebus.EventBus
 	registry   *eebus.DeviceRegistry
 }
@@ -34,6 +36,8 @@ func NewMonitoringService(
 	dhw temperatureReader,
 	room temperatureReader,
 	outdoor temperatureReader,
+	flow temperatureReader,
+	returnTemp temperatureReader,
 	bus *eebus.EventBus,
 	registry *eebus.DeviceRegistry,
 ) *MonitoringService {
@@ -42,6 +46,8 @@ func NewMonitoringService(
 		dhw:        dhw,
 		room:       room,
 		outdoor:    outdoor,
+		flow:       flow,
+		returnTemp: returnTemp,
 		bus:        bus,
 		registry:   registry,
 	}
@@ -150,6 +156,16 @@ func (s *MonitoringService) GetMeasurements(_ context.Context, req *pb.DeviceReq
 			appendMeasurement(&measurements, now, "outdoor_temperature", value, "degC")
 		}
 	}
+	if s.flow != nil {
+		if value, err := s.flow.Temperature(req.Ski); err == nil {
+			appendMeasurement(&measurements, now, "flow_temperature", value, "degC")
+		}
+	}
+	if s.returnTemp != nil {
+		if value, err := s.returnTemp.Temperature(req.Ski); err == nil {
+			appendMeasurement(&measurements, now, "return_temperature", value, "degC")
+		}
+	}
 
 	if s.monitoring != nil {
 		values, err := s.monitoring.GenericMeasurements(req.Ski)
@@ -209,6 +225,10 @@ func (s *MonitoringService) SubscribeMeasurements(req *pb.DeviceRequest, stream 
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED
 			case "outdoor.monitoring_support_updated":
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED
+			case "monitoring.flow_temperature_updated":
+				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED
+			case "monitoring.return_temperature_updated":
+				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED
 			default:
 				continue
 			}
@@ -249,6 +269,10 @@ func (s *MonitoringService) attachMeasurementPayload(event *pb.MeasurementEvent,
 		s.attachTemperaturePayload(event, ski, s.room, "room_temperature")
 	case pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED:
 		s.attachTemperaturePayload(event, ski, s.outdoor, "outdoor_temperature")
+	case pb.MeasurementEventType_MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED:
+		s.attachTemperaturePayload(event, ski, s.flow, "flow_temperature")
+	case pb.MeasurementEventType_MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED:
+		s.attachTemperaturePayload(event, ski, s.returnTemp, "return_temperature")
 	}
 }
 

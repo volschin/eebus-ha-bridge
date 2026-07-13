@@ -18,6 +18,8 @@ Lokale Integration von EEBUS-faehigen Waermepumpen in Home Assistant ueber das *
   `monitoringOfDhwTemperature`-Use-Case
 - **Warmwasser-Boost und Betriebsart** -- Lokales Aktivieren der Einmalladung
   und Auswahl der vom Geraet angebotenen DHW-Betriebsarten
+- **Raumheizung** -- Home-Assistant-`climate` mit Ist-/Solltemperatur,
+  dynamischen Geraetegrenzen und den angebotenen Modi `auto`/`on`/`off`
 - **Energy Dashboard** -- Volle Integration mit dem HA Energy Dashboard
 - **Erweiterbar** -- Architektur vorbereitet fuer zukuenftige EEBUS-HVAC-Use-Cases
 
@@ -122,6 +124,7 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 | `number.eebus_lpc_limit` | number | LPC-Limit setzen (W) |
 | `number.eebus_failsafe_limit` | number | Failsafe-Grenze (W), standardmaessig deaktiviert |
 | `water_heater.eebus_domestic_hot_water` | water_heater | Warmwasser mit Ist-/Solltemperatur und Betriebsart; Grenzen und Optionen kommen vom Geraet |
+| `climate.eebus_room_heating` | climate | Raumheizung mit Ist-/Solltemperatur und `auto`/`on`/`off`; Grenzen und Optionen kommen vom Geraet |
 | `switch.eebus_lpc_active` | switch | Limit aktivieren/deaktivieren |
 | `switch.eebus_heartbeat` | switch | Heartbeat an/aus, standardmaessig deaktiviert |
 | `switch.eebus_dhw_boost` | switch | Warmwasser-Einmalladung aktivieren/deaktivieren |
@@ -307,7 +310,7 @@ automation:
 
 ## Bekannte Einschraenkungen
 
-- **Keine HVAC-Steuerung:** Vaillant exponiert Betriebsmodi und Sollwerte nicht ueber EEBUS. Dafuer weiterhin mypyllant nutzen.
+- **HVAC-Steuerung:** Raumheizung wird als `climate.eebus_room_heating` exponiert (Ist-/Solltemperatur, Modi `auto`/`on`/`off`). Kuehlung, Zeitprogramme und ein belastbarer Heizaktivitaetsstatus (`hvac_action`) werden vom VR940 nicht angeboten.
 - **Kein Auto-Discovery in HA:** Die Bridge-Adresse muss manuell eingegeben werden. Die EEBUS-Discovery (mDNS) findet Waermepumpen, aber die Bridge selbst wird nicht von HA entdeckt.
 - **Re-Pairing bei Zertifikatsverlust:** Wird das Bridge-Zertifikat geloescht, aendert sich der SKI. Erneutes Pairing in der myVaillant-App noetig.
 - **Heartbeat bei Bridge-Ausfall:** Die Waermepumpe erkennt den Heartbeat-Timeout (max 2 min) und faellt auf den Failsafe-Wert zurueck.

@@ -34,6 +34,16 @@ from .generated.eebus.v1.dhw_service_pb2 import (  # noqa: F401
 )
 from .generated.eebus.v1.dhw_service_pb2_grpc import DHWServiceStub  # noqa: F401
 from .generated.eebus.v1.grid_service_pb2 import GridData  # noqa: F401
+from .generated.eebus.v1.hvac_service_pb2 import (  # noqa: F401
+    RoomHeatingEvent,
+    RoomHeatingEventType,
+    RoomHeatingSetpoint,
+    RoomHeatingState,
+    RoomHeatingSystemFunction,
+    SetRoomHeatingModeRequest,
+    SetRoomHeatingTemperatureRequest,
+)
+from .generated.eebus.v1.hvac_service_pb2_grpc import HVACServiceStub  # noqa: F401
 from .generated.eebus.v1.grid_service_pb2_grpc import GridServiceStub  # noqa: F401
 from .generated.eebus.v1.lpc_service_pb2 import (  # noqa: F401
     LPCEventType,
@@ -76,6 +86,10 @@ def dhw_service_stub(channel: grpc.aio.Channel) -> DHWServiceStub:
     return DHWServiceStub(channel)  # type: ignore[no-untyped-call]
 
 
+def hvac_service_stub(channel: grpc.aio.Channel) -> HVACServiceStub:
+    return HVACServiceStub(channel)  # type: ignore[no-untyped-call]
+
+
 def monitoring_service_stub(channel: grpc.aio.Channel) -> MonitoringServiceStub:
     return MonitoringServiceStub(channel)  # type: ignore[no-untyped-call]
 
@@ -112,6 +126,7 @@ __all__ = [
     "Empty",
     "GridData",
     "GridServiceStub",
+    "HVACServiceStub",
     "LPCEventType",
     "LPCServiceStub",
     "LoadLimit",
@@ -124,9 +139,16 @@ __all__ = [
     "PVData",
     "PowerMeasurement",
     "RegisterSKIRequest",
+    "RoomHeatingEvent",
+    "RoomHeatingEventType",
+    "RoomHeatingSetpoint",
+    "RoomHeatingState",
+    "RoomHeatingSystemFunction",
     "SetDHWBoostRequest",
     "SetDHWOperationModeRequest",
     "SetDHWSetpointRequest",
+    "SetRoomHeatingModeRequest",
+    "SetRoomHeatingTemperatureRequest",
     "VisualizationServiceStub",
     "WriteFailsafeLimitRequest",
     "WriteLoadLimitRequest",
