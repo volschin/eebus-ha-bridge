@@ -169,32 +169,49 @@ func TestHvacProbeBindRequestsAndConfirms(t *testing.T) {
 
 	counter := model.MsgCounterType(7)
 	var (
-		boundMu sync.Mutex
-		bound   bool
+		nmCallbackMu sync.Mutex
+		nmCallback   func(spineapi.ResponseMessage)
 	)
 	localFeature := mocks.NewFeatureLocalInterface(t)
 	localFeature.On("RequestRemoteData", mock.Anything, nil, nil, remoteFeature).Return(&counter, nil)
 	localFeature.On("AddResultCallback", mock.Anything).Return()
-	localFeature.On("HasBindingToRemote", remoteAddr).Return(func(*model.FeatureAddressType) bool {
-		boundMu.Lock()
-		defer boundMu.Unlock()
-		return bound
-	}).Maybe()
-	localFeature.On("BindToRemote", remoteAddr).Run(func(mock.Arguments) {
-		boundMu.Lock()
-		bound = true // simulate the device accepting the binding
-		boundMu.Unlock()
-	}).Return(&counter, nil)
+	localFeature.On("HasBindingToRemote", remoteAddr).Return(false).Maybe()
+	localFeature.On("BindToRemote", remoteAddr).Return(&counter, nil)
+
+	// Bind accept/deny results arrive at the local NodeManagement feature, not
+	// the client feature — capture its callback to inject the device's accept.
+	nm := mocks.NewNodeManagementInterface(t)
+	nm.On("AddResultCallback", mock.Anything).Run(func(args mock.Arguments) {
+		nmCallbackMu.Lock()
+		nmCallback = args.Get(0).(func(spineapi.ResponseMessage))
+		nmCallbackMu.Unlock()
+	}).Return()
+	deviceLocal := mocks.NewDeviceLocalInterface(t)
+	deviceLocal.On("NodeManagement").Return(nm).Maybe()
 
 	local := mocks.NewEntityLocalInterface(t)
 	local.On("GetOrAddFeature", mock.Anything, mock.Anything).Return(localFeature).Maybe()
 	local.On("AddUseCaseSupport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 	local.On("FeatureOfTypeAndRole", model.FeatureTypeTypeSetpoint, model.RoleTypeClient).Return(localFeature).Maybe()
+	local.On("Device").Return(deviceLocal).Maybe()
 	p.Setup(local)
 	p.EnableBind()
 
 	device := buildProbeDeviceMock(t, "ABCD1234", remoteFeature)
 	p.ProbeOnce("ABCD1234", device)
+
+	// Simulate the VR940 accepting the binding: result errorNumber=0
+	// referencing the bind request's msgCounter.
+	nmCallbackMu.Lock()
+	cb := nmCallback
+	nmCallbackMu.Unlock()
+	if cb == nil {
+		t.Fatal("probe never registered a NodeManagement result callback")
+	}
+	cb(spineapi.ResponseMessage{
+		MsgCounterReference: counter,
+		Data:                &model.ResultDataType{ErrorNumber: ptr(model.ErrorNumberType(0))},
+	})
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {

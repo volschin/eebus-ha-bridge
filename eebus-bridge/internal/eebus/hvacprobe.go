@@ -36,9 +36,16 @@ type HvacProbe struct {
 
 	// bindEnabled turns on the stage-2 binding attempt. resultHooked tracks
 	// which local client features already log incoming SPINE result messages
-	// (accept/deny replies to the bind requests).
+	// (errors replying to the read requests). Bind accept/deny results do NOT
+	// arrive there: binding management runs NodeManagement-to-NodeManagement,
+	// so the device addresses its result to the local NodeManagement feature.
+	// nmHooked guards the one callback registered there; bindResults collects
+	// its errorNumber per msgCounterReference for collectBindResults to match
+	// against the counters returned by BindToRemote.
 	bindEnabled  bool
 	resultHooked map[model.FeatureTypeType]bool
+	nmHooked     bool
+	bindResults  map[uint64]int64
 
 	// pollInterval/pollTimeout control how long collectData waits for read
 	// responses to land in the remote feature caches. Overridden in tests.
@@ -75,6 +82,7 @@ func NewHvacProbe(logf func(format string, args ...any)) *HvacProbe {
 	return &HvacProbe{
 		probed:       make(map[string]bool),
 		resultHooked: make(map[model.FeatureTypeType]bool),
+		bindResults:  make(map[uint64]int64),
 		logf:         logf,
 		pollInterval: 2 * time.Second,
 		pollTimeout:  30 * time.Second,
@@ -252,16 +260,19 @@ func (p *HvacProbe) requestAll(ski string, local spineapi.EntityLocalInterface, 
 
 // pendingBind tracks one bind request awaiting confirmation.
 type pendingBind struct {
-	target       probeTarget
-	localFeature spineapi.FeatureLocalInterface
+	target     probeTarget
+	msgCounter uint64
 }
 
 // bindAll requests a binding from the local client feature to each remote
-// Setpoint/HVAC server feature. Acceptance is confirmed asynchronously: on an
-// accept result spine-go records the binding, which collectBindResults
-// observes via HasBindingToRemote. A result callback per local feature logs
-// the raw accept/deny replies (including the deny error number).
+// Setpoint/HVAC server feature. Acceptance is confirmed asynchronously via
+// the result callback on the local NodeManagement feature (binding management
+// is a NodeManagement-to-NodeManagement exchange, so the accept/deny result
+// is addressed there — NOT to the client feature; spine-go's own
+// bindResponseCallback and HasBindingToRemote miss it for the same reason).
+// collectBindResults matches the results against the request msgCounters.
 func (p *HvacProbe) bindAll(ski string, local spineapi.EntityLocalInterface, targets []probeTarget) []pendingBind {
+	p.hookNodeManagementResults(local)
 	var requested []pendingBind
 	for _, t := range targets {
 		featureType := t.feature.Type()
@@ -288,9 +299,33 @@ func (p *HvacProbe) bindAll(ski string, local spineapi.EntityLocalInterface, tar
 		}
 		p.logf("[HVACPROBE] ski=%s entity=%s bind %s requested (msgCounter=%d)",
 			ski, t.entityAddr, featureType, counter)
-		requested = append(requested, pendingBind{target: t, localFeature: localFeature})
+		requested = append(requested, pendingBind{target: t, msgCounter: counter})
 	}
 	return requested
+}
+
+// hookNodeManagementResults registers, once, a result callback on the local
+// NodeManagement feature that records every result's errorNumber by
+// msgCounterReference — the only place bind accept/deny replies surface.
+func (p *HvacProbe) hookNodeManagementResults(local spineapi.EntityLocalInterface) {
+	p.mu.Lock()
+	hooked := p.nmHooked
+	if !hooked {
+		p.nmHooked = true
+	}
+	p.mu.Unlock()
+	if hooked {
+		return
+	}
+	local.Device().NodeManagement().AddResultCallback(func(msg spineapi.ResponseMessage) {
+		result, ok := msg.Data.(*model.ResultDataType)
+		if !ok || result.ErrorNumber == nil {
+			return
+		}
+		p.mu.Lock()
+		p.bindResults[uint64(msg.MsgCounterReference)] = int64(*result.ErrorNumber)
+		p.mu.Unlock()
+	})
 }
 
 // hookResultLogging logs every SPINE result message arriving at a local
@@ -324,26 +359,34 @@ func (p *HvacProbe) hookResultLogging(ski string, featureType model.FeatureTypeT
 	})
 }
 
-// collectBindResults polls until each requested binding is confirmed or the
-// timeout passes. A missing confirmation means the device denied or ignored
-// the bind - the result log above carries the deny error number if one came.
+// collectBindResults polls the NodeManagement result log until each requested
+// bind's msgCounter got an accept (errorNumber 0) or deny result, or the
+// timeout passes.
 func (p *HvacProbe) collectBindResults(ski string, pending []pendingBind) {
 	deadline := time.Now().Add(p.pollTimeout)
 	for len(pending) > 0 && time.Now().Before(deadline) {
 		time.Sleep(p.pollInterval)
 		remaining := pending[:0]
 		for _, b := range pending {
-			if b.localFeature.HasBindingToRemote(b.target.feature.Address()) {
-				p.logf("[HVACPROBE] ski=%s entity=%s bind %s ACCEPTED",
-					ski, b.target.entityAddr, b.target.feature.Type())
+			p.mu.Lock()
+			errno, ok := p.bindResults[b.msgCounter]
+			p.mu.Unlock()
+			if !ok {
+				remaining = append(remaining, b)
 				continue
 			}
-			remaining = append(remaining, b)
+			if errno == 0 {
+				p.logf("[HVACPROBE] ski=%s entity=%s bind %s ACCEPTED (msgCounter=%d)",
+					ski, b.target.entityAddr, b.target.feature.Type(), b.msgCounter)
+			} else {
+				p.logf("[HVACPROBE] ski=%s entity=%s bind %s DENIED errorNumber=%d (msgCounter=%d)",
+					ski, b.target.entityAddr, b.target.feature.Type(), errno, b.msgCounter)
+			}
 		}
 		pending = remaining
 	}
 	for _, b := range pending {
-		p.logf("[HVACPROBE] ski=%s entity=%s bind %s NOT confirmed within %s (denied or ignored; see result log)",
+		p.logf("[HVACPROBE] ski=%s entity=%s bind %s NOT answered within %s",
 			ski, b.target.entityAddr, b.target.feature.Type(), p.pollTimeout)
 	}
 }
