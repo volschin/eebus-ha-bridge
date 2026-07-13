@@ -20,7 +20,8 @@
     },
     "number": {
       "lpc_limit": { "default": "mdi:speedometer" },
-      "failsafe_limit": { "default": "mdi:shield-alert" }
+      "failsafe_limit": { "default": "mdi:shield-alert" },
+      "dhw_setpoint": { "default": "mdi:water-thermometer" }
     },
     "switch": {
       "lpc_active": { "default": "mdi:power-plug" },

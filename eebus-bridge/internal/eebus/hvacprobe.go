@@ -130,7 +130,6 @@ var hvacProbeUseCases = []struct {
 	scenarios []model.UseCaseScenarioSupportType
 }{
 	{model.UseCaseNameTypeConfigurationOfDhwSystemFunction, []model.UseCaseScenarioSupportType{1, 2, 3}},
-	{model.UseCaseNameTypeConfigurationOfDhwTemperature, []model.UseCaseScenarioSupportType{1}},
 	{model.UseCaseNameTypeConfigurationOfRoomHeatingSystemFunction, []model.UseCaseScenarioSupportType{1}},
 	{model.UseCaseNameTypeConfigurationOfRoomHeatingTemperature, []model.UseCaseScenarioSupportType{1}},
 }

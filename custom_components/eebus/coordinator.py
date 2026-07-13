@@ -150,6 +150,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._lpc_supported: bool | None = None
         self._failsafe_supported: bool | None = None
         self._ohpcf_supported: bool | None = None
+        self._dhw_supported: bool | None = None
         self._ski_registered: bool = False
         self._not_found_streak: int = 0
 
@@ -526,6 +527,13 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             data["ohpcf_supported"] = self._ohpcf_supported
 
+            # DHW target temperature: the bridge exposes this only when the
+            # remote device negotiates configurationOfDhwTemperature scenario 1.
+            data["dhw_setpoint"] = await self._async_read_dhw_setpoint(
+                channel, proto_stubs, request
+            )
+            data["dhw_supported"] = self._dhw_supported
+
             if saw_not_found:
                 self._not_found_streak += 1
             else:
@@ -822,6 +830,69 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise ServiceValidationError(
                 f"Compressor flexibility control failed: {err.details()}"
             ) from err
+
+    async def _async_read_dhw_setpoint(
+        self, channel: grpc.aio.Channel, proto_stubs: Any, request: Any
+    ) -> dict[str, Any] | None:
+        """Read the DHW target and device-provided constraints."""
+        try:
+            stub = proto_stubs.dhw_service_stub(channel)
+            setpoint = await stub.GetDHWSetpoint(request, timeout=RPC_TIMEOUT)
+        except grpc.aio.AioRpcError as err:
+            if _is_unimplemented(err) or err.code() in (
+                grpc.StatusCode.NOT_FOUND,
+                grpc.StatusCode.UNAVAILABLE,
+            ):
+                self._dhw_supported = False
+            else:
+                _LOGGER.debug(
+                    "EEBUS DHW setpoint read failed for SKI %s: %s",
+                    self.ski,
+                    _rpc_error_text(err),
+                )
+            return None
+
+        self._dhw_supported = True
+        return {
+            "value_celsius": setpoint.value_celsius,
+            "min_celsius": setpoint.min_celsius,
+            "max_celsius": setpoint.max_celsius,
+            "step_celsius": setpoint.step_celsius,
+            "writable": setpoint.writable,
+        }
+
+    async def async_write_dhw_setpoint(self, value_celsius: float) -> None:
+        """Write the domestic-hot-water target via the bridge."""
+        channel = await self._ensure_channel()
+        from . import proto_stubs
+
+        stub = proto_stubs.dhw_service_stub(channel)
+        try:
+            await stub.SetDHWSetpoint(
+                proto_stubs.SetDHWSetpointRequest(
+                    ski=self.ski, value_celsius=value_celsius
+                ),
+                timeout=RPC_TIMEOUT,
+            )
+            self._dhw_supported = True
+        except grpc.aio.AioRpcError as err:
+            if _is_unimplemented(err):
+                self._dhw_supported = False
+                _LOGGER.info(
+                    "DHW setpoint control unsupported for SKI %s: %s",
+                    self.ski,
+                    err.details(),
+                )
+                return
+            if err.code() in (
+                grpc.StatusCode.INVALID_ARGUMENT,
+                grpc.StatusCode.FAILED_PRECONDITION,
+                grpc.StatusCode.NOT_FOUND,
+            ):
+                raise ServiceValidationError(
+                    f"Domestic hot water setpoint failed: {err.details()}"
+                ) from err
+            raise
 
     async def async_start_heartbeat(self) -> None:
         """Start EEBUS heartbeat via gRPC."""
@@ -1152,6 +1223,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ("device_events", self._run_device_event_stream),
             ("lpc_events", self._run_lpc_event_stream),
             ("measurements", self._run_measurement_stream),
+            ("dhw_events", self._run_dhw_event_stream),
         ):
             self._stream_tasks.append(
                 self.hass.async_create_background_task(
@@ -1217,6 +1289,18 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._handle_measurement_event(event)
 
         await self._run_stream("measurement", consume)
+
+    async def _run_dhw_event_stream(self) -> None:
+        from . import proto_stubs
+
+        async def consume(channel: grpc.aio.Channel) -> None:
+            stub = proto_stubs.dhw_service_stub(channel)
+            async for event in stub.SubscribeDHWEvents(
+                proto_stubs.DeviceRequest(ski=self.ski)
+            ):
+                self._handle_dhw_event(event)
+
+        await self._run_stream("DHW", consume)
 
     def _event_matches(self, event_ski: str) -> bool:
         """Return True when an event applies to the configured device."""
@@ -1301,6 +1385,32 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._push_data({"energy_consumed_kwh": event.energy.kilowatt_hours})
             else:
                 self.hass.async_create_task(self.async_request_refresh())
+
+    def _handle_dhw_event(self, event: Any) -> None:
+        from . import proto_stubs
+
+        if not self._event_matches(event.ski):
+            return
+        if (
+            event.event_type == proto_stubs.DHWEventType.DHW_EVENT_SETPOINT_UPDATED
+            and event.HasField("setpoint")
+        ):
+            setpoint = event.setpoint
+            self._dhw_supported = True
+            self._push_data(
+                {
+                    "dhw_setpoint": {
+                        "value_celsius": setpoint.value_celsius,
+                        "min_celsius": setpoint.min_celsius,
+                        "max_celsius": setpoint.max_celsius,
+                        "step_celsius": setpoint.step_celsius,
+                        "writable": setpoint.writable,
+                    },
+                    "dhw_supported": True,
+                }
+            )
+        elif event.event_type == proto_stubs.DHWEventType.DHW_EVENT_SUPPORT_UPDATED:
+            self.hass.async_create_task(self.async_request_refresh())
 
     async def async_shutdown(self) -> None:
         """Close gRPC channel and cancel stream tasks."""

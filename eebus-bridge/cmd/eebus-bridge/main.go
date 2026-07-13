@@ -85,13 +85,17 @@ func main() {
 	}
 	lpcWrapper.Setup(localEntity)
 	monitoringWrapper.Setup(localEntity)
+	dhwTemperature := usecases.NewDHWTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
 	if err := bridgeSvc.Service().AddUseCase(lpcWrapper.UseCase()); err != nil {
 		log.Fatalf("adding LPC use case: %v", err)
 	}
 	if err := bridgeSvc.Service().AddUseCase(monitoringWrapper.UseCase()); err != nil {
 		log.Fatalf("adding monitoring use case: %v", err)
 	}
-	registeredUseCases := []string{"LPC", "Monitoring"}
+	if err := bridgeSvc.Service().AddUseCase(dhwTemperature.UseCase()); err != nil {
+		log.Fatalf("adding DHW temperature use case: %v", err)
+	}
+	registeredUseCases := []string{"LPC", "Monitoring", "DHWTemperature"}
 
 	// SPIKE: experimental MGCP grid-connection-point provider. Off by default.
 	var mgcpProvider *usecases.MGCPProvider
@@ -220,6 +224,7 @@ func main() {
 	gridSvc := bridgegrpc.NewGridService(mgcpProvider)
 	visualizationSvc := bridgegrpc.NewVisualizationService(vapdProvider, vabdProvider)
 	ohpcfSvc := bridgegrpc.NewOHPCFService(ohpcfWrapper, bus, registry)
+	dhwSvc := bridgegrpc.NewDHWService(dhwTemperature, bus)
 
 	pb.RegisterDeviceServiceServer(grpcSrv.GRPCServer(), deviceSvc)
 	pb.RegisterLPCServiceServer(grpcSrv.GRPCServer(), lpcSvc)
@@ -228,6 +233,7 @@ func main() {
 	// write, not a reading-injection provider, so it is registered alongside the
 	// other control services rather than behind the loopback push gate below.
 	pb.RegisterOHPCFServiceServer(grpcSrv.GRPCServer(), ohpcfSvc)
+	pb.RegisterDHWServiceServer(grpcSrv.GRPCServer(), dhwSvc)
 
 	// The grid/PV/battery publish RPCs inject values into EEBUS state that
 	// downstream equipment consumes, and the gRPC server has no transport auth.

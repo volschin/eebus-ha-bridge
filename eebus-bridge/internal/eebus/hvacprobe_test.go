@@ -647,13 +647,13 @@ func TestHvacProbeAdvertisesClientUseCasesOnlyWithBind(t *testing.T) {
 	}
 	mu.Unlock()
 
-	// Stage 2: EnableBind after Setup advertises all four, exactly once.
+	// Stage 2: EnableBind after Setup advertises the remaining probe-only use
+	// cases exactly once. DHW temperature is now a production use case.
 	p.EnableBind()
 	p.EnableBind() // idempotent
 
 	want := []model.UseCaseNameType{
 		model.UseCaseNameTypeConfigurationOfDhwSystemFunction,
-		model.UseCaseNameTypeConfigurationOfDhwTemperature,
 		model.UseCaseNameTypeConfigurationOfRoomHeatingSystemFunction,
 		model.UseCaseNameTypeConfigurationOfRoomHeatingTemperature,
 	}

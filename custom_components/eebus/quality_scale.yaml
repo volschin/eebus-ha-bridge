@@ -47,7 +47,9 @@ rules:
   docs-examples: done
   docs-known-limitations: done
   docs-supported-devices: done
-  docs-supported-functions: done
+  docs-supported-functions:
+    status: done
+    comment: README lists the DHW target number and its device-provided constraints.
   docs-troubleshooting: done
   docs-use-cases: done
   dynamic-devices:
