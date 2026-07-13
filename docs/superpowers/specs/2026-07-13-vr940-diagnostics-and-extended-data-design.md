@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-13
 
-**Status:** Proposed; hardware capture required before entity implementation
+**Status:** Phase 1 capture implemented; hardware capture required before entity implementation
 
 **Branch:** `feat/vr940-diagnostics-usecases`
 
@@ -247,7 +247,8 @@ registry using the integration's established migration pattern.
 ### Phase 1 — capture and fixture
 
 1. Implement the opt-in, read-only extended data capture with unit tests for stable
-   ordering, supported-operation filtering and redaction.
+   ordering, supported-operation filtering and redaction. **Implemented on this
+   branch; see `docs/vr940-extended-capture.md`.**
 2. Run it against the paired VR940 after a normal heating cycle and retain the
    redacted JSON/text artifacts under `docs/`.
 3. Repeat the capture while the compressor is running and stopped, and before/after

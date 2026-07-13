@@ -211,6 +211,14 @@ func main() {
 		log.Println("[HVACPROBE] hvac_probe_bind/hvac_probe_write/hvac_probe_overrun_write_ski require hvac_probe; not armed")
 	}
 
+	// Opt-in extended diagnostics capture. Setup must happen before Start so the
+	// read-only client features are part of detailed discovery. The capture is
+	// triggered by the first remote use-case event after discovery completes.
+	if cfg.Experimental.ExtendedCapture {
+		eebus.DefaultExtendedCapture().Setup(localEntity, cfg.Experimental.ExtendedCaptureDir)
+		log.Printf("[EXTCAPTURE] read-only extended capture armed; redacted artifacts will be written to %s", cfg.Experimental.ExtendedCaptureDir)
+	}
+
 	// Controllable systems revert an active LPC limit to its failsafe value when
 	// heartbeats stop arriving, so keep the local heartbeat running for the
 	// lifetime of the bridge.

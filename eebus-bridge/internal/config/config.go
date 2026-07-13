@@ -30,6 +30,14 @@ type OHPCFConfig struct {
 // ExperimentalConfig gates spike / not-yet-stable features. Everything here is
 // off by default and may change or be removed without notice.
 type ExperimentalConfig struct {
+	// ExtendedCapture enables a one-shot, read-only capture of the remote SPINE
+	// feature/function map and all readable diagnostic data. It writes redacted
+	// JSON and text artifacts to ExtendedCaptureDir and never binds, subscribes
+	// or writes.
+	ExtendedCapture bool `yaml:"extended_capture"`
+	// ExtendedCaptureDir receives the redacted capture artifacts. The directory
+	// is created with restricted permissions when the capture completes.
+	ExtendedCaptureDir string `yaml:"extended_capture_dir"`
 	// MGCPProvider exposes a local GridConnectionPointOfPremises entity that
 	// advertises the Monitoring of Grid Connection Point (MGCP) use case and
 	// serves grid power/energy measurements, so a heat pump (e.g. Vaillant VR940,
@@ -164,6 +172,9 @@ func applyDefaults(cfg *Config) {
 		enabled := true
 		cfg.OHPCF.Enabled = &enabled
 	}
+	if cfg.Experimental.ExtendedCaptureDir == "" {
+		cfg.Experimental.ExtendedCaptureDir = "/data/captures"
+	}
 }
 
 func applyEnvOverrides(cfg *Config) {
@@ -225,6 +236,14 @@ func applyEnvOverrides(cfg *Config) {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			cfg.Experimental.MGCPProvider = enabled
 		}
+	}
+	if v := os.Getenv("EEBUS_EXP_EXTENDED_CAPTURE"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.Experimental.ExtendedCapture = enabled
+		}
+	}
+	if v := os.Getenv("EEBUS_EXP_EXTENDED_CAPTURE_DIR"); v != "" {
+		cfg.Experimental.ExtendedCaptureDir = v
 	}
 	if v := os.Getenv("EEBUS_EXP_VAPD_PROVIDER"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {

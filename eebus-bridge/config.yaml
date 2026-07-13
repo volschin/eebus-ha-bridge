@@ -24,6 +24,11 @@ ohpcf:
   enabled: true
 
 experimental:
+  # One-shot, read-only SPINE capture for diagnostics and hardware discovery.
+  # Writes redacted JSON and text artifacts; never binds, subscribes or writes.
+  extended_capture: false
+  extended_capture_dir: "/data/captures"
+
   # mgcp_provider exposes a local grid-connection-point so a heat pump (e.g.
   # Vaillant VR940) can read the live grid / PV-surplus situation and run its
   # own energy management. Home Assistant feeds the data via GridService.

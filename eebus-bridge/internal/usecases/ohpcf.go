@@ -75,6 +75,8 @@ func (w *OHPCFWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInter
 		)
 		eebus.DefaultUseCaseDiscovery().LogOnce(ski, device)
 	}
+	// No-op unless the read-only extended capture was armed in main.
+	eebus.DefaultExtendedCapture().CaptureOnce(ski, device)
 
 	if w.registry != nil {
 		w.registry.UpsertObservation(ski, device, entity, "ohpcf")

@@ -78,6 +78,12 @@ func TestDefaults(t *testing.T) {
 	if cfg.OHPCF.Enabled == nil || !*cfg.OHPCF.Enabled {
 		t.Error("default OHPCF.Enabled = false, want true")
 	}
+	if cfg.Experimental.ExtendedCapture {
+		t.Error("default Experimental.ExtendedCapture = true, want false")
+	}
+	if cfg.Experimental.ExtendedCaptureDir != "/data/captures" {
+		t.Errorf("default ExtendedCaptureDir = %q, want /data/captures", cfg.Experimental.ExtendedCaptureDir)
+	}
 }
 
 func TestOHPCFDisable(t *testing.T) {
@@ -135,6 +141,8 @@ grpc:
 	t.Setenv("EEBUS_GRPC_PORT", "9999")
 	t.Setenv("EEBUS_SERIAL", "env-serial")
 	t.Setenv("EEBUS_EXP_HVAC_PROBE_OVERRUN_WRITE_SKI", "AA BB")
+	t.Setenv("EEBUS_EXP_EXTENDED_CAPTURE", "true")
+	t.Setenv("EEBUS_EXP_EXTENDED_CAPTURE_DIR", "/tmp/eebus-capture-test")
 
 	cfg, err := config.LoadFromFile(path)
 	if err != nil {
@@ -149,5 +157,11 @@ grpc:
 	}
 	if cfg.Experimental.HvacProbeOverrunWriteSKI != "AA BB" {
 		t.Errorf("env override HvacProbeOverrunWriteSKI = %q, want AA BB", cfg.Experimental.HvacProbeOverrunWriteSKI)
+	}
+	if !cfg.Experimental.ExtendedCapture {
+		t.Error("env override ExtendedCapture = false, want true")
+	}
+	if cfg.Experimental.ExtendedCaptureDir != "/tmp/eebus-capture-test" {
+		t.Errorf("env override ExtendedCaptureDir = %q", cfg.Experimental.ExtendedCaptureDir)
 	}
 }

@@ -61,6 +61,8 @@ func (w *LPCWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInterfa
 	}
 	// No-op unless the experimental HVAC probe was armed in main.
 	eebus.DefaultHvacProbe().ProbeOnce(ski, device)
+	// No-op unless the read-only extended capture was armed in main.
+	eebus.DefaultExtendedCapture().CaptureOnce(ski, device)
 
 	if w.registry != nil {
 		w.registry.UpsertObservation(ski, device, entity, "lpc")
