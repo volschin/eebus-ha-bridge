@@ -20,20 +20,20 @@
     },
     "number": {
       "lpc_limit": { "default": "mdi:speedometer" },
-      "failsafe_limit": { "default": "mdi:shield-alert" },
-      "dhw_setpoint": { "default": "mdi:water-thermometer" }
+      "failsafe_limit": { "default": "mdi:shield-alert" }
     },
     "switch": {
       "lpc_active": { "default": "mdi:power-plug" },
       "heartbeat": { "default": "mdi:heart-pulse" },
       "dhw_boost": { "default": "mdi:water-boiler" }
     },
-    "select": {
-      "dhw_operation_mode": { "default": "mdi:water-boiler-auto" }
-    },
+    "select": {},
     "binary_sensor": {
       "connected": { "default": "mdi:lan-connect" },
       "heartbeat_ok": { "default": "mdi:heart-pulse" }
+    },
+    "water_heater": {
+      "domestic_hot_water": { "default": "mdi:water-boiler" }
     }
   }
 }

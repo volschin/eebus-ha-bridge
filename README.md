@@ -12,8 +12,8 @@ Lokale Integration von EEBUS-faehigen Waermepumpen in Home Assistant ueber das *
 - **Leistungsmessung** -- Elektrische Verbrauchsdaten der Waermepumpe in Echtzeit
 - **Discovery & Pairing** -- mDNS-Erkennung und SKI-basiertes Pairing ueber den HA Config Flow
 - **Heartbeat-Ueberwachung** -- Sicherheitsrelevanter EEBUS-Heartbeat mit Failsafe-Fallback
-- **Warmwasser-Solltemperatur** -- Lokales Lesen und Setzen des vom Geraet
-  angebotenen DHW-Sollwerts mit dynamischen Min/Max/Schritt-Grenzen
+- **Warmwasser-Entitaet** -- Home-Assistant-`water_heater` mit Ist- und
+  Solltemperatur, dynamischen Min/Max/Schritt-Grenzen und Betriebsart
 - **Warmwasser-Isttemperatur** -- Lokales Push-Monitoring ueber den EEBUS
   `monitoringOfDhwTemperature`-Use-Case
 - **Warmwasser-Boost und Betriebsart** -- Lokales Aktivieren der Einmalladung
@@ -121,11 +121,10 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 |--------|-----|-------------|
 | `number.eebus_lpc_limit` | number | LPC-Limit setzen (W) |
 | `number.eebus_failsafe_limit` | number | Failsafe-Grenze (W), standardmaessig deaktiviert |
-| `number.eebus_dhw_setpoint` | number | Warmwasser-Solltemperatur; Bereich und Schrittweite kommen vom Geraet |
+| `water_heater.eebus_domestic_hot_water` | water_heater | Warmwasser mit Ist-/Solltemperatur und Betriebsart; Grenzen und Optionen kommen vom Geraet |
 | `switch.eebus_lpc_active` | switch | Limit aktivieren/deaktivieren |
 | `switch.eebus_heartbeat` | switch | Heartbeat an/aus, standardmaessig deaktiviert |
 | `switch.eebus_dhw_boost` | switch | Warmwasser-Einmalladung aktivieren/deaktivieren |
-| `select.eebus_dhw_operation_mode` | select | Warmwasser-Betriebsart; Optionen kommen vom Geraet |
 | `select.eebus_compressor_flexibility` | select | OHPCF-Verdichter-Flexibilitaet: `on`/`paused`/`off`, nur vorhanden wenn WP ein Angebot meldet |
 
 ### Diagnose

@@ -36,6 +36,7 @@ PLATFORMS = [
     Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
+    Platform.WATER_HEATER,
 ]
 
 PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling

@@ -108,11 +108,9 @@
     },
     "number": {
       "lpc_limit": { "name": "LPC Limit" },
-      "failsafe_limit": { "name": "Failsafe Limit" },
-      "dhw_setpoint": { "name": "Warmwasser-Solltemperatur" }
+      "failsafe_limit": { "name": "Failsafe Limit" }
     },
     "select": {
-      "dhw_operation_mode": { "name": "Warmwasser Betriebsart" },
       "compressor_flexibility": {
         "name": "Verdichter-Flexibilität",
         "state": {
@@ -130,6 +128,9 @@
     "binary_sensor": {
       "connected": { "name": "Verbunden" },
       "heartbeat_ok": { "name": "Heartbeat OK" }
+    },
+    "water_heater": {
+      "domestic_hot_water": { "name": "Warmwasser" }
     }
   }
 }

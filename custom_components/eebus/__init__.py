@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
     CONF_BATTERY_CHARGED_ENERGY_ENTITY,
@@ -21,6 +22,7 @@ from .const import (
     CONF_PV_PEAK_POWER_ENTITY,
     CONF_PV_POWER_ENTITY,
     CONF_PV_YIELD_ENERGY_ENTITY,
+    DOMAIN,
     PLATFORMS,
 )
 from .coordinator import EebusCoordinator
@@ -57,11 +59,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> boo
 
     entry.runtime_data = coordinator
 
+    _remove_replaced_dhw_entities(hass, coordinator.ski)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
     return True
+
+
+def _remove_replaced_dhw_entities(hass: HomeAssistant, ski: str) -> None:
+    """Remove registry entries superseded by the combined water-heater entity."""
+    entity_registry = er.async_get(hass)
+    for domain, unique_id in (
+        ("number", f"{ski}_dhw_setpoint"),
+        ("select", f"{ski}_dhw_operation_mode"),
+    ):
+        if entity_id := entity_registry.async_get_entity_id(domain, DOMAIN, unique_id):
+            entity_registry.async_remove(entity_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> bool:

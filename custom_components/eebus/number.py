@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from homeassistant.components.number import NumberDeviceClass, NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, UnitOfPower, UnitOfTemperature
+from homeassistant.const import EntityCategory, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -24,7 +24,6 @@ async def async_setup_entry(
     async_add_entities([
         EebusLPCLimitNumber(coordinator),
         EebusFailsafeLimitNumber(coordinator),
-        EebusDHWSetpointNumber(coordinator),
     ])
 
 
@@ -118,61 +117,4 @@ class EebusFailsafeLimitNumber(EebusEntity, NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Set new failsafe limit via gRPC."""
         await self.coordinator.async_write_failsafe_limit(value)
-        await self.coordinator.async_request_refresh()
-
-
-class EebusDHWSetpointNumber(EebusEntity, NumberEntity):
-    """Domestic-hot-water target temperature advertised by the heat pump."""
-
-    _attr_device_class = NumberDeviceClass.TEMPERATURE
-    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-    _attr_mode = NumberMode.BOX
-    _attr_translation_key = "dhw_setpoint"
-    _attr_entity_category = EntityCategory.CONFIG
-
-    def __init__(self, coordinator: EebusCoordinator) -> None:
-        """Initialize the DHW setpoint number."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.ski}_dhw_setpoint"
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the current DHW target."""
-        setpoint = (self.coordinator.data or {}).get("dhw_setpoint")
-        return None if setpoint is None else float(setpoint["value_celsius"])
-
-    @property
-    def native_min_value(self) -> float:
-        """Return the device-provided lower bound."""
-        setpoint = (self.coordinator.data or {}).get("dhw_setpoint")
-        return float(setpoint["min_celsius"]) if setpoint is not None else 0.0
-
-    @property
-    def native_max_value(self) -> float:
-        """Return the device-provided upper bound."""
-        setpoint = (self.coordinator.data or {}).get("dhw_setpoint")
-        return float(setpoint["max_celsius"]) if setpoint is not None else 100.0
-
-    @property
-    def native_step(self) -> float:
-        """Return the device-provided increment."""
-        setpoint = (self.coordinator.data or {}).get("dhw_setpoint")
-        return float(setpoint["step_celsius"]) if setpoint is not None else 1.0
-
-    @property
-    def available(self) -> bool:
-        """Expose control only for a negotiated writable DHW setpoint."""
-        if not super().available:
-            return False
-        data = self.coordinator.data or {}
-        setpoint = data.get("dhw_setpoint")
-        return bool(
-            data.get("dhw_supported") is not False
-            and setpoint is not None
-            and setpoint.get("writable")
-        )
-
-    async def async_set_native_value(self, value: float) -> None:
-        """Set the DHW target via gRPC."""
-        await self.coordinator.async_write_dhw_setpoint(value)
         await self.coordinator.async_request_refresh()
