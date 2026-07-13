@@ -316,3 +316,59 @@ def test_dhw_temperature_measurement_event_pushes_value():
     coordinator._handle_measurement_event(event)
 
     assert pushed["dhw_temperature_c"] == 49.5
+
+
+def test_room_temperature_measurement_event_pushes_value():
+    """MRT stream events update the room-temperature sensor directly."""
+    coordinator, _ = _make_coordinator(data={"connected": True})
+    pushed = {}
+    coordinator.async_set_updated_data = pushed.update
+    event = monitoring_service_pb2.MeasurementEvent(
+        ski="test-ski",
+        event_type=monitoring_service_pb2.MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED,
+        measurement=proto_stubs.MeasurementEntry(
+            type="room_temperature", value=21.25, unit="degC"
+        ),
+    )
+
+    coordinator._handle_measurement_event(event)
+
+    assert pushed["room_temperature_c"] == 21.25
+
+
+def test_outdoor_temperature_measurement_event_pushes_value():
+    """MOT stream events update the outdoor-temperature sensor directly."""
+    coordinator, _ = _make_coordinator(data={"connected": True})
+    pushed = {}
+    coordinator.async_set_updated_data = pushed.update
+    event = monitoring_service_pb2.MeasurementEvent(
+        ski="test-ski",
+        event_type=(
+            monitoring_service_pb2.MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED
+        ),
+        measurement=proto_stubs.MeasurementEntry(
+            type="outdoor_temperature", value=7.5, unit="degC"
+        ),
+    )
+
+    coordinator._handle_measurement_event(event)
+
+    assert pushed["outdoor_temperature_c"] == 7.5
+
+
+def test_temperature_support_event_requests_refresh():
+    """MRT and MOT support changes reconcile state through polling."""
+    for event_type in (
+        monitoring_service_pb2.MEASUREMENT_EVENT_ROOM_TEMPERATURE_SUPPORT_UPDATED,
+        monitoring_service_pb2.MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED,
+    ):
+        coordinator, _ = _make_coordinator(data={"connected": True})
+        coordinator.hass = MagicMock()
+        coordinator.async_request_refresh = MagicMock(return_value=None)
+        event = monitoring_service_pb2.MeasurementEvent(
+            ski="test-ski", event_type=event_type
+        )
+
+        coordinator._handle_measurement_event(event)
+
+        coordinator.hass.async_create_task.assert_called_once()

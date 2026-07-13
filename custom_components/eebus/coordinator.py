@@ -1511,6 +1511,28 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_DHW_TEMPERATURE_SUPPORT_UPDATED
         ):
             self.hass.async_create_task(self.async_request_refresh())
+        elif event_type == (
+            proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED
+        ):
+            if event.HasField("measurement"):
+                self._push_data({"room_temperature_c": event.measurement.value})
+            else:
+                self.hass.async_create_task(self.async_request_refresh())
+        elif event_type == (
+            proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_ROOM_TEMPERATURE_SUPPORT_UPDATED
+        ):
+            self.hass.async_create_task(self.async_request_refresh())
+        elif event_type == (
+            proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED
+        ):
+            if event.HasField("measurement"):
+                self._push_data({"outdoor_temperature_c": event.measurement.value})
+            else:
+                self.hass.async_create_task(self.async_request_refresh())
+        elif event_type == (
+            proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED
+        ):
+            self.hass.async_create_task(self.async_request_refresh())
 
     def _handle_dhw_event(self, event: Any) -> None:
         from . import proto_stubs

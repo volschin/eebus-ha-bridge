@@ -18,22 +18,33 @@ import (
 type MonitoringService struct {
 	pb.UnimplementedMonitoringServiceServer
 	monitoring *usecases.MonitoringWrapper
-	dhw        dhwTemperatureReader
+	dhw        temperatureReader
+	room       temperatureReader
+	outdoor    temperatureReader
 	bus        *eebus.EventBus
 	registry   *eebus.DeviceRegistry
 }
 
-type dhwTemperatureReader interface {
+type temperatureReader interface {
 	Temperature(string) (float64, error)
 }
 
 func NewMonitoringService(
 	monitoring *usecases.MonitoringWrapper,
-	dhw dhwTemperatureReader,
+	dhw temperatureReader,
+	room temperatureReader,
+	outdoor temperatureReader,
 	bus *eebus.EventBus,
 	registry *eebus.DeviceRegistry,
 ) *MonitoringService {
-	return &MonitoringService{monitoring: monitoring, dhw: dhw, bus: bus, registry: registry}
+	return &MonitoringService{
+		monitoring: monitoring,
+		dhw:        dhw,
+		room:       room,
+		outdoor:    outdoor,
+		bus:        bus,
+		registry:   registry,
+	}
 }
 
 func (s *MonitoringService) GetPowerConsumption(_ context.Context, req *pb.DeviceRequest) (*pb.PowerMeasurement, error) {
@@ -129,8 +140,22 @@ func (s *MonitoringService) GetMeasurements(_ context.Context, req *pb.DeviceReq
 			appendMeasurement(&measurements, now, "dhw_temperature", value, "degC")
 		}
 	}
+	if s.room != nil {
+		if value, err := s.room.Temperature(req.Ski); err == nil {
+			appendMeasurement(&measurements, now, "room_temperature", value, "degC")
+		}
+	}
+	if s.outdoor != nil {
+		if value, err := s.outdoor.Temperature(req.Ski); err == nil {
+			appendMeasurement(&measurements, now, "outdoor_temperature", value, "degC")
+		}
+	}
 
-	if values, err := s.monitoring.GenericMeasurements(req.Ski); err == nil {
+	if s.monitoring != nil {
+		values, err := s.monitoring.GenericMeasurements(req.Ski)
+		if err != nil {
+			values = nil
+		}
 		seen := make(map[string]struct{}, len(measurements)+len(values))
 		for _, measurement := range measurements {
 			seen[measurement.Type] = struct{}{}
@@ -176,6 +201,14 @@ func (s *MonitoringService) SubscribeMeasurements(req *pb.DeviceRequest, stream 
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED
 			case "dhw.monitoring_support_updated":
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_SUPPORT_UPDATED
+			case "room.temperature_updated":
+				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED
+			case "room.monitoring_support_updated":
+				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_ROOM_TEMPERATURE_SUPPORT_UPDATED
+			case "outdoor.temperature_updated":
+				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED
+			case "outdoor.monitoring_support_updated":
+				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED
 			default:
 				continue
 			}
@@ -211,16 +244,30 @@ func (s *MonitoringService) attachMeasurementPayload(event *pb.MeasurementEvent,
 			}}
 		}
 	case pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED:
-		if s.dhw != nil {
-			if value, err := s.dhw.Temperature(ski); err == nil {
-				event.Data = &pb.MeasurementEvent_Measurement{Measurement: &pb.MeasurementEntry{
-					Type:      "dhw_temperature",
-					Value:     value,
-					Unit:      "degC",
-					Timestamp: timestamppb.Now(),
-				}}
-			}
-		}
+		s.attachTemperaturePayload(event, ski, s.dhw, "dhw_temperature")
+	case pb.MeasurementEventType_MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED:
+		s.attachTemperaturePayload(event, ski, s.room, "room_temperature")
+	case pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED:
+		s.attachTemperaturePayload(event, ski, s.outdoor, "outdoor_temperature")
+	}
+}
+
+func (s *MonitoringService) attachTemperaturePayload(
+	event *pb.MeasurementEvent,
+	ski string,
+	reader temperatureReader,
+	measurementType string,
+) {
+	if reader == nil {
+		return
+	}
+	if value, err := reader.Temperature(ski); err == nil {
+		event.Data = &pb.MeasurementEvent_Measurement{Measurement: &pb.MeasurementEntry{
+			Type:      measurementType,
+			Value:     value,
+			Unit:      "degC",
+			Timestamp: timestamppb.Now(),
+		}}
 	}
 }
 
