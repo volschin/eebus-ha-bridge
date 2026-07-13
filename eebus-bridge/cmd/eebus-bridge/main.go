@@ -74,6 +74,7 @@ func main() {
 
 	lpcWrapper := usecases.NewLPCWrapper(bus, registry, cfg.Logging.DebugEvents)
 	monitoringWrapper := usecases.NewMonitoringWrapper(bus, registry, cfg.Logging.DebugEvents)
+	dhwMonitoringWrapper := usecases.NewDHWMonitoringWrapper(bus, registry, cfg.Logging.DebugEvents)
 
 	if err := bridgeSvc.Setup(); err != nil {
 		log.Fatalf("setting up EEBUS service: %v", err)
@@ -85,6 +86,7 @@ func main() {
 	}
 	lpcWrapper.Setup(localEntity)
 	monitoringWrapper.Setup(localEntity)
+	dhwMonitoringWrapper.Setup(localEntity)
 	dhwTemperature := usecases.NewDHWTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
 	dhwSystemFunction := usecases.NewDHWSystemFunction(localEntity, bus, registry, cfg.Logging.DebugEvents)
 	if err := bridgeSvc.Service().AddUseCase(lpcWrapper.UseCase()); err != nil {
@@ -93,13 +95,16 @@ func main() {
 	if err := bridgeSvc.Service().AddUseCase(monitoringWrapper.UseCase()); err != nil {
 		log.Fatalf("adding monitoring use case: %v", err)
 	}
+	if err := bridgeSvc.Service().AddUseCase(dhwMonitoringWrapper.UseCase()); err != nil {
+		log.Fatalf("adding DHW monitoring use case: %v", err)
+	}
 	if err := bridgeSvc.Service().AddUseCase(dhwTemperature.UseCase()); err != nil {
 		log.Fatalf("adding DHW temperature use case: %v", err)
 	}
 	if err := bridgeSvc.Service().AddUseCase(dhwSystemFunction.UseCase()); err != nil {
 		log.Fatalf("adding DHW system function use case: %v", err)
 	}
-	registeredUseCases := []string{"LPC", "Monitoring", "DHWTemperature", "DHWSystemFunction"}
+	registeredUseCases := []string{"LPC", "Monitoring", "DHWMonitoring", "DHWTemperature", "DHWSystemFunction"}
 
 	// SPIKE: experimental MGCP grid-connection-point provider. Off by default.
 	var mgcpProvider *usecases.MGCPProvider
@@ -230,7 +235,7 @@ func main() {
 
 	deviceSvc := bridgegrpc.NewDeviceService(bridgeSvc.Callbacks(), bus, ski, registry)
 	lpcSvc := bridgegrpc.NewLPCService(lpcWrapper, bus, registry)
-	monitoringSvc := bridgegrpc.NewMonitoringService(monitoringWrapper, bus, registry)
+	monitoringSvc := bridgegrpc.NewMonitoringService(monitoringWrapper, dhwMonitoringWrapper, bus, registry)
 	gridSvc := bridgegrpc.NewGridService(mgcpProvider)
 	visualizationSvc := bridgegrpc.NewVisualizationService(vapdProvider, vabdProvider)
 	ohpcfSvc := bridgegrpc.NewOHPCFService(ohpcfWrapper, bus, registry)

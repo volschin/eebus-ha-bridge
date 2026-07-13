@@ -6,6 +6,7 @@ require (
 	github.com/enbility/eebus-go v0.7.1-0.20260708082145-0134afee5953
 	github.com/enbility/ship-go v0.6.1-0.20260706134013-3abd41d19f41
 	github.com/enbility/spine-go v0.7.1-0.20260629113257-b3bcc643f323
+	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
@@ -24,7 +25,6 @@ require (
 	github.com/rickb777/period v1.0.22 // indirect
 	github.com/rickb777/plural v1.4.7 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
 	gitlab.com/c0b/go-ordered-json v0.0.0-20201030195603-febf46534d5a // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
@@ -34,3 +34,5 @@ require (
 	golang.org/x/tools v0.44.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
 )
+
+replace github.com/enbility/eebus-go => github.com/volschin/eebus-go v0.7.1-0.20260708124432-29523adca344

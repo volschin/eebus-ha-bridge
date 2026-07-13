@@ -14,6 +14,8 @@ Lokale Integration von EEBUS-faehigen Waermepumpen in Home Assistant ueber das *
 - **Heartbeat-Ueberwachung** -- Sicherheitsrelevanter EEBUS-Heartbeat mit Failsafe-Fallback
 - **Warmwasser-Solltemperatur** -- Lokales Lesen und Setzen des vom Geraet
   angebotenen DHW-Sollwerts mit dynamischen Min/Max/Schritt-Grenzen
+- **Warmwasser-Isttemperatur** -- Lokales Push-Monitoring ueber den EEBUS
+  `monitoringOfDhwTemperature`-Use-Case
 - **Warmwasser-Boost und Betriebsart** -- Lokales Aktivieren der Einmalladung
   und Auswahl der vom Geraet angebotenen DHW-Betriebsarten
 - **Energy Dashboard** -- Volle Integration mit dem HA Energy Dashboard
