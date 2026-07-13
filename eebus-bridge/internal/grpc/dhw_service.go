@@ -265,7 +265,8 @@ func mapDHWError(action string, err error) error {
 	case errors.Is(err, usecases.ErrDHWOutOfRange), errors.Is(err, usecases.ErrDHWInvalidStep),
 		errors.Is(err, usecases.ErrDHWSysFnInvalidMode):
 		return status.Errorf(codes.InvalidArgument, "%s: %v", action, err)
-	case errors.Is(err, usecases.ErrDHWNotWritable), errors.Is(err, usecases.ErrDHWSysFnNotWritable):
+	case errors.Is(err, usecases.ErrDHWNotWritable), errors.Is(err, usecases.ErrDHWSysFnNotWritable),
+		errors.Is(err, usecases.ErrDHWSysFnRejected):
 		return status.Errorf(codes.FailedPrecondition, "%s: %v", action, err)
 	case errors.Is(err, usecases.ErrDHWDataUnavailable), errors.Is(err, usecases.ErrDHWSysFnDataUnavailable):
 		return status.Errorf(codes.NotFound, "%s: %v", action, err)

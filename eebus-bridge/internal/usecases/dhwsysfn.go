@@ -20,6 +20,7 @@ var (
 	ErrDHWSysFnDataUnavailable = errors.New("DHW system function data unavailable")
 	ErrDHWSysFnNotWritable     = errors.New("DHW system function is not writable")
 	ErrDHWSysFnInvalidMode     = errors.New("DHW operation mode is not advertised")
+	ErrDHWSysFnRejected        = errors.New("DHW system function write rejected by device")
 )
 
 // DHWSystemFunctionState is the current DHW boost state and operation mode
@@ -225,8 +226,10 @@ func (d *DHWSystemFunction) State(entity spineapi.EntityRemoteInterface) (DHWSys
 		BoostWritable:  overrunOp != nil && overrunOp.Write() && boolPtrNotFalse(resolved.overrun.IsOverrunStatusChangeable),
 		OperationMode:  string(resolved.currentModeType),
 		AvailableModes: resolved.availableModeTypes,
+		// Like the boost path, a missing changeability flag must not hide a
+		// write the device advertises via operations; only explicit false blocks.
 		ModeWritable: systemOp != nil && systemOp.Write() &&
-			resolved.system.IsOperationModeIdChangeable != nil && *resolved.system.IsOperationModeIdChangeable,
+			boolPtrNotFalse(resolved.system.IsOperationModeIdChangeable),
 	}, nil
 }
 
@@ -348,7 +351,7 @@ func (d *DHWSystemFunction) write(
 	select {
 	case response := <-result:
 		if response.ErrorNumber != nil && *response.ErrorNumber != 0 {
-			return fmt.Errorf("%s rejected by device: error=%d", label, *response.ErrorNumber)
+			return fmt.Errorf("%w: %s error=%d", ErrDHWSysFnRejected, label, *response.ErrorNumber)
 		}
 		d.request(entity, refresh)
 		return nil

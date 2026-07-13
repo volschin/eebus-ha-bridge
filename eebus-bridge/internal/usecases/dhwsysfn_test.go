@@ -27,6 +27,44 @@ func TestDHWSystemFunctionStateResolvesBoostAndModes(t *testing.T) {
 	}
 }
 
+// Devices may omit the optional changeability flags entirely (the VR940
+// does for overruns); an advertised write operation must win then.
+func TestDHWSystemFunctionStateModeWritableWithoutChangeableFlag(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		flag         *bool
+		wantWritable bool
+	}{
+		{"nil flag stays writable", nil, true},
+		{"explicit false blocks", ptr(false), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			feature := dhwSysFnFeatureWithModeChangeable(t, true, true, nil, tc.flag)
+			entity := mocks.NewEntityRemoteInterface(t)
+			entity.On("FeatureOfTypeAndRole", model.FeatureTypeTypeHvac, model.RoleTypeServer).Return(feature)
+
+			state, err := (&DHWSystemFunction{}).State(entity)
+			if err != nil {
+				t.Fatalf("State() error = %v", err)
+			}
+			if state.ModeWritable != tc.wantWritable {
+				t.Fatalf("ModeWritable = %t, want %t", state.ModeWritable, tc.wantWritable)
+			}
+		})
+	}
+}
+
+func TestDHWSystemFunctionWriteBoostDeviceRejection(t *testing.T) {
+	feature := dhwSysFnFeature(t, true, true, nil)
+	local, entity, _ := dhwSysFnWriteHarnessWithErrno(t, feature, 2)
+	dhw := &DHWSystemFunction{localEntity: local}
+
+	err := dhw.WriteBoost(context.Background(), entity, true)
+	if !errors.Is(err, ErrDHWSysFnRejected) {
+		t.Fatalf("WriteBoost() error = %v, want ErrDHWSysFnRejected", err)
+	}
+}
+
 func TestDHWSystemFunctionStateFailsClosedForAmbiguousDHWFunction(t *testing.T) {
 	feature := mocks.NewFeatureRemoteInterface(t)
 	feature.On("DataCopy", model.FunctionTypeHvacSystemFunctionDescriptionListData).Return(
@@ -77,6 +115,14 @@ func TestDHWSystemFunctionWriteOperationModeResolvesModeIDFromType(t *testing.T)
 }
 
 func dhwSysFnFeature(t *testing.T, overrunWrite, systemWrite bool, overrunChangeable *bool) *mocks.FeatureRemoteInterface {
+	return dhwSysFnFeatureWithModeChangeable(t, overrunWrite, systemWrite, overrunChangeable, ptr(true))
+}
+
+func dhwSysFnFeatureWithModeChangeable(
+	t *testing.T,
+	overrunWrite, systemWrite bool,
+	overrunChangeable, modeChangeable *bool,
+) *mocks.FeatureRemoteInterface {
 	t.Helper()
 	feature := mocks.NewFeatureRemoteInterface(t)
 	feature.On("DataCopy", model.FunctionTypeHvacSystemFunctionDescriptionListData).Return(
@@ -91,7 +137,7 @@ func dhwSysFnFeature(t *testing.T, overrunWrite, systemWrite bool, overrunChange
 			{
 				SystemFunctionId:            ptr(model.HvacSystemFunctionIdType(3)),
 				CurrentOperationModeId:      ptr(model.HvacOperationModeIdType(0)),
-				IsOperationModeIdChangeable: ptr(true),
+				IsOperationModeIdChangeable: modeChangeable,
 			},
 		}},
 	).Maybe()
@@ -156,16 +202,24 @@ func dhwSysFnWriteHarness(
 	t *testing.T,
 	remote *mocks.FeatureRemoteInterface,
 ) (*mocks.EntityLocalInterface, *mocks.EntityRemoteInterface, *writtenDhwSysFn) {
+	return dhwSysFnWriteHarnessWithErrno(t, remote, 0)
+}
+
+func dhwSysFnWriteHarnessWithErrno(
+	t *testing.T,
+	remote *mocks.FeatureRemoteInterface,
+	errno model.ErrorNumberType,
+) (*mocks.EntityLocalInterface, *mocks.EntityRemoteInterface, *writtenDhwSysFn) {
 	t.Helper()
 	localAddress := &model.FeatureAddressType{}
 	local := mocks.NewFeatureLocalInterface(t)
 	local.On("Address").Return(localAddress)
 	local.On("AddResponseCallback", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 		callback := args.Get(1).(func(spineapi.ResponseMessage))
-		callback(spineapi.ResponseMessage{Data: &model.ResultDataType{ErrorNumber: ptr(model.ErrorNumberType(0))}})
+		callback(spineapi.ResponseMessage{Data: &model.ResultDataType{ErrorNumber: ptr(errno)}})
 	}).Return(nil)
 	local.On("RequestRemoteData", mock.Anything, mock.Anything, mock.Anything, remote).
-		Return(ptr(model.MsgCounterType(10)), (*model.ErrorType)(nil))
+		Return(ptr(model.MsgCounterType(10)), (*model.ErrorType)(nil)).Maybe()
 
 	written := &writtenDhwSysFn{}
 	counter := model.MsgCounterType(9)
