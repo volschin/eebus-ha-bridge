@@ -23,8 +23,8 @@ import (
 // operations output is the payoff: it tells us which functions the device
 // declares writable before we attempt any write.
 //
-// Gated behind experimental.hvac_probe; sends only SPINE read commands, never
-// writes or subscribes. Stage 2 (experimental.hvac_probe_bind, EnableBind)
+// Gated behind experimental.hvac_probe. Stage 1 sends only SPINE read commands,
+// never writes or subscribes. Stage 2 (experimental.hvac_probe_bind, EnableBind)
 // additionally requests a binding to each remote Setpoint/HVAC server feature
 // — the precondition for any SPINE write — and reports whether the device
 // accepts it. Stage 3 (experimental.hvac_probe_write, EnableWrite) sends one
@@ -33,7 +33,10 @@ import (
 // altering any temperature, and reports the device's accept/deny result.
 // Stage 3b (experimental.hvac_probe_write_delta_ski, EnableWriteDelta) proves
 // the device applies writes: scoped to one SKI, it changes the dhwTemperature
-// setpoint by one advertised step, confirms via re-read, and restores.
+// setpoint by one advertised step, confirms via re-read, and restores. Stage 4
+// logs DHW overrun/boost viability from HVAC data and, when scoped by
+// experimental.hvac_probe_overrun_write_ski, activates and cancels one-time DHW
+// overrun once after an accepted HVAC bind.
 type HvacProbe struct {
 	mu          sync.Mutex
 	localEntity spineapi.EntityLocalInterface
@@ -69,6 +72,12 @@ type HvacProbe struct {
 	// write(original) → re-read. The setpoint is off its original value only
 	// for the seconds between the two writes. Empty means never.
 	writeDeltaSKI string
+
+	// overrunWriteSKI arms the stage-4b one-time DHW boost test for exactly one
+	// device. It writes active, confirms active/running, then writes inactive
+	// and confirms inactive/finished. Empty means never.
+	overrunWriteSKI string
+	overrunTested   map[string]bool
 
 	// pollInterval/pollTimeout control how long collectData waits for read
 	// responses to land in the remote feature caches. Overridden in tests.
@@ -107,10 +116,26 @@ func NewHvacProbe(logf func(format string, args ...any)) *HvacProbe {
 		resultHooked:   make(map[model.FeatureTypeType]bool),
 		bindResults:    make(map[uint64]int64),
 		featureResults: make(map[uint64]int64),
+		overrunTested:  make(map[string]bool),
 		logf:           logf,
 		pollInterval:   2 * time.Second,
 		pollTimeout:    30 * time.Second,
 	}
+}
+
+// EnableOverrunWrite arms stage 4b for exactly the device with the given SKI:
+// on an accepted DHWCircuit HVAC binding, activate one-time DHW overrun, re-read
+// to confirm active/running, then cancel and confirm inactive/finished.
+// Fail-closed: without a matching SKI, one oneTimeDhw description, writable
+// operations, and a changeable overrun entry, nothing is written. Requires
+// EnableBind so a binding can be accepted first.
+func (p *HvacProbe) EnableOverrunWrite(ski string) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	p.overrunWriteSKI = NormalizeSKI(ski)
+	p.mu.Unlock()
 }
 
 var defaultHvacProbe = NewHvacProbe(nil)
@@ -465,6 +490,9 @@ func (p *HvacProbe) collectBindResults(ski string, pending []pendingBind) {
 				if write && b.target.feature.Type() == model.FeatureTypeTypeSetpoint {
 					go p.attemptSetpointEchoWrite(ski, b)
 				}
+				if b.target.feature.Type() == model.FeatureTypeTypeHvac {
+					go p.runOverrunWriteTestOnce(ski, b)
+				}
 			} else {
 				p.logf("[HVACPROBE] ski=%s entity=%s bind %s DENIED errorNumber=%d (msgCounter=%d)",
 					ski, b.target.entityAddr, b.target.feature.Type(), errno, b.msgCounter)
@@ -476,6 +504,236 @@ func (p *HvacProbe) collectBindResults(ski string, pending []pendingBind) {
 		p.logf("[HVACPROBE] ski=%s entity=%s bind %s NOT answered within %s",
 			ski, b.target.entityAddr, b.target.feature.Type(), p.pollTimeout)
 	}
+}
+
+func (p *HvacProbe) runOverrunWriteTestOnce(ski string, b pendingBind) {
+	p.mu.Lock()
+	armedSKI := p.overrunWriteSKI
+	key := ski + "|" + b.target.entityAddr
+	if armedSKI == "" || armedSKI != NormalizeSKI(ski) || p.overrunTested[key] {
+		p.mu.Unlock()
+		return
+	}
+	p.overrunTested[key] = true
+	p.mu.Unlock()
+
+	p.runOverrunWriteTest(ski, b)
+}
+
+func (p *HvacProbe) runOverrunWriteTest(ski string, b pendingBind) {
+	op := b.target.feature.Operations()[model.FunctionTypeHvacOverrunListData]
+	if op == nil || !op.Write() {
+		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s boost test skipped: hvacOverrunListData not advertised writable",
+			ski, b.target.entityAddr)
+		return
+	}
+	id, entry, ok := p.oneTimeDhwOverrun(b.target)
+	if !ok {
+		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s boost test skipped: need exactly one oneTimeDhw overrun with list entry",
+			ski, b.target.entityAddr)
+		return
+	}
+	// The VR940 (firmware 404.1.29) omits IsOverrunStatusChangeable entirely
+	// while advertising hvacOverrunListData as rw, so a missing flag must not
+	// block the test — re-check this on newer VR940 firmware. Only an
+	// explicit false blocks.
+	if entry.IsOverrunStatusChangeable != nil && !*entry.IsOverrunStatusChangeable {
+		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s boost test skipped: overrunId=%d status not changeable",
+			ski, b.target.entityAddr, id)
+		return
+	}
+	if entry.IsOverrunStatusChangeable == nil {
+		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s overrunId=%d isOverrunStatusChangeable not reported; relying on advertised write operation",
+			ski, b.target.entityAddr, id)
+	}
+	// A boost that is already active/running was started outside the probe
+	// (app, panel); the final cancel would kill it. Only test from a resting
+	// state, and treat an unknown status as unsafe.
+	if entry.OverrunStatus == nil ||
+		(*entry.OverrunStatus != model.HvacOverrunStatusTypeInactive && *entry.OverrunStatus != model.HvacOverrunStatusTypeFinished) {
+		status := "<nil>"
+		if entry.OverrunStatus != nil {
+			status = string(*entry.OverrunStatus)
+		}
+		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s boost test skipped: overrunId=%d status=%s is not inactive/finished",
+			ski, b.target.entityAddr, id, status)
+		return
+	}
+	list := p.waitForOverrunData(b.target)
+	if list == nil {
+		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s boost test skipped: no hvacOverrunListData within %s",
+			ski, b.target.entityAddr, p.pollTimeout)
+		return
+	}
+
+	p.logf("[HVACPROBE] stage=4b ski=%s entity=%s BOOST TEST overrunId=%d: activate then cancel",
+		ski, b.target.entityAddr, id)
+	errno, seen, sent := p.sendOverrunWriteAndAwait(ski, b, overrunListWithStatus(list, id, model.HvacOverrunStatusTypeActive), "activate")
+	if !sent {
+		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s BOOST TEST aborted: activation write not sent",
+			ski, b.target.entityAddr)
+		return
+	}
+	if !seen {
+		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s activate result not seen; confirming and cancelling anyway",
+			ski, b.target.entityAddr)
+	}
+	if seen && errno != 0 {
+		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s activate denied by device; cancelling anyway",
+			ski, b.target.entityAddr)
+	} else {
+		status, ok := p.confirmOverrunStatus(b, id, model.HvacOverrunStatusTypeActive, model.HvacOverrunStatusTypeRunning)
+		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s activate confirm status=%s ok=%t",
+			ski, b.target.entityAddr, status, ok)
+	}
+
+	_, _, sent = p.sendOverrunWriteAndAwait(ski, b, overrunListWithStatus(list, id, model.HvacOverrunStatusTypeInactive), "cancel")
+	if !sent {
+		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s CANCEL FAILED: boost may still be active/running; verify manually",
+			ski, b.target.entityAddr)
+		return
+	}
+	status, ok := p.confirmOverrunStatus(b, id, model.HvacOverrunStatusTypeInactive, model.HvacOverrunStatusTypeFinished)
+	p.logf("[HVACPROBE] stage=4b ski=%s entity=%s cancel confirm status=%s ok=%t",
+		ski, b.target.entityAddr, status, ok)
+}
+
+func (p *HvacProbe) sendOverrunWriteAndAwait(ski string, b pendingBind, data *model.HvacOverrunListDataType, label string) (errno int64, seen, sent bool) {
+	cmd := model.CmdType{HvacOverrunListData: data}
+	msgCounter, werr := b.target.feature.Device().Sender().Write(b.localFeature.Address(), b.target.feature.Address(), cmd)
+	if werr != nil {
+		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s %s HvacOverrun send failed: %v", ski, b.target.entityAddr, label, werr)
+		return -1, false, false
+	}
+	counter := uint64(0)
+	if msgCounter != nil {
+		counter = uint64(*msgCounter)
+	}
+	p.logf("[HVACPROBE] stage=4b ski=%s entity=%s %s HvacOverrun sent (msgCounter=%d)", ski, b.target.entityAddr, label, counter)
+
+	deadline := time.Now().Add(p.pollTimeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(p.pollInterval)
+		p.mu.Lock()
+		res, ok := p.featureResults[counter]
+		if !ok {
+			res, ok = p.bindResults[counter]
+		}
+		p.mu.Unlock()
+		if !ok {
+			continue
+		}
+		if res == 0 {
+			p.logf("[HVACPROBE] stage=4b ski=%s entity=%s %s HvacOverrun ACCEPTED (msgCounter=%d)",
+				ski, b.target.entityAddr, label, counter)
+		} else {
+			p.logf("[HVACPROBE] stage=4b ski=%s entity=%s %s HvacOverrun DENIED errorNumber=%d (msgCounter=%d)",
+				ski, b.target.entityAddr, label, res, counter)
+		}
+		return res, true, true
+	}
+	p.logf("[HVACPROBE] stage=4b ski=%s entity=%s %s HvacOverrun NOT answered within %s",
+		ski, b.target.entityAddr, label, p.pollTimeout)
+	return -1, false, true
+}
+
+func (p *HvacProbe) confirmOverrunStatus(b pendingBind, id model.HvacOverrunIdType, good ...model.HvacOverrunStatusType) (string, bool) {
+	deadline := time.Now().Add(p.pollTimeout)
+	last := "<missing>"
+	for time.Now().Before(deadline) {
+		if _, err := b.localFeature.RequestRemoteData(model.FunctionTypeHvacOverrunListData, nil, nil, b.target.feature); err != nil {
+			return last, false
+		}
+		time.Sleep(p.pollInterval)
+		raw := b.target.feature.DataCopy(model.FunctionTypeHvacOverrunListData)
+		data, ok := raw.(*model.HvacOverrunListDataType)
+		if !ok || data == nil {
+			continue
+		}
+		for _, entry := range data.HvacOverrunData {
+			if entry.OverrunId == nil || *entry.OverrunId != id || entry.OverrunStatus == nil {
+				continue
+			}
+			last = string(*entry.OverrunStatus)
+			for _, want := range good {
+				if *entry.OverrunStatus == want {
+					return last, true
+				}
+			}
+		}
+	}
+	return last, false
+}
+
+func (p *HvacProbe) oneTimeDhwOverrun(t probeTarget) (model.HvacOverrunIdType, model.HvacOverrunDataType, bool) {
+	descs := p.waitForOverrunDescriptions(t)
+	if descs == nil {
+		return 0, model.HvacOverrunDataType{}, false
+	}
+	var found []model.HvacOverrunIdType
+	for _, d := range descs.HvacOverrunDescriptionData {
+		if d.OverrunId != nil && d.OverrunType != nil && *d.OverrunType == model.HvacOverrunTypeTypeOneTimeDhw {
+			found = append(found, *d.OverrunId)
+		}
+	}
+	if len(found) != 1 {
+		return 0, model.HvacOverrunDataType{}, false
+	}
+	list := p.waitForOverrunData(t)
+	if list == nil {
+		return 0, model.HvacOverrunDataType{}, false
+	}
+	for _, entry := range list.HvacOverrunData {
+		if entry.OverrunId != nil && *entry.OverrunId == found[0] {
+			return found[0], entry, true
+		}
+	}
+	return 0, model.HvacOverrunDataType{}, false
+}
+
+func (p *HvacProbe) waitForOverrunDescriptions(t probeTarget) *model.HvacOverrunDescriptionListDataType {
+	deadline := time.Now().Add(p.pollTimeout)
+	for time.Now().Before(deadline) {
+		raw := t.feature.DataCopy(model.FunctionTypeHvacOverrunDescriptionListData)
+		if raw != nil && !isNilPointer(raw) {
+			data, ok := raw.(*model.HvacOverrunDescriptionListDataType)
+			if !ok {
+				return nil
+			}
+			return data
+		}
+		time.Sleep(p.pollInterval)
+	}
+	return nil
+}
+
+func (p *HvacProbe) waitForOverrunData(t probeTarget) *model.HvacOverrunListDataType {
+	deadline := time.Now().Add(p.pollTimeout)
+	for time.Now().Before(deadline) {
+		raw := t.feature.DataCopy(model.FunctionTypeHvacOverrunListData)
+		if raw != nil && !isNilPointer(raw) {
+			data, ok := raw.(*model.HvacOverrunListDataType)
+			if !ok {
+				return nil
+			}
+			return data
+		}
+		time.Sleep(p.pollInterval)
+	}
+	return nil
+}
+
+func overrunListWithStatus(data *model.HvacOverrunListDataType, id model.HvacOverrunIdType, status model.HvacOverrunStatusType) *model.HvacOverrunListDataType {
+	entries := make([]model.HvacOverrunDataType, len(data.HvacOverrunData))
+	copy(entries, data.HvacOverrunData)
+	for i := range entries {
+		if entries[i].OverrunId != nil && *entries[i].OverrunId == id {
+			s := status
+			entries[i].OverrunStatus = &s
+			break
+		}
+	}
+	return &model.HvacOverrunListDataType{HvacOverrunData: entries}
 }
 
 // attemptSetpointEchoWrite is stage 3: once the device accepted the Setpoint
@@ -752,6 +1010,7 @@ func (p *HvacProbe) waitForSetpointData(t probeTarget) *model.SetpointListDataTy
 // collectData polls the remote feature caches until every requested function
 // produced data or the timeout passes, logging each payload as JSON once.
 func (p *HvacProbe) collectData(ski string, pending []pendingRead) {
+	analysisTargets := hvacAnalysisTargets(pending)
 	deadline := time.Now().Add(p.pollTimeout)
 	for len(pending) > 0 && time.Now().Before(deadline) {
 		time.Sleep(p.pollInterval)
@@ -775,6 +1034,194 @@ func (p *HvacProbe) collectData(ski string, pending []pendingRead) {
 		p.logf("[HVACPROBE] ski=%s entity=%s data %s = <no response within %s>",
 			ski, r.target.entityAddr, r.function, p.pollTimeout)
 	}
+	for _, t := range analysisTargets {
+		p.logOverrunAnalysis(ski, t)
+	}
+}
+
+func hvacAnalysisTargets(pending []pendingRead) []probeTarget {
+	seen := make(map[string]bool)
+	var out []probeTarget
+	for _, r := range pending {
+		if r.target.feature.Type() != model.FeatureTypeTypeHvac {
+			continue
+		}
+		key := r.target.entityAddr
+		if addr := r.target.feature.Address(); addr != nil {
+			key = fmt.Sprintf("%s/%p", key, addr)
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, r.target)
+	}
+	return out
+}
+
+func (p *HvacProbe) logOverrunAnalysis(ski string, t probeTarget) {
+	overrunDesc, overrunDescOK := hvacOverrunDescriptions(t)
+	overruns, overrunsOK := hvacOverruns(t)
+	systemDesc, systemDescOK := hvacSystemDescriptions(t)
+	systems, systemsOK := hvacSystems(t)
+
+	p.logf("[HVACPROBE] stage=4a ski=%s entity=%s overrunDescriptions=%s oneTimeDhwIds=[%s] overrunList=%s hvacOverrunListDataOp=%s hvacSystemFunctionListDataOp=%s systemDescriptions=%s systemFunctions=%s",
+		ski, t.entityAddr,
+		formatOverrunDescriptions(overrunDesc, overrunDescOK),
+		formatOneTimeDhwIds(overrunDesc),
+		formatOverrunEntries(overruns, overrunsOK),
+		formatOperation(t.feature.Operations()[model.FunctionTypeHvacOverrunListData]),
+		formatOperation(t.feature.Operations()[model.FunctionTypeHvacSystemFunctionListData]),
+		formatSystemDescriptions(systemDesc, systemDescOK),
+		formatSystemFunctions(systemDesc, systems, systemDescOK, systemsOK),
+	)
+}
+
+func hvacOverrunDescriptions(t probeTarget) (*model.HvacOverrunDescriptionListDataType, bool) {
+	raw := t.feature.DataCopy(model.FunctionTypeHvacOverrunDescriptionListData)
+	data, ok := raw.(*model.HvacOverrunDescriptionListDataType)
+	return data, ok && data != nil
+}
+
+func hvacOverruns(t probeTarget) (*model.HvacOverrunListDataType, bool) {
+	raw := t.feature.DataCopy(model.FunctionTypeHvacOverrunListData)
+	data, ok := raw.(*model.HvacOverrunListDataType)
+	return data, ok && data != nil
+}
+
+func hvacSystemDescriptions(t probeTarget) (*model.HvacSystemFunctionDescriptionListDataType, bool) {
+	raw := t.feature.DataCopy(model.FunctionTypeHvacSystemFunctionDescriptionListData)
+	data, ok := raw.(*model.HvacSystemFunctionDescriptionListDataType)
+	return data, ok && data != nil
+}
+
+func hvacSystems(t probeTarget) (*model.HvacSystemFunctionListDataType, bool) {
+	raw := t.feature.DataCopy(model.FunctionTypeHvacSystemFunctionListData)
+	data, ok := raw.(*model.HvacSystemFunctionListDataType)
+	return data, ok && data != nil
+}
+
+func formatOverrunDescriptions(data *model.HvacOverrunDescriptionListDataType, ok bool) string {
+	if !ok {
+		return "<missing>"
+	}
+	out := make([]string, 0, len(data.HvacOverrunDescriptionData))
+	for _, d := range data.HvacOverrunDescriptionData {
+		id := "<nil>"
+		if d.OverrunId != nil {
+			id = fmt.Sprint(*d.OverrunId)
+		}
+		typ := "<nil>"
+		oneTime := false
+		if d.OverrunType != nil {
+			typ = string(*d.OverrunType)
+			oneTime = *d.OverrunType == model.HvacOverrunTypeTypeOneTimeDhw
+		}
+		out = append(out, fmt.Sprintf("{id=%s type=%s oneTimeDhw=%t affectedSystemFunctionIds=%v}", id, typ, oneTime, d.AffectedSystemFunctionId))
+	}
+	return "[" + strings.Join(out, " ") + "]"
+}
+
+func formatOneTimeDhwIds(data *model.HvacOverrunDescriptionListDataType) string {
+	if data == nil {
+		return ""
+	}
+	var ids []string
+	for _, d := range data.HvacOverrunDescriptionData {
+		if d.OverrunId != nil && d.OverrunType != nil && *d.OverrunType == model.HvacOverrunTypeTypeOneTimeDhw {
+			ids = append(ids, fmt.Sprint(*d.OverrunId))
+		}
+	}
+	return strings.Join(ids, ",")
+}
+
+func formatOverrunEntries(data *model.HvacOverrunListDataType, ok bool) string {
+	if !ok {
+		return "<missing>"
+	}
+	out := make([]string, 0, len(data.HvacOverrunData))
+	for _, d := range data.HvacOverrunData {
+		id := "<nil>"
+		if d.OverrunId != nil {
+			id = fmt.Sprint(*d.OverrunId)
+		}
+		status := "<nil>"
+		if d.OverrunStatus != nil {
+			status = string(*d.OverrunStatus)
+		}
+		changeable := "<nil>"
+		if d.IsOverrunStatusChangeable != nil {
+			changeable = fmt.Sprint(*d.IsOverrunStatusChangeable)
+		}
+		out = append(out, fmt.Sprintf("{id=%s status=%s changeable=%s}", id, status, changeable))
+	}
+	return "[" + strings.Join(out, " ") + "]"
+}
+
+func formatSystemDescriptions(data *model.HvacSystemFunctionDescriptionListDataType, ok bool) string {
+	if !ok {
+		return "<missing>"
+	}
+	out := make([]string, 0, len(data.HvacSystemFunctionDescriptionData))
+	for _, d := range data.HvacSystemFunctionDescriptionData {
+		id := "<nil>"
+		if d.SystemFunctionId != nil {
+			id = fmt.Sprint(*d.SystemFunctionId)
+		}
+		typ := "<nil>"
+		if d.SystemFunctionType != nil {
+			typ = string(*d.SystemFunctionType)
+		}
+		out = append(out, fmt.Sprintf("{id=%s type=%s}", id, typ))
+	}
+	return "[" + strings.Join(out, " ") + "]"
+}
+
+func formatSystemFunctions(desc *model.HvacSystemFunctionDescriptionListDataType, data *model.HvacSystemFunctionListDataType, descOK, dataOK bool) string {
+	if !dataOK {
+		return "<missing>"
+	}
+	types := make(map[model.HvacSystemFunctionIdType]string)
+	if descOK {
+		for _, d := range desc.HvacSystemFunctionDescriptionData {
+			if d.SystemFunctionId != nil && d.SystemFunctionType != nil {
+				types[*d.SystemFunctionId] = string(*d.SystemFunctionType)
+			}
+		}
+	}
+	out := make([]string, 0, len(data.HvacSystemFunctionData))
+	for _, d := range data.HvacSystemFunctionData {
+		id := "<nil>"
+		typ := "<missing-description>"
+		if d.SystemFunctionId != nil {
+			id = fmt.Sprint(*d.SystemFunctionId)
+			if v, ok := types[*d.SystemFunctionId]; ok {
+				typ = v
+			}
+		}
+		mode := "<nil>"
+		if d.CurrentOperationModeId != nil {
+			mode = fmt.Sprint(*d.CurrentOperationModeId)
+		}
+		changeable := "<nil>"
+		if d.IsOperationModeIdChangeable != nil {
+			changeable = fmt.Sprint(*d.IsOperationModeIdChangeable)
+		}
+		active := "<nil>"
+		if d.IsOverrunActive != nil {
+			active = fmt.Sprint(*d.IsOverrunActive)
+		}
+		out = append(out, fmt.Sprintf("{id=%s type=%s currentOperationModeId=%s operationModeChangeable=%s overrunActive=%s}",
+			id, typ, mode, changeable, active))
+	}
+	return "[" + strings.Join(out, " ") + "]"
+}
+
+func formatOperation(op spineapi.OperationsInterface) string {
+	if op == nil {
+		return "<missing>"
+	}
+	return fmt.Sprintf("read=%t write=%t", op.Read(), op.Write())
 }
 
 // isNilPointer reports whether DataCopy returned a typed nil pointer wrapped

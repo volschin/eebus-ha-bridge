@@ -619,6 +619,355 @@ func TestHvacProbeDeltaFailsClosedWithoutConstraints(t *testing.T) {
 	}
 }
 
+func TestHvacProbeStage4aAnalysisLogsOverrunData(t *testing.T) {
+	logf, lines := collectLogf()
+	p := NewHvacProbe(logf)
+	p.pollInterval = 5 * time.Millisecond
+	p.pollTimeout = 50 * time.Millisecond
+
+	target := newHvacAnalysisTarget(t,
+		&model.HvacOverrunDescriptionListDataType{HvacOverrunDescriptionData: []model.HvacOverrunDescriptionDataType{
+			{OverrunId: ptr(model.HvacOverrunIdType(1)), OverrunType: ptr(model.HvacOverrunTypeTypeParty)},
+			{OverrunId: ptr(model.HvacOverrunIdType(2)), OverrunType: ptr(model.HvacOverrunTypeTypeOneTimeDhw), AffectedSystemFunctionId: []model.HvacSystemFunctionIdType{3}},
+		}},
+		&model.HvacOverrunListDataType{HvacOverrunData: []model.HvacOverrunDataType{{
+			OverrunId:                 ptr(model.HvacOverrunIdType(2)),
+			OverrunStatus:             ptr(model.HvacOverrunStatusTypeInactive),
+			IsOverrunStatusChangeable: ptr(true),
+		}}},
+		&model.HvacSystemFunctionDescriptionListDataType{HvacSystemFunctionDescriptionData: []model.HvacSystemFunctionDescriptionDataType{{
+			SystemFunctionId:   ptr(model.HvacSystemFunctionIdType(3)),
+			SystemFunctionType: ptr(model.HvacSystemFunctionTypeTypeDhw),
+		}}},
+		&model.HvacSystemFunctionListDataType{HvacSystemFunctionData: []model.HvacSystemFunctionDataType{{
+			SystemFunctionId:            ptr(model.HvacSystemFunctionIdType(3)),
+			CurrentOperationModeId:      ptr(model.HvacOperationModeIdType(4)),
+			IsOperationModeIdChangeable: ptr(true),
+			IsOverrunActive:             ptr(false),
+		}}},
+		true,
+	)
+	p.collectData("ABCD1234", []pendingRead{{target: target, function: model.FunctionTypeHvacOverrunListData}})
+
+	out := strings.Join(lines(), "\n")
+	for _, want := range []string{
+		"stage=4a",
+		"oneTimeDhwIds=[2]",
+		"{id=1 type=party oneTimeDhw=false",
+		"{id=2 type=oneTimeDhw oneTimeDhw=true",
+		"status=inactive changeable=true",
+		"hvacOverrunListDataOp=read=true write=true",
+		"type=dhw currentOperationModeId=4 operationModeChangeable=true overrunActive=false",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing analysis log %q in:\n%s", want, out)
+		}
+	}
+
+	logf2, lines2 := collectLogf()
+	p2 := NewHvacProbe(logf2)
+	p2.collectData("ABCD1234", []pendingRead{{target: newHvacAnalysisTarget(t,
+		&model.HvacOverrunDescriptionListDataType{HvacOverrunDescriptionData: []model.HvacOverrunDescriptionDataType{{
+			OverrunId: ptr(model.HvacOverrunIdType(1)), OverrunType: ptr(model.HvacOverrunTypeTypeParty),
+		}}},
+		nil, nil, nil, false,
+	), function: model.FunctionTypeHvacOverrunDescriptionListData}})
+	out = strings.Join(lines2(), "\n")
+	if !strings.Contains(out, "stage=4a") || !strings.Contains(out, "oneTimeDhwIds=[]") || !strings.Contains(out, "overrunList=<missing>") {
+		t.Fatalf("no-oneTimeDhw analysis incomplete:\n%s", out)
+	}
+}
+
+type overrunHarness struct {
+	p           *HvacProbe
+	lines       func() []string
+	status      func() model.HvacOverrunStatusType
+	writes      func() []model.HvacOverrunStatusType
+	acceptBind  func()
+	remoteSki   string
+	expectedSKI string
+}
+
+func newOverrunHarness(t *testing.T, opts overrunHarnessOptions) *overrunHarness {
+	t.Helper()
+	logf, lines := collectLogf()
+	p := NewHvacProbe(logf)
+	p.pollInterval = 5 * time.Millisecond
+	p.pollTimeout = 200 * time.Millisecond
+	p.EnableBind()
+	p.EnableOverrunWrite(opts.expectedSKI)
+
+	remoteAddr := &model.FeatureAddressType{
+		Device:  ptr(model.AddressDeviceType("d0")),
+		Entity:  []model.AddressEntityType{4},
+		Feature: ptr(model.AddressFeatureType(3)),
+	}
+	localAddr := &model.FeatureAddressType{
+		Device:  ptr(model.AddressDeviceType("bridge")),
+		Entity:  []model.AddressEntityType{1},
+		Feature: ptr(model.AddressFeatureType(4)),
+	}
+
+	status := opts.initialStatus
+	var (
+		mu     sync.Mutex
+		writes []model.HvacOverrunStatusType
+		cbMu   sync.Mutex
+		nmCb   func(spineapi.ResponseMessage)
+		ftCb   func(spineapi.ResponseMessage)
+	)
+
+	writeCounter := model.MsgCounterType(22)
+	sender := mocks.NewSenderInterface(t)
+	sender.On("Write", localAddr, remoteAddr, mock.Anything).Run(func(args mock.Arguments) {
+		cmd := args.Get(2).(model.CmdType)
+		mu.Lock()
+		for _, entry := range cmd.HvacOverrunListData.HvacOverrunData {
+			if entry.OverrunId != nil && *entry.OverrunId == 9 && entry.OverrunStatus != nil {
+				status = *entry.OverrunStatus
+				writes = append(writes, status)
+			}
+		}
+		mu.Unlock()
+		if !opts.ackWrites {
+			return
+		}
+		cbMu.Lock()
+		cb := ftCb
+		cbMu.Unlock()
+		if cb != nil {
+			go cb(spineapi.ResponseMessage{
+				MsgCounterReference: writeCounter,
+				Data:                &model.ResultDataType{ErrorNumber: ptr(model.ErrorNumberType(0))},
+			})
+		}
+	}).Return(&writeCounter, nil).Maybe()
+	deviceRemote := mocks.NewDeviceRemoteInterface(t)
+	deviceRemote.On("Sender").Return(sender).Maybe()
+
+	remoteFeature := mocks.NewFeatureRemoteInterface(t)
+	remoteFeature.On("String").Return("hvac-server-feature").Maybe()
+	remoteFeature.On("Type").Return(model.FeatureTypeTypeHvac).Maybe()
+	remoteFeature.On("Address").Return(remoteAddr).Maybe()
+	remoteFeature.On("Operations").Return(map[model.FunctionType]spineapi.OperationsInterface{
+		model.FunctionTypeHvacOverrunListData:        newOpMock(t, true, opts.writeOp),
+		model.FunctionTypeHvacSystemFunctionListData: newOpMock(t, true, false),
+	}).Maybe()
+	remoteFeature.On("DataCopy", model.FunctionTypeHvacOverrunDescriptionListData).Return(opts.descriptions).Maybe()
+	remoteFeature.On("DataCopy", model.FunctionTypeHvacOverrunListData).Return(func(model.FunctionType) any {
+		mu.Lock()
+		defer mu.Unlock()
+		entry := model.HvacOverrunDataType{
+			OverrunId:                 ptr(model.HvacOverrunIdType(9)),
+			IsOverrunStatusChangeable: opts.changeable,
+		}
+		if !opts.nilStatus {
+			entry.OverrunStatus = ptr(status)
+		}
+		return &model.HvacOverrunListDataType{HvacOverrunData: []model.HvacOverrunDataType{entry}}
+	}).Maybe()
+	remoteFeature.On("DataCopy", mock.Anything).Return(nil).Maybe()
+	remoteFeature.On("Device").Return(deviceRemote).Maybe()
+
+	bindCounter := model.MsgCounterType(7)
+	localFeature := mocks.NewFeatureLocalInterface(t)
+	localFeature.On("RequestRemoteData", mock.Anything, nil, nil, remoteFeature).Return(&bindCounter, nil)
+	localFeature.On("AddResultCallback", mock.Anything).Run(func(args mock.Arguments) {
+		cbMu.Lock()
+		ftCb = args.Get(0).(func(spineapi.ResponseMessage))
+		cbMu.Unlock()
+	}).Return()
+	localFeature.On("HasBindingToRemote", remoteAddr).Return(false).Maybe()
+	localFeature.On("BindToRemote", remoteAddr).Return(&bindCounter, nil)
+	localFeature.On("Address").Return(localAddr).Maybe()
+
+	nm := mocks.NewNodeManagementInterface(t)
+	nm.On("AddResultCallback", mock.Anything).Run(func(args mock.Arguments) {
+		cbMu.Lock()
+		nmCb = args.Get(0).(func(spineapi.ResponseMessage))
+		cbMu.Unlock()
+	}).Return()
+	deviceLocal := mocks.NewDeviceLocalInterface(t)
+	deviceLocal.On("NodeManagement").Return(nm).Maybe()
+
+	local := mocks.NewEntityLocalInterface(t)
+	local.On("GetOrAddFeature", mock.Anything, mock.Anything).Return(localFeature).Maybe()
+	local.On("AddUseCaseSupport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	local.On("FeatureOfTypeAndRole", model.FeatureTypeTypeHvac, model.RoleTypeClient).Return(localFeature).Maybe()
+	local.On("Device").Return(deviceLocal).Maybe()
+	p.Setup(local)
+
+	device := buildProbeHVACDeviceMock(t, opts.remoteSKI, remoteFeature)
+	p.ProbeOnce(opts.remoteSKI, device)
+
+	return &overrunHarness{
+		p:           p,
+		lines:       lines,
+		remoteSki:   opts.remoteSKI,
+		expectedSKI: opts.expectedSKI,
+		status: func() model.HvacOverrunStatusType {
+			mu.Lock()
+			defer mu.Unlock()
+			return status
+		},
+		writes: func() []model.HvacOverrunStatusType {
+			mu.Lock()
+			defer mu.Unlock()
+			out := make([]model.HvacOverrunStatusType, len(writes))
+			copy(out, writes)
+			return out
+		},
+		acceptBind: func() {
+			cbMu.Lock()
+			cb := nmCb
+			cbMu.Unlock()
+			if cb == nil {
+				t.Fatal("probe never registered a NodeManagement result callback")
+			}
+			cb(spineapi.ResponseMessage{
+				MsgCounterReference: bindCounter,
+				Data:                &model.ResultDataType{ErrorNumber: ptr(model.ErrorNumberType(0))},
+			})
+		},
+	}
+}
+
+type overrunHarnessOptions struct {
+	remoteSKI    string
+	expectedSKI  string
+	writeOp      bool
+	descriptions *model.HvacOverrunDescriptionListDataType
+	changeable   *bool
+	ackWrites    bool
+	// initialStatus is the overrun status the device reports before any probe
+	// write; nilStatus makes the device report no status at all.
+	initialStatus model.HvacOverrunStatusType
+	nilStatus     bool
+}
+
+func defaultOverrunOptions() overrunHarnessOptions {
+	return overrunHarnessOptions{
+		remoteSKI:     "ABCD1234",
+		expectedSKI:   "ABCD1234",
+		writeOp:       true,
+		initialStatus: model.HvacOverrunStatusTypeInactive,
+		descriptions: &model.HvacOverrunDescriptionListDataType{HvacOverrunDescriptionData: []model.HvacOverrunDescriptionDataType{{
+			OverrunId: ptr(model.HvacOverrunIdType(9)), OverrunType: ptr(model.HvacOverrunTypeTypeOneTimeDhw),
+		}}},
+		changeable: ptr(true),
+		ackWrites:  true,
+	}
+}
+
+func TestHvacProbeOverrunWriteActivatesAndCancels(t *testing.T) {
+	h := newOverrunHarness(t, defaultOverrunOptions())
+	h.acceptBind()
+
+	out := waitForLog(t, h.lines, "cancel confirm status=inactive ok=true", 3*time.Second)
+	for _, want := range []string{
+		"stage=4b",
+		"BOOST TEST overrunId=9: activate then cancel",
+		"activate HvacOverrun ACCEPTED",
+		"activate confirm status=active ok=true",
+		"cancel HvacOverrun ACCEPTED",
+		"cancel confirm status=inactive ok=true",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing log %q in:\n%s", want, out)
+		}
+	}
+	if got := h.status(); got != model.HvacOverrunStatusTypeInactive {
+		t.Errorf("overrun status = %s, want inactive", got)
+	}
+	gotWrites := h.writes()
+	if len(gotWrites) != 2 || gotWrites[0] != model.HvacOverrunStatusTypeActive || gotWrites[1] != model.HvacOverrunStatusTypeInactive {
+		t.Fatalf("writes = %v, want [active inactive]", gotWrites)
+	}
+}
+
+// The VR940 omits IsOverrunStatusChangeable while advertising the write
+// operation; a missing flag must log a notice but still run the test.
+func TestHvacProbeOverrunWriteRunsWithoutChangeableFlag(t *testing.T) {
+	opts := defaultOverrunOptions()
+	opts.changeable = nil
+	h := newOverrunHarness(t, opts)
+	h.acceptBind()
+
+	out := waitForLog(t, h.lines, "cancel confirm status=inactive ok=true", 3*time.Second)
+	if !strings.Contains(out, "isOverrunStatusChangeable not reported; relying on advertised write operation") {
+		t.Errorf("missing nil-changeable notice in:\n%s", out)
+	}
+	gotWrites := h.writes()
+	if len(gotWrites) != 2 || gotWrites[0] != model.HvacOverrunStatusTypeActive || gotWrites[1] != model.HvacOverrunStatusTypeInactive {
+		t.Fatalf("writes = %v, want [active inactive]", gotWrites)
+	}
+}
+
+func TestHvacProbeOverrunWriteFailsClosed(t *testing.T) {
+	cases := []struct {
+		name string
+		edit func(*overrunHarnessOptions)
+		log  string
+	}{
+		{"changeable false", func(o *overrunHarnessOptions) { o.changeable = ptr(false) }, "status not changeable"},
+		{"no write op", func(o *overrunHarnessOptions) { o.writeOp = false }, "not advertised writable"},
+		{"ski mismatch", func(o *overrunHarnessOptions) { o.expectedSKI = "FFFF" }, "bind HVAC ACCEPTED"},
+		{"zero oneTimeDhw", func(o *overrunHarnessOptions) {
+			o.descriptions = &model.HvacOverrunDescriptionListDataType{HvacOverrunDescriptionData: []model.HvacOverrunDescriptionDataType{{
+				OverrunId: ptr(model.HvacOverrunIdType(1)), OverrunType: ptr(model.HvacOverrunTypeTypeParty),
+			}}}
+		}, "need exactly one oneTimeDhw"},
+		{"multiple oneTimeDhw", func(o *overrunHarnessOptions) {
+			o.descriptions = &model.HvacOverrunDescriptionListDataType{HvacOverrunDescriptionData: []model.HvacOverrunDescriptionDataType{
+				{OverrunId: ptr(model.HvacOverrunIdType(9)), OverrunType: ptr(model.HvacOverrunTypeTypeOneTimeDhw)},
+				{OverrunId: ptr(model.HvacOverrunIdType(10)), OverrunType: ptr(model.HvacOverrunTypeTypeOneTimeDhw)},
+			}}
+		}, "need exactly one oneTimeDhw"},
+		{"boost already running", func(o *overrunHarnessOptions) {
+			o.initialStatus = model.HvacOverrunStatusTypeRunning
+		}, "status=running is not inactive/finished"},
+		{"status missing", func(o *overrunHarnessOptions) {
+			o.nilStatus = true
+		}, "status=<nil> is not inactive/finished"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := defaultOverrunOptions()
+			tc.edit(&opts)
+			h := newOverrunHarness(t, opts)
+			h.acceptBind()
+			waitForLog(t, h.lines, tc.log, 3*time.Second)
+			if got := h.writes(); len(got) != 0 {
+				t.Fatalf("writes = %v, want none", got)
+			}
+		})
+	}
+}
+
+func TestHvacProbeOverrunWriteCancelsWhenResultLost(t *testing.T) {
+	opts := defaultOverrunOptions()
+	opts.ackWrites = false
+	h := newOverrunHarness(t, opts)
+	h.acceptBind()
+
+	out := waitForLog(t, h.lines, "cancel confirm status=inactive ok=true", 3*time.Second)
+	for _, want := range []string{
+		"activate HvacOverrun NOT answered",
+		"activate result not seen; confirming and cancelling anyway",
+		"activate confirm status=active ok=true",
+		"cancel HvacOverrun NOT answered",
+		"cancel confirm status=inactive ok=true",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing log %q in:\n%s", want, out)
+		}
+	}
+	gotWrites := h.writes()
+	if len(gotWrites) != 2 || gotWrites[0] != model.HvacOverrunStatusTypeActive || gotWrites[1] != model.HvacOverrunStatusTypeInactive {
+		t.Fatalf("writes = %v, want [active inactive]", gotWrites)
+	}
+}
+
 func TestHvacProbeAdvertisesClientUseCasesOnlyWithBind(t *testing.T) {
 	var (
 		mu         sync.Mutex
@@ -678,6 +1027,61 @@ func TestHvacProbeAdvertisesClientUseCasesOnlyWithBind(t *testing.T) {
 	if len(advertised) != len(want) {
 		t.Errorf("bind-before-Setup advertised %d use cases %v, want %d", len(advertised), advertised, len(want))
 	}
+}
+
+func buildProbeHVACDeviceMock(t *testing.T, ski string, hvac spineapi.FeatureRemoteInterface) *mocks.DeviceRemoteInterface {
+	t.Helper()
+
+	entityAddr := &model.EntityAddressType{Entity: []model.AddressEntityType{4}}
+	entity := mocks.NewEntityRemoteInterface(t)
+	entity.On("Address").Return(entityAddr).Maybe()
+	entity.On("EntityType").Return(model.EntityTypeTypeDHWCircuit).Maybe()
+	entity.On("FeatureOfTypeAndRole", model.FeatureTypeTypeSetpoint, model.RoleTypeServer).Return(nil).Maybe()
+	entity.On("FeatureOfTypeAndRole", model.FeatureTypeTypeHvac, model.RoleTypeServer).Return(hvac).Maybe()
+
+	device := mocks.NewDeviceRemoteInterface(t)
+	device.On("Ski").Return(ski).Maybe()
+	device.On("Entities").Return([]spineapi.EntityRemoteInterface{entity}).Maybe()
+	return device
+}
+
+func newHvacAnalysisTarget(
+	t *testing.T,
+	overrunDesc *model.HvacOverrunDescriptionListDataType,
+	overruns *model.HvacOverrunListDataType,
+	systemDesc *model.HvacSystemFunctionDescriptionListDataType,
+	systems *model.HvacSystemFunctionListDataType,
+	writeOp bool,
+) probeTarget {
+	t.Helper()
+	remoteAddr := &model.FeatureAddressType{
+		Device:  ptr(model.AddressDeviceType("d0")),
+		Entity:  []model.AddressEntityType{4},
+		Feature: ptr(model.AddressFeatureType(3)),
+	}
+	remoteFeature := mocks.NewFeatureRemoteInterface(t)
+	remoteFeature.On("String").Return("hvac-server-feature").Maybe()
+	remoteFeature.On("Type").Return(model.FeatureTypeTypeHvac).Maybe()
+	remoteFeature.On("Address").Return(remoteAddr).Maybe()
+	remoteFeature.On("Operations").Return(map[model.FunctionType]spineapi.OperationsInterface{
+		model.FunctionTypeHvacOverrunListData:        newOpMock(t, true, writeOp),
+		model.FunctionTypeHvacSystemFunctionListData: newOpMock(t, true, false),
+	}).Maybe()
+	remoteFeature.On("DataCopy", model.FunctionTypeHvacOverrunDescriptionListData).Return(overrunDesc).Maybe()
+	remoteFeature.On("DataCopy", model.FunctionTypeHvacOverrunListData).Return(overruns).Maybe()
+	remoteFeature.On("DataCopy", model.FunctionTypeHvacSystemFunctionDescriptionListData).Return(systemDesc).Maybe()
+	remoteFeature.On("DataCopy", model.FunctionTypeHvacSystemFunctionListData).Return(systems).Maybe()
+	remoteFeature.On("DataCopy", mock.Anything).Return(nil).Maybe()
+	return probeTarget{entityAddr: "4", entityType: model.EntityTypeTypeDHWCircuit, feature: remoteFeature}
+}
+
+func newOpMock(t *testing.T, read, write bool) *mocks.OperationsInterface {
+	t.Helper()
+	op := mocks.NewOperationsInterface(t)
+	op.On("Read").Return(read).Maybe()
+	op.On("Write").Return(write).Maybe()
+	op.On("String").Return(fmt.Sprintf("read=%t write=%t", read, write)).Maybe()
+	return op
 }
 
 func ptr[T any](v T) *T { return &v }

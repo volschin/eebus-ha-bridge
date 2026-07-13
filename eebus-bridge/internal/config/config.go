@@ -75,6 +75,12 @@ type ExperimentalConfig struct {
 	// description, complete constraints and writable operations, nothing is
 	// written. Requires HvacProbe, HvacProbeBind and HvacProbeWrite.
 	HvacProbeWriteDeltaSKI string `yaml:"hvac_probe_write_delta_ski"`
+	// HvacProbeOverrunWriteSKI is stage 4b of the HVAC control spike, scoped to
+	// exactly the device with this SKI: on its DHWCircuit HVAC feature, activate
+	// the oneTimeDhw overrun, re-read to confirm active/running, then cancel and
+	// confirm inactive/finished. This exercises DHW one-time-charge/boost write
+	// hardware validation only. Requires HvacProbe and HvacProbeBind.
+	HvacProbeOverrunWriteSKI string `yaml:"hvac_probe_overrun_write_ski"`
 	// TrustSKI, when set, makes the bridge trust (RegisterRemoteSKI) this remote
 	// SKI at startup instead of waiting for Home Assistant to send it via gRPC.
 	// Lets a spike container complete the SHIP handshake with a known device
@@ -247,6 +253,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("EEBUS_EXP_HVAC_PROBE_WRITE_DELTA_SKI"); v != "" {
 		cfg.Experimental.HvacProbeWriteDeltaSKI = v
+	}
+	if v := os.Getenv("EEBUS_EXP_HVAC_PROBE_OVERRUN_WRITE_SKI"); v != "" {
+		cfg.Experimental.HvacProbeOverrunWriteSKI = v
 	}
 	if v := os.Getenv("EEBUS_OHPCF_ENABLED"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {

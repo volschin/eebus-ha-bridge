@@ -177,11 +177,17 @@ func main() {
 			} else if cfg.Experimental.HvacProbeWriteDeltaSKI != "" {
 				log.Println("[HVACPROBE] hvac_probe_write_delta_ski requires hvac_probe_write; delta stage not armed")
 			}
+			if ski := cfg.Experimental.HvacProbeOverrunWriteSKI; ski != "" {
+				eebus.DefaultHvacProbe().EnableOverrunWrite(ski)
+				log.Printf("[HVACPROBE] stage-4b DHW boost armed for SKI %s; will activate one-time DHW overrun, confirm, and cancel after accepted HVAC bind", ski)
+			}
 		} else if cfg.Experimental.HvacProbeWrite {
 			log.Println("[HVACPROBE] hvac_probe_write requires hvac_probe_bind; write stage not armed")
+		} else if cfg.Experimental.HvacProbeOverrunWriteSKI != "" {
+			log.Println("[HVACPROBE] hvac_probe_overrun_write_ski requires hvac_probe_bind; boost stage not armed")
 		}
-	} else if cfg.Experimental.HvacProbeBind || cfg.Experimental.HvacProbeWrite {
-		log.Println("[HVACPROBE] hvac_probe_bind/hvac_probe_write require hvac_probe; not armed")
+	} else if cfg.Experimental.HvacProbeBind || cfg.Experimental.HvacProbeWrite || cfg.Experimental.HvacProbeOverrunWriteSKI != "" {
+		log.Println("[HVACPROBE] hvac_probe_bind/hvac_probe_write/hvac_probe_overrun_write_ski require hvac_probe; not armed")
 	}
 
 	// Controllable systems revert an active LPC limit to its failsafe value when
