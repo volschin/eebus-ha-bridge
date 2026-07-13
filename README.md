@@ -12,6 +12,8 @@ Lokale Integration von EEBUS-faehigen Waermepumpen in Home Assistant ueber das *
 - **Leistungsmessung** -- Elektrische Verbrauchsdaten der Waermepumpe in Echtzeit
 - **Discovery & Pairing** -- mDNS-Erkennung und SKI-basiertes Pairing ueber den HA Config Flow
 - **Heartbeat-Ueberwachung** -- Sicherheitsrelevanter EEBUS-Heartbeat mit Failsafe-Fallback
+- **Warmwasser-Solltemperatur** -- Lokales Lesen und Setzen des vom Geraet
+  angebotenen DHW-Sollwerts mit dynamischen Min/Max/Schritt-Grenzen
 - **Energy Dashboard** -- Volle Integration mit dem HA Energy Dashboard
 - **Erweiterbar** -- Architektur vorbereitet fuer zukuenftige EEBUS-HVAC-Use-Cases
 
@@ -96,6 +98,7 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 
 - **Leistungsmessung:** Event-basiert (ca. alle 60s vom Inverter)
 - **LPC-Limits:** Event-basiert (bei Aenderung)
+- **Warmwasser-Solltemperatur:** Event-basiert (bei Aenderung)
 - **Heartbeat:** Alle 4 Sekunden (im Bridge, nicht in HA)
 
 ## Verfuegbare Entities
@@ -113,6 +116,7 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 |--------|-----|-------------|
 | `number.eebus_lpc_limit` | number | LPC-Limit setzen (W) |
 | `number.eebus_failsafe_limit` | number | Failsafe-Grenze (W), standardmaessig deaktiviert |
+| `number.eebus_dhw_setpoint` | number | Warmwasser-Solltemperatur; Bereich und Schrittweite kommen vom Geraet |
 | `switch.eebus_lpc_active` | switch | Limit aktivieren/deaktivieren |
 | `switch.eebus_heartbeat` | switch | Heartbeat an/aus, standardmaessig deaktiviert |
 | `select.eebus_compressor_flexibility` | select | OHPCF-Verdichter-Flexibilitaet: `on`/`paused`/`off`, nur vorhanden wenn WP ein Angebot meldet |
@@ -143,7 +147,7 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 
 ### Nicht unterstuetzt
 
-- HVAC-Steuerung (Betriebsmodi, Sollwerte) -- Vaillant exponiert diese nicht ueber EEBUS
+- Raumheizungs-Sollwerte, Betriebsmodi und DHW-Boost -- noch nicht produktiv verdrahtet
 - Geraete ohne EEBUS-Schnittstelle
 
 ## Energiemanagement mit EEBUS verstehen

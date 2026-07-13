@@ -22,6 +22,11 @@ from .generated.eebus.v1.device_service_pb2 import (  # noqa: F401
     RegisterSKIRequest,
 )
 from .generated.eebus.v1.device_service_pb2_grpc import DeviceServiceStub  # noqa: F401
+from .generated.eebus.v1.dhw_service_pb2 import (  # noqa: F401
+    DHWEventType,
+    SetDHWSetpointRequest,
+)
+from .generated.eebus.v1.dhw_service_pb2_grpc import DHWServiceStub  # noqa: F401
 from .generated.eebus.v1.grid_service_pb2 import GridData  # noqa: F401
 from .generated.eebus.v1.grid_service_pb2_grpc import GridServiceStub  # noqa: F401
 from .generated.eebus.v1.lpc_service_pb2 import (  # noqa: F401
@@ -61,6 +66,10 @@ def device_service_stub(channel: grpc.aio.Channel) -> DeviceServiceStub:
     return DeviceServiceStub(channel)  # type: ignore[no-untyped-call]
 
 
+def dhw_service_stub(channel: grpc.aio.Channel) -> DHWServiceStub:
+    return DHWServiceStub(channel)  # type: ignore[no-untyped-call]
+
+
 def monitoring_service_stub(channel: grpc.aio.Channel) -> MonitoringServiceStub:
     return MonitoringServiceStub(channel)  # type: ignore[no-untyped-call]
 
@@ -88,6 +97,8 @@ __all__ = [
     "DeviceEventType",
     "DeviceRequest",
     "DeviceServiceStub",
+    "DHWEventType",
+    "DHWServiceStub",
     "Empty",
     "GridData",
     "GridServiceStub",
@@ -103,6 +114,7 @@ __all__ = [
     "PVData",
     "PowerMeasurement",
     "RegisterSKIRequest",
+    "SetDHWSetpointRequest",
     "VisualizationServiceStub",
     "WriteFailsafeLimitRequest",
     "WriteLoadLimitRequest",

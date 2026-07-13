@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package eebus.v1;
+
+option go_package = "github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1";
+
+import "eebus/v1/common.proto";
+
+// DHWService exposes the Configuration of DHW Temperature scenario validated
+// against the Vaillant VR940. Values and constraints originate from the remote
+// DHWCircuit Setpoint server.
+service DHWService {
+  rpc GetDHWSetpoint(DeviceRequest) returns (DHWSetpoint);
+  rpc SetDHWSetpoint(SetDHWSetpointRequest) returns (Empty);
+  rpc SubscribeDHWEvents(DeviceRequest) returns (stream DHWEvent);
+}
+
+message DHWSetpoint {
+  double value_celsius = 1;
+  double min_celsius = 2;
+  double max_celsius = 3;
+  double step_celsius = 4;
+  bool writable = 5;
+}
+
+message SetDHWSetpointRequest {
+  string ski = 1;
+  double value_celsius = 2;
+}
+
+enum DHWEventType {
+  DHW_EVENT_UNSPECIFIED = 0;
+  DHW_EVENT_SUPPORT_UPDATED = 1;
+  DHW_EVENT_SETPOINT_UPDATED = 2;
+}
+
+message DHWEvent {
+  string ski = 1;
+  DHWEventType event_type = 2;
+  DHWSetpoint setpoint = 3;
+}

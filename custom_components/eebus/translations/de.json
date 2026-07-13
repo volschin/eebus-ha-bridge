@@ -108,7 +108,8 @@
     },
     "number": {
       "lpc_limit": { "name": "LPC Limit" },
-      "failsafe_limit": { "name": "Failsafe Limit" }
+      "failsafe_limit": { "name": "Failsafe Limit" },
+      "dhw_setpoint": { "name": "Warmwasser-Solltemperatur" }
     },
     "select": {
       "compressor_flexibility": {
