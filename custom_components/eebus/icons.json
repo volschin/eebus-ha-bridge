@@ -6,6 +6,7 @@
       "energy_consumed_heating": { "default": "mdi:radiator" },
       "energy_consumed_dhw": { "default": "mdi:water-boiler" },
       "consumption_limit": { "default": "mdi:speedometer" },
+      "device_operating_state": { "default": "mdi:state-machine" },
       "power_l1": { "default": "mdi:flash" },
       "power_l2": { "default": "mdi:flash" },
       "power_l3": { "default": "mdi:flash" },

@@ -72,6 +72,7 @@
       "energy_consumed_heating": { "name": "Energieverbrauch Heizung" },
       "energy_consumed_dhw": { "name": "Energieverbrauch Warmwasser" },
       "consumption_limit": { "name": "Leistungslimit" },
+      "device_operating_state": { "name": "Betriebszustand" },
       "dhw_temperature": { "name": "Warmwassertemperatur" },
       "room_temperature": { "name": "Raumtemperatur" },
       "outdoor_temperature": { "name": "Außentemperatur" },

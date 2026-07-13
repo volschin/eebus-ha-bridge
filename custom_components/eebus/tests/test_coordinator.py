@@ -6,6 +6,9 @@ from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import grpc
+from grpc.aio import AioRpcError, Metadata
+
 from custom_components.eebus import proto_stubs
 from custom_components.eebus.coordinator import EebusCoordinator, POLL_INTERVAL
 from custom_components.eebus.generated.eebus.v1 import (
@@ -90,6 +93,65 @@ def test_measurement_energy_event_pushes_data():
     )
     coordinator._handle_measurement_event(event)
     assert pushed["energy_consumed_kwh"] == 42.0
+
+
+def test_device_operating_state_event_pushes_data():
+    """DeviceDiagnosis stream events update the diagnostic sensor directly."""
+    coordinator, pushed = _make_coordinator(
+        data={"device_operating_state": "standby"}
+    )
+    event = monitoring_service_pb2.MeasurementEvent(
+        ski="test-ski",
+        event_type=(
+            monitoring_service_pb2.MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED
+        ),
+        device_diagnostics=proto_stubs.DeviceDiagnosticsData(
+            operating_state="futureVendorState"
+        ),
+    )
+
+    coordinator._handle_measurement_event(event)
+
+    assert pushed["device_operating_state"] == "futureVendorState"
+
+
+async def test_read_device_diagnostics_returns_operating_state():
+    """Polling returns the bridge operating-state string unchanged."""
+
+    class MonitoringStub:
+        async def GetDeviceDiagnostics(self, _request, timeout=None):
+            return proto_stubs.DeviceDiagnosticsData(operating_state="normalOperation")
+
+    coordinator, _ = _make_coordinator()
+    module = SimpleNamespace(monitoring_service_stub=lambda _channel: MonitoringStub())
+
+    result = await coordinator._async_read_device_diagnostics(
+        MagicMock(), module, proto_stubs.DeviceRequest(ski="test-ski")
+    )
+
+    assert result == "normalOperation"
+
+
+async def test_read_device_diagnostics_unavailable_returns_none():
+    """Missing diagnosis data remains unavailable without failing the poll."""
+
+    class MonitoringStub:
+        async def GetDeviceDiagnostics(self, _request, timeout=None):
+            raise AioRpcError(
+                grpc.StatusCode.NOT_FOUND,
+                Metadata(),
+                Metadata(),
+                details="device operating state unavailable",
+            )
+
+    coordinator, _ = _make_coordinator()
+    module = SimpleNamespace(monitoring_service_stub=lambda _channel: MonitoringStub())
+
+    result = await coordinator._async_read_device_diagnostics(
+        MagicMock(), module, proto_stubs.DeviceRequest(ski="test-ski")
+    )
+
+    assert result is None
 
 
 def test_measurement_event_other_ski_ignored():

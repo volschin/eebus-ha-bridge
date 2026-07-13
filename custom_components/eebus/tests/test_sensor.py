@@ -2,12 +2,15 @@
 
 from unittest.mock import MagicMock
 
+from homeassistant.const import EntityCategory
+
 from custom_components.eebus.sensor import (
     EebusFailsafeDurationSensor,
     EebusFailsafeLimitSensor,
     EebusMeasurementDescription,
     EebusMeasurementSensor,
     EebusPowerSensor,
+    MEASUREMENT_SENSORS,
 )
 
 
@@ -85,3 +88,36 @@ def test_measurement_sensor_vaillant_temperature_value():
 
     sensor = EebusMeasurementSensor(coordinator, description)
     assert sensor.native_value == 48.5
+
+
+def _device_operating_state_sensor(value):
+    """Build the device operating state sensor with the supplied value."""
+    coordinator = MagicMock()
+    coordinator.data = {"device_operating_state": value, "connected": True}
+    coordinator.ski = "test-ski-123"
+    description = next(
+        item for item in MEASUREMENT_SENSORS if item.key == "device_operating_state"
+    )
+    return EebusMeasurementSensor(coordinator, description)
+
+
+def test_device_operating_state_sensor_value():
+    """Device operating state is an enabled diagnostic sensor."""
+    sensor = _device_operating_state_sensor("normalOperation")
+    assert sensor.native_value == "normalOperation"
+    assert sensor.entity_description.entity_category == EntityCategory.DIAGNOSTIC
+    assert sensor.entity_description.entity_registry_enabled_default is True
+    assert sensor.entity_description.device_class is None
+
+
+def test_device_operating_state_sensor_unavailable():
+    """Missing device operating state produces no native value."""
+    assert _device_operating_state_sensor(None).native_value is None
+
+
+def test_device_operating_state_sensor_passes_through_unknown_value():
+    """Unknown future device states remain visible as their raw string."""
+    assert (
+        _device_operating_state_sensor("futureVendorState").native_value
+        == "futureVendorState"
+    )

@@ -561,6 +561,9 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data["room_heating_system_function"],
             ) = await self._async_read_room_heating(channel, proto_stubs, request)
             data["room_heating_supported"] = self._room_heating_supported
+            data["device_operating_state"] = await self._async_read_device_diagnostics(
+                channel, proto_stubs, request
+            )
 
             if saw_not_found:
                 self._not_found_streak += 1
@@ -1035,6 +1038,28 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if state.HasField("current_temperature_celsius"):
             self._push_data({"room_temperature_c": state.current_temperature_celsius})
         return setpoint, system_function
+
+    async def _async_read_device_diagnostics(
+        self, channel: grpc.aio.Channel, proto_stubs: Any, request: Any
+    ) -> str | None:
+        """Read the device operating state without mutating coordinator data."""
+        try:
+            diagnostics = await proto_stubs.monitoring_service_stub(
+                channel
+            ).GetDeviceDiagnostics(request, timeout=RPC_TIMEOUT)
+        except grpc.aio.AioRpcError as err:
+            if not (
+                _is_unimplemented(err)
+                or err.code()
+                in (grpc.StatusCode.NOT_FOUND, grpc.StatusCode.UNAVAILABLE)
+            ):
+                _LOGGER.debug(
+                    "EEBUS device diagnosis read failed for SKI %s: %s",
+                    self.ski,
+                    _rpc_error_text(err),
+                )
+            return None
+        return diagnostics.operating_state or None
 
     async def async_set_room_heating_temperature(self, value_celsius: float) -> None:
         """Set the room-heating target temperature."""
@@ -1652,6 +1677,19 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ):
             if event.HasField("measurement"):
                 self._push_data({"return_temperature_c": event.measurement.value})
+            else:
+                self.hass.async_create_task(self.async_request_refresh())
+        elif event_type == (
+            proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED
+        ):
+            if event.HasField("device_diagnostics"):
+                self._push_data(
+                    {
+                        "device_operating_state": (
+                            event.device_diagnostics.operating_state or None
+                        )
+                    }
+                )
             else:
                 self.hass.async_create_task(self.async_request_refresh())
 
