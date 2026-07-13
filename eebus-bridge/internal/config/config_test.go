@@ -134,6 +134,7 @@ grpc:
 
 	t.Setenv("EEBUS_GRPC_PORT", "9999")
 	t.Setenv("EEBUS_SERIAL", "env-serial")
+	t.Setenv("EEBUS_EXP_HVAC_PROBE_OVERRUN_WRITE_SKI", "AA BB")
 
 	cfg, err := config.LoadFromFile(path)
 	if err != nil {
@@ -145,5 +146,8 @@ grpc:
 	}
 	if cfg.EEBUS.Serial != "env-serial" {
 		t.Errorf("env override EEBUS.Serial = %q, want env-serial", cfg.EEBUS.Serial)
+	}
+	if cfg.Experimental.HvacProbeOverrunWriteSKI != "AA BB" {
+		t.Errorf("env override HvacProbeOverrunWriteSKI = %q, want AA BB", cfg.Experimental.HvacProbeOverrunWriteSKI)
 	}
 }
