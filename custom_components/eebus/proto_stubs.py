@@ -23,7 +23,13 @@ from .generated.eebus.v1.device_service_pb2 import (  # noqa: F401
 )
 from .generated.eebus.v1.device_service_pb2_grpc import DeviceServiceStub  # noqa: F401
 from .generated.eebus.v1.dhw_service_pb2 import (  # noqa: F401
+    DHWBoostStatus,
     DHWEventType,
+    DHWSystemFunctionEvent,
+    DHWSystemFunctionEventType,
+    DHWSystemFunctionState,
+    SetDHWBoostRequest,
+    SetDHWOperationModeRequest,
     SetDHWSetpointRequest,
 )
 from .generated.eebus.v1.dhw_service_pb2_grpc import DHWServiceStub  # noqa: F401
@@ -97,8 +103,12 @@ __all__ = [
     "DeviceEventType",
     "DeviceRequest",
     "DeviceServiceStub",
+    "DHWBoostStatus",
     "DHWEventType",
     "DHWServiceStub",
+    "DHWSystemFunctionEvent",
+    "DHWSystemFunctionEventType",
+    "DHWSystemFunctionState",
     "Empty",
     "GridData",
     "GridServiceStub",
@@ -114,6 +124,8 @@ __all__ = [
     "PVData",
     "PowerMeasurement",
     "RegisterSKIRequest",
+    "SetDHWBoostRequest",
+    "SetDHWOperationModeRequest",
     "SetDHWSetpointRequest",
     "VisualizationServiceStub",
     "WriteFailsafeLimitRequest",

@@ -53,6 +53,26 @@ class DHWServiceStub(object):
                 request_serializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
                 response_deserializer=eebus_dot_v1_dot_dhw__service__pb2.DHWEvent.FromString,
                 _registered_method=True)
+        self.GetDHWSystemFunction = channel.unary_unary(
+                '/eebus.v1.DHWService/GetDHWSystemFunction',
+                request_serializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
+                response_deserializer=eebus_dot_v1_dot_dhw__service__pb2.DHWSystemFunctionState.FromString,
+                _registered_method=True)
+        self.SetDHWBoost = channel.unary_unary(
+                '/eebus.v1.DHWService/SetDHWBoost',
+                request_serializer=eebus_dot_v1_dot_dhw__service__pb2.SetDHWBoostRequest.SerializeToString,
+                response_deserializer=eebus_dot_v1_dot_common__pb2.Empty.FromString,
+                _registered_method=True)
+        self.SetDHWOperationMode = channel.unary_unary(
+                '/eebus.v1.DHWService/SetDHWOperationMode',
+                request_serializer=eebus_dot_v1_dot_dhw__service__pb2.SetDHWOperationModeRequest.SerializeToString,
+                response_deserializer=eebus_dot_v1_dot_common__pb2.Empty.FromString,
+                _registered_method=True)
+        self.SubscribeDHWSystemFunctionEvents = channel.unary_stream(
+                '/eebus.v1.DHWService/SubscribeDHWSystemFunctionEvents',
+                request_serializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
+                response_deserializer=eebus_dot_v1_dot_dhw__service__pb2.DHWSystemFunctionEvent.FromString,
+                _registered_method=True)
 
 
 class DHWServiceServicer(object):
@@ -79,6 +99,30 @@ class DHWServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetDHWSystemFunction(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SetDHWBoost(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SetDHWOperationMode(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SubscribeDHWSystemFunctionEvents(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_DHWServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -96,6 +140,26 @@ def add_DHWServiceServicer_to_server(servicer, server):
                     servicer.SubscribeDHWEvents,
                     request_deserializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.FromString,
                     response_serializer=eebus_dot_v1_dot_dhw__service__pb2.DHWEvent.SerializeToString,
+            ),
+            'GetDHWSystemFunction': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetDHWSystemFunction,
+                    request_deserializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.FromString,
+                    response_serializer=eebus_dot_v1_dot_dhw__service__pb2.DHWSystemFunctionState.SerializeToString,
+            ),
+            'SetDHWBoost': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetDHWBoost,
+                    request_deserializer=eebus_dot_v1_dot_dhw__service__pb2.SetDHWBoostRequest.FromString,
+                    response_serializer=eebus_dot_v1_dot_common__pb2.Empty.SerializeToString,
+            ),
+            'SetDHWOperationMode': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetDHWOperationMode,
+                    request_deserializer=eebus_dot_v1_dot_dhw__service__pb2.SetDHWOperationModeRequest.FromString,
+                    response_serializer=eebus_dot_v1_dot_common__pb2.Empty.SerializeToString,
+            ),
+            'SubscribeDHWSystemFunctionEvents': grpc.unary_stream_rpc_method_handler(
+                    servicer.SubscribeDHWSystemFunctionEvents,
+                    request_deserializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.FromString,
+                    response_serializer=eebus_dot_v1_dot_dhw__service__pb2.DHWSystemFunctionEvent.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -182,6 +246,114 @@ class DHWService(object):
             '/eebus.v1.DHWService/SubscribeDHWEvents',
             eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
             eebus_dot_v1_dot_dhw__service__pb2.DHWEvent.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetDHWSystemFunction(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/eebus.v1.DHWService/GetDHWSystemFunction',
+            eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
+            eebus_dot_v1_dot_dhw__service__pb2.DHWSystemFunctionState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetDHWBoost(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/eebus.v1.DHWService/SetDHWBoost',
+            eebus_dot_v1_dot_dhw__service__pb2.SetDHWBoostRequest.SerializeToString,
+            eebus_dot_v1_dot_common__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetDHWOperationMode(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/eebus.v1.DHWService/SetDHWOperationMode',
+            eebus_dot_v1_dot_dhw__service__pb2.SetDHWOperationModeRequest.SerializeToString,
+            eebus_dot_v1_dot_common__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SubscribeDHWSystemFunctionEvents(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/eebus.v1.DHWService/SubscribeDHWSystemFunctionEvents',
+            eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
+            eebus_dot_v1_dot_dhw__service__pb2.DHWSystemFunctionEvent.FromString,
             options,
             channel_credentials,
             insecure,

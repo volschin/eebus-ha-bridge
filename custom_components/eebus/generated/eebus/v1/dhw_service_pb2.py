@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from . import common_pb2 as eebus_dot_v1_dot_common__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1a\x65\x65\x62us/v1/dhw_service.proto\x12\x08\x65\x65\x62us.v1\x1a\x15\x65\x65\x62us/v1/common.proto\"v\n\x0b\x44HWSetpoint\x12\x15\n\rvalue_celsius\x18\x01 \x01(\x01\x12\x13\n\x0bmin_celsius\x18\x02 \x01(\x01\x12\x13\n\x0bmax_celsius\x18\x03 \x01(\x01\x12\x14\n\x0cstep_celsius\x18\x04 \x01(\x01\x12\x10\n\x08writable\x18\x05 \x01(\x08\";\n\x15SetDHWSetpointRequest\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12\x15\n\rvalue_celsius\x18\x02 \x01(\x01\"l\n\x08\x44HWEvent\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12*\n\nevent_type\x18\x02 \x01(\x0e\x32\x16.eebus.v1.DHWEventType\x12\'\n\x08setpoint\x18\x03 \x01(\x0b\x32\x15.eebus.v1.DHWSetpoint*h\n\x0c\x44HWEventType\x12\x19\n\x15\x44HW_EVENT_UNSPECIFIED\x10\x00\x12\x1d\n\x19\x44HW_EVENT_SUPPORT_UPDATED\x10\x01\x12\x1e\n\x1a\x44HW_EVENT_SETPOINT_UPDATED\x10\x02\x32\xd7\x01\n\nDHWService\x12@\n\x0eGetDHWSetpoint\x12\x17.eebus.v1.DeviceRequest\x1a\x15.eebus.v1.DHWSetpoint\x12\x42\n\x0eSetDHWSetpoint\x12\x1f.eebus.v1.SetDHWSetpointRequest\x1a\x0f.eebus.v1.Empty\x12\x43\n\x12SubscribeDHWEvents\x12\x17.eebus.v1.DeviceRequest\x1a\x12.eebus.v1.DHWEvent0\x01\x42=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1a\x65\x65\x62us/v1/dhw_service.proto\x12\x08\x65\x65\x62us.v1\x1a\x15\x65\x65\x62us/v1/common.proto\"v\n\x0b\x44HWSetpoint\x12\x15\n\rvalue_celsius\x18\x01 \x01(\x01\x12\x13\n\x0bmin_celsius\x18\x02 \x01(\x01\x12\x13\n\x0bmax_celsius\x18\x03 \x01(\x01\x12\x14\n\x0cstep_celsius\x18\x04 \x01(\x01\x12\x10\n\x08writable\x18\x05 \x01(\x08\";\n\x15SetDHWSetpointRequest\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12\x15\n\rvalue_celsius\x18\x02 \x01(\x01\"l\n\x08\x44HWEvent\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12*\n\nevent_type\x18\x02 \x01(\x0e\x32\x16.eebus.v1.DHWEventType\x12\'\n\x08setpoint\x18\x03 \x01(\x0b\x32\x15.eebus.v1.DHWSetpoint\"\xa8\x01\n\x16\x44HWSystemFunctionState\x12.\n\x0c\x62oost_status\x18\x01 \x01(\x0e\x32\x18.eebus.v1.DHWBoostStatus\x12\x16\n\x0e\x62oost_writable\x18\x02 \x01(\x08\x12\x16\n\x0eoperation_mode\x18\x03 \x01(\t\x12\x17\n\x0f\x61vailable_modes\x18\x04 \x03(\t\x12\x15\n\rmode_writable\x18\x05 \x01(\x08\"1\n\x12SetDHWBoostRequest\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12\x0e\n\x06\x61\x63tive\x18\x02 \x01(\x08\"7\n\x1aSetDHWOperationModeRequest\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12\x0c\n\x04mode\x18\x02 \x01(\t\"\x90\x01\n\x16\x44HWSystemFunctionEvent\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12\x38\n\nevent_type\x18\x02 \x01(\x0e\x32$.eebus.v1.DHWSystemFunctionEventType\x12/\n\x05state\x18\x03 \x01(\x0b\x32 .eebus.v1.DHWSystemFunctionState*h\n\x0c\x44HWEventType\x12\x19\n\x15\x44HW_EVENT_UNSPECIFIED\x10\x00\x12\x1d\n\x19\x44HW_EVENT_SUPPORT_UPDATED\x10\x01\x12\x1e\n\x1a\x44HW_EVENT_SETPOINT_UPDATED\x10\x02*\xab\x01\n\x0e\x44HWBoostStatus\x12 \n\x1c\x44HW_BOOST_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n\x19\x44HW_BOOST_STATUS_INACTIVE\x10\x01\x12\x1b\n\x17\x44HW_BOOST_STATUS_ACTIVE\x10\x02\x12\x1c\n\x18\x44HW_BOOST_STATUS_RUNNING\x10\x03\x12\x1d\n\x19\x44HW_BOOST_STATUS_FINISHED\x10\x04*\xa3\x01\n\x1a\x44HWSystemFunctionEventType\x12)\n%DHW_SYSTEM_FUNCTION_EVENT_UNSPECIFIED\x10\x00\x12-\n)DHW_SYSTEM_FUNCTION_EVENT_SUPPORT_UPDATED\x10\x01\x12+\n\'DHW_SYSTEM_FUNCTION_EVENT_STATE_UPDATED\x10\x02\x32\x97\x04\n\nDHWService\x12@\n\x0eGetDHWSetpoint\x12\x17.eebus.v1.DeviceRequest\x1a\x15.eebus.v1.DHWSetpoint\x12\x42\n\x0eSetDHWSetpoint\x12\x1f.eebus.v1.SetDHWSetpointRequest\x1a\x0f.eebus.v1.Empty\x12\x43\n\x12SubscribeDHWEvents\x12\x17.eebus.v1.DeviceRequest\x1a\x12.eebus.v1.DHWEvent0\x01\x12Q\n\x14GetDHWSystemFunction\x12\x17.eebus.v1.DeviceRequest\x1a .eebus.v1.DHWSystemFunctionState\x12<\n\x0bSetDHWBoost\x12\x1c.eebus.v1.SetDHWBoostRequest\x1a\x0f.eebus.v1.Empty\x12L\n\x13SetDHWOperationMode\x12$.eebus.v1.SetDHWOperationModeRequest\x1a\x0f.eebus.v1.Empty\x12_\n SubscribeDHWSystemFunctionEvents\x12\x17.eebus.v1.DeviceRequest\x1a .eebus.v1.DHWSystemFunctionEvent0\x01\x42=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,14 +33,26 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'eebus.v1.dhw_service_pb2', 
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1'
-  _globals['_DHWEVENTTYPE']._serialized_start=354
-  _globals['_DHWEVENTTYPE']._serialized_end=458
+  _globals['_DHWEVENTTYPE']._serialized_start=780
+  _globals['_DHWEVENTTYPE']._serialized_end=884
+  _globals['_DHWBOOSTSTATUS']._serialized_start=887
+  _globals['_DHWBOOSTSTATUS']._serialized_end=1058
+  _globals['_DHWSYSTEMFUNCTIONEVENTTYPE']._serialized_start=1061
+  _globals['_DHWSYSTEMFUNCTIONEVENTTYPE']._serialized_end=1224
   _globals['_DHWSETPOINT']._serialized_start=63
   _globals['_DHWSETPOINT']._serialized_end=181
   _globals['_SETDHWSETPOINTREQUEST']._serialized_start=183
   _globals['_SETDHWSETPOINTREQUEST']._serialized_end=242
   _globals['_DHWEVENT']._serialized_start=244
   _globals['_DHWEVENT']._serialized_end=352
-  _globals['_DHWSERVICE']._serialized_start=461
-  _globals['_DHWSERVICE']._serialized_end=676
+  _globals['_DHWSYSTEMFUNCTIONSTATE']._serialized_start=355
+  _globals['_DHWSYSTEMFUNCTIONSTATE']._serialized_end=523
+  _globals['_SETDHWBOOSTREQUEST']._serialized_start=525
+  _globals['_SETDHWBOOSTREQUEST']._serialized_end=574
+  _globals['_SETDHWOPERATIONMODEREQUEST']._serialized_start=576
+  _globals['_SETDHWOPERATIONMODEREQUEST']._serialized_end=631
+  _globals['_DHWSYSTEMFUNCTIONEVENT']._serialized_start=634
+  _globals['_DHWSYSTEMFUNCTIONEVENT']._serialized_end=778
+  _globals['_DHWSERVICE']._serialized_start=1227
+  _globals['_DHWSERVICE']._serialized_end=1762
 # @@protoc_insertion_point(module_scope)

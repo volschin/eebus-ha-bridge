@@ -112,6 +112,7 @@
       "dhw_setpoint": { "name": "Warmwasser-Solltemperatur" }
     },
     "select": {
+      "dhw_operation_mode": { "name": "Warmwasser Betriebsart" },
       "compressor_flexibility": {
         "name": "Verdichter-Flexibilität",
         "state": {
@@ -123,7 +124,8 @@
     },
     "switch": {
       "lpc_active": { "name": "LPC aktiv" },
-      "heartbeat": { "name": "Heartbeat" }
+      "heartbeat": { "name": "Heartbeat" },
+      "dhw_boost": { "name": "Warmwasser Einmalladung" }
     },
     "binary_sensor": {
       "connected": { "name": "Verbunden" },

@@ -19,9 +19,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DHWService_GetDHWSetpoint_FullMethodName     = "/eebus.v1.DHWService/GetDHWSetpoint"
-	DHWService_SetDHWSetpoint_FullMethodName     = "/eebus.v1.DHWService/SetDHWSetpoint"
-	DHWService_SubscribeDHWEvents_FullMethodName = "/eebus.v1.DHWService/SubscribeDHWEvents"
+	DHWService_GetDHWSetpoint_FullMethodName                   = "/eebus.v1.DHWService/GetDHWSetpoint"
+	DHWService_SetDHWSetpoint_FullMethodName                   = "/eebus.v1.DHWService/SetDHWSetpoint"
+	DHWService_SubscribeDHWEvents_FullMethodName               = "/eebus.v1.DHWService/SubscribeDHWEvents"
+	DHWService_GetDHWSystemFunction_FullMethodName             = "/eebus.v1.DHWService/GetDHWSystemFunction"
+	DHWService_SetDHWBoost_FullMethodName                      = "/eebus.v1.DHWService/SetDHWBoost"
+	DHWService_SetDHWOperationMode_FullMethodName              = "/eebus.v1.DHWService/SetDHWOperationMode"
+	DHWService_SubscribeDHWSystemFunctionEvents_FullMethodName = "/eebus.v1.DHWService/SubscribeDHWSystemFunctionEvents"
 )
 
 // DHWServiceClient is the client API for DHWService service.
@@ -35,6 +39,10 @@ type DHWServiceClient interface {
 	GetDHWSetpoint(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*DHWSetpoint, error)
 	SetDHWSetpoint(ctx context.Context, in *SetDHWSetpointRequest, opts ...grpc.CallOption) (*Empty, error)
 	SubscribeDHWEvents(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DHWEvent], error)
+	GetDHWSystemFunction(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*DHWSystemFunctionState, error)
+	SetDHWBoost(ctx context.Context, in *SetDHWBoostRequest, opts ...grpc.CallOption) (*Empty, error)
+	SetDHWOperationMode(ctx context.Context, in *SetDHWOperationModeRequest, opts ...grpc.CallOption) (*Empty, error)
+	SubscribeDHWSystemFunctionEvents(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DHWSystemFunctionEvent], error)
 }
 
 type dHWServiceClient struct {
@@ -84,6 +92,55 @@ func (c *dHWServiceClient) SubscribeDHWEvents(ctx context.Context, in *DeviceReq
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type DHWService_SubscribeDHWEventsClient = grpc.ServerStreamingClient[DHWEvent]
 
+func (c *dHWServiceClient) GetDHWSystemFunction(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*DHWSystemFunctionState, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DHWSystemFunctionState)
+	err := c.cc.Invoke(ctx, DHWService_GetDHWSystemFunction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dHWServiceClient) SetDHWBoost(ctx context.Context, in *SetDHWBoostRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, DHWService_SetDHWBoost_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dHWServiceClient) SetDHWOperationMode(ctx context.Context, in *SetDHWOperationModeRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, DHWService_SetDHWOperationMode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dHWServiceClient) SubscribeDHWSystemFunctionEvents(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DHWSystemFunctionEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &DHWService_ServiceDesc.Streams[1], DHWService_SubscribeDHWSystemFunctionEvents_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[DeviceRequest, DHWSystemFunctionEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DHWService_SubscribeDHWSystemFunctionEventsClient = grpc.ServerStreamingClient[DHWSystemFunctionEvent]
+
 // DHWServiceServer is the server API for DHWService service.
 // All implementations must embed UnimplementedDHWServiceServer
 // for forward compatibility.
@@ -95,6 +152,10 @@ type DHWServiceServer interface {
 	GetDHWSetpoint(context.Context, *DeviceRequest) (*DHWSetpoint, error)
 	SetDHWSetpoint(context.Context, *SetDHWSetpointRequest) (*Empty, error)
 	SubscribeDHWEvents(*DeviceRequest, grpc.ServerStreamingServer[DHWEvent]) error
+	GetDHWSystemFunction(context.Context, *DeviceRequest) (*DHWSystemFunctionState, error)
+	SetDHWBoost(context.Context, *SetDHWBoostRequest) (*Empty, error)
+	SetDHWOperationMode(context.Context, *SetDHWOperationModeRequest) (*Empty, error)
+	SubscribeDHWSystemFunctionEvents(*DeviceRequest, grpc.ServerStreamingServer[DHWSystemFunctionEvent]) error
 	mustEmbedUnimplementedDHWServiceServer()
 }
 
@@ -113,6 +174,18 @@ func (UnimplementedDHWServiceServer) SetDHWSetpoint(context.Context, *SetDHWSetp
 }
 func (UnimplementedDHWServiceServer) SubscribeDHWEvents(*DeviceRequest, grpc.ServerStreamingServer[DHWEvent]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeDHWEvents not implemented")
+}
+func (UnimplementedDHWServiceServer) GetDHWSystemFunction(context.Context, *DeviceRequest) (*DHWSystemFunctionState, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDHWSystemFunction not implemented")
+}
+func (UnimplementedDHWServiceServer) SetDHWBoost(context.Context, *SetDHWBoostRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetDHWBoost not implemented")
+}
+func (UnimplementedDHWServiceServer) SetDHWOperationMode(context.Context, *SetDHWOperationModeRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetDHWOperationMode not implemented")
+}
+func (UnimplementedDHWServiceServer) SubscribeDHWSystemFunctionEvents(*DeviceRequest, grpc.ServerStreamingServer[DHWSystemFunctionEvent]) error {
+	return status.Error(codes.Unimplemented, "method SubscribeDHWSystemFunctionEvents not implemented")
 }
 func (UnimplementedDHWServiceServer) mustEmbedUnimplementedDHWServiceServer() {}
 func (UnimplementedDHWServiceServer) testEmbeddedByValue()                    {}
@@ -182,6 +255,71 @@ func _DHWService_SubscribeDHWEvents_Handler(srv interface{}, stream grpc.ServerS
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type DHWService_SubscribeDHWEventsServer = grpc.ServerStreamingServer[DHWEvent]
 
+func _DHWService_GetDHWSystemFunction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeviceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DHWServiceServer).GetDHWSystemFunction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DHWService_GetDHWSystemFunction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DHWServiceServer).GetDHWSystemFunction(ctx, req.(*DeviceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DHWService_SetDHWBoost_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetDHWBoostRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DHWServiceServer).SetDHWBoost(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DHWService_SetDHWBoost_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DHWServiceServer).SetDHWBoost(ctx, req.(*SetDHWBoostRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DHWService_SetDHWOperationMode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetDHWOperationModeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DHWServiceServer).SetDHWOperationMode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DHWService_SetDHWOperationMode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DHWServiceServer).SetDHWOperationMode(ctx, req.(*SetDHWOperationModeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DHWService_SubscribeDHWSystemFunctionEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(DeviceRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DHWServiceServer).SubscribeDHWSystemFunctionEvents(m, &grpc.GenericServerStream[DeviceRequest, DHWSystemFunctionEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DHWService_SubscribeDHWSystemFunctionEventsServer = grpc.ServerStreamingServer[DHWSystemFunctionEvent]
+
 // DHWService_ServiceDesc is the grpc.ServiceDesc for DHWService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -197,11 +335,28 @@ var DHWService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "SetDHWSetpoint",
 			Handler:    _DHWService_SetDHWSetpoint_Handler,
 		},
+		{
+			MethodName: "GetDHWSystemFunction",
+			Handler:    _DHWService_GetDHWSystemFunction_Handler,
+		},
+		{
+			MethodName: "SetDHWBoost",
+			Handler:    _DHWService_SetDHWBoost_Handler,
+		},
+		{
+			MethodName: "SetDHWOperationMode",
+			Handler:    _DHWService_SetDHWOperationMode_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "SubscribeDHWEvents",
 			Handler:       _DHWService_SubscribeDHWEvents_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "SubscribeDHWSystemFunctionEvents",
+			Handler:       _DHWService_SubscribeDHWSystemFunctionEvents_Handler,
 			ServerStreams: true,
 		},
 	},

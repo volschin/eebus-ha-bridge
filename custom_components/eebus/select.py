@@ -36,6 +36,7 @@ async def async_setup_entry(
     # client is active and a compatible heat pump was found.
     if coordinator.data and coordinator.data.get("ohpcf_supported"):
         entities.append(EebusCompressorFlexibilitySelect(coordinator))
+    entities.append(EebusDHWOperationModeSelect(coordinator))
     async_add_entities(entities)
 
 
@@ -113,4 +114,58 @@ class EebusCompressorFlexibilitySelect(EebusEntity, SelectEntity):
         else:
             action = proto_stubs.OHPCFAction.OHPCF_ACTION_ABORT
         await self.coordinator.async_control_compressor(action)
+        await self.coordinator.async_request_refresh()
+
+
+class EebusDHWOperationModeSelect(EebusEntity, SelectEntity):
+    """Select for domestic-hot-water operation mode."""
+
+    _attr_translation_key = "dhw_operation_mode"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: EebusCoordinator) -> None:
+        """Initialize."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.ski}_dhw_operation_mode"
+
+    def _state(self) -> dict[str, Any] | None:
+        if self.coordinator.data is None:
+            return None
+        return self.coordinator.data.get("dhw_system_function")
+
+    @property
+    def available(self) -> bool:
+        """Available only for writable DHW operation modes."""
+        if not super().available:
+            return False
+        data = self.coordinator.data or {}
+        state = self._state()
+        return bool(
+            data.get("dhw_sysfn_supported") is not False
+            and state is not None
+            and state.get("mode_writable")
+            and state.get("available_modes")
+        )
+
+    @property
+    def options(self) -> list[str]:
+        """Return operation modes advertised by the device."""
+        state = self._state()
+        if state is None:
+            return []
+        modes = state.get("available_modes")
+        return list(modes) if isinstance(modes, list) else []
+
+    @property
+    def current_option(self) -> str | None:
+        """Return the current DHW operation mode."""
+        state = self._state()
+        if state is None:
+            return None
+        mode = state.get("operation_mode")
+        return mode if isinstance(mode, str) and mode else None
+
+    async def async_select_option(self, option: str) -> None:
+        """Set the DHW operation mode."""
+        await self.coordinator.async_set_dhw_operation_mode(option)
         await self.coordinator.async_request_refresh()

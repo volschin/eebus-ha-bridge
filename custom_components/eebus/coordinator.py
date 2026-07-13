@@ -97,6 +97,23 @@ def _rpc_error_text(err: grpc.aio.AioRpcError) -> str:
     return f"code={err.code().name} details={err.details()}"
 
 
+def _dhw_system_function_to_dict(state: Any) -> dict[str, Any]:
+    """Convert a DHW system-function protobuf state into coordinator data."""
+    from . import proto_stubs
+
+    status = proto_stubs.DHWBoostStatus.Name(state.boost_status)
+    prefix = "DHW_BOOST_STATUS_"
+    if status.startswith(prefix):
+        status = status[len(prefix) :]
+    return {
+        "boost_status": status.lower(),
+        "boost_writable": state.boost_writable,
+        "operation_mode": state.operation_mode,
+        "available_modes": list(state.available_modes),
+        "mode_writable": state.mode_writable,
+    }
+
+
 class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator that manages gRPC connection and data updates."""
 
@@ -151,6 +168,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._failsafe_supported: bool | None = None
         self._ohpcf_supported: bool | None = None
         self._dhw_supported: bool | None = None
+        self._dhw_sysfn_supported: bool | None = None
         self._ski_registered: bool = False
         self._not_found_streak: int = 0
 
@@ -533,6 +551,10 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 channel, proto_stubs, request
             )
             data["dhw_supported"] = self._dhw_supported
+            data["dhw_system_function"] = await self._async_read_dhw_system_function(
+                channel, proto_stubs, request
+            )
+            data["dhw_sysfn_supported"] = self._dhw_sysfn_supported
 
             if saw_not_found:
                 self._not_found_streak += 1
@@ -894,6 +916,84 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ) from err
             raise
 
+    async def _async_read_dhw_system_function(
+        self, channel: grpc.aio.Channel, proto_stubs: Any, request: Any
+    ) -> dict[str, Any] | None:
+        """Read DHW boost and operation mode state."""
+        try:
+            stub = proto_stubs.dhw_service_stub(channel)
+            state = await stub.GetDHWSystemFunction(request, timeout=RPC_TIMEOUT)
+        except grpc.aio.AioRpcError as err:
+            if _is_unimplemented(err) or err.code() in (
+                grpc.StatusCode.NOT_FOUND,
+                grpc.StatusCode.UNAVAILABLE,
+            ):
+                self._dhw_sysfn_supported = False
+            else:
+                _LOGGER.debug(
+                    "EEBUS DHW system function read failed for SKI %s: %s",
+                    self.ski,
+                    _rpc_error_text(err),
+                )
+            return None
+
+        self._dhw_sysfn_supported = True
+        return _dhw_system_function_to_dict(state)
+
+    async def async_set_dhw_boost(self, active: bool) -> None:
+        """Activate or cancel DHW one-time boost."""
+        channel = await self._ensure_channel()
+        from . import proto_stubs
+
+        stub = proto_stubs.dhw_service_stub(channel)
+        try:
+            await stub.SetDHWBoost(
+                proto_stubs.SetDHWBoostRequest(ski=self.ski, active=active),
+                timeout=RPC_TIMEOUT,
+            )
+            self._dhw_sysfn_supported = True
+        except grpc.aio.AioRpcError as err:
+            if _is_unimplemented(err):
+                self._dhw_sysfn_supported = False
+                _LOGGER.info("DHW boost unsupported for SKI %s: %s", self.ski, err.details())
+                return
+            if err.code() in (
+                grpc.StatusCode.INVALID_ARGUMENT,
+                grpc.StatusCode.FAILED_PRECONDITION,
+                grpc.StatusCode.NOT_FOUND,
+            ):
+                raise ServiceValidationError(f"Domestic hot water boost failed: {err.details()}") from err
+            raise
+
+    async def async_set_dhw_operation_mode(self, mode: str) -> None:
+        """Set the DHW operation mode by advertised mode type."""
+        channel = await self._ensure_channel()
+        from . import proto_stubs
+
+        stub = proto_stubs.dhw_service_stub(channel)
+        try:
+            await stub.SetDHWOperationMode(
+                proto_stubs.SetDHWOperationModeRequest(ski=self.ski, mode=mode),
+                timeout=RPC_TIMEOUT,
+            )
+            self._dhw_sysfn_supported = True
+        except grpc.aio.AioRpcError as err:
+            if _is_unimplemented(err):
+                self._dhw_sysfn_supported = False
+                _LOGGER.info(
+                    "DHW operation mode unsupported for SKI %s: %s",
+                    self.ski,
+                    err.details(),
+                )
+                return
+            if err.code() in (
+                grpc.StatusCode.INVALID_ARGUMENT,
+                grpc.StatusCode.FAILED_PRECONDITION,
+                grpc.StatusCode.NOT_FOUND,
+            ):
+                raise ServiceValidationError(f"Domestic hot water operation mode failed: {err.details()}") from err
+            raise
+
     async def async_start_heartbeat(self) -> None:
         """Start EEBUS heartbeat via gRPC."""
         channel = await self._ensure_channel()
@@ -1224,6 +1324,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ("lpc_events", self._run_lpc_event_stream),
             ("measurements", self._run_measurement_stream),
             ("dhw_events", self._run_dhw_event_stream),
+            ("dhw_sysfn_events", self._run_dhw_sysfn_event_stream),
         ):
             self._stream_tasks.append(
                 self.hass.async_create_background_task(
@@ -1301,6 +1402,18 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._handle_dhw_event(event)
 
         await self._run_stream("DHW", consume)
+
+    async def _run_dhw_sysfn_event_stream(self) -> None:
+        from . import proto_stubs
+
+        async def consume(channel: grpc.aio.Channel) -> None:
+            stub = proto_stubs.dhw_service_stub(channel)
+            async for event in stub.SubscribeDHWSystemFunctionEvents(
+                proto_stubs.DeviceRequest(ski=self.ski)
+            ):
+                self._handle_dhw_sysfn_event(event)
+
+        await self._run_stream("DHW system function", consume)
 
     def _event_matches(self, event_ski: str) -> bool:
         """Return True when an event applies to the configured device."""
@@ -1410,6 +1523,29 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 }
             )
         elif event.event_type == proto_stubs.DHWEventType.DHW_EVENT_SUPPORT_UPDATED:
+            self.hass.async_create_task(self.async_request_refresh())
+
+    def _handle_dhw_sysfn_event(self, event: Any) -> None:
+        from . import proto_stubs
+
+        if not self._event_matches(event.ski):
+            return
+        if (
+            event.event_type
+            == proto_stubs.DHWSystemFunctionEventType.DHW_SYSTEM_FUNCTION_EVENT_STATE_UPDATED
+            and event.HasField("state")
+        ):
+            self._dhw_sysfn_supported = True
+            self._push_data(
+                {
+                    "dhw_system_function": _dhw_system_function_to_dict(event.state),
+                    "dhw_sysfn_supported": True,
+                }
+            )
+        elif (
+            event.event_type
+            == proto_stubs.DHWSystemFunctionEventType.DHW_SYSTEM_FUNCTION_EVENT_SUPPORT_UPDATED
+        ):
             self.hass.async_create_task(self.async_request_refresh())
 
     async def async_shutdown(self) -> None:

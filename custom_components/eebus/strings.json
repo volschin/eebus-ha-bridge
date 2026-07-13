@@ -112,6 +112,7 @@
       "dhw_setpoint": { "name": "Domestic Hot Water Target Temperature" }
     },
     "select": {
+      "dhw_operation_mode": { "name": "Domestic Hot Water Operation Mode" },
       "compressor_flexibility": {
         "name": "Compressor Flexibility",
         "state": {
@@ -123,7 +124,8 @@
     },
     "switch": {
       "lpc_active": { "name": "LPC Active" },
-      "heartbeat": { "name": "Heartbeat" }
+      "heartbeat": { "name": "Heartbeat" },
+      "dhw_boost": { "name": "Domestic Hot Water Boost" }
     },
     "binary_sensor": {
       "connected": { "name": "Connected" },

@@ -86,6 +86,7 @@ func main() {
 	lpcWrapper.Setup(localEntity)
 	monitoringWrapper.Setup(localEntity)
 	dhwTemperature := usecases.NewDHWTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
+	dhwSystemFunction := usecases.NewDHWSystemFunction(localEntity, bus, registry, cfg.Logging.DebugEvents)
 	if err := bridgeSvc.Service().AddUseCase(lpcWrapper.UseCase()); err != nil {
 		log.Fatalf("adding LPC use case: %v", err)
 	}
@@ -95,7 +96,10 @@ func main() {
 	if err := bridgeSvc.Service().AddUseCase(dhwTemperature.UseCase()); err != nil {
 		log.Fatalf("adding DHW temperature use case: %v", err)
 	}
-	registeredUseCases := []string{"LPC", "Monitoring", "DHWTemperature"}
+	if err := bridgeSvc.Service().AddUseCase(dhwSystemFunction.UseCase()); err != nil {
+		log.Fatalf("adding DHW system function use case: %v", err)
+	}
+	registeredUseCases := []string{"LPC", "Monitoring", "DHWTemperature", "DHWSystemFunction"}
 
 	// SPIKE: experimental MGCP grid-connection-point provider. Off by default.
 	var mgcpProvider *usecases.MGCPProvider
@@ -230,7 +234,7 @@ func main() {
 	gridSvc := bridgegrpc.NewGridService(mgcpProvider)
 	visualizationSvc := bridgegrpc.NewVisualizationService(vapdProvider, vabdProvider)
 	ohpcfSvc := bridgegrpc.NewOHPCFService(ohpcfWrapper, bus, registry)
-	dhwSvc := bridgegrpc.NewDHWService(dhwTemperature, bus)
+	dhwSvc := bridgegrpc.NewDHWService(dhwTemperature, dhwSystemFunction, bus)
 
 	pb.RegisterDeviceServiceServer(grpcSrv.GRPCServer(), deviceSvc)
 	pb.RegisterLPCServiceServer(grpcSrv.GRPCServer(), lpcSvc)
