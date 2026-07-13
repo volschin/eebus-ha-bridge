@@ -533,10 +533,18 @@ func (p *HvacProbe) runOverrunWriteTest(ski string, b pendingBind) {
 			ski, b.target.entityAddr)
 		return
 	}
-	if entry.IsOverrunStatusChangeable == nil || !*entry.IsOverrunStatusChangeable {
+	// The VR940 (firmware state 2026-07) omits IsOverrunStatusChangeable
+	// entirely while advertising hvacOverrunListData as rw, so a missing flag
+	// must not block the test — re-check this on new VR940 firmware. Only an
+	// explicit false blocks.
+	if entry.IsOverrunStatusChangeable != nil && !*entry.IsOverrunStatusChangeable {
 		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s boost test skipped: overrunId=%d status not changeable",
 			ski, b.target.entityAddr, id)
 		return
+	}
+	if entry.IsOverrunStatusChangeable == nil {
+		p.logf("[HVACPROBE] stage=4b ski=%s entity=%s overrunId=%d isOverrunStatusChangeable not reported; relying on advertised write operation",
+			ski, b.target.entityAddr, id)
 	}
 	// A boost that is already active/running was started outside the probe
 	// (app, panel); the final cancel would kill it. Only test from a resting

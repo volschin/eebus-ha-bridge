@@ -885,13 +885,31 @@ func TestHvacProbeOverrunWriteActivatesAndCancels(t *testing.T) {
 	}
 }
 
+// The VR940 omits IsOverrunStatusChangeable while advertising the write
+// operation; a missing flag must log a notice but still run the test.
+func TestHvacProbeOverrunWriteRunsWithoutChangeableFlag(t *testing.T) {
+	opts := defaultOverrunOptions()
+	opts.changeable = nil
+	h := newOverrunHarness(t, opts)
+	h.acceptBind()
+
+	out := waitForLog(t, h.lines, "cancel confirm status=inactive ok=true", 3*time.Second)
+	if !strings.Contains(out, "isOverrunStatusChangeable not reported; relying on advertised write operation") {
+		t.Errorf("missing nil-changeable notice in:\n%s", out)
+	}
+	gotWrites := h.writes()
+	if len(gotWrites) != 2 || gotWrites[0] != model.HvacOverrunStatusTypeActive || gotWrites[1] != model.HvacOverrunStatusTypeInactive {
+		t.Fatalf("writes = %v, want [active inactive]", gotWrites)
+	}
+}
+
 func TestHvacProbeOverrunWriteFailsClosed(t *testing.T) {
 	cases := []struct {
 		name string
 		edit func(*overrunHarnessOptions)
 		log  string
 	}{
-		{"missing changeable", func(o *overrunHarnessOptions) { o.changeable = nil }, "status not changeable"},
+		{"changeable false", func(o *overrunHarnessOptions) { o.changeable = ptr(false) }, "status not changeable"},
 		{"no write op", func(o *overrunHarnessOptions) { o.writeOp = false }, "not advertised writable"},
 		{"ski mismatch", func(o *overrunHarnessOptions) { o.expectedSKI = "FFFF" }, "bind HVAC ACCEPTED"},
 		{"zero oneTimeDhw", func(o *overrunHarnessOptions) {
