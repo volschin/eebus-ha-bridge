@@ -93,6 +93,10 @@ func main() {
 	outdoorMonitoringWrapper.Setup(localEntity)
 	dhwTemperature := usecases.NewDHWTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
 	dhwSystemFunction := usecases.NewDHWSystemFunction(localEntity, bus, registry, cfg.Logging.DebugEvents)
+	roomHeatingTemperature := usecases.NewRoomHeatingTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
+	roomHeatingSystemFunction := usecases.NewRoomHeatingSystemFunction(localEntity, bus, registry, cfg.Logging.DebugEvents)
+	hydraulicTemperatures := usecases.NewHydraulicTemperatures(bus, registry, cfg.Logging.DebugEvents)
+	hydraulicTemperatures.Setup(localEntity)
 	if err := bridgeSvc.Service().AddUseCase(lpcWrapper.UseCase()); err != nil {
 		log.Fatalf("adding LPC use case: %v", err)
 	}
@@ -114,8 +118,15 @@ func main() {
 	if err := bridgeSvc.Service().AddUseCase(dhwSystemFunction.UseCase()); err != nil {
 		log.Fatalf("adding DHW system function use case: %v", err)
 	}
+	if err := bridgeSvc.Service().AddUseCase(roomHeatingTemperature.UseCase()); err != nil {
+		log.Fatalf("adding room heating temperature use case: %v", err)
+	}
+	if err := bridgeSvc.Service().AddUseCase(roomHeatingSystemFunction.UseCase()); err != nil {
+		log.Fatalf("adding room heating system function use case: %v", err)
+	}
 	registeredUseCases := []string{
 		"LPC", "Monitoring", "DHWMonitoring", "MRT", "MOT", "DHWTemperature", "DHWSystemFunction",
+		"RoomHeatingTemperature", "RoomHeatingSystemFunction",
 	}
 
 	// SPIKE: experimental MGCP grid-connection-point provider. Off by default.
@@ -252,6 +263,8 @@ func main() {
 		dhwMonitoringWrapper,
 		roomMonitoringWrapper,
 		outdoorMonitoringWrapper,
+		usecases.FlowTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
+		usecases.ReturnTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
 		bus,
 		registry,
 	)
@@ -259,6 +272,12 @@ func main() {
 	visualizationSvc := bridgegrpc.NewVisualizationService(vapdProvider, vabdProvider)
 	ohpcfSvc := bridgegrpc.NewOHPCFService(ohpcfWrapper, bus, registry)
 	dhwSvc := bridgegrpc.NewDHWService(dhwTemperature, dhwSystemFunction, bus)
+	hvacSvc := bridgegrpc.NewHVACService(
+		roomHeatingTemperature,
+		roomHeatingSystemFunction,
+		roomMonitoringWrapper,
+		bus,
+	)
 
 	pb.RegisterDeviceServiceServer(grpcSrv.GRPCServer(), deviceSvc)
 	pb.RegisterLPCServiceServer(grpcSrv.GRPCServer(), lpcSvc)
@@ -268,6 +287,7 @@ func main() {
 	// other control services rather than behind the loopback push gate below.
 	pb.RegisterOHPCFServiceServer(grpcSrv.GRPCServer(), ohpcfSvc)
 	pb.RegisterDHWServiceServer(grpcSrv.GRPCServer(), dhwSvc)
+	pb.RegisterHVACServiceServer(grpcSrv.GRPCServer(), hvacSvc)
 
 	// The grid/PV/battery publish RPCs inject values into EEBUS state that
 	// downstream equipment consumes, and the gRPC server has no transport auth.

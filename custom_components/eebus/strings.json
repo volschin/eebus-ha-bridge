@@ -129,6 +129,9 @@
       "connected": { "name": "Connected" },
       "heartbeat_ok": { "name": "Heartbeat OK" }
     },
+    "climate": {
+      "room_heating": { "name": "Room Heating" }
+    },
     "water_heater": {
       "domestic_hot_water": { "name": "Domestic Hot Water" }
     }

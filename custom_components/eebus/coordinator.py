@@ -169,6 +169,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._ohpcf_supported: bool | None = None
         self._dhw_supported: bool | None = None
         self._dhw_sysfn_supported: bool | None = None
+        self._room_heating_supported: bool | None = None
         self._ski_registered: bool = False
         self._not_found_streak: int = 0
 
@@ -555,6 +556,11 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 channel, proto_stubs, request
             )
             data["dhw_sysfn_supported"] = self._dhw_sysfn_supported
+            (
+                data["room_heating_setpoint"],
+                data["room_heating_system_function"],
+            ) = await self._async_read_room_heating(channel, proto_stubs, request)
+            data["room_heating_supported"] = self._room_heating_supported
 
             if saw_not_found:
                 self._not_found_streak += 1
@@ -994,6 +1000,94 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 raise ServiceValidationError(f"Domestic hot water operation mode failed: {err.details()}") from err
             raise
 
+    async def _async_read_room_heating(
+        self, channel: grpc.aio.Channel, proto_stubs: Any, request: Any
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """Read room-heating setpoint and system-function state."""
+        try:
+            state = await proto_stubs.hvac_service_stub(channel).GetRoomHeating(
+                request, timeout=RPC_TIMEOUT
+            )
+        except grpc.aio.AioRpcError as err:
+            if _is_unimplemented(err) or err.code() in (
+                grpc.StatusCode.NOT_FOUND,
+                grpc.StatusCode.UNAVAILABLE,
+            ):
+                self._room_heating_supported = False
+            return None, None
+        self._room_heating_supported = True
+        setpoint = None
+        if state.HasField("setpoint"):
+            setpoint = {
+                "value_celsius": state.setpoint.value_celsius,
+                "min_celsius": state.setpoint.min_celsius,
+                "max_celsius": state.setpoint.max_celsius,
+                "step_celsius": state.setpoint.step_celsius,
+                "writable": state.setpoint.writable,
+            }
+        system_function = None
+        if state.HasField("system_function"):
+            system_function = {
+                "operation_mode": state.system_function.operation_mode,
+                "available_modes": list(state.system_function.available_modes),
+                "mode_writable": state.system_function.mode_writable,
+            }
+        if state.HasField("current_temperature_celsius"):
+            self._push_data({"room_temperature_c": state.current_temperature_celsius})
+        return setpoint, system_function
+
+    async def async_set_room_heating_temperature(self, value_celsius: float) -> None:
+        """Set the room-heating target temperature."""
+        channel = await self._ensure_channel()
+        from . import proto_stubs
+
+        try:
+            await proto_stubs.hvac_service_stub(channel).SetRoomHeatingTemperature(
+                proto_stubs.SetRoomHeatingTemperatureRequest(
+                    ski=self.ski, value_celsius=value_celsius
+                ),
+                timeout=RPC_TIMEOUT,
+            )
+            self._room_heating_supported = True
+        except grpc.aio.AioRpcError as err:
+            if _is_unimplemented(err):
+                self._room_heating_supported = False
+                return
+            if err.code() in (
+                grpc.StatusCode.INVALID_ARGUMENT,
+                grpc.StatusCode.FAILED_PRECONDITION,
+                grpc.StatusCode.NOT_FOUND,
+            ):
+                raise ServiceValidationError(
+                    f"Room heating setpoint failed: {err.details()}"
+                ) from err
+            raise
+
+    async def async_set_room_heating_mode(self, mode: str) -> None:
+        """Set the room-heating operation mode."""
+        channel = await self._ensure_channel()
+        from . import proto_stubs
+
+        try:
+            await proto_stubs.hvac_service_stub(channel).SetRoomHeatingMode(
+                proto_stubs.SetRoomHeatingModeRequest(ski=self.ski, mode=mode),
+                timeout=RPC_TIMEOUT,
+            )
+            self._room_heating_supported = True
+        except grpc.aio.AioRpcError as err:
+            if _is_unimplemented(err):
+                self._room_heating_supported = False
+                return
+            if err.code() in (
+                grpc.StatusCode.INVALID_ARGUMENT,
+                grpc.StatusCode.FAILED_PRECONDITION,
+                grpc.StatusCode.NOT_FOUND,
+            ):
+                raise ServiceValidationError(
+                    f"Room heating mode failed: {err.details()}"
+                ) from err
+            raise
+
     async def async_start_heartbeat(self) -> None:
         """Start EEBUS heartbeat via gRPC."""
         channel = await self._ensure_channel()
@@ -1325,6 +1419,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ("measurements", self._run_measurement_stream),
             ("dhw_events", self._run_dhw_event_stream),
             ("dhw_sysfn_events", self._run_dhw_sysfn_event_stream),
+            ("room_heating_events", self._run_room_heating_event_stream),
         ):
             self._stream_tasks.append(
                 self.hass.async_create_background_task(
@@ -1414,6 +1509,18 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._handle_dhw_sysfn_event(event)
 
         await self._run_stream("DHW system function", consume)
+
+    async def _run_room_heating_event_stream(self) -> None:
+        from . import proto_stubs
+
+        async def consume(channel: grpc.aio.Channel) -> None:
+            stub = proto_stubs.hvac_service_stub(channel)
+            async for event in stub.SubscribeRoomHeatingEvents(
+                proto_stubs.DeviceRequest(ski=self.ski)
+            ):
+                self._handle_room_heating_event(event)
+
+        await self._run_stream("room heating", consume)
 
     def _event_matches(self, event_ski: str) -> bool:
         """Return True when an event applies to the configured device."""
@@ -1533,6 +1640,20 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED
         ):
             self.hass.async_create_task(self.async_request_refresh())
+        elif event_type == (
+            proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED
+        ):
+            if event.HasField("measurement"):
+                self._push_data({"flow_temperature_c": event.measurement.value})
+            else:
+                self.hass.async_create_task(self.async_request_refresh())
+        elif event_type == (
+            proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED
+        ):
+            if event.HasField("measurement"):
+                self._push_data({"return_temperature_c": event.measurement.value})
+            else:
+                self.hass.async_create_task(self.async_request_refresh())
 
     def _handle_dhw_event(self, event: Any) -> None:
         from . import proto_stubs
@@ -1582,6 +1703,38 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             == proto_stubs.DHWSystemFunctionEventType.DHW_SYSTEM_FUNCTION_EVENT_SUPPORT_UPDATED
         ):
             self.hass.async_create_task(self.async_request_refresh())
+
+    def _handle_room_heating_event(self, event: Any) -> None:
+        from . import proto_stubs
+
+        if not self._event_matches(event.ski):
+            return
+        if event.event_type == proto_stubs.RoomHeatingEventType.ROOM_HEATING_EVENT_SUPPORT_UPDATED:
+            self.hass.async_create_task(self.async_request_refresh())
+            return
+        if not event.HasField("state"):
+            self.hass.async_create_task(self.async_request_refresh())
+            return
+        state = event.state
+        updates: dict[str, Any] = {"room_heating_supported": True}
+        self._room_heating_supported = True
+        if state.HasField("current_temperature_celsius"):
+            updates["room_temperature_c"] = state.current_temperature_celsius
+        if state.HasField("setpoint"):
+            updates["room_heating_setpoint"] = {
+                "value_celsius": state.setpoint.value_celsius,
+                "min_celsius": state.setpoint.min_celsius,
+                "max_celsius": state.setpoint.max_celsius,
+                "step_celsius": state.setpoint.step_celsius,
+                "writable": state.setpoint.writable,
+            }
+        if state.HasField("system_function"):
+            updates["room_heating_system_function"] = {
+                "operation_mode": state.system_function.operation_mode,
+                "available_modes": list(state.system_function.available_modes),
+                "mode_writable": state.system_function.mode_writable,
+            }
+        self._push_data(updates)
 
     async def async_shutdown(self) -> None:
         """Close gRPC channel and cancel stream tasks."""

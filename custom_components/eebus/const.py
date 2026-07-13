@@ -32,6 +32,7 @@ CONF_BATTERY_SOC_ENTITY = "battery_soc_entity"
 
 PLATFORMS = [
     Platform.BINARY_SENSOR,
+    Platform.CLIMATE,
     Platform.NUMBER,
     Platform.SELECT,
     Platform.SENSOR,

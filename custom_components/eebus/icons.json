@@ -32,6 +32,9 @@
       "connected": { "default": "mdi:lan-connect" },
       "heartbeat_ok": { "default": "mdi:heart-pulse" }
     },
+    "climate": {
+      "room_heating": { "default": "mdi:radiator" }
+    },
     "water_heater": {
       "domestic_hot_water": { "default": "mdi:water-boiler" }
     }

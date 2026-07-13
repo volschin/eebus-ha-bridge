@@ -8,6 +8,13 @@
 
 **Tech Stack:** Go (`eebus-bridge`, `enbility/eebus-go`/`spine-go` — no fork changes), Protocol Buffers (`buf`, `grpcio-tools==1.78.0`), Python 3.13 / Home Assistant (`custom_components/eebus`).
 
+## Implementation Status (2026-07-13)
+
+- Tasks 1–9: implemented and locally verified. The task-local commit steps remain intentionally pending so the resumed work can be reviewed and committed as one coherent change set.
+- Task 10: pending manual VR940 hardware acceptance. Flow/return sensors remain disabled by default until this gate passes.
+- Task 11: pending Task 10; the experimental HVAC probe is retained until hardware acceptance is complete.
+- Verification: `go vet ./...`, `go test -race ./...`, `ruff check custom_components/`, strict `mypy`, 76 Python tests, both protobuf generators, and `git diff --check` pass.
+
 ## Global Constraints
 
 - Room-heating Configuration use cases are bridge-local Go, mirroring `dhw.go`/`dhwsysfn.go` — no `eebus-go` fork commits, no `UPSTREAM_PATCHES.md` entry, no `go.mod` pin change.
