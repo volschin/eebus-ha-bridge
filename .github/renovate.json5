@@ -2,5 +2,12 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "local>olcond/renovate-config"
+  ],
+  "packageRules": [
+    {
+      "description": "go.mod replace pins the fork's bridge-integration branch (carries MDT patches); Renovate digest updates follow the fork's default 'dev' branch and would silently drop those patches",
+      "matchPackageNames": ["github.com/volschin/eebus-go"],
+      "enabled": false
+    }
   ]
 }
