@@ -18,6 +18,8 @@ Der bisherige Ansatz kombiniert drei Arten von Erweiterungen:
 
 Parallel entstehen im Upstream weitere relevante Änderungen. Beispiele zum Zeitpunkt dieses Designs sind Per-Phase-Messungen, Monitoring of DHW Temperature (MDT), Monitoring of Room Temperature (MRT), Monitoring of Outdoor Temperature (MOT) und Korrekturen an der MGCP-Entity-Kompatibilität.
 
+Der konkreteste aktuelle Anwendungsfall ist der HVAC-/DHW-Bereich: Der experimentelle HVAC-Probe-Spike der Bridge (PR #91) hat am 13.07.2026 gegen einen live VR940 verifiziert, dass das Gateway Bindings auf seine `Setpoint`- und `HVAC`-Server-Features akzeptiert (Entities `DHWCircuit` und `HVACRoom`). Die zugehörigen Use Cases — `monitoringOfDhwTemperature`, `configurationOfDhwTemperature`, `monitoringOfRoomTemperature`, `configurationOfRoomHeatingTemperature`, `configurationOfDhwSystemFunction`, `configurationOfRoomHeatingSystemFunction` — existieren in `eebus-go` entweder nur als offene Upstream-PRs (Monitoring-Seite) oder noch gar nicht (Configuration-/Setpoint-Seite). Genau für diese Lücke beschreibt dieses Dokument den Weg von Bridge-Spike über Fork-Integration zu Upstream-Beitrag.
+
 Ein einzelner fremder PR-Branch kann kurzfristig direkt konsumiert werden. Sobald mehrere noch nicht gemergte Änderungen gleichzeitig benötigt werden, fehlt jedoch ein reproduzierbarer, gemeinsam getesteter Dependency-Stand. Eigenständige generische Implementierungen im Bridge-Repository erschweren außerdem spätere Upstream-Beiträge, weil sie an Bridge-interne Interfaces und Lifecycle-Entscheidungen gekoppelt werden.
 
 ### Entscheidung
@@ -119,6 +121,12 @@ module github.com/enbility/eebus-go
 
 Das ist bei Go-Forks beabsichtigt. Die Bridge importiert weiterhin `github.com/enbility/eebus-go/...`; nur die Auflösung der Dependency wird temporär auf den Fork umgeleitet.
 
+### Geltungsbereich: `ship-go` und `spine-go`
+
+Dasselbe Fork-Modell gilt bei Bedarf auch für `enbility/spine-go` und `enbility/ship-go` — aber erst, wenn der erste konkrete Patch dort benötigt wird, nicht vorsorglich. Ein realer Kandidat existiert bereits: Der HVAC-Probe-Spike hat gezeigt, dass Bind-/Subscribe-Bestätigungen in `spine-go` als Result-Nachrichten auf dem `NodeManagement`-Feature landen und die per-Feature-Sicht (`HasBindingToRemote`) dadurch kein verlässliches Bestätigungssignal liefert. Eine Verbesserung der Result-Zustellung wäre ein `spine-go`-Beitrag nach demselben `contrib/*`-Muster.
+
+Wird ein `spine-go`- oder `ship-go`-Fork nötig, erhält er dieselbe Branch-Struktur, ein eigenes `replace` in `go.mod` und eigene Zeilen im Patch-Inventar. Die drei Module bleiben dabei ein gemeinsam getesteter Satz (siehe Abschnitt 5, Regel 4).
+
 Empfohlene Remotes in einem lokalen Fork-Checkout:
 
 ```text
@@ -173,6 +181,18 @@ Regeln:
 6. Sobald kein nicht gemergter Patch mehr benötigt wird, wird `replace` entfernt und direkt auf einen Upstream-Commit oder ein Release gepinnt.
 
 Der `replace`-Eintrag macht den Sonderzustand im Dependency-Vertrag sichtbar. Ein direktes Umschreiben aller Imports auf den Fork würde dagegen unnötige Quellcodeabweichung erzeugen.
+
+### Ist-Zustand
+
+Bei Erstellung dieses Dokuments pinnt `eebus-bridge/go.mod` bereits `eebus-go`, `ship-go` und `spine-go` auf Upstream-`dev`-Pseudoversionen — ohne `replace`:
+
+```go
+github.com/enbility/eebus-go v0.7.1-0.20260708082145-0134afee5953
+github.com/enbility/ship-go  v0.6.1-0.20260706134013-3abd41d19f41
+github.com/enbility/spine-go v0.7.1-0.20260629113257-b3bcc643f323
+```
+
+Der `replace`-Eintrag kommt erst hinzu, wenn `bridge-integration` den ersten Patch über der Upstream-Basis enthält (siehe Phase 1, Punkt 5).
 
 ---
 
@@ -265,6 +285,10 @@ Die folgenden aktuell Bridge-eigenen Bereiche werden auf Upstreamfähigkeit gepr
 | VAPD Provider | `eebus-go` Use Case für die passende Provider-Rolle | generische Feature-/Szenario-Implementierung |
 | VABD Provider | `eebus-go` Use Case für die passende Provider-Rolle | generische Feature-/Szenario-Implementierung |
 | Entity-Kompatibilitätslogik | bestehende `eebus-go` Use Cases beziehungsweise gemeinsame API | Multi-Entity-Geräte sind kein HA-spezifisches Problem |
+| HVAC-/DHW-Configuration-Clients (`configurationOfDhwTemperature`, `configurationOfRoomHeatingTemperature`, `configurationOf*SystemFunction`) | neuer `eebus-go` Use Case (`contrib/*`) | existiert weder upstream noch als offener PR; VR940-Bind-Verhalten bereits verifiziert (Bridge-PR #91) |
+| NodeManagement-Result-Zustellung für Bind/Subscribe | `spine-go` | Bestätigungs-Routing ist generisches SPINE-Verhalten, kein Bridge-Problem |
+
+Die HVAC-/DHW-**Monitoring**-Clients (MDT, MRT, MOT) sind dagegen keine Eigenentwicklungs-Kandidaten: Sie existieren bereits als offene Upstream-PRs (#226, #232, #233) und werden nach Abschnitt 7.2 als fremde PRs integriert.
 
 Die bestehenden Dateien `internal/usecases/mgcp.go`, `vapd.go` und `vabd.go` werden nicht unverändert verschoben. Zuerst werden EEBUS-Zustandsmodell, Feature-Server und Szenariologik von Bridge-Lifecycle, Logging und EventBus getrennt.
 
@@ -277,6 +301,7 @@ Die bestehenden Dateien `internal/usecases/mgcp.go`, `vapd.go` und `vabd.go` wer
 - Mapping von HA-Sensorwerten auf Provider-Eingaben.
 - Wiederverbindung, Polling-Fallback und Bridge-Health.
 - Gerätespezifische Diagnoseinformationen.
+- Experimentelle Probes wie `internal/eebus/hvacprobe.go` als Hardware-Validierungsinstrument. Ein Probe klärt Geräteverhalten (Discovery, Bind-Akzeptanz, Read-/Write-Reaktion), bevor eine generische Implementierung begonnen wird — er ist Vorstufe eines `contrib/*`-Beitrags, wird aber selbst nie upstream eingereicht und nach Abschluss der generischen Implementierung wieder entfernt.
 
 ### Hersteller-Workarounds
 
@@ -369,7 +394,17 @@ In dieser Phase ändert sich keine Laufzeitfunktion.
 3. Nur aktuell benötigte PRs in `bridge-integration` aufnehmen.
 4. Bridge-Adapter erst nach erfolgreicher Dependency-Integration ergänzen.
 
-Die bloße Aussicht auf einen zukünftigen Sensor rechtfertigt keine Aufnahme.
+Kandidaten zum Zeitpunkt dieses Designs (Status am 13.07.2026 geprüft, alle offen):
+
+| Upstream-PR | Inhalt | Konkreter Bridge-Bedarf |
+|---|---|---|
+| enbility/eebus-go#226 | Monitoring of DHW Temperature (MDT) | DHW-Temperatursensor; VR940 bietet den Use Case auf Entity `DHWCircuit` an |
+| enbility/eebus-go#232 | Monitoring of Room Temperature (MRT) | Raumtemperatursensor; VR940 Entity `HVACRoom` |
+| enbility/eebus-go#233 | Monitoring of Outdoor Temperature (MOT) | Außentemperatursensor |
+| enbility/eebus-go#154 | Per-Phase-Messungen | korrekte Phasenzuordnung der bestehenden Leistungs-/Strom-Sensoren |
+| enbility/eebus-go#236 | MGCP-Actor-Type-Fix | Kompatibilität des MGCP-Providers (Phase 3) |
+
+Die Tabelle ist eine Priorisierungsgrundlage, keine Zusage: Jeder PR durchläuft vor Aufnahme die Prüfliste aus Abschnitt 7.2. Die bloße Aussicht auf einen zukünftigen Sensor rechtfertigt keine Aufnahme.
 
 ### Phase 3 — Eigene Provider upstreamfähig machen
 
@@ -458,5 +493,9 @@ Diese Entscheidungen verändern das Architekturmodell nicht. Alle Dokumentations
 - [`eebus-go` PR #232 — Monitoring of Room Temperature](https://github.com/enbility/eebus-go/pull/232)
 - [`eebus-go` PR #233 — Monitoring of Outdoor Temperature](https://github.com/enbility/eebus-go/pull/233)
 - [`eebus-go` PR #236 — MGCP actor type fix](https://github.com/enbility/eebus-go/pull/236)
+- [`eebus-ha-bridge` PR #91 — experimenteller HVAC/DHW-Probe-Spike](https://github.com/volschin/eebus-ha-bridge/pull/91)
+- [`docs/vr940-usecase-dump.txt`](../../vr940-usecase-dump.txt) — Live-Discovery der VR940-Entities und Use Cases
 - [`docs/eebus-vaillant-improvements.md`](../../eebus-vaillant-improvements.md)
 - [`2026-04-06-eebus-bridge-design.md`](2026-04-06-eebus-bridge-design.md)
+
+PR-Status zuletzt geprüft am 13.07.2026; alle referenzierten Upstream-PRs waren zu diesem Zeitpunkt offen.
