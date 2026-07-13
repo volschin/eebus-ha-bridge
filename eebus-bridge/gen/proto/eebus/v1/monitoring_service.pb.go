@@ -36,6 +36,7 @@ const (
 	MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED MeasurementEventType = 8
 	MeasurementEventType_MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED            MeasurementEventType = 9
 	MeasurementEventType_MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED          MeasurementEventType = 10
+	MeasurementEventType_MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED      MeasurementEventType = 11
 )
 
 // Enum value maps for MeasurementEventType.
@@ -52,6 +53,7 @@ var (
 		8:  "MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED",
 		9:  "MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED",
 		10: "MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED",
+		11: "MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED",
 	}
 	MeasurementEventType_value = map[string]int32{
 		"MEASUREMENT_EVENT_UNSPECIFIED":                         0,
@@ -65,6 +67,7 @@ var (
 		"MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED": 8,
 		"MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED":            9,
 		"MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED":          10,
+		"MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED":      11,
 	}
 )
 
@@ -191,6 +194,58 @@ func (x *MeasurementList) GetMeasurements() []*MeasurementEntry {
 	return nil
 }
 
+type DeviceDiagnosticsData struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	OperatingState string                 `protobuf:"bytes,1,opt,name=operating_state,json=operatingState,proto3" json:"operating_state,omitempty"`
+	Timestamp      *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DeviceDiagnosticsData) Reset() {
+	*x = DeviceDiagnosticsData{}
+	mi := &file_eebus_v1_monitoring_service_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceDiagnosticsData) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceDiagnosticsData) ProtoMessage() {}
+
+func (x *DeviceDiagnosticsData) ProtoReflect() protoreflect.Message {
+	mi := &file_eebus_v1_monitoring_service_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceDiagnosticsData.ProtoReflect.Descriptor instead.
+func (*DeviceDiagnosticsData) Descriptor() ([]byte, []int) {
+	return file_eebus_v1_monitoring_service_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *DeviceDiagnosticsData) GetOperatingState() string {
+	if x != nil {
+		return x.OperatingState
+	}
+	return ""
+}
+
+func (x *DeviceDiagnosticsData) GetTimestamp() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Timestamp
+	}
+	return nil
+}
+
 type MeasurementEvent struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Ski       string                 `protobuf:"bytes,1,opt,name=ski,proto3" json:"ski,omitempty"`
@@ -200,6 +255,7 @@ type MeasurementEvent struct {
 	//	*MeasurementEvent_Power
 	//	*MeasurementEvent_Energy
 	//	*MeasurementEvent_Measurement
+	//	*MeasurementEvent_DeviceDiagnostics
 	Data          isMeasurementEvent_Data `protobuf_oneof:"data"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -207,7 +263,7 @@ type MeasurementEvent struct {
 
 func (x *MeasurementEvent) Reset() {
 	*x = MeasurementEvent{}
-	mi := &file_eebus_v1_monitoring_service_proto_msgTypes[2]
+	mi := &file_eebus_v1_monitoring_service_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -219,7 +275,7 @@ func (x *MeasurementEvent) String() string {
 func (*MeasurementEvent) ProtoMessage() {}
 
 func (x *MeasurementEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_monitoring_service_proto_msgTypes[2]
+	mi := &file_eebus_v1_monitoring_service_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -232,7 +288,7 @@ func (x *MeasurementEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MeasurementEvent.ProtoReflect.Descriptor instead.
 func (*MeasurementEvent) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_monitoring_service_proto_rawDescGZIP(), []int{2}
+	return file_eebus_v1_monitoring_service_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *MeasurementEvent) GetSki() string {
@@ -283,6 +339,15 @@ func (x *MeasurementEvent) GetMeasurement() *MeasurementEntry {
 	return nil
 }
 
+func (x *MeasurementEvent) GetDeviceDiagnostics() *DeviceDiagnosticsData {
+	if x != nil {
+		if x, ok := x.Data.(*MeasurementEvent_DeviceDiagnostics); ok {
+			return x.DeviceDiagnostics
+		}
+	}
+	return nil
+}
+
 type isMeasurementEvent_Data interface {
 	isMeasurementEvent_Data()
 }
@@ -299,11 +364,17 @@ type MeasurementEvent_Measurement struct {
 	Measurement *MeasurementEntry `protobuf:"bytes,5,opt,name=measurement,proto3,oneof"`
 }
 
+type MeasurementEvent_DeviceDiagnostics struct {
+	DeviceDiagnostics *DeviceDiagnosticsData `protobuf:"bytes,6,opt,name=device_diagnostics,json=deviceDiagnostics,proto3,oneof"`
+}
+
 func (*MeasurementEvent_Power) isMeasurementEvent_Data() {}
 
 func (*MeasurementEvent_Energy) isMeasurementEvent_Data() {}
 
 func (*MeasurementEvent_Measurement) isMeasurementEvent_Data() {}
+
+func (*MeasurementEvent_DeviceDiagnostics) isMeasurementEvent_Data() {}
 
 var File_eebus_v1_monitoring_service_proto protoreflect.FileDescriptor
 
@@ -314,15 +385,19 @@ const file_eebus_v1_monitoring_service_proto_rawDesc = "" +
 	"\x0ekilowatt_hours\x18\x01 \x01(\x01R\rkilowattHours\x128\n" +
 	"\ttimestamp\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"Q\n" +
 	"\x0fMeasurementList\x12>\n" +
-	"\fmeasurements\x18\x01 \x03(\v2\x1a.eebus.v1.MeasurementEntryR\fmeasurements\"\x96\x02\n" +
+	"\fmeasurements\x18\x01 \x03(\v2\x1a.eebus.v1.MeasurementEntryR\fmeasurements\"z\n" +
+	"\x15DeviceDiagnosticsData\x12'\n" +
+	"\x0foperating_state\x18\x01 \x01(\tR\x0eoperatingState\x128\n" +
+	"\ttimestamp\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"\xe8\x02\n" +
 	"\x10MeasurementEvent\x12\x10\n" +
 	"\x03ski\x18\x01 \x01(\tR\x03ski\x12=\n" +
 	"\n" +
 	"event_type\x18\x02 \x01(\x0e2\x1e.eebus.v1.MeasurementEventTypeR\teventType\x122\n" +
 	"\x05power\x18\x03 \x01(\v2\x1a.eebus.v1.PowerMeasurementH\x00R\x05power\x125\n" +
 	"\x06energy\x18\x04 \x01(\v2\x1b.eebus.v1.EnergyMeasurementH\x00R\x06energy\x12>\n" +
-	"\vmeasurement\x18\x05 \x01(\v2\x1a.eebus.v1.MeasurementEntryH\x00R\vmeasurementB\x06\n" +
-	"\x04data*\xa2\x04\n" +
+	"\vmeasurement\x18\x05 \x01(\v2\x1a.eebus.v1.MeasurementEntryH\x00R\vmeasurement\x12P\n" +
+	"\x12device_diagnostics\x18\x06 \x01(\v2\x1f.eebus.v1.DeviceDiagnosticsDataH\x00R\x11deviceDiagnosticsB\x06\n" +
+	"\x04data*\xd8\x04\n" +
 	"\x14MeasurementEventType\x12!\n" +
 	"\x1dMEASUREMENT_EVENT_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fMEASUREMENT_EVENT_POWER_UPDATED\x10\x01\x12$\n" +
@@ -335,11 +410,13 @@ const file_eebus_v1_monitoring_service_proto_rawDesc = "" +
 	"5MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED\x10\b\x12.\n" +
 	"*MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED\x10\t\x120\n" +
 	",MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED\x10\n" +
-	"2\xc1\x02\n" +
+	"\x124\n" +
+	"0MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED\x10\v2\x93\x03\n" +
 	"\x11MonitoringService\x12J\n" +
 	"\x13GetPowerConsumption\x12\x17.eebus.v1.DeviceRequest\x1a\x1a.eebus.v1.PowerMeasurement\x12I\n" +
 	"\x11GetEnergyConsumed\x12\x17.eebus.v1.DeviceRequest\x1a\x1b.eebus.v1.EnergyMeasurement\x12E\n" +
-	"\x0fGetMeasurements\x12\x17.eebus.v1.DeviceRequest\x1a\x19.eebus.v1.MeasurementList\x12N\n" +
+	"\x0fGetMeasurements\x12\x17.eebus.v1.DeviceRequest\x1a\x19.eebus.v1.MeasurementList\x12P\n" +
+	"\x14GetDeviceDiagnostics\x12\x17.eebus.v1.DeviceRequest\x1a\x1f.eebus.v1.DeviceDiagnosticsData\x12N\n" +
 	"\x15SubscribeMeasurements\x12\x17.eebus.v1.DeviceRequest\x1a\x1a.eebus.v1.MeasurementEvent0\x01B=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3"
 
 var (
@@ -355,37 +432,42 @@ func file_eebus_v1_monitoring_service_proto_rawDescGZIP() []byte {
 }
 
 var file_eebus_v1_monitoring_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_eebus_v1_monitoring_service_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_eebus_v1_monitoring_service_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_eebus_v1_monitoring_service_proto_goTypes = []any{
 	(MeasurementEventType)(0),     // 0: eebus.v1.MeasurementEventType
 	(*EnergyMeasurement)(nil),     // 1: eebus.v1.EnergyMeasurement
 	(*MeasurementList)(nil),       // 2: eebus.v1.MeasurementList
-	(*MeasurementEvent)(nil),      // 3: eebus.v1.MeasurementEvent
-	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
-	(*MeasurementEntry)(nil),      // 5: eebus.v1.MeasurementEntry
-	(*PowerMeasurement)(nil),      // 6: eebus.v1.PowerMeasurement
-	(*DeviceRequest)(nil),         // 7: eebus.v1.DeviceRequest
+	(*DeviceDiagnosticsData)(nil), // 3: eebus.v1.DeviceDiagnosticsData
+	(*MeasurementEvent)(nil),      // 4: eebus.v1.MeasurementEvent
+	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
+	(*MeasurementEntry)(nil),      // 6: eebus.v1.MeasurementEntry
+	(*PowerMeasurement)(nil),      // 7: eebus.v1.PowerMeasurement
+	(*DeviceRequest)(nil),         // 8: eebus.v1.DeviceRequest
 }
 var file_eebus_v1_monitoring_service_proto_depIdxs = []int32{
-	4,  // 0: eebus.v1.EnergyMeasurement.timestamp:type_name -> google.protobuf.Timestamp
-	5,  // 1: eebus.v1.MeasurementList.measurements:type_name -> eebus.v1.MeasurementEntry
-	0,  // 2: eebus.v1.MeasurementEvent.event_type:type_name -> eebus.v1.MeasurementEventType
-	6,  // 3: eebus.v1.MeasurementEvent.power:type_name -> eebus.v1.PowerMeasurement
-	1,  // 4: eebus.v1.MeasurementEvent.energy:type_name -> eebus.v1.EnergyMeasurement
-	5,  // 5: eebus.v1.MeasurementEvent.measurement:type_name -> eebus.v1.MeasurementEntry
-	7,  // 6: eebus.v1.MonitoringService.GetPowerConsumption:input_type -> eebus.v1.DeviceRequest
-	7,  // 7: eebus.v1.MonitoringService.GetEnergyConsumed:input_type -> eebus.v1.DeviceRequest
-	7,  // 8: eebus.v1.MonitoringService.GetMeasurements:input_type -> eebus.v1.DeviceRequest
-	7,  // 9: eebus.v1.MonitoringService.SubscribeMeasurements:input_type -> eebus.v1.DeviceRequest
-	6,  // 10: eebus.v1.MonitoringService.GetPowerConsumption:output_type -> eebus.v1.PowerMeasurement
-	1,  // 11: eebus.v1.MonitoringService.GetEnergyConsumed:output_type -> eebus.v1.EnergyMeasurement
-	2,  // 12: eebus.v1.MonitoringService.GetMeasurements:output_type -> eebus.v1.MeasurementList
-	3,  // 13: eebus.v1.MonitoringService.SubscribeMeasurements:output_type -> eebus.v1.MeasurementEvent
-	10, // [10:14] is the sub-list for method output_type
-	6,  // [6:10] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	5,  // 0: eebus.v1.EnergyMeasurement.timestamp:type_name -> google.protobuf.Timestamp
+	6,  // 1: eebus.v1.MeasurementList.measurements:type_name -> eebus.v1.MeasurementEntry
+	5,  // 2: eebus.v1.DeviceDiagnosticsData.timestamp:type_name -> google.protobuf.Timestamp
+	0,  // 3: eebus.v1.MeasurementEvent.event_type:type_name -> eebus.v1.MeasurementEventType
+	7,  // 4: eebus.v1.MeasurementEvent.power:type_name -> eebus.v1.PowerMeasurement
+	1,  // 5: eebus.v1.MeasurementEvent.energy:type_name -> eebus.v1.EnergyMeasurement
+	6,  // 6: eebus.v1.MeasurementEvent.measurement:type_name -> eebus.v1.MeasurementEntry
+	3,  // 7: eebus.v1.MeasurementEvent.device_diagnostics:type_name -> eebus.v1.DeviceDiagnosticsData
+	8,  // 8: eebus.v1.MonitoringService.GetPowerConsumption:input_type -> eebus.v1.DeviceRequest
+	8,  // 9: eebus.v1.MonitoringService.GetEnergyConsumed:input_type -> eebus.v1.DeviceRequest
+	8,  // 10: eebus.v1.MonitoringService.GetMeasurements:input_type -> eebus.v1.DeviceRequest
+	8,  // 11: eebus.v1.MonitoringService.GetDeviceDiagnostics:input_type -> eebus.v1.DeviceRequest
+	8,  // 12: eebus.v1.MonitoringService.SubscribeMeasurements:input_type -> eebus.v1.DeviceRequest
+	7,  // 13: eebus.v1.MonitoringService.GetPowerConsumption:output_type -> eebus.v1.PowerMeasurement
+	1,  // 14: eebus.v1.MonitoringService.GetEnergyConsumed:output_type -> eebus.v1.EnergyMeasurement
+	2,  // 15: eebus.v1.MonitoringService.GetMeasurements:output_type -> eebus.v1.MeasurementList
+	3,  // 16: eebus.v1.MonitoringService.GetDeviceDiagnostics:output_type -> eebus.v1.DeviceDiagnosticsData
+	4,  // 17: eebus.v1.MonitoringService.SubscribeMeasurements:output_type -> eebus.v1.MeasurementEvent
+	13, // [13:18] is the sub-list for method output_type
+	8,  // [8:13] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_eebus_v1_monitoring_service_proto_init() }
@@ -394,10 +476,11 @@ func file_eebus_v1_monitoring_service_proto_init() {
 		return
 	}
 	file_eebus_v1_common_proto_init()
-	file_eebus_v1_monitoring_service_proto_msgTypes[2].OneofWrappers = []any{
+	file_eebus_v1_monitoring_service_proto_msgTypes[3].OneofWrappers = []any{
 		(*MeasurementEvent_Power)(nil),
 		(*MeasurementEvent_Energy)(nil),
 		(*MeasurementEvent_Measurement)(nil),
+		(*MeasurementEvent_DeviceDiagnostics)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -405,7 +488,7 @@ func file_eebus_v1_monitoring_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_eebus_v1_monitoring_service_proto_rawDesc), len(file_eebus_v1_monitoring_service_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

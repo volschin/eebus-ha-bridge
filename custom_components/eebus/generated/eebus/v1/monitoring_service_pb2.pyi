@@ -24,6 +24,7 @@ class MeasurementEventType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED: _ClassVar[MeasurementEventType]
     MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED: _ClassVar[MeasurementEventType]
     MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED: _ClassVar[MeasurementEventType]
+    MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED: _ClassVar[MeasurementEventType]
 MEASUREMENT_EVENT_UNSPECIFIED: MeasurementEventType
 MEASUREMENT_EVENT_POWER_UPDATED: MeasurementEventType
 MEASUREMENT_EVENT_ENERGY_UPDATED: MeasurementEventType
@@ -35,6 +36,7 @@ MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED: MeasurementEventType
 MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED: MeasurementEventType
 MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED: MeasurementEventType
 MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED: MeasurementEventType
+MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED: MeasurementEventType
 
 class EnergyMeasurement(_message.Message):
     __slots__ = ("kilowatt_hours", "timestamp")
@@ -50,16 +52,26 @@ class MeasurementList(_message.Message):
     measurements: _containers.RepeatedCompositeFieldContainer[_common_pb2.MeasurementEntry]
     def __init__(self, measurements: _Optional[_Iterable[_Union[_common_pb2.MeasurementEntry, _Mapping]]] = ...) -> None: ...
 
+class DeviceDiagnosticsData(_message.Message):
+    __slots__ = ("operating_state", "timestamp")
+    OPERATING_STATE_FIELD_NUMBER: _ClassVar[int]
+    TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
+    operating_state: str
+    timestamp: _timestamp_pb2.Timestamp
+    def __init__(self, operating_state: _Optional[str] = ..., timestamp: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+
 class MeasurementEvent(_message.Message):
-    __slots__ = ("ski", "event_type", "power", "energy", "measurement")
+    __slots__ = ("ski", "event_type", "power", "energy", "measurement", "device_diagnostics")
     SKI_FIELD_NUMBER: _ClassVar[int]
     EVENT_TYPE_FIELD_NUMBER: _ClassVar[int]
     POWER_FIELD_NUMBER: _ClassVar[int]
     ENERGY_FIELD_NUMBER: _ClassVar[int]
     MEASUREMENT_FIELD_NUMBER: _ClassVar[int]
+    DEVICE_DIAGNOSTICS_FIELD_NUMBER: _ClassVar[int]
     ski: str
     event_type: MeasurementEventType
     power: _common_pb2.PowerMeasurement
     energy: EnergyMeasurement
     measurement: _common_pb2.MeasurementEntry
-    def __init__(self, ski: _Optional[str] = ..., event_type: _Optional[_Union[MeasurementEventType, str]] = ..., power: _Optional[_Union[_common_pb2.PowerMeasurement, _Mapping]] = ..., energy: _Optional[_Union[EnergyMeasurement, _Mapping]] = ..., measurement: _Optional[_Union[_common_pb2.MeasurementEntry, _Mapping]] = ...) -> None: ...
+    device_diagnostics: DeviceDiagnosticsData
+    def __init__(self, ski: _Optional[str] = ..., event_type: _Optional[_Union[MeasurementEventType, str]] = ..., power: _Optional[_Union[_common_pb2.PowerMeasurement, _Mapping]] = ..., energy: _Optional[_Union[EnergyMeasurement, _Mapping]] = ..., measurement: _Optional[_Union[_common_pb2.MeasurementEntry, _Mapping]] = ..., device_diagnostics: _Optional[_Union[DeviceDiagnosticsData, _Mapping]] = ...) -> None: ...

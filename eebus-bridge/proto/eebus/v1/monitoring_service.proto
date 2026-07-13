@@ -11,6 +11,7 @@ service MonitoringService {
   rpc GetPowerConsumption(DeviceRequest) returns (PowerMeasurement);
   rpc GetEnergyConsumed(DeviceRequest) returns (EnergyMeasurement);
   rpc GetMeasurements(DeviceRequest) returns (MeasurementList);
+  rpc GetDeviceDiagnostics(DeviceRequest) returns (DeviceDiagnosticsData);
   rpc SubscribeMeasurements(DeviceRequest) returns (stream MeasurementEvent);
 }
 
@@ -23,6 +24,11 @@ message MeasurementList {
   repeated MeasurementEntry measurements = 1;
 }
 
+message DeviceDiagnosticsData {
+  string operating_state = 1;
+  google.protobuf.Timestamp timestamp = 2;
+}
+
 message MeasurementEvent {
   string ski = 1;
   MeasurementEventType event_type = 2;
@@ -30,6 +36,7 @@ message MeasurementEvent {
     PowerMeasurement power = 3;
     EnergyMeasurement energy = 4;
     MeasurementEntry measurement = 5;
+    DeviceDiagnosticsData device_diagnostics = 6;
   }
 }
 
@@ -45,4 +52,5 @@ enum MeasurementEventType {
   MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED = 8;
   MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED = 9;
   MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED = 10;
+  MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED = 11;
 }

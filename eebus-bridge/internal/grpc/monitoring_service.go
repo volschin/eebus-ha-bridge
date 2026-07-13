@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -17,18 +18,23 @@ import (
 
 type MonitoringService struct {
 	pb.UnimplementedMonitoringServiceServer
-	monitoring *usecases.MonitoringWrapper
-	dhw        temperatureReader
-	room       temperatureReader
-	outdoor    temperatureReader
-	flow       temperatureReader
-	returnTemp temperatureReader
-	bus        *eebus.EventBus
-	registry   *eebus.DeviceRegistry
+	monitoring  *usecases.MonitoringWrapper
+	dhw         temperatureReader
+	room        temperatureReader
+	outdoor     temperatureReader
+	flow        temperatureReader
+	returnTemp  temperatureReader
+	diagnostics deviceOperatingStateReader
+	bus         *eebus.EventBus
+	registry    *eebus.DeviceRegistry
 }
 
 type temperatureReader interface {
 	Temperature(string) (float64, error)
+}
+
+type deviceOperatingStateReader interface {
+	OperatingState(string) (string, error)
 }
 
 func NewMonitoringService(
@@ -38,19 +44,41 @@ func NewMonitoringService(
 	outdoor temperatureReader,
 	flow temperatureReader,
 	returnTemp temperatureReader,
+	diagnostics deviceOperatingStateReader,
 	bus *eebus.EventBus,
 	registry *eebus.DeviceRegistry,
 ) *MonitoringService {
 	return &MonitoringService{
-		monitoring: monitoring,
-		dhw:        dhw,
-		room:       room,
-		outdoor:    outdoor,
-		flow:       flow,
-		returnTemp: returnTemp,
-		bus:        bus,
-		registry:   registry,
+		monitoring:  monitoring,
+		dhw:         dhw,
+		room:        room,
+		outdoor:     outdoor,
+		flow:        flow,
+		returnTemp:  returnTemp,
+		diagnostics: diagnostics,
+		bus:         bus,
+		registry:    registry,
 	}
+}
+
+func (s *MonitoringService) GetDeviceDiagnostics(_ context.Context, req *pb.DeviceRequest) (*pb.DeviceDiagnosticsData, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if s.diagnostics == nil {
+		return nil, status.Error(codes.Unavailable, "device diagnosis reader not initialized")
+	}
+	state, err := s.diagnostics.OperatingState(req.Ski)
+	if err != nil {
+		if errors.Is(err, usecases.ErrDeviceOperatingStateUnavailable) {
+			return nil, status.Errorf(codes.NotFound, "reading device operating state: %v", err)
+		}
+		return nil, status.Errorf(codes.Internal, "reading device operating state: %v", err)
+	}
+	return &pb.DeviceDiagnosticsData{
+		OperatingState: state,
+		Timestamp:      timestamppb.Now(),
+	}, nil
 }
 
 func (s *MonitoringService) GetPowerConsumption(_ context.Context, req *pb.DeviceRequest) (*pb.PowerMeasurement, error) {
@@ -229,6 +257,8 @@ func (s *MonitoringService) SubscribeMeasurements(req *pb.DeviceRequest, stream 
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED
 			case "monitoring.return_temperature_updated":
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED
+			case "monitoring.device_operating_state_updated":
+				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED
 			default:
 				continue
 			}
@@ -273,6 +303,16 @@ func (s *MonitoringService) attachMeasurementPayload(event *pb.MeasurementEvent,
 		s.attachTemperaturePayload(event, ski, s.flow, "flow_temperature")
 	case pb.MeasurementEventType_MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED:
 		s.attachTemperaturePayload(event, ski, s.returnTemp, "return_temperature")
+	case pb.MeasurementEventType_MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED:
+		if s.diagnostics == nil {
+			return
+		}
+		if state, err := s.diagnostics.OperatingState(ski); err == nil {
+			event.Data = &pb.MeasurementEvent_DeviceDiagnostics{DeviceDiagnostics: &pb.DeviceDiagnosticsData{
+				OperatingState: state,
+				Timestamp:      timestamppb.Now(),
+			}}
+		}
 	}
 }
 

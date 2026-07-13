@@ -22,6 +22,7 @@ const (
 	MonitoringService_GetPowerConsumption_FullMethodName   = "/eebus.v1.MonitoringService/GetPowerConsumption"
 	MonitoringService_GetEnergyConsumed_FullMethodName     = "/eebus.v1.MonitoringService/GetEnergyConsumed"
 	MonitoringService_GetMeasurements_FullMethodName       = "/eebus.v1.MonitoringService/GetMeasurements"
+	MonitoringService_GetDeviceDiagnostics_FullMethodName  = "/eebus.v1.MonitoringService/GetDeviceDiagnostics"
 	MonitoringService_SubscribeMeasurements_FullMethodName = "/eebus.v1.MonitoringService/SubscribeMeasurements"
 )
 
@@ -32,6 +33,7 @@ type MonitoringServiceClient interface {
 	GetPowerConsumption(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*PowerMeasurement, error)
 	GetEnergyConsumed(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*EnergyMeasurement, error)
 	GetMeasurements(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*MeasurementList, error)
+	GetDeviceDiagnostics(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*DeviceDiagnosticsData, error)
 	SubscribeMeasurements(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MeasurementEvent], error)
 }
 
@@ -73,6 +75,16 @@ func (c *monitoringServiceClient) GetMeasurements(ctx context.Context, in *Devic
 	return out, nil
 }
 
+func (c *monitoringServiceClient) GetDeviceDiagnostics(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*DeviceDiagnosticsData, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeviceDiagnosticsData)
+	err := c.cc.Invoke(ctx, MonitoringService_GetDeviceDiagnostics_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *monitoringServiceClient) SubscribeMeasurements(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MeasurementEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &MonitoringService_ServiceDesc.Streams[0], MonitoringService_SubscribeMeasurements_FullMethodName, cOpts...)
@@ -99,6 +111,7 @@ type MonitoringServiceServer interface {
 	GetPowerConsumption(context.Context, *DeviceRequest) (*PowerMeasurement, error)
 	GetEnergyConsumed(context.Context, *DeviceRequest) (*EnergyMeasurement, error)
 	GetMeasurements(context.Context, *DeviceRequest) (*MeasurementList, error)
+	GetDeviceDiagnostics(context.Context, *DeviceRequest) (*DeviceDiagnosticsData, error)
 	SubscribeMeasurements(*DeviceRequest, grpc.ServerStreamingServer[MeasurementEvent]) error
 	mustEmbedUnimplementedMonitoringServiceServer()
 }
@@ -118,6 +131,9 @@ func (UnimplementedMonitoringServiceServer) GetEnergyConsumed(context.Context, *
 }
 func (UnimplementedMonitoringServiceServer) GetMeasurements(context.Context, *DeviceRequest) (*MeasurementList, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetMeasurements not implemented")
+}
+func (UnimplementedMonitoringServiceServer) GetDeviceDiagnostics(context.Context, *DeviceRequest) (*DeviceDiagnosticsData, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDeviceDiagnostics not implemented")
 }
 func (UnimplementedMonitoringServiceServer) SubscribeMeasurements(*DeviceRequest, grpc.ServerStreamingServer[MeasurementEvent]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeMeasurements not implemented")
@@ -197,6 +213,24 @@ func _MonitoringService_GetMeasurements_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MonitoringService_GetDeviceDiagnostics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeviceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MonitoringServiceServer).GetDeviceDiagnostics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MonitoringService_GetDeviceDiagnostics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MonitoringServiceServer).GetDeviceDiagnostics(ctx, req.(*DeviceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _MonitoringService_SubscribeMeasurements_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(DeviceRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -226,6 +260,10 @@ var MonitoringService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMeasurements",
 			Handler:    _MonitoringService_GetMeasurements_Handler,
+		},
+		{
+			MethodName: "GetDeviceDiagnostics",
+			Handler:    _MonitoringService_GetDeviceDiagnostics_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
