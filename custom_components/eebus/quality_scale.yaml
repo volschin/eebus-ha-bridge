@@ -49,7 +49,7 @@ rules:
   docs-supported-devices: done
   docs-supported-functions:
     status: done
-    comment: README lists DHW target, boost, operation mode, and their device-provided constraints/options.
+    comment: README lists the DHW water heater, boost, and their device-provided constraints/options.
   docs-troubleshooting: done
   docs-use-cases: done
   dynamic-devices:

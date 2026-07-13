@@ -6,13 +6,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import grpc
 from grpc.aio import AioRpcError, Metadata
+from homeassistant.components.water_heater import WaterHeaterEntityFeature
+from homeassistant.const import ATTR_TEMPERATURE
 
 from custom_components.eebus import proto_stubs
 from custom_components.eebus.coordinator import EebusCoordinator
 from custom_components.eebus.generated.eebus.v1 import dhw_service_pb2
-from custom_components.eebus.number import EebusDHWSetpointNumber
-from custom_components.eebus.select import EebusDHWOperationModeSelect
 from custom_components.eebus.switch import EebusDHWBoostSwitch
+from custom_components.eebus.water_heater import EebusDHWWaterHeater
 
 
 def _coordinator(data=None):
@@ -72,12 +73,13 @@ def test_read_dhw_setpoint_not_found_marks_unsupported():
     assert coordinator._dhw_supported is False
 
 
-def test_dhw_number_uses_dynamic_constraints_and_writes():
-    """The HA number mirrors the heat pump range and calls the DHW RPC."""
+def test_dhw_water_heater_combines_temperatures_modes_and_writes():
+    """The water heater combines measured temperature, target, and operation mode."""
     coordinator = MagicMock()
     coordinator.ski = "test-ski"
     coordinator.data = {
         "connected": True,
+        "dhw_temperature_c": 44.5,
         "dhw_supported": True,
         "dhw_setpoint": {
             "value_celsius": 46,
@@ -86,20 +88,78 @@ def test_dhw_number_uses_dynamic_constraints_and_writes():
             "step_celsius": 1,
             "writable": True,
         },
+        "dhw_sysfn_supported": True,
+        "dhw_system_function": {
+            "boost_status": "inactive",
+            "boost_writable": True,
+            "operation_mode": "auto",
+            "available_modes": ["auto", "on", "off"],
+            "mode_writable": True,
+        },
     }
     coordinator.async_write_dhw_setpoint = AsyncMock()
+    coordinator.async_set_dhw_operation_mode = AsyncMock()
     coordinator.async_request_refresh = AsyncMock()
-    number = EebusDHWSetpointNumber(coordinator)
+    water_heater = EebusDHWWaterHeater(coordinator)
 
-    assert number.native_value == 46
-    assert number.native_min_value == 35
-    assert number.native_max_value == 70
-    assert number.native_step == 1
-    assert number.available is True
+    assert water_heater.current_temperature == 44.5
+    assert water_heater.target_temperature == 46
+    assert water_heater.min_temp == 35
+    assert water_heater.max_temp == 70
+    assert water_heater.target_temperature_step == 1
+    assert water_heater.current_operation == "auto"
+    assert water_heater.operation_list == ["auto", "on", "off"]
+    assert water_heater.supported_features == (
+        WaterHeaterEntityFeature.TARGET_TEMPERATURE
+        | WaterHeaterEntityFeature.OPERATION_MODE
+    )
+    assert water_heater.available is True
 
-    asyncio.run(number.async_set_native_value(47))
+    asyncio.run(water_heater.async_set_temperature(**{ATTR_TEMPERATURE: 47}))
     coordinator.async_write_dhw_setpoint.assert_awaited_once_with(47)
-    coordinator.async_request_refresh.assert_awaited_once()
+    asyncio.run(water_heater.async_set_operation_mode("off"))
+    coordinator.async_set_dhw_operation_mode.assert_awaited_once_with("off")
+    assert coordinator.async_request_refresh.await_count == 2
+
+
+def test_dhw_water_heater_is_read_only_when_controls_are_not_writable():
+    """Measured DHW data remains visible without advertising write controls."""
+    coordinator = MagicMock()
+    coordinator.ski = "test-ski"
+    coordinator.data = {"connected": True, "dhw_temperature_c": 44.5}
+
+    water_heater = EebusDHWWaterHeater(coordinator)
+
+    assert water_heater.available is True
+    assert water_heater.current_temperature == 44.5
+    assert water_heater.target_temperature is None
+    assert water_heater.supported_features == WaterHeaterEntityFeature(0)
+
+
+def test_dhw_water_heater_ignores_stale_unsupported_controls():
+    """Support updates hide stale target and mode data retained between refreshes."""
+    coordinator = MagicMock()
+    coordinator.ski = "test-ski"
+    coordinator.data = {
+        "connected": True,
+        "dhw_temperature_c": 44.5,
+        "dhw_supported": False,
+        "dhw_setpoint": {"value_celsius": 46, "writable": True},
+        "dhw_sysfn_supported": False,
+        "dhw_system_function": {
+            "operation_mode": "auto",
+            "available_modes": ["auto", "off"],
+            "mode_writable": True,
+        },
+    }
+
+    water_heater = EebusDHWWaterHeater(coordinator)
+
+    assert water_heater.available is True
+    assert water_heater.target_temperature is None
+    assert water_heater.current_operation is None
+    assert water_heater.operation_list is None
+    assert water_heater.supported_features == WaterHeaterEntityFeature(0)
 
 
 def test_dhw_event_pushes_setpoint():
@@ -211,8 +271,8 @@ def test_dhw_system_function_event_pushes_state():
     assert pushed["dhw_sysfn_supported"] is True
 
 
-def test_dhw_boost_switch_and_operation_mode_select():
-    """The HA entities mirror coordinator state and call the DHW sysfn RPCs."""
+def test_dhw_boost_switch():
+    """The HA switch mirrors coordinator boost state and calls the DHW RPC."""
     coordinator = MagicMock()
     coordinator.ski = "test-ski"
     coordinator.data = {
@@ -227,7 +287,6 @@ def test_dhw_boost_switch_and_operation_mode_select():
         },
     }
     coordinator.async_set_dhw_boost = AsyncMock()
-    coordinator.async_set_dhw_operation_mode = AsyncMock()
     coordinator.async_request_refresh = AsyncMock()
 
     switch = EebusDHWBoostSwitch(coordinator)
@@ -236,10 +295,3 @@ def test_dhw_boost_switch_and_operation_mode_select():
     assert switch.extra_state_attributes == {"boost_status": "running"}
     asyncio.run(switch.async_turn_off())
     coordinator.async_set_dhw_boost.assert_awaited_once_with(False)
-
-    select = EebusDHWOperationModeSelect(coordinator)
-    assert select.available is True
-    assert select.options == ["auto", "on", "off"]
-    assert select.current_option == "auto"
-    asyncio.run(select.async_select_option("off"))
-    coordinator.async_set_dhw_operation_mode.assert_awaited_once_with("off")
