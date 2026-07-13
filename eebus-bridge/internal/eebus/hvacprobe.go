@@ -31,6 +31,9 @@ import (
 // echo write per accepted Setpoint binding: it writes the device's own current
 // SetpointListData back unchanged, so the write path is exercised without
 // altering any temperature, and reports the device's accept/deny result.
+// Stage 3b (experimental.hvac_probe_write_delta_ski, EnableWriteDelta) proves
+// the device applies writes: scoped to one SKI, it changes the dhwTemperature
+// setpoint by one advertised step, confirms via re-read, and restores.
 type HvacProbe struct {
 	mu          sync.Mutex
 	localEntity spineapi.EntityLocalInterface
@@ -46,6 +49,7 @@ type HvacProbe struct {
 	// its errorNumber per msgCounterReference for collectBindResults to match
 	// against the counters returned by BindToRemote.
 	bindEnabled  bool
+	ucAdvertised bool
 	resultHooked map[model.FeatureTypeType]bool
 	nmHooked     bool
 	bindResults  map[uint64]int64
@@ -59,12 +63,12 @@ type HvacProbe struct {
 	writeEnabled   bool
 	featureResults map[uint64]int64
 
-	// writeDeltaEnabled turns on the stage-3b value-changing test: on the
-	// DHWCircuit entity the echo write is replaced by write(current±1) →
-	// re-read to confirm the device applied it → write(original) → re-read.
-	// The setpoint is off its original value only for the seconds between the
-	// two writes.
-	writeDeltaEnabled bool
+	// writeDeltaSKI arms the stage-3b value-changing test for exactly one
+	// device: on that device's DHWCircuit entity the echo write is replaced by
+	// write(current±step) → re-read to confirm the device applied it →
+	// write(original) → re-read. The setpoint is off its original value only
+	// for the seconds between the two writes. Empty means never.
+	writeDeltaSKI string
 
 	// pollInterval/pollTimeout control how long collectData waits for read
 	// responses to land in the remote feature caches. Overridden in tests.
@@ -132,21 +136,44 @@ var hvacProbeUseCases = []struct {
 }
 
 // Setup arms the probe: it registers Setpoint and HVAC client features on the
-// local entity (required as SPINE sender addresses for the read requests) and
-// advertises the matching ConfigurationAppliance client use cases. Both change
-// the announced NodeManagement data, so Setup must run before the EEBUS
+// local entity (required as SPINE sender addresses for the read requests).
+// The ConfigurationAppliance client use cases are only advertised once the
+// bind stage is armed (stage 2b) — the pure read probe must not claim use
+// cases the bridge doesn't implement. Both change the announced
+// NodeManagement data, so Setup and EnableBind must run before the EEBUS
 // service starts. Not calling Setup leaves ProbeOnce a no-op.
 func (p *HvacProbe) Setup(localEntity spineapi.EntityLocalInterface) {
 	if p == nil || localEntity == nil {
 		return
 	}
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.localEntity = localEntity
+	bind := p.bindEnabled
+	p.mu.Unlock()
 	localEntity.GetOrAddFeature(model.FeatureTypeTypeSetpoint, model.RoleTypeClient)
 	localEntity.GetOrAddFeature(model.FeatureTypeTypeHvac, model.RoleTypeClient)
+	if bind {
+		p.advertiseClientUseCases()
+	}
+}
+
+// advertiseClientUseCases announces, once, the ConfigurationAppliance client
+// counterparts of the configurationOf* use cases in NodeManagement. Part of
+// stage 2b: claiming the client role is only justified when the probe
+// actually binds (and possibly writes), not for raw diagnostic reads.
+func (p *HvacProbe) advertiseClientUseCases() {
+	p.mu.Lock()
+	local := p.localEntity
+	done := p.ucAdvertised
+	if local != nil {
+		p.ucAdvertised = true
+	}
+	p.mu.Unlock()
+	if local == nil || done {
+		return
+	}
 	for _, uc := range hvacProbeUseCases {
-		localEntity.AddUseCaseSupport(
+		local.AddUseCaseSupport(
 			model.UseCaseActorTypeConfigurationAppliance,
 			uc.name,
 			model.SpecificationVersionType("1.0.0"),
@@ -201,8 +228,9 @@ func (p *HvacProbe) ProbeOnce(ski string, device spineapi.DeviceRemoteInterface)
 }
 
 // EnableBind arms stage 2: ProbeOnce additionally requests a binding to each
-// remote Setpoint/HVAC server feature. Call alongside Setup, before the
-// service starts.
+// remote Setpoint/HVAC server feature, and the matching ConfigurationAppliance
+// client use cases are advertised in NodeManagement. Call alongside Setup,
+// before the service starts.
 func (p *HvacProbe) EnableBind() {
 	if p == nil {
 		return
@@ -210,6 +238,7 @@ func (p *HvacProbe) EnableBind() {
 	p.mu.Lock()
 	p.bindEnabled = true
 	p.mu.Unlock()
+	p.advertiseClientUseCases()
 }
 
 // EnableWrite arms stage 3: after a Setpoint binding is ACCEPTED, the probe
@@ -224,16 +253,19 @@ func (p *HvacProbe) EnableWrite() {
 	p.mu.Unlock()
 }
 
-// EnableWriteDelta arms stage 3b: on the DHWCircuit entity, instead of the
-// echo write, change the DHW setpoint by one step (clamped to the advertised
-// constraints), re-read to confirm the device applied it, then write the
-// original value back and confirm the restore. Requires EnableWrite.
-func (p *HvacProbe) EnableWriteDelta() {
+// EnableWriteDelta arms stage 3b for exactly the device with the given SKI:
+// on its DHWCircuit entity, instead of the echo write, change the
+// dhwTemperature setpoint by one advertised step, re-read to confirm the
+// device applied it, then write the original value back and confirm the
+// restore. Fail-closed: without a SKI, a dhwTemperature-scoped setpoint
+// description, complete constraints, and a writable setpointListData
+// operation, no value-changing write is sent. Requires EnableWrite.
+func (p *HvacProbe) EnableWriteDelta(ski string) {
 	if p == nil {
 		return
 	}
 	p.mu.Lock()
-	p.writeDeltaEnabled = true
+	p.writeDeltaSKI = NormalizeSKI(ski)
 	p.mu.Unlock()
 }
 
@@ -466,9 +498,9 @@ func (p *HvacProbe) attemptSetpointEchoWrite(ski string, b pendingBind) {
 	}
 
 	p.mu.Lock()
-	delta := p.writeDeltaEnabled
+	deltaSKI := p.writeDeltaSKI
 	p.mu.Unlock()
-	if delta && b.target.entityType == model.EntityTypeTypeDHWCircuit {
+	if deltaSKI != "" && deltaSKI == NormalizeSKI(ski) && b.target.entityType == model.EntityTypeTypeDHWCircuit {
 		p.runSetpointDeltaTest(ski, b, data)
 		return
 	}
@@ -483,14 +515,15 @@ func (p *HvacProbe) attemptSetpointEchoWrite(ski string, b pendingBind) {
 }
 
 // sendSetpointWriteAndAwait sends one SetpointListData write and waits for the
-// device's result. Returns the errorNumber and whether a result arrived at
-// all; label distinguishes echo/delta/restore writes in the log.
-func (p *HvacProbe) sendSetpointWriteAndAwait(ski string, b pendingBind, data *model.SetpointListDataType, label string) (int64, bool) {
+// device's result. sent reports whether the command reached the sender at all;
+// seen whether a result arrived; errno is only meaningful when seen. label
+// distinguishes echo/delta/restore writes in the log.
+func (p *HvacProbe) sendSetpointWriteAndAwait(ski string, b pendingBind, data *model.SetpointListDataType, label string) (errno int64, seen, sent bool) {
 	cmd := model.CmdType{SetpointListData: data}
 	msgCounter, werr := b.target.feature.Device().Sender().Write(b.localFeature.Address(), b.target.feature.Address(), cmd)
 	if werr != nil {
 		p.logf("[HVACPROBE] ski=%s entity=%s %s Setpoint send failed: %v", ski, b.target.entityAddr, label, werr)
-		return -1, false
+		return -1, false, false
 	}
 	counter := uint64(0)
 	if msgCounter != nil {
@@ -502,78 +535,108 @@ func (p *HvacProbe) sendSetpointWriteAndAwait(ski string, b pendingBind, data *m
 	for time.Now().Before(deadline) {
 		time.Sleep(p.pollInterval)
 		p.mu.Lock()
-		errno, ok := p.featureResults[counter]
+		res, ok := p.featureResults[counter]
 		if !ok {
 			// Fallback: some routing puts results on NodeManagement instead.
-			errno, ok = p.bindResults[counter]
+			res, ok = p.bindResults[counter]
 		}
 		p.mu.Unlock()
 		if !ok {
 			continue
 		}
-		if errno == 0 {
+		if res == 0 {
 			p.logf("[HVACPROBE] ski=%s entity=%s %s Setpoint ACCEPTED (msgCounter=%d)",
 				ski, b.target.entityAddr, label, counter)
 		} else {
 			p.logf("[HVACPROBE] ski=%s entity=%s %s Setpoint DENIED errorNumber=%d (msgCounter=%d)",
-				ski, b.target.entityAddr, label, errno, counter)
+				ski, b.target.entityAddr, label, res, counter)
 		}
-		return errno, true
+		return res, true, true
 	}
 	p.logf("[HVACPROBE] ski=%s entity=%s %s Setpoint NOT answered within %s",
 		ski, b.target.entityAddr, label, p.pollTimeout)
-	return -1, false
+	return -1, false, true
 }
 
 // runSetpointDeltaTest is stage 3b: prove the device APPLIES writes, not just
-// ACKs them. It changes the first valued setpoint by one constraint step
-// (default +1, clamped to the advertised range), re-reads until the device
-// reports the new value, then writes the original value back and confirms the
-// restore. A failed restore is logged loudly — that is the one outcome
-// needing manual attention (device keeps the changed setpoint).
+// ACKs them. Fail-closed target selection: the setpoint must be identified as
+// dhwTemperature via its description, declare complete constraints (positive
+// step, min and max), and the remote feature must advertise setpointListData
+// as writable — otherwise no value-changing write is sent. Once the delta
+// write was handed to the sender, the original value is restored best-effort
+// regardless of whether a result was seen: a lost or late result does not
+// prove the device ignored the command. A failed restore is logged loudly —
+// that is the one outcome needing manual attention.
 func (p *HvacProbe) runSetpointDeltaTest(ski string, b pendingBind, data *model.SetpointListDataType) {
+	op := b.target.feature.Operations()[model.FunctionTypeSetpointListData]
+	if op == nil || !op.Write() {
+		p.logf("[HVACPROBE] ski=%s entity=%s delta test skipped: setpointListData not advertised writable", ski, b.target.entityAddr)
+		return
+	}
+	id, ok := p.dhwTemperatureSetpointId(b.target)
+	if !ok {
+		p.logf("[HVACPROBE] ski=%s entity=%s delta test skipped: no dhwTemperature-scoped setpoint description within %s",
+			ski, b.target.entityAddr, p.pollTimeout)
+		return
+	}
 	idx := -1
 	for i, sp := range data.SetpointData {
-		if sp.SetpointId != nil && sp.Value != nil {
+		if sp.SetpointId != nil && *sp.SetpointId == id && sp.Value != nil {
 			idx = i
 			break
 		}
 	}
 	if idx < 0 {
-		p.logf("[HVACPROBE] ski=%s entity=%s delta test skipped: no setpoint entry with a value", ski, b.target.entityAddr)
+		p.logf("[HVACPROBE] ski=%s entity=%s delta test skipped: setpointId=%d has no value", ski, b.target.entityAddr, id)
 		return
 	}
-	id := *data.SetpointData[idx].SetpointId
 	orig := data.SetpointData[idx].Value.GetValue()
 
-	step, minV, maxV := p.setpointConstraints(b.target, id)
+	step, minV, maxV, ok := p.setpointConstraints(b.target, id)
+	if !ok {
+		p.logf("[HVACPROBE] ski=%s entity=%s delta test skipped: setpointId=%d has incomplete constraints (need step+min+max)",
+			ski, b.target.entityAddr, id)
+		return
+	}
 	target := orig + step
-	if maxV != nil && target > *maxV {
+	if target > maxV {
 		target = orig - step
 	}
-	if minV != nil && target < *minV {
+	if target < minV {
 		p.logf("[HVACPROBE] ski=%s entity=%s delta test skipped: no room within constraints [%v..%v]",
-			ski, b.target.entityAddr, *minV, *maxV)
+			ski, b.target.entityAddr, minV, maxV)
 		return
 	}
 
 	p.logf("[HVACPROBE] ski=%s entity=%s DELTA TEST setpointId=%d: %v -> %v (restore follows)",
 		ski, b.target.entityAddr, id, orig, target)
-	if errno, ok := p.sendSetpointWriteAndAwait(ski, b, setpointListWithValue(data, idx, target), "delta-write"); !ok || errno != 0 {
-		p.logf("[HVACPROBE] ski=%s entity=%s DELTA TEST aborted: delta write not accepted; device should still be at %v",
+	errno, seen, sent := p.sendSetpointWriteAndAwait(ski, b, setpointListWithValue(data, idx, target), "delta-write")
+	if !sent {
+		// Nothing reached the sender; the device cannot have changed.
+		p.logf("[HVACPROBE] ski=%s entity=%s DELTA TEST aborted: delta write not sent; device unchanged at %v",
 			ski, b.target.entityAddr, orig)
 		return
 	}
-	if p.confirmSetpointValue(b, id, target) {
+	// From here on the command is out — restore no matter what the result
+	// said: even a missing or negative result does not prove the device did
+	// not apply the write.
+	if !seen {
+		p.logf("[HVACPROBE] ski=%s entity=%s delta-write result not seen; confirming and restoring anyway", ski, b.target.entityAddr)
+	}
+	switch {
+	case seen && errno != 0:
+		p.logf("[HVACPROBE] ski=%s entity=%s DELTA TEST setpointId=%d denied by device; verifying it stayed at %v",
+			ski, b.target.entityAddr, id, orig)
+	case p.confirmSetpointValue(b, id, target):
 		p.logf("[HVACPROBE] ski=%s entity=%s DELTA TEST setpointId=%d APPLIED: device now reports %v",
 			ski, b.target.entityAddr, id, target)
-	} else {
+	default:
 		p.logf("[HVACPROBE] ski=%s entity=%s DELTA TEST setpointId=%d NOT CONFIRMED: device never reported %v (ACK without apply?)",
 			ski, b.target.entityAddr, id, target)
 	}
 
-	// Restore unconditionally — even an unconfirmed delta may have been applied.
-	if errno, ok := p.sendSetpointWriteAndAwait(ski, b, setpointListWithValue(data, idx, orig), "restore"); !ok || errno != 0 {
+	_, _, sent = p.sendSetpointWriteAndAwait(ski, b, setpointListWithValue(data, idx, orig), "restore")
+	if !sent {
 		p.logf("[HVACPROBE] ski=%s entity=%s RESTORE FAILED: setpointId=%d may still be at %v instead of %v — fix manually (myVAILLANT)!",
 			ski, b.target.entityAddr, id, target, orig)
 		return
@@ -587,6 +650,27 @@ func (p *HvacProbe) runSetpointDeltaTest(ski string, b pendingBind, data *model.
 	}
 }
 
+// dhwTemperatureSetpointId polls the cached setpoint descriptions for the one
+// scoped dhwTemperature. The description read is requested during stage 1, so
+// the data normally arrives within the poll window.
+func (p *HvacProbe) dhwTemperatureSetpointId(t probeTarget) (model.SetpointIdType, bool) {
+	deadline := time.Now().Add(p.pollTimeout)
+	for {
+		raw := t.feature.DataCopy(model.FunctionTypeSetpointDescriptionListData)
+		if desc, ok := raw.(*model.SetpointDescriptionListDataType); ok && desc != nil {
+			for _, d := range desc.SetpointDescriptionData {
+				if d.SetpointId != nil && d.ScopeType != nil && *d.ScopeType == model.ScopeTypeTypeDhwTemperature {
+					return *d.SetpointId, true
+				}
+			}
+		}
+		if !time.Now().Before(deadline) {
+			return 0, false
+		}
+		time.Sleep(p.pollInterval)
+	}
+}
+
 // setpointListWithValue returns a copy of the list with entry idx's value
 // replaced — the original stays untouched for the later restore write.
 func setpointListWithValue(data *model.SetpointListDataType, idx int, value float64) *model.SetpointListDataType {
@@ -597,34 +681,29 @@ func setpointListWithValue(data *model.SetpointListDataType, idx int, value floa
 }
 
 // setpointConstraints returns the advertised step/min/max for a setpoint from
-// the cached constraints data. Step defaults to 1 when unavailable.
-func (p *HvacProbe) setpointConstraints(t probeTarget, id model.SetpointIdType) (step float64, minV, maxV *float64) {
-	step = 1
+// the cached constraints data. ok is false unless all three are present and
+// the step is positive — the delta test must not guess bounds for a write
+// that changes a real appliance.
+func (p *HvacProbe) setpointConstraints(t probeTarget, id model.SetpointIdType) (step, minV, maxV float64, ok bool) {
 	raw := t.feature.DataCopy(model.FunctionTypeSetpointConstraintsListData)
-	constraints, ok := raw.(*model.SetpointConstraintsListDataType)
-	if !ok || constraints == nil {
-		return step, nil, nil
+	constraints, isList := raw.(*model.SetpointConstraintsListDataType)
+	if !isList || constraints == nil {
+		return 0, 0, 0, false
 	}
 	for _, c := range constraints.SetpointConstraintsData {
 		if c.SetpointId == nil || *c.SetpointId != id {
 			continue
 		}
-		if c.SetpointStepSize != nil {
-			if s := c.SetpointStepSize.GetValue(); s > 0 {
-				step = s
-			}
+		if c.SetpointStepSize == nil || c.SetpointRangeMin == nil || c.SetpointRangeMax == nil {
+			return 0, 0, 0, false
 		}
-		if c.SetpointRangeMin != nil {
-			v := c.SetpointRangeMin.GetValue()
-			minV = &v
+		step = c.SetpointStepSize.GetValue()
+		if step <= 0 {
+			return 0, 0, 0, false
 		}
-		if c.SetpointRangeMax != nil {
-			v := c.SetpointRangeMax.GetValue()
-			maxV = &v
-		}
-		break
+		return step, c.SetpointRangeMin.GetValue(), c.SetpointRangeMax.GetValue(), true
 	}
-	return step, minV, maxV
+	return 0, 0, 0, false
 }
 
 // confirmSetpointValue re-reads SetpointListData until the device reports the

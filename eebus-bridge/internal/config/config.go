@@ -65,13 +65,16 @@ type ExperimentalConfig struct {
 	// command. Values are not modified, so no temperature changes. Requires
 	// HvacProbe and HvacProbeBind.
 	HvacProbeWrite bool `yaml:"hvac_probe_write"`
-	// HvacProbeWriteDelta is stage 3b of the HVAC control spike: on the
-	// DHWCircuit entity, instead of the echo write, change the DHW setpoint by
-	// one constraint step, re-read to confirm the device applied it, then
-	// restore the original value and confirm again. The setpoint deviates from
-	// its original value only for the few seconds between the two writes.
-	// Requires HvacProbe, HvacProbeBind and HvacProbeWrite.
-	HvacProbeWriteDelta bool `yaml:"hvac_probe_write_delta"`
+	// HvacProbeWriteDeltaSKI is stage 3b of the HVAC control spike, scoped to
+	// exactly the device with this SKI: on its DHWCircuit entity, instead of
+	// the echo write, change the dhwTemperature setpoint by one advertised
+	// constraint step, re-read to confirm the device applied it, then restore
+	// the original value and confirm again. The setpoint deviates from its
+	// original value only for the few seconds between the two writes.
+	// Fail-closed: without a matching SKI, a dhwTemperature-scoped setpoint
+	// description, complete constraints and writable operations, nothing is
+	// written. Requires HvacProbe, HvacProbeBind and HvacProbeWrite.
+	HvacProbeWriteDeltaSKI string `yaml:"hvac_probe_write_delta_ski"`
 	// TrustSKI, when set, makes the bridge trust (RegisterRemoteSKI) this remote
 	// SKI at startup instead of waiting for Home Assistant to send it via gRPC.
 	// Lets a spike container complete the SHIP handshake with a known device
@@ -242,10 +245,8 @@ func applyEnvOverrides(cfg *Config) {
 			cfg.Experimental.HvacProbeWrite = enabled
 		}
 	}
-	if v := os.Getenv("EEBUS_EXP_HVAC_PROBE_WRITE_DELTA"); v != "" {
-		if enabled, err := strconv.ParseBool(v); err == nil {
-			cfg.Experimental.HvacProbeWriteDelta = enabled
-		}
+	if v := os.Getenv("EEBUS_EXP_HVAC_PROBE_WRITE_DELTA_SKI"); v != "" {
+		cfg.Experimental.HvacProbeWriteDeltaSKI = v
 	}
 	if v := os.Getenv("EEBUS_OHPCF_ENABLED"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
