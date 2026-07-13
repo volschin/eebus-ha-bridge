@@ -41,7 +41,7 @@ func (s *MonitoringService) GetPowerConsumption(_ context.Context, req *pb.Devic
 		}
 		return nil, status.Errorf(codes.Internal, "reading power: %v", err)
 	}
-	log.Printf("[DEBUG] Monitoring.GetPowerConsumption success: requested_ski=%s watts=%f", req.Ski, value)
+	log.Printf("[DEBUG] Monitoring.GetPowerConsumption success: requested_ski=%s watts=%g", req.Ski, value)
 	return &pb.PowerMeasurement{
 		Watts:     value,
 		Timestamp: timestamppb.Now(),
@@ -240,7 +240,7 @@ func (s *MonitoringService) readPower(ski string) (float64, error) {
 		log.Printf("[DEBUG] Monitoring.readPower nil-entity fallback failed: requested_ski=%s err=%v", ski, fallbackErr)
 		return 0, err
 	}
-	log.Printf("[DEBUG] Monitoring.readPower nil-entity fallback succeeded: requested_ski=%s watts=%f", ski, value)
+	log.Printf("[DEBUG] Monitoring.readPower nil-entity fallback succeeded: requested_ski=%s watts=%g", ski, value)
 	return value, nil
 }
 
