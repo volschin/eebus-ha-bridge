@@ -22,7 +22,7 @@ func TestIntegrationDeviceServiceRoundTrip(t *testing.T) {
 
 	deviceSvc := bridgegrpc.NewDeviceService(callbacks, bus, "integration-test-ski", registry)
 	lpcSvc := bridgegrpc.NewLPCService(nil, bus, registry)
-	monSvc := bridgegrpc.NewMonitoringService(nil, nil, nil, nil, nil, nil, bus, registry)
+	monSvc := bridgegrpc.NewMonitoringService(nil, nil, nil, nil, nil, nil, nil, bus, registry)
 
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterDeviceServiceServer(srv.GRPCServer(), deviceSvc)

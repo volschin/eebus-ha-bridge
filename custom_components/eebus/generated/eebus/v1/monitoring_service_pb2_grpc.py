@@ -50,6 +50,11 @@ class MonitoringServiceStub(object):
                 request_serializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
                 response_deserializer=eebus_dot_v1_dot_monitoring__service__pb2.MeasurementList.FromString,
                 _registered_method=True)
+        self.GetDeviceDiagnostics = channel.unary_unary(
+                '/eebus.v1.MonitoringService/GetDeviceDiagnostics',
+                request_serializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
+                response_deserializer=eebus_dot_v1_dot_monitoring__service__pb2.DeviceDiagnosticsData.FromString,
+                _registered_method=True)
         self.SubscribeMeasurements = channel.unary_stream(
                 '/eebus.v1.MonitoringService/SubscribeMeasurements',
                 request_serializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
@@ -78,6 +83,12 @@ class MonitoringServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetDeviceDiagnostics(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def SubscribeMeasurements(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -101,6 +112,11 @@ def add_MonitoringServiceServicer_to_server(servicer, server):
                     servicer.GetMeasurements,
                     request_deserializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.FromString,
                     response_serializer=eebus_dot_v1_dot_monitoring__service__pb2.MeasurementList.SerializeToString,
+            ),
+            'GetDeviceDiagnostics': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetDeviceDiagnostics,
+                    request_deserializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.FromString,
+                    response_serializer=eebus_dot_v1_dot_monitoring__service__pb2.DeviceDiagnosticsData.SerializeToString,
             ),
             'SubscribeMeasurements': grpc.unary_stream_rpc_method_handler(
                     servicer.SubscribeMeasurements,
@@ -189,6 +205,33 @@ class MonitoringService(object):
             '/eebus.v1.MonitoringService/GetMeasurements',
             eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
             eebus_dot_v1_dot_monitoring__service__pb2.MeasurementList.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetDeviceDiagnostics(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/eebus.v1.MonitoringService/GetDeviceDiagnostics',
+            eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
+            eebus_dot_v1_dot_monitoring__service__pb2.DeviceDiagnosticsData.FromString,
             options,
             channel_credentials,
             insecure,

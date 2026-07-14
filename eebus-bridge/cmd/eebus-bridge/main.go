@@ -97,6 +97,8 @@ func main() {
 	roomHeatingSystemFunction := usecases.NewRoomHeatingSystemFunction(localEntity, bus, registry, cfg.Logging.DebugEvents)
 	hydraulicTemperatures := usecases.NewHydraulicTemperatures(bus, registry, cfg.Logging.DebugEvents)
 	hydraulicTemperatures.Setup(localEntity)
+	deviceOperatingState := usecases.NewDeviceOperatingState(bus, registry, cfg.Logging.DebugEvents)
+	deviceOperatingState.Setup(localEntity)
 	if err := bridgeSvc.Service().AddUseCase(lpcWrapper.UseCase()); err != nil {
 		log.Fatalf("adding LPC use case: %v", err)
 	}
@@ -265,6 +267,7 @@ func main() {
 		outdoorMonitoringWrapper,
 		usecases.FlowTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
 		usecases.ReturnTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
+		deviceOperatingState,
 		bus,
 		registry,
 	)

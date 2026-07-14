@@ -26,7 +26,7 @@ from . import common_pb2 as eebus_dot_v1_dot_common__pb2
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n!eebus/v1/monitoring_service.proto\x12\x08\x65\x65\x62us.v1\x1a\x15\x65\x65\x62us/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"Z\n\x11\x45nergyMeasurement\x12\x16\n\x0ekilowatt_hours\x18\x01 \x01(\x01\x12-\n\ttimestamp\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"C\n\x0fMeasurementList\x12\x30\n\x0cmeasurements\x18\x01 \x03(\x0b\x32\x1a.eebus.v1.MeasurementEntry\"\xea\x01\n\x10MeasurementEvent\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12\x32\n\nevent_type\x18\x02 \x01(\x0e\x32\x1e.eebus.v1.MeasurementEventType\x12+\n\x05power\x18\x03 \x01(\x0b\x32\x1a.eebus.v1.PowerMeasurementH\x00\x12-\n\x06\x65nergy\x18\x04 \x01(\x0b\x32\x1b.eebus.v1.EnergyMeasurementH\x00\x12\x31\n\x0bmeasurement\x18\x05 \x01(\x0b\x32\x1a.eebus.v1.MeasurementEntryH\x00\x42\x06\n\x04\x64\x61ta*\xa2\x04\n\x14MeasurementEventType\x12!\n\x1dMEASUREMENT_EVENT_UNSPECIFIED\x10\x00\x12#\n\x1fMEASUREMENT_EVENT_POWER_UPDATED\x10\x01\x12$\n MEASUREMENT_EVENT_ENERGY_UPDATED\x10\x02\x12-\n)MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED\x10\x03\x12\x35\n1MEASUREMENT_EVENT_DHW_TEMPERATURE_SUPPORT_UPDATED\x10\x04\x12.\n*MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED\x10\x05\x12\x36\n2MEASUREMENT_EVENT_ROOM_TEMPERATURE_SUPPORT_UPDATED\x10\x06\x12\x31\n-MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED\x10\x07\x12\x39\n5MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED\x10\x08\x12.\n*MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED\x10\t\x12\x30\n,MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED\x10\n2\xc1\x02\n\x11MonitoringService\x12J\n\x13GetPowerConsumption\x12\x17.eebus.v1.DeviceRequest\x1a\x1a.eebus.v1.PowerMeasurement\x12I\n\x11GetEnergyConsumed\x12\x17.eebus.v1.DeviceRequest\x1a\x1b.eebus.v1.EnergyMeasurement\x12\x45\n\x0fGetMeasurements\x12\x17.eebus.v1.DeviceRequest\x1a\x19.eebus.v1.MeasurementList\x12N\n\x15SubscribeMeasurements\x12\x17.eebus.v1.DeviceRequest\x1a\x1a.eebus.v1.MeasurementEvent0\x01\x42=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n!eebus/v1/monitoring_service.proto\x12\x08\x65\x65\x62us.v1\x1a\x15\x65\x65\x62us/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"Z\n\x11\x45nergyMeasurement\x12\x16\n\x0ekilowatt_hours\x18\x01 \x01(\x01\x12-\n\ttimestamp\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"C\n\x0fMeasurementList\x12\x30\n\x0cmeasurements\x18\x01 \x03(\x0b\x32\x1a.eebus.v1.MeasurementEntry\"_\n\x15\x44\x65viceDiagnosticsData\x12\x17\n\x0foperating_state\x18\x01 \x01(\t\x12-\n\ttimestamp\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\xa9\x02\n\x10MeasurementEvent\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12\x32\n\nevent_type\x18\x02 \x01(\x0e\x32\x1e.eebus.v1.MeasurementEventType\x12+\n\x05power\x18\x03 \x01(\x0b\x32\x1a.eebus.v1.PowerMeasurementH\x00\x12-\n\x06\x65nergy\x18\x04 \x01(\x0b\x32\x1b.eebus.v1.EnergyMeasurementH\x00\x12\x31\n\x0bmeasurement\x18\x05 \x01(\x0b\x32\x1a.eebus.v1.MeasurementEntryH\x00\x12=\n\x12\x64\x65vice_diagnostics\x18\x06 \x01(\x0b\x32\x1f.eebus.v1.DeviceDiagnosticsDataH\x00\x42\x06\n\x04\x64\x61ta*\xd8\x04\n\x14MeasurementEventType\x12!\n\x1dMEASUREMENT_EVENT_UNSPECIFIED\x10\x00\x12#\n\x1fMEASUREMENT_EVENT_POWER_UPDATED\x10\x01\x12$\n MEASUREMENT_EVENT_ENERGY_UPDATED\x10\x02\x12-\n)MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED\x10\x03\x12\x35\n1MEASUREMENT_EVENT_DHW_TEMPERATURE_SUPPORT_UPDATED\x10\x04\x12.\n*MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED\x10\x05\x12\x36\n2MEASUREMENT_EVENT_ROOM_TEMPERATURE_SUPPORT_UPDATED\x10\x06\x12\x31\n-MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED\x10\x07\x12\x39\n5MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED\x10\x08\x12.\n*MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED\x10\t\x12\x30\n,MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED\x10\n\x12\x34\n0MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED\x10\x0b\x32\x93\x03\n\x11MonitoringService\x12J\n\x13GetPowerConsumption\x12\x17.eebus.v1.DeviceRequest\x1a\x1a.eebus.v1.PowerMeasurement\x12I\n\x11GetEnergyConsumed\x12\x17.eebus.v1.DeviceRequest\x1a\x1b.eebus.v1.EnergyMeasurement\x12\x45\n\x0fGetMeasurements\x12\x17.eebus.v1.DeviceRequest\x1a\x19.eebus.v1.MeasurementList\x12P\n\x14GetDeviceDiagnostics\x12\x17.eebus.v1.DeviceRequest\x1a\x1f.eebus.v1.DeviceDiagnosticsData\x12N\n\x15SubscribeMeasurements\x12\x17.eebus.v1.DeviceRequest\x1a\x1a.eebus.v1.MeasurementEvent0\x01\x42=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -34,14 +34,16 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'eebus.v1.monitoring_service
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1'
-  _globals['_MEASUREMENTEVENTTYPE']._serialized_start=502
-  _globals['_MEASUREMENTEVENTTYPE']._serialized_end=1048
+  _globals['_MEASUREMENTEVENTTYPE']._serialized_start=662
+  _globals['_MEASUREMENTEVENTTYPE']._serialized_end=1262
   _globals['_ENERGYMEASUREMENT']._serialized_start=103
   _globals['_ENERGYMEASUREMENT']._serialized_end=193
   _globals['_MEASUREMENTLIST']._serialized_start=195
   _globals['_MEASUREMENTLIST']._serialized_end=262
-  _globals['_MEASUREMENTEVENT']._serialized_start=265
-  _globals['_MEASUREMENTEVENT']._serialized_end=499
-  _globals['_MONITORINGSERVICE']._serialized_start=1051
-  _globals['_MONITORINGSERVICE']._serialized_end=1372
+  _globals['_DEVICEDIAGNOSTICSDATA']._serialized_start=264
+  _globals['_DEVICEDIAGNOSTICSDATA']._serialized_end=359
+  _globals['_MEASUREMENTEVENT']._serialized_start=362
+  _globals['_MEASUREMENTEVENT']._serialized_end=659
+  _globals['_MONITORINGSERVICE']._serialized_start=1265
+  _globals['_MONITORINGSERVICE']._serialized_end=1668
 # @@protoc_insertion_point(module_scope)

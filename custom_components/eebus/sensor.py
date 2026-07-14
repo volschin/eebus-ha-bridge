@@ -41,6 +41,13 @@ class EebusMeasurementDescription(SensorEntityDescription):
 # single-phase heat pumps) that never populate them.
 MEASUREMENT_SENSORS: tuple[EebusMeasurementDescription, ...] = (
     EebusMeasurementDescription(
+        key="device_operating_state",
+        data_key="device_operating_state",
+        translation_key="device_operating_state",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=True,
+    ),
+    EebusMeasurementDescription(
         key="dhw_temperature",
         data_key="dhw_temperature_c",
         translation_key="dhw_temperature",
@@ -199,7 +206,7 @@ class EebusMeasurementSensor(EebusEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.ski}_{description.key}"
 
     @property
-    def native_value(self) -> float | None:
+    def native_value(self) -> float | str | None:
         """Return the measurement value, or None when unavailable."""
         if self.coordinator.data is None:
             return None

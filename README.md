@@ -20,6 +20,8 @@ Lokale Integration von EEBUS-faehigen Waermepumpen in Home Assistant ueber das *
   und Auswahl der vom Geraet angebotenen DHW-Betriebsarten
 - **Raumheizung** -- Home-Assistant-`climate` mit Ist-/Solltemperatur,
   dynamischen Geraetegrenzen und den angebotenen Modi `auto`/`on`/`off`
+- **Geraete-Betriebszustand** -- Read-only Diagnose des standardisierten EEBUS
+  `DeviceDiagnosis.operatingState`, inklusive unbekannter zukuenftiger Werte
 - **Energy Dashboard** -- Volle Integration mit dem HA Energy Dashboard
 - **Erweiterbar** -- Architektur vorbereitet fuer zukuenftige EEBUS-HVAC-Use-Cases
 
@@ -136,6 +138,7 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 |--------|-----|-------------|
 | `binary_sensor.eebus_connected` | binary_sensor | EEBUS-Verbindungsstatus |
 | `binary_sensor.eebus_heartbeat_ok` | binary_sensor | Heartbeat innerhalb Toleranz, standardmaessig deaktiviert |
+| `sensor.eebus_device_operating_state` | sensor | EEBUS-Geraete-Betriebszustand, z. B. `normalOperation` |
 | `sensor.eebus_compressor_flexibility_power_estimate` | sensor | OHPCF geschaetzte Leistung des Angebots (W), standardmaessig deaktiviert |
 | `sensor.eebus_compressor_flexibility_power_max` | sensor | OHPCF maximale Leistung des Angebots (W), standardmaessig deaktiviert |
 
