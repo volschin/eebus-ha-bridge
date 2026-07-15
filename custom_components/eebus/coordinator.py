@@ -207,363 +207,128 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
 
             monitoring_stub = proto_stubs.monitoring_service_stub(channel)
+            lpc_stub = proto_stubs.lpc_service_stub(channel)
             request = proto_stubs.DeviceRequest(ski=self.ski)
             fallback_request = proto_stubs.DeviceRequest(ski="")
-            used_fallback = False
-            saw_not_found = False
+            flags = {"saw_not_found": False, "used_fallback": False}
 
-            try:
-                power = await monitoring_stub.GetPowerConsumption(
-                    request, timeout=RPC_TIMEOUT
-                )
-                data["power_watts"] = power.watts
-                _LOGGER.debug(
-                    "EEBUS power read for SKI %s succeeded: watts=%s",
-                    self.ski,
-                    power.watts,
-                )
-            except grpc.aio.AioRpcError as err:
-                if _is_not_found(err):
-                    saw_not_found = True
-                    try:
-                        power = await monitoring_stub.GetPowerConsumption(
-                            fallback_request, timeout=RPC_TIMEOUT
-                        )
-                        data["power_watts"] = power.watts
-                        used_fallback = True
-                        _LOGGER.debug(
-                            "EEBUS power read for SKI %s used fallback entity: watts=%s",
-                            self.ski,
-                            power.watts,
-                        )
-                    except grpc.aio.AioRpcError as retry_err:
-                        data["power_watts"] = None
-                        _LOGGER.debug(
-                            "EEBUS power read failed for SKI %s and fallback: %s",
-                            self.ski,
-                            _rpc_error_text(retry_err),
-                        )
-                else:
-                    data["power_watts"] = None
-                    _LOGGER.debug(
-                        "EEBUS power read failed for SKI %s: %s",
-                        self.ski,
-                        _rpc_error_text(err),
-                    )
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("Failed to read power consumption")
-                data["power_watts"] = None
+            # The reads are independent; run them concurrently so poll latency
+            # is the slowest single read instead of the sum of all round-trips.
+            power, measurements, energy, limit, failsafe, hb = await asyncio.gather(
+                self._poll_read(
+                    "power", monitoring_stub.GetPowerConsumption, request, fallback_request, flags
+                ),
+                self._poll_read(
+                    "scoped energy", monitoring_stub.GetMeasurements, request, fallback_request, flags
+                ),
+                self._poll_read(
+                    "total energy", monitoring_stub.GetEnergyConsumed, request, fallback_request, flags
+                ),
+                self._poll_read(
+                    "consumption limit",
+                    lpc_stub.GetConsumptionLimit,
+                    request,
+                    fallback_request,
+                    flags,
+                    unsupported_attr="_lpc_supported",
+                ),
+                self._poll_read(
+                    "failsafe",
+                    lpc_stub.GetFailsafeLimit,
+                    request,
+                    fallback_request,
+                    flags,
+                    unsupported_attr="_failsafe_supported",
+                ),
+                self._poll_read(
+                    "heartbeat",
+                    lpc_stub.GetHeartbeatStatus,
+                    request,
+                    fallback_request,
+                    flags,
+                    unsupported_attr="_heartbeat_supported",
+                ),
+            )
 
-            try:
-                measurements = await monitoring_stub.GetMeasurements(
-                    request, timeout=RPC_TIMEOUT
-                )
+            data["power_watts"] = power.watts if power is not None else None
+
+            if measurements is not None:
                 scoped_energy = self._extract_scoped_energy_kwh(measurements.measurements)
                 data["energy_consumed_heating_kwh"] = scoped_energy["heating"]
                 data["energy_consumed_dhw_kwh"] = scoped_energy["dhw"]
                 data.update(self._extract_flat_measurements(measurements.measurements))
-                _LOGGER.debug(
-                    "EEBUS scoped energy read for SKI %s: heating=%s dhw=%s entries=%s",
-                    self.ski,
-                    data["energy_consumed_heating_kwh"],
-                    data["energy_consumed_dhw_kwh"],
-                    len(measurements.measurements),
-                )
-            except grpc.aio.AioRpcError as err:
-                if _is_not_found(err):
-                    saw_not_found = True
-                    try:
-                        measurements = await monitoring_stub.GetMeasurements(
-                            fallback_request, timeout=RPC_TIMEOUT
-                        )
-                        scoped_energy = self._extract_scoped_energy_kwh(
-                            measurements.measurements
-                        )
-                        data["energy_consumed_heating_kwh"] = scoped_energy["heating"]
-                        data["energy_consumed_dhw_kwh"] = scoped_energy["dhw"]
-                        data.update(
-                            self._extract_flat_measurements(measurements.measurements)
-                        )
-                        used_fallback = True
-                        _LOGGER.debug(
-                            "EEBUS scoped energy read for SKI %s used fallback: heating=%s dhw=%s entries=%s",
-                            self.ski,
-                            data["energy_consumed_heating_kwh"],
-                            data["energy_consumed_dhw_kwh"],
-                            len(measurements.measurements),
-                        )
-                    except grpc.aio.AioRpcError as retry_err:
-                        data["energy_consumed_heating_kwh"] = None
-                        data["energy_consumed_dhw_kwh"] = None
-                        _LOGGER.debug(
-                            "EEBUS scoped energy read failed for SKI %s and fallback: %s",
-                            self.ski,
-                            _rpc_error_text(retry_err),
-                        )
-                else:
-                    data["energy_consumed_heating_kwh"] = None
-                    data["energy_consumed_dhw_kwh"] = None
-                    _LOGGER.debug(
-                        "EEBUS scoped energy read failed for SKI %s: %s",
-                        self.ski,
-                        _rpc_error_text(err),
-                    )
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("Failed to read scoped energy measurements")
+            else:
                 data["energy_consumed_heating_kwh"] = None
                 data["energy_consumed_dhw_kwh"] = None
 
-            try:
-                energy = await monitoring_stub.GetEnergyConsumed(
-                    request, timeout=RPC_TIMEOUT
-                )
-                data["energy_consumed_kwh"] = energy.kilowatt_hours
-                _LOGGER.debug(
-                    "EEBUS total energy read for SKI %s succeeded: kWh=%s",
-                    self.ski,
-                    energy.kilowatt_hours,
-                )
-            except grpc.aio.AioRpcError as err:
-                if _is_not_found(err):
-                    saw_not_found = True
-                    try:
-                        energy = await monitoring_stub.GetEnergyConsumed(
-                            fallback_request, timeout=RPC_TIMEOUT
-                        )
-                        data["energy_consumed_kwh"] = energy.kilowatt_hours
-                        used_fallback = True
-                        _LOGGER.debug(
-                            "EEBUS total energy read for SKI %s used fallback: kWh=%s",
-                            self.ski,
-                            energy.kilowatt_hours,
-                        )
-                    except grpc.aio.AioRpcError as retry_err:
-                        data["energy_consumed_kwh"] = None
-                        _LOGGER.debug(
-                            "EEBUS total energy read failed for SKI %s and fallback: %s",
-                            self.ski,
-                            _rpc_error_text(retry_err),
-                        )
-                else:
-                    data["energy_consumed_kwh"] = None
-                    _LOGGER.debug(
-                        "EEBUS total energy read failed for SKI %s: %s",
-                        self.ski,
-                        _rpc_error_text(err),
-                    )
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("Failed to read total consumed energy")
-                data["energy_consumed_kwh"] = None
+            data["energy_consumed_kwh"] = (
+                energy.kilowatt_hours if energy is not None else None
+            )
 
-            try:
-                lpc_stub = proto_stubs.lpc_service_stub(channel)
-                limit = await lpc_stub.GetConsumptionLimit(
-                    request, timeout=RPC_TIMEOUT
-                )
+            if limit is not None:
+                self._lpc_supported = True
                 data["consumption_limit"] = {
                     "value_watts": limit.value_watts,
                     "is_active": limit.is_active,
                     "is_changeable": limit.is_changeable,
                 }
-                self._lpc_supported = True
-                _LOGGER.debug(
-                    "EEBUS consumption limit read for SKI %s: value=%s active=%s changeable=%s",
-                    self.ski,
-                    limit.value_watts,
-                    limit.is_active,
-                    limit.is_changeable,
-                )
-            except grpc.aio.AioRpcError as err:
-                if _is_not_found(err):
-                    saw_not_found = True
-                    try:
-                        limit = await lpc_stub.GetConsumptionLimit(
-                            fallback_request, timeout=RPC_TIMEOUT
-                        )
-                        data["consumption_limit"] = {
-                            "value_watts": limit.value_watts,
-                            "is_active": limit.is_active,
-                            "is_changeable": limit.is_changeable,
-                        }
-                        self._lpc_supported = True
-                        used_fallback = True
-                        _LOGGER.debug(
-                            "EEBUS consumption limit read for SKI %s used fallback: value=%s active=%s changeable=%s",
-                            self.ski,
-                            limit.value_watts,
-                            limit.is_active,
-                            limit.is_changeable,
-                        )
-                    except grpc.aio.AioRpcError as retry_err:
-                        data["consumption_limit"] = None
-                        _LOGGER.debug(
-                            "EEBUS consumption limit read failed for SKI %s and fallback: %s",
-                            self.ski,
-                            _rpc_error_text(retry_err),
-                        )
-                        if _is_unimplemented(retry_err):
-                            self._lpc_supported = False
-                else:
-                    data["consumption_limit"] = None
-                    _LOGGER.debug(
-                        "EEBUS consumption limit read failed for SKI %s: %s",
-                        self.ski,
-                        _rpc_error_text(err),
-                    )
-                    if _is_unimplemented(err):
-                        self._lpc_supported = False
+            else:
+                data["consumption_limit"] = None
 
-            try:
-                lpc_stub = proto_stubs.lpc_service_stub(channel)
-                failsafe = await lpc_stub.GetFailsafeLimit(
-                    request, timeout=RPC_TIMEOUT
-                )
+            if failsafe is not None:
+                self._failsafe_supported = True
                 data["failsafe_limit"] = {
                     "value_watts": failsafe.value_watts,
                     "duration_minimum_seconds": failsafe.duration_minimum_seconds,
                 }
-                self._failsafe_supported = True
-                _LOGGER.debug(
-                    "EEBUS failsafe read for SKI %s: value=%s min_duration_s=%s",
-                    self.ski,
-                    failsafe.value_watts,
-                    failsafe.duration_minimum_seconds,
-                )
-            except grpc.aio.AioRpcError as err:
-                if _is_not_found(err):
-                    saw_not_found = True
-                    try:
-                        failsafe = await lpc_stub.GetFailsafeLimit(
-                            fallback_request, timeout=RPC_TIMEOUT
-                        )
-                        data["failsafe_limit"] = {
-                            "value_watts": failsafe.value_watts,
-                            "duration_minimum_seconds": failsafe.duration_minimum_seconds,
-                        }
-                        self._failsafe_supported = True
-                        used_fallback = True
-                        _LOGGER.debug(
-                            "EEBUS failsafe read for SKI %s used fallback: value=%s min_duration_s=%s",
-                            self.ski,
-                            failsafe.value_watts,
-                            failsafe.duration_minimum_seconds,
-                        )
-                    except grpc.aio.AioRpcError as retry_err:
-                        data["failsafe_limit"] = None
-                        _LOGGER.debug(
-                            "EEBUS failsafe read failed for SKI %s and fallback: %s",
-                            self.ski,
-                            _rpc_error_text(retry_err),
-                        )
-                        if _is_unimplemented(retry_err):
-                            self._failsafe_supported = False
-                else:
-                    data["failsafe_limit"] = None
-                    _LOGGER.debug(
-                        "EEBUS failsafe read failed for SKI %s: %s",
-                        self.ski,
-                        _rpc_error_text(err),
-                    )
-                    if _is_unimplemented(err):
-                        self._failsafe_supported = False
+            else:
+                data["failsafe_limit"] = None
 
-            try:
-                lpc_stub = proto_stubs.lpc_service_stub(channel)
-                hb = await lpc_stub.GetHeartbeatStatus(
-                    request, timeout=RPC_TIMEOUT
-                )
+            if hb is not None:
+                self._heartbeat_supported = True
                 data["heartbeat_status"] = {
                     "running": hb.running,
                     "within_duration": hb.within_duration,
                 }
-                data["heartbeat_supported"] = True
-                self._heartbeat_supported = True
-                _LOGGER.debug(
-                    "EEBUS heartbeat status for SKI %s: running=%s within_duration=%s",
-                    self.ski,
-                    hb.running,
-                    hb.within_duration,
-                )
-            except grpc.aio.AioRpcError as err:
-                if _is_not_found(err):
-                    saw_not_found = True
-                    try:
-                        hb = await lpc_stub.GetHeartbeatStatus(
-                            fallback_request, timeout=RPC_TIMEOUT
-                        )
-                        data["heartbeat_status"] = {
-                            "running": hb.running,
-                            "within_duration": hb.within_duration,
-                        }
-                        data["heartbeat_supported"] = True
-                        self._heartbeat_supported = True
-                        used_fallback = True
-                        _LOGGER.debug(
-                            "EEBUS heartbeat read for SKI %s used fallback: running=%s within_duration=%s",
-                            self.ski,
-                            hb.running,
-                            hb.within_duration,
-                        )
-                    except grpc.aio.AioRpcError as retry_err:
-                        data["heartbeat_status"] = None
-                        data["heartbeat_supported"] = self._heartbeat_supported
-                        _LOGGER.debug(
-                            "EEBUS heartbeat read failed for SKI %s and fallback: %s",
-                            self.ski,
-                            _rpc_error_text(retry_err),
-                        )
-                        if _is_unimplemented(retry_err):
-                            data["heartbeat_supported"] = False
-                            self._heartbeat_supported = False
-                else:
-                    data["heartbeat_status"] = None
-                    data["heartbeat_supported"] = self._heartbeat_supported
-                    _LOGGER.debug(
-                        "EEBUS heartbeat read failed for SKI %s: %s",
-                        self.ski,
-                        _rpc_error_text(err),
-                    )
-                    if _is_unimplemented(err):
-                        data["heartbeat_supported"] = False
-                        self._heartbeat_supported = False
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("Failed to read heartbeat status")
+            else:
                 data["heartbeat_status"] = None
-                data["heartbeat_supported"] = self._heartbeat_supported
 
+            saw_not_found = flags["saw_not_found"]
+            used_fallback = flags["used_fallback"]
+            data["heartbeat_supported"] = self._heartbeat_supported
             data["lpc_supported"] = self._lpc_supported
             data["failsafe_supported"] = self._failsafe_supported
             data["read_fallback_used"] = used_fallback
-            data["device_info"] = await self._async_fetch_device_info(
-                device_stub, proto_stubs, allow_fallback=used_fallback
-            )
 
-            # OHPCF (heat-pump compressor flexibility): read the compressor's
-            # optional-consumption offer. Unsupported/unavailable when the bridge
-            # OHPCF client is off; the entities then stay unavailable.
-            data["compressor_flexibility"] = await self._async_read_compressor_flexibility(
-                channel, proto_stubs, request
+            # Remaining reads are independent too; the device-info read needs
+            # used_fallback from the first batch, so this is a second gather.
+            # OHPCF/DHW/room-heating stay unavailable when the bridge side is
+            # off; device diagnostics is best-effort.
+            (
+                data["device_info"],
+                data["compressor_flexibility"],
+                data["dhw_setpoint"],
+                data["dhw_system_function"],
+                room_heating,
+                data["device_operating_state"],
+            ) = await asyncio.gather(
+                self._async_fetch_device_info(
+                    device_stub, proto_stubs, allow_fallback=used_fallback
+                ),
+                self._async_read_compressor_flexibility(channel, proto_stubs, request),
+                self._async_read_dhw_setpoint(channel, proto_stubs, request),
+                self._async_read_dhw_system_function(channel, proto_stubs, request),
+                self._async_read_room_heating(channel, proto_stubs, request),
+                self._async_read_device_diagnostics(channel, proto_stubs, request),
             )
             data["ohpcf_supported"] = self._ohpcf_supported
-
-            # DHW target temperature: the bridge exposes this only when the
-            # remote device negotiates configurationOfDhwTemperature scenario 1.
-            data["dhw_setpoint"] = await self._async_read_dhw_setpoint(
-                channel, proto_stubs, request
-            )
             data["dhw_supported"] = self._dhw_supported
-            data["dhw_system_function"] = await self._async_read_dhw_system_function(
-                channel, proto_stubs, request
-            )
             data["dhw_sysfn_supported"] = self._dhw_sysfn_supported
             (
                 data["room_heating_setpoint"],
                 data["room_heating_system_function"],
-            ) = await self._async_read_room_heating(channel, proto_stubs, request)
+            ) = room_heating
             data["room_heating_supported"] = self._room_heating_supported
-            data["device_operating_state"] = await self._async_read_device_diagnostics(
-                channel, proto_stubs, request
-            )
 
             if saw_not_found:
                 self._not_found_streak += 1
@@ -607,6 +372,58 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._was_unavailable = True
 
             raise UpdateFailed(f"gRPC error: {err}") from err
+
+    async def _poll_read(
+        self,
+        label: str,
+        call: Any,
+        request: Any,
+        fallback_request: Any,
+        flags: dict[str, bool],
+        unsupported_attr: str | None = None,
+    ) -> Any:
+        """Call a read RPC, retrying once with the fallback SKI on NOT_FOUND.
+
+        Returns the response, or None on failure. Records NOT_FOUND and
+        fallback use in ``flags``; when ``unsupported_attr`` is given, clears
+        that support flag on UNIMPLEMENTED.
+        """
+        try:
+            response = await call(request, timeout=RPC_TIMEOUT)
+        except grpc.aio.AioRpcError as err:
+            if _is_not_found(err):
+                flags["saw_not_found"] = True
+                try:
+                    response = await call(fallback_request, timeout=RPC_TIMEOUT)
+                except grpc.aio.AioRpcError as retry_err:
+                    _LOGGER.debug(
+                        "EEBUS %s read failed for SKI %s and fallback: %s",
+                        label,
+                        self.ski,
+                        _rpc_error_text(retry_err),
+                    )
+                    if unsupported_attr is not None and _is_unimplemented(retry_err):
+                        setattr(self, unsupported_attr, False)
+                    return None
+                flags["used_fallback"] = True
+                _LOGGER.debug(
+                    "EEBUS %s read for SKI %s used fallback entity", label, self.ski
+                )
+                return response
+            _LOGGER.debug(
+                "EEBUS %s read failed for SKI %s: %s",
+                label,
+                self.ski,
+                _rpc_error_text(err),
+            )
+            if unsupported_attr is not None and _is_unimplemented(err):
+                setattr(self, unsupported_attr, False)
+            return None
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Failed to read %s", label)
+            return None
+        _LOGGER.debug("EEBUS %s read for SKI %s succeeded", label, self.ski)
+        return response
 
     async def _async_fetch_device_info(
         self, device_stub: Any, proto_stubs: Any, allow_fallback: bool
