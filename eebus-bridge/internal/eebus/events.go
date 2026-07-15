@@ -4,13 +4,11 @@ package eebus
 type EventType string
 
 const (
-	EventTypeDeviceConnected     EventType = "device.connected"
-	EventTypeDeviceDisconnected  EventType = "device.disconnected"
-	EventTypeDeviceTrustRemoved  EventType = "device.trust_removed"
-	EventTypeDeviceRegisterSKI   EventType = "device.register_ski"
-	EventTypeDeviceUnregisterSKI EventType = "device.unregister_ski"
-	EventTypeDiscoveryUpdated    EventType = "discovery.updated"
-	EventTypePairingUpdated      EventType = "pairing.updated"
+	EventTypeDeviceConnected    EventType = "device.connected"
+	EventTypeDeviceDisconnected EventType = "device.disconnected"
+	EventTypeDeviceTrustRemoved EventType = "device.trust_removed"
+	EventTypeDiscoveryUpdated   EventType = "discovery.updated"
+	EventTypePairingUpdated     EventType = "pairing.updated"
 
 	EventTypeMonitoringPowerUpdated                EventType = "monitoring.power_updated"
 	EventTypeMonitoringPowerPerPhaseUpdated        EventType = "monitoring.power_per_phase_updated"

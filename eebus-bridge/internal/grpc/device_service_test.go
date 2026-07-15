@@ -2,6 +2,7 @@ package grpc_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -15,12 +16,29 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+type recordingTrustController struct {
+	registerCalls   []string
+	unregisterCalls []string
+	registerErr     error
+	unregisterErr   error
+}
+
+func (c *recordingTrustController) RegisterSKI(ski string) error {
+	c.registerCalls = append(c.registerCalls, ski)
+	return c.registerErr
+}
+
+func (c *recordingTrustController) UnregisterSKI(ski string) error {
+	c.unregisterCalls = append(c.unregisterCalls, ski)
+	return c.unregisterErr
+}
+
 func setupDeviceTest(t *testing.T) pb.DeviceServiceClient {
 	t.Helper()
 
 	bus := eebus.NewEventBus()
 	callbacks := eebus.NewCallbacks(bus, false)
-	svc := bridgegrpc.NewDeviceService(callbacks, bus, "test-local-ski", eebus.NewDeviceRegistry())
+	svc := bridgegrpc.NewDeviceService(callbacks, bus, "test-local-ski", eebus.NewDeviceRegistry(), &recordingTrustController{})
 
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterDeviceServiceServer(srv.GRPCServer(), svc)
@@ -66,7 +84,7 @@ func TestListDevicesResponsesAreSortedByNormalizedSKI(t *testing.T) {
 	registry.AddDevice("cc:03", eebus.DeviceInfo{})
 	registry.AddDevice("AA-01", eebus.DeviceInfo{})
 	registry.AddDevice(" bb 02 ", eebus.DeviceInfo{})
-	svc := bridgegrpc.NewDeviceService(callbacks, bus, "local", registry)
+	svc := bridgegrpc.NewDeviceService(callbacks, bus, "local", registry, &recordingTrustController{})
 
 	discovered, err := svc.ListDiscoveredDevices(context.Background(), &pb.Empty{})
 	if err != nil {
@@ -111,24 +129,17 @@ func TestRegisterRemoteSKIAcceptsWellFormedSKI(t *testing.T) {
 func TestRegisterRemoteSKINormalizesColonSeparatedSKI(t *testing.T) {
 	bus := eebus.NewEventBus()
 	callbacks := eebus.NewCallbacks(bus, false)
-	svc := bridgegrpc.NewDeviceService(callbacks, bus, "test-local-ski", eebus.NewDeviceRegistry())
-
-	ch := bus.Subscribe()
-	defer bus.Unsubscribe(ch)
+	trust := &recordingTrustController{}
+	svc := bridgegrpc.NewDeviceService(callbacks, bus, "test-local-ski", eebus.NewDeviceRegistry(), trust)
 
 	colonSKI := "68:2f:70:8c:eb:a5:df:9a:dc:b9:e6:78:7e:a9:11:d9:fc:3a:c4:90"
 	if _, err := svc.RegisterRemoteSKI(context.Background(), &pb.RegisterSKIRequest{Ski: colonSKI}); err != nil {
 		t.Fatalf("RegisterRemoteSKI(colon-separated): %v", err)
 	}
 
-	want := eebus.NormalizeSKI(testValidSKI)
-	select {
-	case evt := <-ch:
-		if evt.SKI != want {
-			t.Errorf("published SKI = %q, want normalized %q", evt.SKI, want)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timeout waiting for register event")
+	want := testValidSKI
+	if len(trust.registerCalls) != 1 || trust.registerCalls[0] != want {
+		t.Fatalf("RegisterSKI calls = %v, want [%s]", trust.registerCalls, want)
 	}
 }
 
@@ -141,33 +152,82 @@ func TestUnregisterRemoteSKIRejectsMalformedSKI(t *testing.T) {
 	}
 }
 
-func TestUnregisterRemoteSKIPublishesEvent(t *testing.T) {
+func TestPairingCommandsBypassCongestedEventBus(t *testing.T) {
 	bus := eebus.NewEventBus()
 	callbacks := eebus.NewCallbacks(bus, false)
-	svc := bridgegrpc.NewDeviceService(callbacks, bus, "test-local-ski", eebus.NewDeviceRegistry())
+	trust := &recordingTrustController{}
+	svc := bridgegrpc.NewDeviceService(callbacks, bus, "test-local-ski", eebus.NewDeviceRegistry(), trust)
 
 	ch := bus.Subscribe()
 	defer bus.Unsubscribe(ch)
+	for range cap(ch) {
+		bus.Publish(eebus.Event{SKI: testValidSKI, Type: eebus.EventTypeDeviceConnected})
+	}
+	if len(ch) != cap(ch) {
+		t.Fatalf("subscriber buffer length = %d, want full capacity %d", len(ch), cap(ch))
+	}
 
+	if _, err := svc.RegisterRemoteSKI(context.Background(), &pb.RegisterSKIRequest{Ski: testValidSKI}); err != nil {
+		t.Fatalf("RegisterRemoteSKI: %v", err)
+	}
 	if _, err := svc.UnregisterRemoteSKI(context.Background(), &pb.RegisterSKIRequest{Ski: testValidSKI}); err != nil {
 		t.Fatalf("UnregisterRemoteSKI: %v", err)
 	}
 
-	want := eebus.NormalizeSKI(testValidSKI)
-	select {
-	case evt := <-ch:
-		if evt.Type != eebus.EventTypeDeviceUnregisterSKI || evt.SKI != want {
-			t.Errorf("event = %+v, want type=device.unregister_ski ski=%s", evt, want)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timeout waiting for unregister event")
+	want := testValidSKI
+	if len(trust.registerCalls) != 1 || trust.registerCalls[0] != want {
+		t.Errorf("RegisterSKI calls = %v, want [%s]", trust.registerCalls, want)
+	}
+	if len(trust.unregisterCalls) != 1 || trust.unregisterCalls[0] != want {
+		t.Errorf("UnregisterSKI calls = %v, want [%s]", trust.unregisterCalls, want)
+	}
+	if len(ch) != cap(ch) {
+		t.Errorf("subscriber buffer length = %d after commands, want %d", len(ch), cap(ch))
+	}
+}
+
+func TestPairingControllerErrorsReturnInternalStatus(t *testing.T) {
+	tests := []struct {
+		name  string
+		call  func(*bridgegrpc.DeviceService) (*pb.Empty, error)
+		trust *recordingTrustController
+	}{
+		{
+			name: "register",
+			call: func(svc *bridgegrpc.DeviceService) (*pb.Empty, error) {
+				return svc.RegisterRemoteSKI(context.Background(), &pb.RegisterSKIRequest{Ski: testValidSKI})
+			},
+			trust: &recordingTrustController{registerErr: errors.New("register failed")},
+		},
+		{
+			name: "unregister",
+			call: func(svc *bridgegrpc.DeviceService) (*pb.Empty, error) {
+				return svc.UnregisterRemoteSKI(context.Background(), &pb.RegisterSKIRequest{Ski: testValidSKI})
+			},
+			trust: &recordingTrustController{unregisterErr: errors.New("unregister failed")},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bus := eebus.NewEventBus()
+			svc := bridgegrpc.NewDeviceService(eebus.NewCallbacks(bus, false), bus, "test-local-ski", eebus.NewDeviceRegistry(), tt.trust)
+
+			resp, err := tt.call(svc)
+			if resp != nil {
+				t.Errorf("response = %v, want nil", resp)
+			}
+			if status.Code(err) != codes.Internal {
+				t.Fatalf("status code = %v, want Internal (error: %v)", status.Code(err), err)
+			}
+		})
 	}
 }
 
 func TestSubscribeDeviceEventsTrustRemoved(t *testing.T) {
 	bus := eebus.NewEventBus()
 	callbacks := eebus.NewCallbacks(bus, false)
-	svc := bridgegrpc.NewDeviceService(callbacks, bus, "test-local-ski", eebus.NewDeviceRegistry())
+	svc := bridgegrpc.NewDeviceService(callbacks, bus, "test-local-ski", eebus.NewDeviceRegistry(), &recordingTrustController{})
 
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterDeviceServiceServer(srv.GRPCServer(), svc)

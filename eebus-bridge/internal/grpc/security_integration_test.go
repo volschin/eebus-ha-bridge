@@ -31,6 +31,11 @@ type acceptingLPCService struct {
 	pb.UnimplementedLPCServiceServer
 }
 
+type acceptingTrustController struct{}
+
+func (acceptingTrustController) RegisterSKI(string) error   { return nil }
+func (acceptingTrustController) UnregisterSKI(string) error { return nil }
+
 func (acceptingLPCService) WriteConsumptionLimit(context.Context, *pb.WriteLoadLimitRequest) (*pb.Empty, error) {
 	return &pb.Empty{}, nil
 }
@@ -112,7 +117,7 @@ func TestTLSTokenSecuresUnaryWriteStreamAndHealth(t *testing.T) {
 		t.Fatal(err)
 	}
 	bus := eebus.NewEventBus()
-	device := NewDeviceService(eebus.NewCallbacks(bus, false), bus, "local-ski", eebus.NewDeviceRegistry())
+	device := NewDeviceService(eebus.NewCallbacks(bus, false), bus, "local-ski", eebus.NewDeviceRegistry(), acceptingTrustController{})
 	pb.RegisterDeviceServiceServer(srv.GRPCServer(), device)
 	pb.RegisterLPCServiceServer(srv.GRPCServer(), acceptingLPCService{})
 	startErr := make(chan error, 1)
