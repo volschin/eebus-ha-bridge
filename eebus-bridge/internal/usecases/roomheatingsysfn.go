@@ -179,17 +179,7 @@ func (r *RoomHeatingSystemFunction) request(entity spineapi.EntityRemoteInterfac
 
 // CompatibleEntity returns the negotiated HVACRoom for a device SKI.
 func (r *RoomHeatingSystemFunction) CompatibleEntity(ski string) spineapi.EntityRemoteInterface {
-	want := eebus.NormalizeSKI(ski)
-	for _, remote := range r.RemoteEntitiesScenarios() {
-		entity := remote.Entity
-		if entity == nil || entity.Device() == nil {
-			continue
-		}
-		if want == "" || eebus.NormalizeSKI(entity.Device().Ski()) == want {
-			return entity
-		}
-	}
-	return nil
+	return compatibleEntity(r.RemoteEntitiesScenarios(), ski)
 }
 
 // State resolves the room-heating operation mode from the remote HVAC cache.

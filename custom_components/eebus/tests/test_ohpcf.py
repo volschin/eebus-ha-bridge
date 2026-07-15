@@ -13,7 +13,7 @@ from custom_components.eebus import proto_stubs
 from custom_components.eebus.coordinator import EebusCoordinator
 from custom_components.eebus.generated.eebus.v1 import ohpcf_service_pb2 as ohpcf_pb2
 from custom_components.eebus.select import EebusCompressorFlexibilitySelect
-from custom_components.eebus.sensor import EebusCompressorFlexibilityStatusSensor
+from custom_components.eebus.sensor import EebusMeasurementSensor, STATE_SENSORS
 
 
 def _coordinator(ski="test-ski"):
@@ -135,7 +135,11 @@ def test_select_extra_state_attributes_exposes_constraints():
 
 
 def _status_sensor_with(flex):
-    sensor = EebusCompressorFlexibilityStatusSensor.__new__(EebusCompressorFlexibilityStatusSensor)
+    description = next(
+        item for item in STATE_SENSORS if item.key == "compressor_flexibility_status"
+    )
+    sensor = EebusMeasurementSensor.__new__(EebusMeasurementSensor)
+    sensor.entity_description = description
     sensor.coordinator = SimpleNamespace(data={"compressor_flexibility": flex})
     return sensor
 

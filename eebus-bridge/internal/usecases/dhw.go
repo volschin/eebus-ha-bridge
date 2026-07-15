@@ -182,17 +182,7 @@ func (d *DHWTemperature) request(entity spineapi.EntityRemoteInterface, function
 
 // CompatibleEntity returns the negotiated DHWCircuit for a device SKI.
 func (d *DHWTemperature) CompatibleEntity(ski string) spineapi.EntityRemoteInterface {
-	want := eebus.NormalizeSKI(ski)
-	for _, remote := range d.RemoteEntitiesScenarios() {
-		entity := remote.Entity
-		if entity == nil || entity.Device() == nil {
-			continue
-		}
-		if want == "" || eebus.NormalizeSKI(entity.Device().Ski()) == want {
-			return entity
-		}
-	}
-	return nil
+	return compatibleEntity(d.RemoteEntitiesScenarios(), ski)
 }
 
 // State reads the DHW target and its complete constraints from the remote cache.

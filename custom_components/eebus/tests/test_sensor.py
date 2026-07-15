@@ -5,13 +5,17 @@ from unittest.mock import MagicMock
 from homeassistant.const import EntityCategory
 
 from custom_components.eebus.sensor import (
-    EebusFailsafeDurationSensor,
-    EebusFailsafeLimitSensor,
     EebusMeasurementDescription,
     EebusMeasurementSensor,
-    EebusPowerSensor,
     MEASUREMENT_SENSORS,
+    STATE_SENSORS,
 )
+
+
+def _state_sensor(coordinator, key):
+    """Build the STATE_SENSORS entry with the given key."""
+    description = next(item for item in STATE_SENSORS if item.key == key)
+    return EebusMeasurementSensor(coordinator, description)
 
 
 def test_power_sensor_value():
@@ -20,7 +24,7 @@ def test_power_sensor_value():
     coordinator.data = {"power_watts": 1500.0, "connected": True}
     coordinator.ski = "test-ski-123"
 
-    sensor = EebusPowerSensor(coordinator)
+    sensor = _state_sensor(coordinator, "power")
     assert sensor.native_value == 1500.0
     assert sensor.native_unit_of_measurement == "W"
 
@@ -31,7 +35,7 @@ def test_power_sensor_unavailable():
     coordinator.data = {"power_watts": None, "connected": True}
     coordinator.ski = "test-ski-123"
 
-    sensor = EebusPowerSensor(coordinator)
+    sensor = _state_sensor(coordinator, "power")
     assert sensor.native_value is None
 
 
@@ -44,7 +48,7 @@ def test_failsafe_limit_sensor_value():
     }
     coordinator.ski = "test-ski-123"
 
-    sensor = EebusFailsafeLimitSensor(coordinator)
+    sensor = _state_sensor(coordinator, "failsafe_limit")
     assert sensor.native_value == 4200.0
     assert sensor.native_unit_of_measurement == "W"
     assert sensor.available is True
@@ -56,7 +60,7 @@ def test_failsafe_limit_sensor_unavailable_when_unsupported():
     coordinator.data = {"failsafe_limit": None, "failsafe_supported": False}
     coordinator.ski = "test-ski-123"
 
-    sensor = EebusFailsafeLimitSensor(coordinator)
+    sensor = _state_sensor(coordinator, "failsafe_limit")
     assert sensor.native_value is None
     assert sensor.available is False
 
@@ -70,7 +74,7 @@ def test_failsafe_duration_sensor_value():
     }
     coordinator.ski = "test-ski-123"
 
-    sensor = EebusFailsafeDurationSensor(coordinator)
+    sensor = _state_sensor(coordinator, "failsafe_duration")
     assert sensor.native_value == 7200
     assert sensor.native_unit_of_measurement == "s"
 

@@ -129,17 +129,7 @@ func (w *OHPCFWrapper) CompatibleEntity(ski string) spineapi.EntityRemoteInterfa
 	if w.uc == nil {
 		return nil
 	}
-	want := eebus.NormalizeSKI(ski)
-	for _, rs := range w.uc.RemoteEntitiesScenarios() {
-		entity := rs.Entity
-		if entity == nil || entity.Device() == nil {
-			continue
-		}
-		if want == "" || eebus.NormalizeSKI(entity.Device().Ski()) == want {
-			return entity
-		}
-	}
-	return nil
+	return compatibleEntity(w.uc.RemoteEntitiesScenarios(), ski)
 }
 
 // RequestedPowerEstimate returns the estimated power (W) of the offered optional

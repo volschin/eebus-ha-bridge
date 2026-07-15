@@ -2,7 +2,6 @@ package grpc
 
 import (
 	"context"
-	"errors"
 
 	spineapi "github.com/enbility/spine-go/api"
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
@@ -260,21 +259,12 @@ func convertDHWBoostStatus(status string) pb.DHWBoostStatus {
 	}
 }
 
+var dhwErrorClasses = usecaseErrorClasses{
+	invalidArgument:    []error{usecases.ErrDHWOutOfRange, usecases.ErrDHWInvalidStep, usecases.ErrDHWSysFnInvalidMode},
+	failedPrecondition: []error{usecases.ErrDHWNotWritable, usecases.ErrDHWSysFnNotWritable, usecases.ErrDHWSysFnRejected},
+	notFound:           []error{usecases.ErrDHWDataUnavailable, usecases.ErrDHWSysFnDataUnavailable},
+}
+
 func mapDHWError(action string, err error) error {
-	switch {
-	case errors.Is(err, usecases.ErrDHWOutOfRange), errors.Is(err, usecases.ErrDHWInvalidStep),
-		errors.Is(err, usecases.ErrDHWSysFnInvalidMode):
-		return status.Errorf(codes.InvalidArgument, "%s: %v", action, err)
-	case errors.Is(err, usecases.ErrDHWNotWritable), errors.Is(err, usecases.ErrDHWSysFnNotWritable),
-		errors.Is(err, usecases.ErrDHWSysFnRejected):
-		return status.Errorf(codes.FailedPrecondition, "%s: %v", action, err)
-	case errors.Is(err, usecases.ErrDHWDataUnavailable), errors.Is(err, usecases.ErrDHWSysFnDataUnavailable):
-		return status.Errorf(codes.NotFound, "%s: %v", action, err)
-	case errors.Is(err, context.Canceled):
-		return status.Errorf(codes.Canceled, "%s: %v", action, err)
-	case errors.Is(err, context.DeadlineExceeded):
-		return status.Errorf(codes.DeadlineExceeded, "%s: %v", action, err)
-	default:
-		return status.Errorf(codes.Internal, "%s: %v", action, err)
-	}
+	return mapUsecaseError(action, err, dhwErrorClasses)
 }
