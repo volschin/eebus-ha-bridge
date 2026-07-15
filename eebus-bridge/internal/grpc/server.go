@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/volschin/eebus-bridge/internal/config"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -21,7 +22,22 @@ type Server struct {
 }
 
 func NewServer(bind string, port int, enableReflection bool) *Server {
-	grpcServer := grpc.NewServer()
+	server, err := NewServerWithSecurity(bind, port, enableReflection, config.GRPCSecurityConfig{Mode: config.GRPCSecurityModeLoopback})
+	if err != nil {
+		panic(err)
+	}
+	return server
+}
+
+func NewServerWithSecurity(bind string, port int, enableReflection bool, security config.GRPCSecurityConfig) (*Server, error) {
+	if (security.Mode == "" || security.Mode == config.GRPCSecurityModeLoopback) && !isLoopbackBind(bind) {
+		return nil, fmt.Errorf("gRPC loopback security mode requires a loopback bind, got %q", bind)
+	}
+	serverOptions, err := loadServerSecurity(security)
+	if err != nil {
+		return nil, err
+	}
+	grpcServer := grpc.NewServer(serverOptions...)
 
 	healthSrv := health.NewServer()
 	grpc_health_v1.RegisterHealthServer(grpcServer, healthSrv)
@@ -36,7 +52,7 @@ func NewServer(bind string, port int, enableReflection bool) *Server {
 		healthSrv:  healthSrv,
 		bind:       bind,
 		port:       port,
-	}
+	}, nil
 }
 
 // SetHealthy toggles the gRPC health status the Docker HEALTHCHECK probes.
@@ -55,7 +71,7 @@ func (s *Server) GRPCServer() *grpc.Server {
 }
 
 func (s *Server) Start() error {
-	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", s.bind, s.port))
+	lis, err := net.Listen("tcp", net.JoinHostPort(s.bind, fmt.Sprintf("%d", s.port)))
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}

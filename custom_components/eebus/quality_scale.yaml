@@ -5,7 +5,9 @@ rules:
   appropriate-polling: done
   brands: done
   common-modules: done
-  config-flow: done
+  config-flow:
+    status: done
+    comment: Host/port, explicit loopback or TLS+token security, and device selection are all configured and connection-tested in the flow.
   config-flow-test-coverage: done
   dependency-transparency: done
   docs-actions:
@@ -32,11 +34,13 @@ rules:
   log-when-unavailable: done
   parallel-updates: done
   reauthentication-flow:
-    status: exempt
-    comment: No authentication needed (local gRPC protocol).
+    status: done
+    comment: UNAUTHENTICATED responses trigger a credential replacement flow that verifies the CA certificate and token before reload.
   test-coverage: done
   devices: done
-  diagnostics: done
+  diagnostics:
+    status: done
+    comment: Device SKI, TLS CA certificate, and authentication token are explicitly redacted and covered by diagnostics tests.
   discovery:
     status: done
     comment: mDNS-based EEBUS/SHIP Discovery via Bridge gRPC API.
@@ -63,10 +67,12 @@ rules:
   entity-translations: done
   exception-translations: done
   icon-translations: done
-  reconfiguration-flow: done
+  reconfiguration-flow:
+    status: done
+    comment: Reconfigure updates host/port in one step and loopback or TLS+token settings in a dedicated security step, preserving a blank existing token.
   repair-issues:
     status: exempt
-    comment: No auth, connection issues communicated via availability and logging.
+    comment: Authentication failures start reauthentication; other connection issues are communicated via availability and logging.
   stale-devices:
     status: exempt
     comment: One device per config entry, removed on unload.

@@ -10,6 +10,15 @@
           "grpc_port": "Bridge Port"
         }
       },
+      "security": {
+        "title": "Secure the bridge connection",
+        "description": "Use loopback only when Home Assistant and the bridge share the same host. Remote bridges require TLS, the issuing CA certificate in PEM format, and an authentication token.",
+        "data": {
+          "security_mode": "Security mode",
+          "tls_ca_certificate": "TLS CA certificate (PEM)",
+          "auth_token": "Authentication token"
+        }
+      },
       "device": {
         "title": "Select EEBUS Device",
         "description": "Pick a discovered device or enter its SKI manually.",
@@ -24,17 +33,44 @@
           "grpc_host": "Bridge Host",
           "grpc_port": "Bridge Port"
         }
+      },
+      "reconfigure_security": {
+        "title": "Reconfigure bridge security",
+        "description": "Enter the TLS settings. Leave the token blank to keep the current token.",
+        "data": {
+          "security_mode": "Security mode",
+          "tls_ca_certificate": "TLS CA certificate (PEM)",
+          "auth_token": "New authentication token (optional)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect to the EEBUS bridge",
+        "description": "Authentication failed. Enter the current CA certificate and a new authentication token.",
+        "data": {
+          "tls_ca_certificate": "TLS CA certificate (PEM)",
+          "auth_token": "Authentication token"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Cannot connect to EEBUS bridge. Check host and port.",
+      "cannot_connect": "Cannot connect to EEBUS bridge. Check the address, certificate, and token.",
+      "required": "This field is required for TLS + token mode.",
       "ski_is_local": "That is the bridge's own SKI. Enter the heat pump's SKI instead."
     },
     "abort": {
       "already_configured": "This device is already configured.",
       "already_in_progress": "Configuration flow is already in progress.",
       "not_eebus_bridge": "Discovered SHIP device does not expose the EEBUS bridge gRPC API.",
+      "reauth_successful": "Authentication updated successfully.",
       "reconfigure_successful": "Reconfiguration successful."
+    }
+  },
+  "selector": {
+    "security_mode": {
+      "options": {
+        "loopback": "Loopback (plaintext)",
+        "tls_token": "TLS + token"
+      }
     }
   },
   "options": {

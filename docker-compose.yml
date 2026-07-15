@@ -8,7 +8,7 @@ services:
       - ./eebus-bridge/config.yaml:/etc/eebus-bridge/config.yaml:ro
     # host networking required: SHIP device discovery uses mDNS multicast (_ship._tcp)
     # which cannot cross Docker bridge network boundaries.
-    # gRPC is protected by binding to 127.0.0.1 (see grpc.bind in config.yaml).
+    # gRPC defaults to loopback; remote binds require TLS + token auth (see config.yaml).
     network_mode: host
     restart: unless-stopped
 

@@ -22,12 +22,15 @@ from homeassistant.const import (
     UnitOfPower,
 )
 from homeassistant.core import Event, HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import ConfigEntryAuthFailed, ServiceValidationError
 from homeassistant.helpers.event import (
     EventStateChangedData,
     async_track_state_change_event,
 )
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+
+from .const import SECURITY_MODE_LOOPBACK
+from .security import create_grpc_channel
 
 if TYPE_CHECKING:
     from . import proto_stubs
@@ -216,6 +219,9 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         host: str,
         port: int,
         ski: str,
+        security_mode: str = SECURITY_MODE_LOOPBACK,
+        tls_ca_certificate: str | None = None,
+        auth_token: str | None = None,
         grid_power_entity: str | None = None,
         grid_feed_in_energy_entity: str | None = None,
         grid_consumption_energy_entity: str | None = None,
@@ -237,6 +243,9 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.host = host
         self.port = port
         self.ski = ski
+        self.security_mode = security_mode
+        self.tls_ca_certificate = tls_ca_certificate
+        self.auth_token = auth_token
         # Optional grid sensors feeding the bridge MGCP provider (PV-surplus).
         self.grid_power_entity = grid_power_entity
         self.grid_feed_in_energy_entity = grid_feed_in_energy_entity
@@ -269,7 +278,13 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _ensure_channel(self) -> grpc.aio.Channel:
         """Create or return existing gRPC channel."""
         if self._channel is None:
-            self._channel = grpc.aio.insecure_channel(f"{self.host}:{self.port}")
+            self._channel = create_grpc_channel(
+                self.host,
+                self.port,
+                self.security_mode,
+                self.tls_ca_certificate,
+                self.auth_token,
+            )
         return self._channel
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -457,6 +472,9 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 await self._channel.close(None)
                 self._channel = None
             self._not_found_streak = 0
+
+            if err.code() == grpc.StatusCode.UNAUTHENTICATED:
+                raise ConfigEntryAuthFailed("Bridge authentication failed") from err
 
             if not self._was_unavailable:
                 _LOGGER.warning(

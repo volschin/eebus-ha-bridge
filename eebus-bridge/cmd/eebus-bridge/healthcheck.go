@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"net"
+	"os"
 	"time"
 
 	"github.com/volschin/eebus-bridge/internal/config"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -20,12 +23,28 @@ func runHealthcheck(configPath string) error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	addr := fmt.Sprintf("%s:%d", cfg.GRPC.Bind, cfg.GRPC.Port)
+	host := cfg.GRPC.Bind
+	serverName := ""
+	if cfg.GRPC.Security.Mode == config.GRPCSecurityModeTLSToken {
+		serverName, err = tlsCertificateServerName(cfg.GRPC.Security.TLSCertFile)
+		if err != nil {
+			return fmt.Errorf("reading TLS server identity: %w", err)
+		}
+		if host == "0.0.0.0" || host == "::" {
+			host = "127.0.0.1"
+		}
+	}
+	addr := net.JoinHostPort(host, fmt.Sprintf("%d", cfg.GRPC.Port))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := bridgegrpc.NewClient(addr, bridgegrpc.ClientSecurityConfig{
+		Mode:       cfg.GRPC.Security.Mode,
+		CACertFile: cfg.GRPC.Security.TLSCertFile,
+		TokenFile:  cfg.GRPC.Security.TokenFile,
+		ServerName: serverName,
+	})
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", addr, err)
 	}
@@ -39,4 +58,26 @@ func runHealthcheck(configPath string) error {
 		return fmt.Errorf("status %s", resp.GetStatus())
 	}
 	return nil
+}
+
+func tlsCertificateServerName(certFile string) (string, error) {
+	data, err := os.ReadFile(certFile) // #nosec G304 -- operator-supplied configuration path
+	if err != nil {
+		return "", err
+	}
+	block, _ := pem.Decode(data)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return "", fmt.Errorf("no PEM certificate found in %q", certFile)
+	}
+	certificate, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return "", err
+	}
+	if len(certificate.DNSNames) > 0 {
+		return certificate.DNSNames[0], nil
+	}
+	if len(certificate.IPAddresses) > 0 {
+		return certificate.IPAddresses[0].String(), nil
+	}
+	return "", fmt.Errorf("certificate %q has no DNS or IP subject alternative name", certFile)
 }

@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import grpc
-import grpc.aio
 import voluptuous as vol
 
 from homeassistant.config_entries import (
@@ -23,6 +21,9 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
 )
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
@@ -31,18 +32,24 @@ from .const import (
     CONF_BATTERY_DISCHARGED_ENERGY_ENTITY,
     CONF_BATTERY_POWER_ENTITY,
     CONF_BATTERY_SOC_ENTITY,
+    CONF_AUTH_TOKEN,
     CONF_DEVICE_SKI,
     CONF_GRID_CONSUMPTION_ENERGY_ENTITY,
     CONF_GRID_FEED_IN_ENERGY_ENTITY,
     CONF_GRID_POWER_ENTITY,
     CONF_GRPC_HOST,
     CONF_GRPC_PORT,
+    CONF_SECURITY_MODE,
+    CONF_TLS_CA_CERTIFICATE,
     CONF_PV_PEAK_POWER_ENTITY,
     CONF_PV_POWER_ENTITY,
     CONF_PV_YIELD_ENERGY_ENTITY,
     DEFAULT_GRPC_PORT,
     DOMAIN,
+    SECURITY_MODE_LOOPBACK,
+    SECURITY_MODE_TLS_TOKEN,
 )
+from .security import create_grpc_channel
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,6 +71,46 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
+SECURITY_MODE_SELECTOR = SelectSelector(
+    SelectSelectorConfig(
+        options=[SECURITY_MODE_LOOPBACK, SECURITY_MODE_TLS_TOKEN],
+        mode=SelectSelectorMode.DROPDOWN,
+        translation_key="security_mode",
+    )
+)
+
+
+def _security_schema(
+    mode: str = SECURITY_MODE_LOOPBACK,
+    tls_ca_certificate: str = "",
+) -> vol.Schema:
+    """Build the shared initial/reconfigure security form."""
+    return vol.Schema(
+        {
+            vol.Required(CONF_SECURITY_MODE, default=mode): SECURITY_MODE_SELECTOR,
+            vol.Optional(
+                CONF_TLS_CA_CERTIFICATE, default=tls_ca_certificate
+            ): TextSelector(TextSelectorConfig(multiline=True)),
+            vol.Optional(CONF_AUTH_TOKEN): TextSelector(
+                TextSelectorConfig(type=TextSelectorType.PASSWORD)
+            ),
+        }
+    )
+
+
+def _reauth_schema(tls_ca_certificate: str) -> vol.Schema:
+    """Build the credential replacement form used after auth failure."""
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_TLS_CA_CERTIFICATE, default=tls_ca_certificate
+            ): TextSelector(TextSelectorConfig(multiline=True)),
+            vol.Required(CONF_AUTH_TOKEN): TextSelector(
+                TextSelectorConfig(type=TextSelectorType.PASSWORD)
+            ),
+        }
+    )
+
 
 class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for EEBUS."""
@@ -82,10 +129,22 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
         self._host: str = ""
         self._port: int = DEFAULT_GRPC_PORT
         self._local_ski: str = ""
+        self._security_mode: str = SECURITY_MODE_LOOPBACK
+        self._tls_ca_certificate: str | None = None
+        self._auth_token: str | None = None
 
     async def _async_probe_bridge(self, host: str, port: int) -> str | None:
         """Check bridge reachability; return its local SKI or None."""
-        channel = grpc.aio.insecure_channel(f"{host}:{port}")
+        try:
+            channel = create_grpc_channel(
+                host,
+                port,
+                self._security_mode,
+                self._tls_ca_certificate,
+                self._auth_token,
+            )
+        except ValueError:
+            return None
         try:
             from . import proto_stubs
 
@@ -104,7 +163,13 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _async_list_discovered_skis(self) -> list[SelectOptionDict]:
         """Fetch discovered devices from the bridge for the SKI picker."""
-        channel = grpc.aio.insecure_channel(f"{self._host}:{self._port}")
+        channel = create_grpc_channel(
+            self._host,
+            self._port,
+            self._security_mode,
+            self._tls_ca_certificate,
+            self._auth_token,
+        )
         try:
             from . import proto_stubs
 
@@ -143,17 +208,12 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(f"bridge_{ski}")
             self._abort_if_unique_id_configured()
 
-        local_ski = await self._async_probe_bridge(host, DEFAULT_GRPC_PORT)
-        if local_ski is None:
-            return self.async_abort(reason="not_eebus_bridge")
-
         self._async_abort_entries_match({CONF_GRPC_HOST: host})
 
         self._host = host
         self._port = DEFAULT_GRPC_PORT
-        self._local_ski = local_ski
         self.context["title_placeholders"] = {"host": host}
-        return await self.async_step_device()
+        return await self.async_step_security()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -165,20 +225,47 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
             self._host = user_input[CONF_GRPC_HOST]
             self._port = user_input[CONF_GRPC_PORT]
 
-            local_ski = await self._async_probe_bridge(self._host, self._port)
-            if local_ski is not None:
-                self._local_ski = local_ski
-                return await self.async_step_device()
-            _LOGGER.warning(
-                "Failed to connect to EEBUS bridge during config flow at %s:%s",
-                self._host,
-                self._port,
-            )
-            errors["base"] = "cannot_connect"
+            return await self.async_step_security()
 
         return self.async_show_form(
             step_id="user",
             data_schema=STEP_USER_DATA_SCHEMA,
+            errors=errors,
+        )
+
+    async def async_step_security(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Configure and verify the bridge transport security mode."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._security_mode = user_input[CONF_SECURITY_MODE]
+            ca = str(user_input.get(CONF_TLS_CA_CERTIFICATE, "")).strip()
+            token = str(user_input.get(CONF_AUTH_TOKEN, "")).strip()
+            self._tls_ca_certificate = ca or None
+            self._auth_token = token or None
+            if self._security_mode == SECURITY_MODE_TLS_TOKEN:
+                if not self._tls_ca_certificate:
+                    errors[CONF_TLS_CA_CERTIFICATE] = "required"
+                if not self._auth_token:
+                    errors[CONF_AUTH_TOKEN] = "required"
+            if not errors:
+                local_ski = await self._async_probe_bridge(self._host, self._port)
+                if local_ski is not None:
+                    self._local_ski = local_ski
+                    return await self.async_step_device()
+                _LOGGER.warning(
+                    "Failed to connect to EEBUS bridge during config flow at %s:%s",
+                    self._host,
+                    self._port,
+                )
+                errors["base"] = "cannot_connect"
+
+        return self.async_show_form(
+            step_id="security",
+            data_schema=_security_schema(
+                self._security_mode, self._tls_ca_certificate or ""
+            ),
             errors=errors,
         )
 
@@ -207,6 +294,9 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_GRPC_HOST: self._host,
                         CONF_GRPC_PORT: self._port,
                         CONF_DEVICE_SKI: ski,
+                        CONF_SECURITY_MODE: self._security_mode,
+                        CONF_TLS_CA_CERTIFICATE: self._tls_ca_certificate,
+                        CONF_AUTH_TOKEN: self._auth_token,
                     },
                 )
 
@@ -233,23 +323,9 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            local_ski = await self._async_probe_bridge(
-                user_input[CONF_GRPC_HOST], user_input[CONF_GRPC_PORT]
-            )
-            if local_ski is not None:
-                return self.async_update_reload_and_abort(
-                    self._get_reconfigure_entry(),
-                    data_updates={
-                        CONF_GRPC_HOST: user_input[CONF_GRPC_HOST],
-                        CONF_GRPC_PORT: user_input[CONF_GRPC_PORT],
-                    },
-                )
-            _LOGGER.warning(
-                "Failed to connect to EEBUS bridge during reconfigure at %s:%s",
-                user_input[CONF_GRPC_HOST],
-                user_input[CONF_GRPC_PORT],
-            )
-            errors["base"] = "cannot_connect"
+            self._host = user_input[CONF_GRPC_HOST]
+            self._port = user_input[CONF_GRPC_PORT]
+            return await self.async_step_reconfigure_security()
 
         entry = self._get_reconfigure_entry()
         return self.async_show_form(
@@ -260,6 +336,96 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_GRPC_PORT, default=entry.data.get(CONF_GRPC_PORT, DEFAULT_GRPC_PORT)): int,
                 }
             ),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure_security(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Update and verify transport credentials during reconfiguration."""
+        entry = self._get_reconfigure_entry()
+        current_mode = entry.data.get(CONF_SECURITY_MODE, SECURITY_MODE_LOOPBACK)
+        current_ca = entry.data.get(CONF_TLS_CA_CERTIFICATE) or ""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            self._security_mode = user_input[CONF_SECURITY_MODE]
+            ca = str(user_input.get(CONF_TLS_CA_CERTIFICATE, "")).strip()
+            token = str(user_input.get(CONF_AUTH_TOKEN, "")).strip()
+            self._tls_ca_certificate = ca or None
+            self._auth_token = token or entry.data.get(CONF_AUTH_TOKEN)
+            if self._security_mode == SECURITY_MODE_TLS_TOKEN:
+                if not self._tls_ca_certificate:
+                    errors[CONF_TLS_CA_CERTIFICATE] = "required"
+                if not self._auth_token:
+                    errors[CONF_AUTH_TOKEN] = "required"
+            else:
+                self._tls_ca_certificate = None
+                self._auth_token = None
+
+            if not errors:
+                local_ski = await self._async_probe_bridge(self._host, self._port)
+                if local_ski is not None:
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        data_updates={
+                            CONF_GRPC_HOST: self._host,
+                            CONF_GRPC_PORT: self._port,
+                            CONF_SECURITY_MODE: self._security_mode,
+                            CONF_TLS_CA_CERTIFICATE: self._tls_ca_certificate,
+                            CONF_AUTH_TOKEN: self._auth_token,
+                        },
+                    )
+                _LOGGER.warning(
+                    "Failed to connect to EEBUS bridge during reconfigure at %s:%s",
+                    self._host,
+                    self._port,
+                )
+                errors["base"] = "cannot_connect"
+
+        return self.async_show_form(
+            step_id="reconfigure_security",
+            data_schema=_security_schema(current_mode, current_ca),
+            errors=errors,
+        )
+
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> ConfigFlowResult:
+        """Start credential replacement after an authentication failure."""
+        self._host = entry_data[CONF_GRPC_HOST]
+        self._port = entry_data[CONF_GRPC_PORT]
+        self._security_mode = entry_data.get(
+            CONF_SECURITY_MODE, SECURITY_MODE_LOOPBACK
+        )
+        self._tls_ca_certificate = entry_data.get(CONF_TLS_CA_CERTIFICATE)
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Verify replacement TLS credentials and reload the entry."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._tls_ca_certificate = str(
+                user_input[CONF_TLS_CA_CERTIFICATE]
+            ).strip()
+            self._auth_token = str(user_input[CONF_AUTH_TOKEN]).strip()
+            local_ski = await self._async_probe_bridge(self._host, self._port)
+            if local_ski is not None:
+                return self.async_update_reload_and_abort(
+                    self._get_reauth_entry(),
+                    data_updates={
+                        CONF_TLS_CA_CERTIFICATE: self._tls_ca_certificate,
+                        CONF_AUTH_TOKEN: self._auth_token,
+                    },
+                    reason="reauth_successful",
+                )
+            errors["base"] = "cannot_connect"
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=_reauth_schema(self._tls_ca_certificate or ""),
             errors=errors,
         )
 

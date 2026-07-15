@@ -7,6 +7,11 @@ DEFAULT_GRPC_PORT = 50051
 CONF_GRPC_HOST = "grpc_host"
 CONF_GRPC_PORT = "grpc_port"
 CONF_DEVICE_SKI = "device_ski"
+CONF_SECURITY_MODE = "security_mode"
+CONF_TLS_CA_CERTIFICATE = "tls_ca_certificate"
+CONF_AUTH_TOKEN = "auth_token"
+SECURITY_MODE_LOOPBACK = "loopback"
+SECURITY_MODE_TLS_TOKEN = "tls_token"
 
 # Options: map Home Assistant grid sensors to the bridge's MGCP provider so a
 # heat pump can read the live grid / PV-surplus situation (§1.3.1). Grid power

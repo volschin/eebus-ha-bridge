@@ -10,6 +10,15 @@
           "grpc_port": "Bridge-Port"
         }
       },
+      "security": {
+        "title": "Bridge-Verbindung absichern",
+        "description": "Loopback nur verwenden, wenn Home Assistant und Bridge auf demselben Host laufen. Entfernte Bridges benötigen TLS, das ausstellende CA-Zertifikat im PEM-Format und ein Authentifizierungs-Token.",
+        "data": {
+          "security_mode": "Sicherheitsmodus",
+          "tls_ca_certificate": "TLS-CA-Zertifikat (PEM)",
+          "auth_token": "Authentifizierungs-Token"
+        }
+      },
       "device": {
         "title": "EEBUS-Gerät auswählen",
         "description": "Gefundenes Gerät auswählen oder SKI manuell eingeben.",
@@ -24,17 +33,44 @@
           "grpc_host": "Bridge-Host",
           "grpc_port": "Bridge-Port"
         }
+      },
+      "reconfigure_security": {
+        "title": "Bridge-Sicherheit rekonfigurieren",
+        "description": "TLS-Einstellungen eingeben. Token leer lassen, um das bestehende Token beizubehalten.",
+        "data": {
+          "security_mode": "Sicherheitsmodus",
+          "tls_ca_certificate": "TLS-CA-Zertifikat (PEM)",
+          "auth_token": "Neues Authentifizierungs-Token (optional)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Erneut mit der EEBUS Bridge verbinden",
+        "description": "Authentifizierung fehlgeschlagen. Aktuelles CA-Zertifikat und ein neues Authentifizierungs-Token eingeben.",
+        "data": {
+          "tls_ca_certificate": "TLS-CA-Zertifikat (PEM)",
+          "auth_token": "Authentifizierungs-Token"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Verbindung zur EEBUS Bridge fehlgeschlagen. Bitte Host und Port prüfen.",
+      "cannot_connect": "Verbindung zur EEBUS Bridge fehlgeschlagen. Bitte Adresse, Zertifikat und Token prüfen.",
+      "required": "Dieses Feld ist für den Modus TLS + Token erforderlich.",
       "ski_is_local": "Das ist die eigene SKI der Bridge. Bitte die SKI der Wärmepumpe eingeben."
     },
     "abort": {
       "already_configured": "Dieses Gerät ist bereits konfiguriert.",
       "already_in_progress": "Konfiguration läuft bereits.",
       "not_eebus_bridge": "Gefundenes SHIP-Gerät stellt keine EEBUS-Bridge-gRPC-API bereit.",
+      "reauth_successful": "Authentifizierung erfolgreich aktualisiert.",
       "reconfigure_successful": "Rekonfiguration erfolgreich."
+    }
+  },
+  "selector": {
+    "security_mode": {
+      "options": {
+        "loopback": "Loopback (Klartext)",
+        "tls_token": "TLS + Token"
+      }
     }
   },
   "options": {

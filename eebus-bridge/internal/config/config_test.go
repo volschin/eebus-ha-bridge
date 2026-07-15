@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/volschin/eebus-bridge/internal/config"
@@ -36,6 +37,9 @@ certificates:
 	if cfg.GRPC.Port != 50051 {
 		t.Errorf("GRPC.Port = %d, want 50051", cfg.GRPC.Port)
 	}
+	if cfg.GRPC.Security.Mode != config.GRPCSecurityModeLoopback {
+		t.Errorf("default gRPC security mode = %q, want loopback", cfg.GRPC.Security.Mode)
+	}
 	if cfg.EEBUS.Port != 4712 {
 		t.Errorf("EEBUS.Port = %d, want 4712", cfg.EEBUS.Port)
 	}
@@ -50,6 +54,32 @@ certificates:
 	}
 	if cfg.Certificates.StoragePath != "/tmp/certs" {
 		t.Errorf("Certificates.StoragePath = %q, want /tmp/certs", cfg.Certificates.StoragePath)
+	}
+}
+
+func TestRejectsNonLoopbackWithoutTLSToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("grpc:\n  bind: 0.0.0.0\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := config.LoadFromFile(path)
+	if err == nil {
+		t.Fatal("LoadFromFile accepted non-loopback plaintext bind")
+	}
+	if !strings.Contains(err.Error(), "requires tls_token") {
+		t.Fatalf("error = %q, want clear tls_token requirement", err)
+	}
+}
+
+func TestRejectsIncompleteTLSTokenConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	yaml := "grpc:\n  bind: 0.0.0.0\n  security:\n    mode: tls_token\n"
+	if err := os.WriteFile(path, []byte(yaml), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := config.LoadFromFile(path)
+	if err == nil || !strings.Contains(err.Error(), "requires tls_cert_file, tls_key_file, and token_file") {
+		t.Fatalf("LoadFromFile error = %v, want missing TLS file error", err)
 	}
 }
 
