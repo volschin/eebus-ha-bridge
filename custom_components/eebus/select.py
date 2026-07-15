@@ -6,7 +6,6 @@ from typing import Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -50,11 +49,10 @@ class EebusCompressorFlexibilitySelect(EebusEntity, SelectEntity):
     paused = pause the running process.
     off    = abort the process (or the implicit state when no offer is running).
 
-    Gold: translation_key, entity_category CONFIG.
+    This is a primary operational control, so it has no entity category.
     """
 
     _attr_translation_key = "compressor_flexibility"
-    _attr_entity_category = EntityCategory.CONFIG
     _attr_options = [OPTION_ON, OPTION_PAUSED, OPTION_OFF]
 
     def __init__(self, coordinator: EebusCoordinator) -> None:

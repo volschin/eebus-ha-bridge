@@ -79,6 +79,7 @@ def _select_with(flex):
 
 def test_select_current_option_distinguishes_paused_from_off():
     """Select reports on/paused/off as three distinct options, not a binary collapse."""
+    assert _select_with({"state": "COMPRESSOR_STATE_RUNNING"}).entity_category is None
     assert _select_with({"state": "COMPRESSOR_STATE_RUNNING"}).current_option == "on"
     assert _select_with({"state": "COMPRESSOR_STATE_SCHEDULED"}).current_option == "on"
     assert _select_with({"state": "COMPRESSOR_STATE_PAUSED"}).current_option == "paused"

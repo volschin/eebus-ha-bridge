@@ -290,6 +290,7 @@ def test_dhw_boost_switch():
     coordinator.async_request_refresh = AsyncMock()
 
     switch = EebusDHWBoostSwitch(coordinator)
+    assert switch.entity_category is None
     assert switch.available is True
     assert switch.is_on is True
     assert switch.extra_state_attributes == {"boost_status": "running"}
