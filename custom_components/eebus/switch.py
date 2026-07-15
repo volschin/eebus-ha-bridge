@@ -32,13 +32,9 @@ async def async_setup_entry(
 
 
 class EebusLPCActiveSwitch(EebusEntity, SwitchEntity):
-    """Switch for activating/deactivating LPC limit.
-
-    Gold: translation_key, entity_category CONFIG.
-    """
+    """Switch for activating/deactivating LPC limit."""
 
     _attr_translation_key = "lpc_active"
-    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: EebusCoordinator) -> None:
         """Initialize."""
@@ -108,7 +104,6 @@ class EebusDHWBoostSwitch(EebusEntity, SwitchEntity):
     """Switch for domestic-hot-water one-time boost."""
 
     _attr_translation_key = "dhw_boost"
-    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: EebusCoordinator) -> None:
         """Initialize."""

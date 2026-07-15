@@ -168,6 +168,22 @@ def test_measurement_event_other_ski_ignored():
     assert not pushed
 
 
+def test_measurement_event_matches_canonicalized_ski():
+    """Canonical bridge events match a differently formatted configured SKI."""
+    coordinator, pushed = _make_coordinator(
+        ski="ab:cd-ef", data={"power_watts": 100.0, "read_fallback_used": False}
+    )
+    event = monitoring_service_pb2.MeasurementEvent(
+        ski="ABCDEF",
+        event_type=monitoring_service_pb2.MEASUREMENT_EVENT_POWER_UPDATED,
+        power={"watts": 1234.5},
+    )
+
+    coordinator._handle_measurement_event(event)
+
+    assert pushed["power_watts"] == 1234.5
+
+
 def test_measurement_event_fallback_ski_accepted():
     """When reads fell back to first entity, its events are accepted."""
     coordinator, pushed = _make_coordinator(

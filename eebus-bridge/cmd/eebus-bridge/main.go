@@ -192,38 +192,6 @@ func main() {
 		registeredUseCases = append(registeredUseCases, "OHPCF")
 	}
 
-	// SPIKE: experimental read-only HVAC/DHW probe. Off by default. Must be armed
-	// before Start so its Setpoint/HVAC client features are part of the announced
-	// feature map.
-	if cfg.Experimental.HvacProbe {
-		eebus.DefaultHvacProbe().Setup(localEntity)
-		log.Println("[HVACPROBE] experimental HVAC/DHW read probe armed; will dump Setpoint/HVAC data on device connect")
-		if cfg.Experimental.HvacProbeBind {
-			eebus.DefaultHvacProbe().EnableBind()
-			log.Println("[HVACPROBE] stage-2 bind armed; will request Setpoint/HVAC bindings on device connect")
-			if cfg.Experimental.HvacProbeWrite {
-				eebus.DefaultHvacProbe().EnableWrite()
-				log.Println("[HVACPROBE] stage-3 write armed; will echo-write current setpoint data after accepted bind (values unchanged)")
-				if ski := cfg.Experimental.HvacProbeWriteDeltaSKI; ski != "" {
-					eebus.DefaultHvacProbe().EnableWriteDelta(ski)
-					log.Printf("[HVACPROBE] stage-3b delta armed for SKI %s; will change DHW setpoint one step, confirm, and restore", ski)
-				}
-			} else if cfg.Experimental.HvacProbeWriteDeltaSKI != "" {
-				log.Println("[HVACPROBE] hvac_probe_write_delta_ski requires hvac_probe_write; delta stage not armed")
-			}
-			if ski := cfg.Experimental.HvacProbeOverrunWriteSKI; ski != "" {
-				eebus.DefaultHvacProbe().EnableOverrunWrite(ski)
-				log.Printf("[HVACPROBE] stage-4b DHW boost armed for SKI %s; will activate one-time DHW overrun, confirm, and cancel after accepted HVAC bind", ski)
-			}
-		} else if cfg.Experimental.HvacProbeWrite {
-			log.Println("[HVACPROBE] hvac_probe_write requires hvac_probe_bind; write stage not armed")
-		} else if cfg.Experimental.HvacProbeOverrunWriteSKI != "" {
-			log.Println("[HVACPROBE] hvac_probe_overrun_write_ski requires hvac_probe_bind; boost stage not armed")
-		}
-	} else if cfg.Experimental.HvacProbeBind || cfg.Experimental.HvacProbeWrite || cfg.Experimental.HvacProbeOverrunWriteSKI != "" {
-		log.Println("[HVACPROBE] hvac_probe_bind/hvac_probe_write/hvac_probe_overrun_write_ski require hvac_probe; not armed")
-	}
-
 	// Controllable systems revert an active LPC limit to its failsafe value when
 	// heartbeats stop arriving, so keep the local heartbeat running for the
 	// lifetime of the bridge.

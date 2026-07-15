@@ -36,7 +36,15 @@ func (b *EventBus) Unsubscribe(ch chan Event) {
 
 // Publish sends an event to all subscribers. Non-blocking: drops events
 // for subscribers whose buffer is full.
+//
+// evt.SKI is normalized here so every subscriber sees a canonical SKI
+// regardless of what the publishing call site passed in — callers used to
+// normalize inconsistently (or not at all), forcing every stream filter to
+// re-normalize both sides of the comparison.
 func (b *EventBus) Publish(evt Event) {
+	if evt.SKI != "" {
+		evt.SKI = NormalizeSKI(evt.SKI)
+	}
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	for ch := range b.subscribers {

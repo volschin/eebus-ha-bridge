@@ -81,6 +81,7 @@ func (s *OHPCFService) ControlCompressorFlexibility(_ context.Context, req *pb.C
 func (s *OHPCFService) SubscribeOHPCFEvents(req *pb.DeviceRequest, stream pb.OHPCFService_SubscribeOHPCFEventsServer) error {
 	ch := s.bus.Subscribe()
 	defer s.bus.Unsubscribe(ch)
+	reqSKI := eebus.NormalizeSKI(req.Ski)
 
 	for {
 		select {
@@ -88,7 +89,7 @@ func (s *OHPCFService) SubscribeOHPCFEvents(req *pb.DeviceRequest, stream pb.OHP
 			if !ok {
 				return nil
 			}
-			if req.Ski != "" && evt.SKI != req.Ski {
+			if reqSKI != "" && evt.SKI != reqSKI {
 				continue
 			}
 			var eventType pb.OHPCFEventType

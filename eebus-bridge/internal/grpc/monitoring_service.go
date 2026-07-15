@@ -233,6 +233,7 @@ func (s *MonitoringService) GetMeasurements(_ context.Context, req *pb.DeviceReq
 func (s *MonitoringService) SubscribeMeasurements(req *pb.DeviceRequest, stream pb.MonitoringService_SubscribeMeasurementsServer) error {
 	ch := s.bus.Subscribe()
 	defer s.bus.Unsubscribe(ch)
+	reqSKI := eebus.NormalizeSKI(req.Ski)
 
 	for {
 		select {
@@ -240,7 +241,7 @@ func (s *MonitoringService) SubscribeMeasurements(req *pb.DeviceRequest, stream 
 			if !ok {
 				return nil
 			}
-			if req.Ski != "" && evt.SKI != req.Ski {
+			if reqSKI != "" && evt.SKI != reqSKI {
 				continue
 			}
 			var eventType pb.MeasurementEventType

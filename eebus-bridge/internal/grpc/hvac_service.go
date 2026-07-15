@@ -127,6 +127,7 @@ func (s *HVACService) SubscribeRoomHeatingEvents(
 	}
 	ch := s.bus.Subscribe()
 	defer s.bus.Unsubscribe(ch)
+	reqSKI := eebus.NormalizeSKI(req.Ski)
 
 	for {
 		select {
@@ -134,7 +135,7 @@ func (s *HVACService) SubscribeRoomHeatingEvents(
 			if !ok {
 				return nil
 			}
-			if req.Ski != "" && eebus.NormalizeSKI(evt.SKI) != eebus.NormalizeSKI(req.Ski) {
+			if reqSKI != "" && evt.SKI != reqSKI {
 				continue
 			}
 			var eventType pb.RoomHeatingEventType
