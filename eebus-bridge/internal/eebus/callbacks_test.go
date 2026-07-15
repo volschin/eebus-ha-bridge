@@ -23,7 +23,7 @@ func TestCallbacksDispatchConnect(t *testing.T) {
 		if evt.SKI != "TEST-SKI-123" {
 			t.Errorf("SKI = %q, want TEST-SKI-123", evt.SKI)
 		}
-		if evt.Type != "device.connected" {
+		if evt.Type != eebus.EventTypeDeviceConnected {
 			t.Errorf("Type = %q, want device.connected", evt.Type)
 		}
 	case <-time.After(time.Second):
@@ -54,7 +54,7 @@ func TestCallbacksDispatchDisconnect(t *testing.T) {
 
 	select {
 	case evt := <-ch:
-		if evt.Type != "device.disconnected" {
+		if evt.Type != eebus.EventTypeDeviceDisconnected {
 			t.Errorf("Type = %q, want device.disconnected", evt.Type)
 		}
 	case <-time.After(time.Second):
@@ -111,7 +111,7 @@ func TestCallbacksTrustRemovedClearsCachedEntitiesAndPublishes(t *testing.T) {
 
 	select {
 	case evt := <-ch:
-		if evt.Type != "device.trust_removed" {
+		if evt.Type != eebus.EventTypeDeviceTrustRemoved {
 			t.Errorf("Type = %q, want device.trust_removed", evt.Type)
 		}
 		if evt.SKI != "TEST-SKI-789" {
@@ -132,7 +132,7 @@ func TestCallbacksVisibleServicesUpdated(t *testing.T) {
 
 	select {
 	case evt := <-ch:
-		if evt.Type != "discovery.updated" {
+		if evt.Type != eebus.EventTypeDiscoveryUpdated {
 			t.Errorf("Type = %q, want discovery.updated", evt.Type)
 		}
 	case <-time.After(time.Second):

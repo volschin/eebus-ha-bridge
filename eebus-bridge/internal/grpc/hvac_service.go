@@ -139,13 +139,13 @@ func (s *HVACService) SubscribeRoomHeatingEvents(
 			}
 			var eventType pb.RoomHeatingEventType
 			switch evt.Type {
-			case "roomheating.use_case_support_updated", "roomheatingsysfn.use_case_support_updated":
+			case eebus.EventTypeRoomHeatingUseCaseSupportUpdated, eebus.EventTypeRoomHeatingSystemFunctionSupportUpdated:
 				eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SUPPORT_UPDATED
-			case "room.temperature_updated":
+			case eebus.EventTypeRoomTemperatureUpdated:
 				eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_CURRENT_TEMPERATURE_UPDATED
-			case "roomheating.setpoint_updated":
+			case eebus.EventTypeRoomHeatingSetpointUpdated:
 				eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SETPOINT_UPDATED
-			case "roomheatingsysfn.updated":
+			case eebus.EventTypeRoomHeatingSystemFunctionUpdated:
 				eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SYSTEM_FUNCTION_UPDATED
 			default:
 				continue

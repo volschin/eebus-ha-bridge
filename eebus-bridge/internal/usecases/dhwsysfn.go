@@ -123,11 +123,11 @@ func (d *DHWSystemFunction) HandleEvent(payload spineapi.EventPayload) {
 		*model.HvacSystemFunctionOperationModeRelationListDataType,
 		*model.HvacOverrunDescriptionListDataType:
 		if _, err := d.State(payload.Entity); err == nil && d.bus != nil {
-			d.bus.Publish(eebus.Event{SKI: payload.Ski, Type: "dhwsysfn.use_case_support_updated"})
+			d.bus.Publish(eebus.Event{SKI: payload.Ski, Type: eebus.EventTypeDHWSystemFunctionSupportUpdated})
 		}
 	case *model.HvacSystemFunctionListDataType, *model.HvacOverrunListDataType:
 		if _, err := d.State(payload.Entity); err == nil && d.bus != nil {
-			d.bus.Publish(eebus.Event{SKI: payload.Ski, Type: "dhwsysfn.updated"})
+			d.bus.Publish(eebus.Event{SKI: payload.Ski, Type: eebus.EventTypeDHWSystemFunctionUpdated})
 		}
 	}
 }
@@ -142,7 +142,7 @@ func (d *DHWSystemFunction) handleUseCaseEvent(
 		d.registry.UpsertObservation(ski, device, entity, "dhw_system_function")
 	}
 	if d.bus != nil {
-		d.bus.Publish(eebus.Event{SKI: ski, Type: "dhwsysfn.use_case_support_updated"})
+		d.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeDHWSystemFunctionSupportUpdated})
 	}
 }
 

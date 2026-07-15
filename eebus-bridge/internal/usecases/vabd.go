@@ -248,7 +248,7 @@ func (p *VABDProvider) handleEvent(ski string, _ spineapi.DeviceRemoteInterface,
 	if event == vabdUseCaseSupportUpdate {
 		log.Printf("[VABD] consumer support update from ski=%s", ski)
 		if p.bus != nil {
-			p.bus.Publish(eebus.Event{SKI: ski, Type: "vabd.consumer_updated"})
+			p.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeVABDConsumerUpdated})
 		}
 	}
 }

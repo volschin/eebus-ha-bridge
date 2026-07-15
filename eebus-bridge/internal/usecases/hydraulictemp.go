@@ -52,10 +52,10 @@ func (h *HydraulicTemperatures) HandleEvent(payload spineapi.EventPayload) {
 	}
 	ski := eebus.NormalizeSKI(payload.Ski)
 	if _, err := h.FlowTemperature(ski); err == nil {
-		h.bus.Publish(eebus.Event{SKI: ski, Type: "monitoring.flow_temperature_updated"})
+		h.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeMonitoringFlowTemperatureUpdated})
 	}
 	if _, err := h.ReturnTemperature(ski); err == nil {
-		h.bus.Publish(eebus.Event{SKI: ski, Type: "monitoring.return_temperature_updated"})
+		h.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeMonitoringReturnTemperatureUpdated})
 	}
 }
 

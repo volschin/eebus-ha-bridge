@@ -79,24 +79,24 @@ func (w *MonitoringWrapper) HandleEvent(ski string, device spineapi.DeviceRemote
 		enrichDeviceClassification(w.registry, w.localEntity, ski, device, entity)
 	}
 
-	var eventType string
+	var eventType eebus.EventType
 	switch event {
 	case mampc.DataUpdatePower:
-		eventType = "monitoring.power_updated"
+		eventType = eebus.EventTypeMonitoringPowerUpdated
 	case mampc.DataUpdatePowerPerPhase:
-		eventType = "monitoring.power_per_phase_updated"
+		eventType = eebus.EventTypeMonitoringPowerPerPhaseUpdated
 	case mampc.DataUpdateEnergyConsumed:
-		eventType = "monitoring.energy_consumed_updated"
+		eventType = eebus.EventTypeMonitoringEnergyConsumedUpdated
 	case mampc.DataUpdateEnergyProduced:
-		eventType = "monitoring.energy_produced_updated"
+		eventType = eebus.EventTypeMonitoringEnergyProducedUpdated
 	case mampc.DataUpdateCurrentsPerPhase:
-		eventType = "monitoring.currents_per_phase_updated"
+		eventType = eebus.EventTypeMonitoringCurrentsPerPhaseUpdated
 	case mampc.DataUpdateVoltagePerPhase:
-		eventType = "monitoring.voltage_per_phase_updated"
+		eventType = eebus.EventTypeMonitoringVoltagePerPhaseUpdated
 	case mampc.DataUpdateFrequency:
-		eventType = "monitoring.frequency_updated"
+		eventType = eebus.EventTypeMonitoringFrequencyUpdated
 	case mampc.UseCaseSupportUpdate:
-		eventType = "monitoring.use_case_support_updated"
+		eventType = eebus.EventTypeMonitoringUseCaseSupportUpdated
 	default:
 		return
 	}

@@ -24,7 +24,7 @@ func TestLPCEventRouting(t *testing.T) {
 		if evt.SKI != "test-ski" {
 			t.Errorf("SKI = %q, want test-ski", evt.SKI)
 		}
-		if evt.Type != "lpc.limit_updated" {
+		if evt.Type != eebus.EventTypeLPCLimitUpdated {
 			t.Errorf("Type = %q, want lpc.limit_updated", evt.Type)
 		}
 	case <-time.After(time.Second):
@@ -42,7 +42,7 @@ func TestLPCFailsafePowerEventRouting(t *testing.T) {
 
 	select {
 	case evt := <-ch:
-		if evt.Type != "lpc.failsafe_power_updated" {
+		if evt.Type != eebus.EventTypeLPCFailsafePowerUpdated {
 			t.Errorf("Type = %q, want lpc.failsafe_power_updated", evt.Type)
 		}
 	case <-time.After(time.Second):
@@ -60,7 +60,7 @@ func TestLPCFailsafeDurationEventRouting(t *testing.T) {
 
 	select {
 	case evt := <-ch:
-		if evt.Type != "lpc.failsafe_duration_updated" {
+		if evt.Type != eebus.EventTypeLPCFailsafeDurationUpdated {
 			t.Errorf("Type = %q, want lpc.failsafe_duration_updated", evt.Type)
 		}
 	case <-time.After(time.Second):
@@ -78,7 +78,7 @@ func TestLPCHeartbeatEventRouting(t *testing.T) {
 
 	select {
 	case evt := <-ch:
-		if evt.Type != "lpc.heartbeat_updated" {
+		if evt.Type != eebus.EventTypeLPCHeartbeatUpdated {
 			t.Errorf("Type = %q, want lpc.heartbeat_updated", evt.Type)
 		}
 	case <-time.After(time.Second):

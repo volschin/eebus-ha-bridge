@@ -81,26 +81,26 @@ func (w *OHPCFWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInter
 		enrichDeviceClassification(w.registry, w.localEntity, ski, device, entity)
 	}
 
-	var eventType string
+	var eventType eebus.EventType
 	switch event {
 	case cemohpcf.UseCaseSupportUpdate:
-		eventType = "ohpcf.use_case_support_updated"
+		eventType = eebus.EventTypeOHPCFUseCaseSupportUpdated
 	case cemohpcf.DataUpdateConsumptionState:
-		eventType = "ohpcf.consumption_state_updated"
+		eventType = eebus.EventTypeOHPCFConsumptionStateUpdated
 	case cemohpcf.DataUpdateConsumptionIsStoppable:
-		eventType = "ohpcf.consumption_stoppable_updated"
+		eventType = eebus.EventTypeOHPCFConsumptionStoppableUpdated
 	case cemohpcf.DataUpdateConsumptionIsPausable:
-		eventType = "ohpcf.consumption_pausable_updated"
+		eventType = eebus.EventTypeOHPCFConsumptionPausableUpdated
 	case cemohpcf.DataUpdateConsumptionStartTime:
-		eventType = "ohpcf.consumption_start_time_updated"
+		eventType = eebus.EventTypeOHPCFConsumptionStartTimeUpdated
 	case cemohpcf.DataUpdateRequestedPowerEstimate:
-		eventType = "ohpcf.requested_power_estimate_updated"
+		eventType = eebus.EventTypeOHPCFRequestedPowerEstimateUpdated
 	case cemohpcf.DataUpdateRequestedPowerMax:
-		eventType = "ohpcf.requested_power_max_updated"
+		eventType = eebus.EventTypeOHPCFRequestedPowerMaxUpdated
 	case cemohpcf.DataUpdateMinimalRunDuration:
-		eventType = "ohpcf.minimal_run_duration_updated"
+		eventType = eebus.EventTypeOHPCFMinimalRunDurationUpdated
 	case cemohpcf.DataUpdateMinimalPauseDuration:
-		eventType = "ohpcf.minimal_pause_duration_updated"
+		eventType = eebus.EventTypeOHPCFMinimalPauseDurationUpdated
 	default:
 		return
 	}

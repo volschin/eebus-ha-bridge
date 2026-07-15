@@ -239,10 +239,10 @@ func main() {
 		defer bus.Unsubscribe(ch)
 		for evt := range ch {
 			switch evt.Type {
-			case "device.register_ski":
+			case eebus.EventTypeDeviceRegisterSKI:
 				bridgeSvc.RegisterRemoteSKI(evt.SKI)
 				log.Printf("Registered remote SKI: %s", evt.SKI)
-			case "device.unregister_ski":
+			case eebus.EventTypeDeviceUnregisterSKI:
 				// eebus-go's UnregisterRemoteService only notifies via
 				// ServicePairingDetailUpdate, not ServiceAutoTrustRemoved, so the
 				// registry is cleared explicitly here rather than relying on a
@@ -250,7 +250,7 @@ func main() {
 				// handles the remote-initiated revocation case).
 				bridgeSvc.UnregisterRemoteSKI(evt.SKI)
 				registry.RemoveDevice(evt.SKI)
-				bus.Publish(eebus.Event{SKI: evt.SKI, Type: "device.trust_removed"})
+				bus.Publish(eebus.Event{SKI: evt.SKI, Type: eebus.EventTypeDeviceTrustRemoved})
 				log.Printf("Unregistered remote SKI: %s", evt.SKI)
 			}
 		}

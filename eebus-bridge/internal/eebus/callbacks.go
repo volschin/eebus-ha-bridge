@@ -48,7 +48,7 @@ func (c *Callbacks) RemoteServiceConnected(_ api.ServiceInterface, identity ship
 
 	c.bus.Publish(Event{
 		SKI:  ski,
-		Type: "device.connected",
+		Type: EventTypeDeviceConnected,
 	})
 }
 
@@ -67,7 +67,7 @@ func (c *Callbacks) RemoteServiceDisconnected(_ api.ServiceInterface, identity s
 
 	c.bus.Publish(Event{
 		SKI:  ski,
-		Type: "device.disconnected",
+		Type: EventTypeDeviceDisconnected,
 	})
 }
 
@@ -82,7 +82,7 @@ func (c *Callbacks) VisibleRemoteMdnsServicesUpdated(_ api.ServiceInterface, ent
 	c.mu.Unlock()
 
 	c.bus.Publish(Event{
-		Type: "discovery.updated",
+		Type: EventTypeDiscoveryUpdated,
 	})
 }
 
@@ -104,7 +104,7 @@ func (c *Callbacks) ServicePairingDetailUpdate(identity shipapi.ServiceIdentity,
 
 	c.bus.Publish(Event{
 		SKI:  ski,
-		Type: "pairing.updated",
+		Type: EventTypePairingUpdated,
 	})
 }
 
@@ -139,7 +139,7 @@ func (c *Callbacks) ServiceAutoTrustRemoved(_ api.ServiceInterface, identity shi
 
 	c.bus.Publish(Event{
 		SKI:  ski,
-		Type: "device.trust_removed",
+		Type: EventTypeDeviceTrustRemoved,
 	})
 }
 

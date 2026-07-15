@@ -64,7 +64,7 @@ func TestSubscribeMeasurements(t *testing.T) {
 
 	// Give the server-side handler goroutine time to subscribe before publishing.
 	time.Sleep(50 * time.Millisecond)
-	bus.Publish(eebus.Event{SKI: "test-ski", Type: "monitoring.power_updated"})
+	bus.Publish(eebus.Event{SKI: "test-ski", Type: eebus.EventTypeMonitoringPowerUpdated})
 
 	evt, err := stream.Recv()
 	if err != nil {
@@ -151,16 +151,16 @@ func TestSubscribeMeasurementsIncludesTemperaturePayloads(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 	tests := []struct {
-		bridgeEvent string
+		bridgeEvent eebus.EventType
 		eventType   pb.MeasurementEventType
 		typ         string
 		value       float64
 	}{
-		{"dhw.temperature_updated", pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED, "dhw_temperature", 49},
-		{"room.temperature_updated", pb.MeasurementEventType_MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED, "room_temperature", 20.5},
-		{"outdoor.temperature_updated", pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED, "outdoor_temperature", 6.5},
-		{"monitoring.flow_temperature_updated", pb.MeasurementEventType_MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED, "flow_temperature", 43},
-		{"monitoring.return_temperature_updated", pb.MeasurementEventType_MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED, "return_temperature", 38},
+		{eebus.EventTypeDHWTemperatureUpdated, pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED, "dhw_temperature", 49},
+		{eebus.EventTypeRoomTemperatureUpdated, pb.MeasurementEventType_MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED, "room_temperature", 20.5},
+		{eebus.EventTypeOutdoorTemperatureUpdated, pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED, "outdoor_temperature", 6.5},
+		{eebus.EventTypeMonitoringFlowTemperatureUpdated, pb.MeasurementEventType_MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED, "flow_temperature", 43},
+		{eebus.EventTypeMonitoringReturnTemperatureUpdated, pb.MeasurementEventType_MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED, "return_temperature", 38},
 	}
 	for _, tt := range tests {
 		bus.Publish(eebus.Event{SKI: "test-ski", Type: tt.bridgeEvent})
@@ -176,11 +176,11 @@ func TestSubscribeMeasurementsIncludesTemperaturePayloads(t *testing.T) {
 	}
 
 	supportTests := []struct {
-		bridgeEvent string
+		bridgeEvent eebus.EventType
 		eventType   pb.MeasurementEventType
 	}{
-		{"room.monitoring_support_updated", pb.MeasurementEventType_MEASUREMENT_EVENT_ROOM_TEMPERATURE_SUPPORT_UPDATED},
-		{"outdoor.monitoring_support_updated", pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED},
+		{eebus.EventTypeRoomMonitoringSupportUpdated, pb.MeasurementEventType_MEASUREMENT_EVENT_ROOM_TEMPERATURE_SUPPORT_UPDATED},
+		{eebus.EventTypeOutdoorMonitoringSupportUpdated, pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED},
 	}
 	for _, tt := range supportTests {
 		bus.Publish(eebus.Event{SKI: "test-ski", Type: tt.bridgeEvent})
@@ -255,7 +255,7 @@ func TestSubscribeMeasurementsForwardsDeviceOperatingState(t *testing.T) {
 	}
 
 	time.Sleep(50 * time.Millisecond)
-	bus.Publish(eebus.Event{SKI: "test-ski", Type: "monitoring.device_operating_state_updated"})
+	bus.Publish(eebus.Event{SKI: "test-ski", Type: eebus.EventTypeMonitoringDeviceOperatingStateUpdated})
 
 	event, err := stream.Recv()
 	if err != nil {

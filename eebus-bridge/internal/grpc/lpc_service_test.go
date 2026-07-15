@@ -39,7 +39,7 @@ func TestSubscribeLPCEvents(t *testing.T) {
 
 	// Give the server-side handler goroutine time to subscribe before publishing.
 	time.Sleep(50 * time.Millisecond)
-	bus.Publish(eebus.Event{SKI: "test-ski", Type: "lpc.limit_updated"})
+	bus.Publish(eebus.Event{SKI: "test-ski", Type: eebus.EventTypeLPCLimitUpdated})
 
 	evt, err := stream.Recv()
 	if err != nil {
@@ -76,7 +76,7 @@ func TestSubscribeLPCEventsHeartbeat(t *testing.T) {
 	}
 
 	time.Sleep(50 * time.Millisecond)
-	bus.Publish(eebus.Event{SKI: "test-ski", Type: "lpc.heartbeat_updated"})
+	bus.Publish(eebus.Event{SKI: "test-ski", Type: eebus.EventTypeLPCHeartbeatUpdated})
 
 	evt, err := stream.Recv()
 	if err != nil {

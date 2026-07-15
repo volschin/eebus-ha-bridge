@@ -20,7 +20,7 @@ func TestMonitoringEventRouting(t *testing.T) {
 
 	select {
 	case evt := <-ch:
-		if evt.Type != "monitoring.power_updated" {
+		if evt.Type != eebus.EventTypeMonitoringPowerUpdated {
 			t.Errorf("Type = %q, want monitoring.power_updated", evt.Type)
 		}
 	case <-time.After(time.Second):
@@ -38,7 +38,7 @@ func TestMonitoringEnergyConsumedEventRouting(t *testing.T) {
 
 	select {
 	case evt := <-ch:
-		if evt.Type != "monitoring.energy_consumed_updated" {
+		if evt.Type != eebus.EventTypeMonitoringEnergyConsumedUpdated {
 			t.Errorf("Type = %q, want monitoring.energy_consumed_updated", evt.Type)
 		}
 	case <-time.After(time.Second):
@@ -56,7 +56,7 @@ func TestMonitoringFrequencyEventRouting(t *testing.T) {
 
 	select {
 	case evt := <-ch:
-		if evt.Type != "monitoring.frequency_updated" {
+		if evt.Type != eebus.EventTypeMonitoringFrequencyUpdated {
 			t.Errorf("Type = %q, want monitoring.frequency_updated", evt.Type)
 		}
 	case <-time.After(time.Second):

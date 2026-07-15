@@ -108,11 +108,11 @@ func (r *RoomHeatingSystemFunction) HandleEvent(payload spineapi.EventPayload) {
 		*model.HvacOperationModeDescriptionListDataType,
 		*model.HvacSystemFunctionOperationModeRelationListDataType:
 		if _, err := r.State(payload.Entity); err == nil && r.bus != nil {
-			r.bus.Publish(eebus.Event{SKI: payload.Ski, Type: "roomheatingsysfn.use_case_support_updated"})
+			r.bus.Publish(eebus.Event{SKI: payload.Ski, Type: eebus.EventTypeRoomHeatingSystemFunctionSupportUpdated})
 		}
 	case *model.HvacSystemFunctionListDataType:
 		if _, err := r.State(payload.Entity); err == nil && r.bus != nil {
-			r.bus.Publish(eebus.Event{SKI: payload.Ski, Type: "roomheatingsysfn.updated"})
+			r.bus.Publish(eebus.Event{SKI: payload.Ski, Type: eebus.EventTypeRoomHeatingSystemFunctionUpdated})
 		}
 	}
 }
@@ -127,7 +127,7 @@ func (r *RoomHeatingSystemFunction) handleUseCaseEvent(
 		r.registry.UpsertObservation(ski, device, entity, "room_heating_system_function")
 	}
 	if r.bus != nil {
-		r.bus.Publish(eebus.Event{SKI: ski, Type: "roomheatingsysfn.use_case_support_updated"})
+		r.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeRoomHeatingSystemFunctionSupportUpdated})
 	}
 }
 

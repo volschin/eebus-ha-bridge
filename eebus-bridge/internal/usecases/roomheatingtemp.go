@@ -111,7 +111,7 @@ func (r *RoomHeatingTemperature) HandleEvent(payload spineapi.EventPayload) {
 		r.request(payload.Entity, model.FunctionTypeSetpointListData)
 	case *model.SetpointListDataType:
 		if _, err := r.State(payload.Entity); err == nil && r.bus != nil {
-			r.bus.Publish(eebus.Event{SKI: payload.Ski, Type: "roomheating.setpoint_updated"})
+			r.bus.Publish(eebus.Event{SKI: payload.Ski, Type: eebus.EventTypeRoomHeatingSetpointUpdated})
 		}
 	}
 }
@@ -126,7 +126,7 @@ func (r *RoomHeatingTemperature) handleUseCaseEvent(
 		r.registry.UpsertObservation(ski, device, entity, "room_heating_temperature")
 	}
 	if r.bus != nil {
-		r.bus.Publish(eebus.Event{SKI: ski, Type: "roomheating.use_case_support_updated"})
+		r.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeRoomHeatingUseCaseSupportUpdated})
 	}
 }
 
