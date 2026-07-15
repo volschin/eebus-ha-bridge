@@ -6,6 +6,7 @@ import asyncio
 import logging
 import math
 from datetime import timedelta
+from functools import lru_cache
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
@@ -54,6 +55,13 @@ POLL_INTERVAL = timedelta(minutes=5)
 RPC_TIMEOUT = 10
 RE_REGISTER_NOT_FOUND_STREAK = 4
 STREAM_RETRY_SECONDS = 30
+# Write-RPC status codes surfaced to the user as a validation error instead of
+# a raw AioRpcError traceback (device-side rejections).
+WRITE_VALIDATION_CODES = (
+    grpc.StatusCode.INVALID_ARGUMENT,
+    grpc.StatusCode.FAILED_PRECONDITION,
+    grpc.StatusCode.NOT_FOUND,
+)
 
 # Maps a GetMeasurements entry type (as emitted by the Go bridge) to the
 # coordinator data key consumed by the per-phase / grid / produced-energy
@@ -111,6 +119,86 @@ def _dhw_system_function_to_dict(state: Any) -> dict[str, Any]:
         "operation_mode": state.operation_mode,
         "available_modes": list(state.available_modes),
         "mode_writable": state.mode_writable,
+    }
+
+
+@lru_cache(maxsize=1)
+def _measurement_event_map() -> tuple[dict[int, tuple[str, str, str]], frozenset[int]]:
+    """Build the measurement-event dispatch tables.
+
+    Streaming twin of FLAT_MEASUREMENT_TYPE_TO_KEY: maps an event type to
+    (payload field, value attribute, coordinator key). Support events carry no
+    payload and always reconcile via a poll. Cached because the proto enum is
+    only importable at runtime.
+    """
+    from . import proto_stubs
+
+    event_type = proto_stubs.MeasurementEventType
+    value_events: dict[int, tuple[str, str, str]] = {
+        event_type.MEASUREMENT_EVENT_POWER_UPDATED: ("power", "watts", "power_watts"),
+        event_type.MEASUREMENT_EVENT_ENERGY_UPDATED: (
+            "energy",
+            "kilowatt_hours",
+            "energy_consumed_kwh",
+        ),
+        event_type.MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED: (
+            "measurement",
+            "value",
+            "dhw_temperature_c",
+        ),
+        event_type.MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED: (
+            "measurement",
+            "value",
+            "room_temperature_c",
+        ),
+        event_type.MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED: (
+            "measurement",
+            "value",
+            "outdoor_temperature_c",
+        ),
+        event_type.MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED: (
+            "measurement",
+            "value",
+            "flow_temperature_c",
+        ),
+        event_type.MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED: (
+            "measurement",
+            "value",
+            "return_temperature_c",
+        ),
+        event_type.MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED: (
+            "device_diagnostics",
+            "operating_state",
+            "device_operating_state",
+        ),
+    }
+    support_events = frozenset(
+        {
+            event_type.MEASUREMENT_EVENT_DHW_TEMPERATURE_SUPPORT_UPDATED,
+            event_type.MEASUREMENT_EVENT_ROOM_TEMPERATURE_SUPPORT_UPDATED,
+            event_type.MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED,
+        }
+    )
+    return value_events, support_events
+
+
+def _setpoint_to_dict(setpoint: Any) -> dict[str, Any]:
+    """Convert a protobuf setpoint (value/min/max/step/writable) to coordinator data."""
+    return {
+        "value_celsius": setpoint.value_celsius,
+        "min_celsius": setpoint.min_celsius,
+        "max_celsius": setpoint.max_celsius,
+        "step_celsius": setpoint.step_celsius,
+        "writable": setpoint.writable,
+    }
+
+
+def _system_function_to_dict(system_function: Any) -> dict[str, Any]:
+    """Convert a protobuf system-function state to coordinator data."""
+    return {
+        "operation_mode": system_function.operation_mode,
+        "available_modes": list(system_function.available_modes),
+        "mode_writable": system_function.mode_writable,
     }
 
 
@@ -543,49 +631,61 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             result[key] = value
         return result
 
+    async def _async_write_rpc(
+        self,
+        label: str,
+        call: Any,
+        request: Any,
+        support_attr: str | None = None,
+        validation: bool = False,
+    ) -> None:
+        """Run a write RPC with shared UNIMPLEMENTED / validation-error mapping.
+
+        On success the support flag is set; on UNIMPLEMENTED it is cleared and
+        the call returns quietly. With ``validation=True``, device-side
+        rejections (WRITE_VALIDATION_CODES) surface as ServiceValidationError.
+        """
+        try:
+            await call(request, timeout=RPC_TIMEOUT)
+            if support_attr is not None:
+                setattr(self, support_attr, True)
+        except grpc.aio.AioRpcError as err:
+            if _is_unimplemented(err):
+                if support_attr is not None:
+                    setattr(self, support_attr, False)
+                _LOGGER.info(
+                    "%s unsupported for SKI %s: %s", label, self.ski, err.details()
+                )
+                return
+            if validation and err.code() in WRITE_VALIDATION_CODES:
+                raise ServiceValidationError(f"{label} failed: {err.details()}") from err
+            raise
+
     async def async_write_lpc_limit(self, value_watts: float) -> None:
         """Write LPC consumption limit via gRPC."""
         channel = await self._ensure_channel()
         from . import proto_stubs
         stub = proto_stubs.lpc_service_stub(channel)
-        try:
-            await stub.WriteConsumptionLimit(
-                proto_stubs.WriteLoadLimitRequest(
-                    ski=self.ski, value_watts=value_watts, is_active=True
-                ),
-                timeout=RPC_TIMEOUT,
-            )
-            self._lpc_supported = True
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err):
-                self._lpc_supported = False
-                _LOGGER.info(
-                    "LPC write unsupported for SKI %s: %s", self.ski, err.details()
-                )
-                return
-            raise
+        await self._async_write_rpc(
+            "LPC write",
+            stub.WriteConsumptionLimit,
+            proto_stubs.WriteLoadLimitRequest(
+                ski=self.ski, value_watts=value_watts, is_active=True
+            ),
+            support_attr="_lpc_supported",
+        )
 
     async def async_write_failsafe_limit(self, value_watts: float) -> None:
         """Write failsafe limit via gRPC."""
         channel = await self._ensure_channel()
         from . import proto_stubs
         stub = proto_stubs.lpc_service_stub(channel)
-        try:
-            await stub.WriteFailsafeLimit(
-                proto_stubs.WriteFailsafeLimitRequest(
-                    ski=self.ski, value_watts=value_watts
-                ),
-                timeout=RPC_TIMEOUT,
-            )
-            self._failsafe_supported = True
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err):
-                self._failsafe_supported = False
-                _LOGGER.info(
-                    "Failsafe write unsupported for SKI %s: %s", self.ski, err.details()
-                )
-                return
-            raise
+        await self._async_write_rpc(
+            "Failsafe write",
+            stub.WriteFailsafeLimit,
+            proto_stubs.WriteFailsafeLimitRequest(ski=self.ski, value_watts=value_watts),
+            support_attr="_failsafe_supported",
+        )
 
     async def async_set_lpc_active(self, active: bool) -> None:
         """Activate or deactivate LPC limit via gRPC."""
@@ -595,24 +695,16 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         current = await stub.GetConsumptionLimit(
             proto_stubs.DeviceRequest(ski=self.ski), timeout=RPC_TIMEOUT
         )
-        try:
-            await stub.WriteConsumptionLimit(
-                proto_stubs.WriteLoadLimitRequest(
-                    ski=self.ski,
-                    value_watts=current.value_watts,
-                    is_active=active,
-                ),
-                timeout=RPC_TIMEOUT,
-            )
-            self._lpc_supported = True
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err):
-                self._lpc_supported = False
-                _LOGGER.info(
-                    "LPC activation unsupported for SKI %s: %s", self.ski, err.details()
-                )
-                return
-            raise
+        await self._async_write_rpc(
+            "LPC activation",
+            stub.WriteConsumptionLimit,
+            proto_stubs.WriteLoadLimitRequest(
+                ski=self.ski,
+                value_watts=current.value_watts,
+                is_active=active,
+            ),
+            support_attr="_lpc_supported",
+        )
 
     async def _async_read_compressor_flexibility(
         self, channel: grpc.aio.Channel, proto_stubs: Any, request: Any
@@ -701,13 +793,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
 
         self._dhw_supported = True
-        return {
-            "value_celsius": setpoint.value_celsius,
-            "min_celsius": setpoint.min_celsius,
-            "max_celsius": setpoint.max_celsius,
-            "step_celsius": setpoint.step_celsius,
-            "writable": setpoint.writable,
-        }
+        return _setpoint_to_dict(setpoint)
 
     async def async_write_dhw_setpoint(self, value_celsius: float) -> None:
         """Write the domestic-hot-water target via the bridge."""
@@ -715,32 +801,13 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         from . import proto_stubs
 
         stub = proto_stubs.dhw_service_stub(channel)
-        try:
-            await stub.SetDHWSetpoint(
-                proto_stubs.SetDHWSetpointRequest(
-                    ski=self.ski, value_celsius=value_celsius
-                ),
-                timeout=RPC_TIMEOUT,
-            )
-            self._dhw_supported = True
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err):
-                self._dhw_supported = False
-                _LOGGER.info(
-                    "DHW setpoint control unsupported for SKI %s: %s",
-                    self.ski,
-                    err.details(),
-                )
-                return
-            if err.code() in (
-                grpc.StatusCode.INVALID_ARGUMENT,
-                grpc.StatusCode.FAILED_PRECONDITION,
-                grpc.StatusCode.NOT_FOUND,
-            ):
-                raise ServiceValidationError(
-                    f"Domestic hot water setpoint failed: {err.details()}"
-                ) from err
-            raise
+        await self._async_write_rpc(
+            "Domestic hot water setpoint",
+            stub.SetDHWSetpoint,
+            proto_stubs.SetDHWSetpointRequest(ski=self.ski, value_celsius=value_celsius),
+            support_attr="_dhw_supported",
+            validation=True,
+        )
 
     async def _async_read_dhw_system_function(
         self, channel: grpc.aio.Channel, proto_stubs: Any, request: Any
@@ -772,24 +839,13 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         from . import proto_stubs
 
         stub = proto_stubs.dhw_service_stub(channel)
-        try:
-            await stub.SetDHWBoost(
-                proto_stubs.SetDHWBoostRequest(ski=self.ski, active=active),
-                timeout=RPC_TIMEOUT,
-            )
-            self._dhw_sysfn_supported = True
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err):
-                self._dhw_sysfn_supported = False
-                _LOGGER.info("DHW boost unsupported for SKI %s: %s", self.ski, err.details())
-                return
-            if err.code() in (
-                grpc.StatusCode.INVALID_ARGUMENT,
-                grpc.StatusCode.FAILED_PRECONDITION,
-                grpc.StatusCode.NOT_FOUND,
-            ):
-                raise ServiceValidationError(f"Domestic hot water boost failed: {err.details()}") from err
-            raise
+        await self._async_write_rpc(
+            "Domestic hot water boost",
+            stub.SetDHWBoost,
+            proto_stubs.SetDHWBoostRequest(ski=self.ski, active=active),
+            support_attr="_dhw_sysfn_supported",
+            validation=True,
+        )
 
     async def async_set_dhw_operation_mode(self, mode: str) -> None:
         """Set the DHW operation mode by advertised mode type."""
@@ -797,28 +853,13 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         from . import proto_stubs
 
         stub = proto_stubs.dhw_service_stub(channel)
-        try:
-            await stub.SetDHWOperationMode(
-                proto_stubs.SetDHWOperationModeRequest(ski=self.ski, mode=mode),
-                timeout=RPC_TIMEOUT,
-            )
-            self._dhw_sysfn_supported = True
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err):
-                self._dhw_sysfn_supported = False
-                _LOGGER.info(
-                    "DHW operation mode unsupported for SKI %s: %s",
-                    self.ski,
-                    err.details(),
-                )
-                return
-            if err.code() in (
-                grpc.StatusCode.INVALID_ARGUMENT,
-                grpc.StatusCode.FAILED_PRECONDITION,
-                grpc.StatusCode.NOT_FOUND,
-            ):
-                raise ServiceValidationError(f"Domestic hot water operation mode failed: {err.details()}") from err
-            raise
+        await self._async_write_rpc(
+            "Domestic hot water operation mode",
+            stub.SetDHWOperationMode,
+            proto_stubs.SetDHWOperationModeRequest(ski=self.ski, mode=mode),
+            support_attr="_dhw_sysfn_supported",
+            validation=True,
+        )
 
     async def _async_read_room_heating(
         self, channel: grpc.aio.Channel, proto_stubs: Any, request: Any
@@ -838,20 +879,10 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._room_heating_supported = True
         setpoint = None
         if state.HasField("setpoint"):
-            setpoint = {
-                "value_celsius": state.setpoint.value_celsius,
-                "min_celsius": state.setpoint.min_celsius,
-                "max_celsius": state.setpoint.max_celsius,
-                "step_celsius": state.setpoint.step_celsius,
-                "writable": state.setpoint.writable,
-            }
+            setpoint = _setpoint_to_dict(state.setpoint)
         system_function = None
         if state.HasField("system_function"):
-            system_function = {
-                "operation_mode": state.system_function.operation_mode,
-                "available_modes": list(state.system_function.available_modes),
-                "mode_writable": state.system_function.mode_writable,
-            }
+            system_function = _system_function_to_dict(state.system_function)
         if state.HasField("current_temperature_celsius"):
             self._push_data({"room_temperature_c": state.current_temperature_celsius})
         return setpoint, system_function
@@ -883,88 +914,52 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         channel = await self._ensure_channel()
         from . import proto_stubs
 
-        try:
-            await proto_stubs.hvac_service_stub(channel).SetRoomHeatingTemperature(
-                proto_stubs.SetRoomHeatingTemperatureRequest(
-                    ski=self.ski, value_celsius=value_celsius
-                ),
-                timeout=RPC_TIMEOUT,
-            )
-            self._room_heating_supported = True
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err):
-                self._room_heating_supported = False
-                return
-            if err.code() in (
-                grpc.StatusCode.INVALID_ARGUMENT,
-                grpc.StatusCode.FAILED_PRECONDITION,
-                grpc.StatusCode.NOT_FOUND,
-            ):
-                raise ServiceValidationError(
-                    f"Room heating setpoint failed: {err.details()}"
-                ) from err
-            raise
+        await self._async_write_rpc(
+            "Room heating setpoint",
+            proto_stubs.hvac_service_stub(channel).SetRoomHeatingTemperature,
+            proto_stubs.SetRoomHeatingTemperatureRequest(
+                ski=self.ski, value_celsius=value_celsius
+            ),
+            support_attr="_room_heating_supported",
+            validation=True,
+        )
 
     async def async_set_room_heating_mode(self, mode: str) -> None:
         """Set the room-heating operation mode."""
         channel = await self._ensure_channel()
         from . import proto_stubs
 
-        try:
-            await proto_stubs.hvac_service_stub(channel).SetRoomHeatingMode(
-                proto_stubs.SetRoomHeatingModeRequest(ski=self.ski, mode=mode),
-                timeout=RPC_TIMEOUT,
-            )
-            self._room_heating_supported = True
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err):
-                self._room_heating_supported = False
-                return
-            if err.code() in (
-                grpc.StatusCode.INVALID_ARGUMENT,
-                grpc.StatusCode.FAILED_PRECONDITION,
-                grpc.StatusCode.NOT_FOUND,
-            ):
-                raise ServiceValidationError(
-                    f"Room heating mode failed: {err.details()}"
-                ) from err
-            raise
+        await self._async_write_rpc(
+            "Room heating mode",
+            proto_stubs.hvac_service_stub(channel).SetRoomHeatingMode,
+            proto_stubs.SetRoomHeatingModeRequest(ski=self.ski, mode=mode),
+            support_attr="_room_heating_supported",
+            validation=True,
+        )
 
     async def async_start_heartbeat(self) -> None:
         """Start EEBUS heartbeat via gRPC."""
         channel = await self._ensure_channel()
         from . import proto_stubs
         stub = proto_stubs.lpc_service_stub(channel)
-        try:
-            await stub.StartHeartbeat(
-                proto_stubs.DeviceRequest(ski=self.ski), timeout=RPC_TIMEOUT
-            )
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err):
-                self._heartbeat_supported = False
-                _LOGGER.info(
-                    "Heartbeat start unsupported for SKI %s: %s", self.ski, err.details()
-                )
-                return
-            raise
+        await self._async_write_rpc(
+            "Heartbeat start",
+            stub.StartHeartbeat,
+            proto_stubs.DeviceRequest(ski=self.ski),
+            support_attr="_heartbeat_supported",
+        )
 
     async def async_stop_heartbeat(self) -> None:
         """Stop EEBUS heartbeat via gRPC."""
         channel = await self._ensure_channel()
         from . import proto_stubs
         stub = proto_stubs.lpc_service_stub(channel)
-        try:
-            await stub.StopHeartbeat(
-                proto_stubs.DeviceRequest(ski=self.ski), timeout=RPC_TIMEOUT
-            )
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err):
-                self._heartbeat_supported = False
-                _LOGGER.info(
-                    "Heartbeat stop unsupported for SKI %s: %s", self.ski, err.details()
-                )
-                return
-            raise
+        await self._async_write_rpc(
+            "Heartbeat stop",
+            stub.StopHeartbeat,
+            proto_stubs.DeviceRequest(ski=self.ski),
+            support_attr="_heartbeat_supported",
+        )
 
     @property
     def grid_push_enabled(self) -> bool:
@@ -1026,6 +1021,54 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
         return result
 
+    async def _async_publish_provider(
+        self, label: str, stub_factory: str, publish_method: str, request: Any
+    ) -> None:
+        """Publish a provider reading to the bridge, quiet when the provider is off.
+
+        UNIMPLEMENTED/UNAVAILABLE mean the provider is disabled or the bridge is
+        down; skip quietly so a missing provider never spams or fails HA.
+        """
+        channel = await self._ensure_channel()
+        from . import proto_stubs
+
+        stub = getattr(proto_stubs, stub_factory)(channel)
+        try:
+            await getattr(stub, publish_method)(request, timeout=RPC_TIMEOUT)
+            _LOGGER.debug("Pushed %s data: %s", label, request)
+        except grpc.aio.AioRpcError as err:
+            if _is_unimplemented(err) or err.code() == grpc.StatusCode.UNAVAILABLE:
+                _LOGGER.debug(
+                    "%s provider not ready; skipping push: %s", label, _rpc_error_text(err)
+                )
+                return
+            _LOGGER.warning("Failed to push %s data: %s", label, _rpc_error_text(err))
+
+    def _start_provider_push(
+        self,
+        label: str,
+        tracked: tuple[str | None, ...],
+        unsub_attr: str,
+        push: Any,
+    ) -> None:
+        """Track the mapped sensors and push provider data on every change."""
+
+        async def _on_change(_event: Event[EventStateChangedData]) -> None:
+            await push()
+
+        entity_ids = [entity_id for entity_id in tracked if entity_id]
+        setattr(
+            self,
+            unsub_attr,
+            async_track_state_change_event(self.hass, entity_ids, _on_change),
+        )
+        # Initial push so the provider has data before the first sensor change.
+        self._stream_tasks.append(
+            self.hass.async_create_background_task(
+                push(), name=f"eebus_{label}_initial_push_{self.ski}"
+            )
+        )
+
     async def async_push_grid_data(self) -> None:
         """Push the mapped grid sensors to the bridge MGCP provider.
 
@@ -1045,57 +1088,31 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.grid_consumption_energy_entity, ENERGY_UNIT_TO_WH, "grid consumption", minimum=0
         )
 
-        channel = await self._ensure_channel()
         from . import proto_stubs
 
-        stub = proto_stubs.grid_service_stub(channel)
         request = proto_stubs.GridData(power_w=power_w)
         if feed_in_wh is not None:
             request.feed_in_wh = feed_in_wh
         if consumed_wh is not None:
             request.consumed_wh = consumed_wh
-        try:
-            await stub.PublishGridData(request, timeout=RPC_TIMEOUT)
-            _LOGGER.debug(
-                "Pushed grid data: power=%.1fW feed_in=%s consumed=%s",
-                power_w,
-                feed_in_wh,
-                consumed_wh,
-            )
-        except grpc.aio.AioRpcError as err:
-            # UNIMPLEMENTED/UNAVAILABLE = provider disabled or bridge down; skip
-            # quietly so a missing grid provider never spams or fails HA.
-            if _is_unimplemented(err) or err.code() == grpc.StatusCode.UNAVAILABLE:
-                _LOGGER.debug("Grid provider not ready; skipping push: %s", _rpc_error_text(err))
-                return
-            _LOGGER.warning("Failed to push grid data: %s", _rpc_error_text(err))
+        await self._async_publish_provider(
+            "grid", "grid_service_stub", "PublishGridData", request
+        )
 
     def async_start_grid_push(self) -> None:
         """Track mapped grid sensors and push their values to the bridge."""
         if not self.grid_push_enabled:
             return
-        tracked = [
-            entity_id
-            for entity_id in (
+        self._start_provider_push(
+            "grid",
+            (
                 self.grid_power_entity,
                 self.grid_feed_in_energy_entity,
                 self.grid_consumption_energy_entity,
-            )
-            if entity_id
-        ]
-        self._grid_unsub = async_track_state_change_event(
-            self.hass, tracked, self._handle_grid_state_change
+            ),
+            "_grid_unsub",
+            self.async_push_grid_data,
         )
-        # Initial push so the provider has data before the first sensor change.
-        self._stream_tasks.append(
-            self.hass.async_create_background_task(
-                self.async_push_grid_data(), name=f"eebus_grid_initial_push_{self.ski}"
-            )
-        )
-
-    async def _handle_grid_state_change(self, _event: Event[EventStateChangedData]) -> None:
-        """Push grid data whenever a mapped sensor changes state."""
-        await self.async_push_grid_data()
 
     @property
     def pv_push_enabled(self) -> bool:
@@ -1122,54 +1139,31 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.pv_peak_power_entity, POWER_UNIT_TO_W, "PV peak power", minimum=0
         )
 
-        channel = await self._ensure_channel()
         from . import proto_stubs
 
-        stub = proto_stubs.visualization_service_stub(channel)
         request = proto_stubs.PVData(power_w=power_w)
         if yield_wh is not None:
             request.yield_wh = yield_wh
         if peak_power_w is not None:
             request.peak_power_w = peak_power_w
-        try:
-            await stub.PublishPVData(request, timeout=RPC_TIMEOUT)
-            _LOGGER.debug(
-                "Pushed PV data: power=%.1fW yield=%s peak=%s",
-                power_w,
-                yield_wh,
-                peak_power_w,
-            )
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err) or err.code() == grpc.StatusCode.UNAVAILABLE:
-                _LOGGER.debug("PV provider not ready; skipping push: %s", _rpc_error_text(err))
-                return
-            _LOGGER.warning("Failed to push PV data: %s", _rpc_error_text(err))
+        await self._async_publish_provider(
+            "PV", "visualization_service_stub", "PublishPVData", request
+        )
 
     def async_start_pv_push(self) -> None:
         """Track mapped PV sensors and push their values to the bridge."""
         if not self.pv_push_enabled:
             return
-        tracked = [
-            entity_id
-            for entity_id in (
+        self._start_provider_push(
+            "pv",
+            (
                 self.pv_power_entity,
                 self.pv_yield_energy_entity,
                 self.pv_peak_power_entity,
-            )
-            if entity_id
-        ]
-        self._pv_unsub = async_track_state_change_event(
-            self.hass, tracked, self._handle_pv_state_change
+            ),
+            "_pv_unsub",
+            self.async_push_pv_data,
         )
-        self._stream_tasks.append(
-            self.hass.async_create_background_task(
-                self.async_push_pv_data(), name=f"eebus_pv_initial_push_{self.ski}"
-            )
-        )
-
-    async def _handle_pv_state_change(self, _event: Event[EventStateChangedData]) -> None:
-        """Push PV data whenever a mapped sensor changes state."""
-        await self.async_push_pv_data()
 
     @property
     def battery_push_enabled(self) -> bool:
@@ -1198,10 +1192,8 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.battery_soc_entity, SOC_UNIT_TO_PCT, "battery SoC", minimum=0, maximum=100
         )
 
-        channel = await self._ensure_channel()
         from . import proto_stubs
 
-        stub = proto_stubs.visualization_service_stub(channel)
         request = proto_stubs.BatteryData(power_w=power_w)
         if charged_wh is not None:
             request.charged_wh = charged_wh
@@ -1209,47 +1201,25 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             request.discharged_wh = discharged_wh
         if soc_pct is not None:
             request.state_of_charge_pct = soc_pct
-        try:
-            await stub.PublishBatteryData(request, timeout=RPC_TIMEOUT)
-            _LOGGER.debug(
-                "Pushed battery data: power=%.1fW charged=%s discharged=%s soc=%s",
-                power_w,
-                charged_wh,
-                discharged_wh,
-                soc_pct,
-            )
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err) or err.code() == grpc.StatusCode.UNAVAILABLE:
-                _LOGGER.debug("Battery provider not ready; skipping push: %s", _rpc_error_text(err))
-                return
-            _LOGGER.warning("Failed to push battery data: %s", _rpc_error_text(err))
+        await self._async_publish_provider(
+            "battery", "visualization_service_stub", "PublishBatteryData", request
+        )
 
     def async_start_battery_push(self) -> None:
         """Track mapped battery sensors and push their values to the bridge."""
         if not self.battery_push_enabled:
             return
-        tracked = [
-            entity_id
-            for entity_id in (
+        self._start_provider_push(
+            "battery",
+            (
                 self.battery_power_entity,
                 self.battery_charged_energy_entity,
                 self.battery_discharged_energy_entity,
                 self.battery_soc_entity,
-            )
-            if entity_id
-        ]
-        self._battery_unsub = async_track_state_change_event(
-            self.hass, tracked, self._handle_battery_state_change
+            ),
+            "_battery_unsub",
+            self.async_push_battery_data,
         )
-        self._stream_tasks.append(
-            self.hass.async_create_background_task(
-                self.async_push_battery_data(), name=f"eebus_battery_initial_push_{self.ski}"
-            )
-        )
-
-    async def _handle_battery_state_change(self, _event: Event[EventStateChangedData]) -> None:
-        """Push battery data whenever a mapped sensor changes state."""
-        await self.async_push_battery_data()
 
     def async_start_streams(self) -> None:
         """Start background tasks consuming bridge event streams."""
@@ -1431,84 +1401,25 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.hass.async_create_task(self.async_request_refresh())
 
     def _handle_measurement_event(self, event: Any) -> None:
-        from . import proto_stubs
-
         if not self._event_matches(event.ski):
             return
-        event_type = event.event_type
-        if event_type == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_POWER_UPDATED:
-            if event.HasField("power"):
-                self._push_data({"power_watts": event.power.watts})
-            else:
-                # Change signalled without a payload; reconcile via poll.
-                self.hass.async_create_task(self.async_request_refresh())
-        elif event_type == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_ENERGY_UPDATED:
-            if event.HasField("energy"):
-                self._push_data({"energy_consumed_kwh": event.energy.kilowatt_hours})
-            else:
-                self.hass.async_create_task(self.async_request_refresh())
-        elif (
-            event_type
-            == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED
-        ):
-            if event.HasField("measurement"):
-                self._push_data({"dhw_temperature_c": event.measurement.value})
-            else:
-                self.hass.async_create_task(self.async_request_refresh())
-        elif (
-            event_type
-            == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_DHW_TEMPERATURE_SUPPORT_UPDATED
-        ):
+        value_events, support_events = _measurement_event_map()
+        if event.event_type in support_events:
             self.hass.async_create_task(self.async_request_refresh())
-        elif event_type == (
-            proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED
-        ):
-            if event.HasField("measurement"):
-                self._push_data({"room_temperature_c": event.measurement.value})
-            else:
-                self.hass.async_create_task(self.async_request_refresh())
-        elif event_type == (
-            proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_ROOM_TEMPERATURE_SUPPORT_UPDATED
-        ):
+            return
+        spec = value_events.get(event.event_type)
+        if spec is None:
+            return
+        field, attr, key = spec
+        if not event.HasField(field):
+            # Change signalled without a payload; reconcile via poll.
             self.hass.async_create_task(self.async_request_refresh())
-        elif event_type == (
-            proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED
-        ):
-            if event.HasField("measurement"):
-                self._push_data({"outdoor_temperature_c": event.measurement.value})
-            else:
-                self.hass.async_create_task(self.async_request_refresh())
-        elif event_type == (
-            proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED
-        ):
-            self.hass.async_create_task(self.async_request_refresh())
-        elif event_type == (
-            proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED
-        ):
-            if event.HasField("measurement"):
-                self._push_data({"flow_temperature_c": event.measurement.value})
-            else:
-                self.hass.async_create_task(self.async_request_refresh())
-        elif event_type == (
-            proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED
-        ):
-            if event.HasField("measurement"):
-                self._push_data({"return_temperature_c": event.measurement.value})
-            else:
-                self.hass.async_create_task(self.async_request_refresh())
-        elif event_type == (
-            proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED
-        ):
-            if event.HasField("device_diagnostics"):
-                self._push_data(
-                    {
-                        "device_operating_state": (
-                            event.device_diagnostics.operating_state or None
-                        )
-                    }
-                )
-            else:
-                self.hass.async_create_task(self.async_request_refresh())
+            return
+        value = getattr(getattr(event, field), attr)
+        if isinstance(value, str):
+            # Empty enum/state strings mean "no value" (device_operating_state).
+            value = value or None
+        self._push_data({key: value})
 
     def _handle_dhw_event(self, event: Any) -> None:
         from . import proto_stubs
@@ -1523,13 +1434,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._dhw_supported = True
             self._push_data(
                 {
-                    "dhw_setpoint": {
-                        "value_celsius": setpoint.value_celsius,
-                        "min_celsius": setpoint.min_celsius,
-                        "max_celsius": setpoint.max_celsius,
-                        "step_celsius": setpoint.step_celsius,
-                        "writable": setpoint.writable,
-                    },
+                    "dhw_setpoint": _setpoint_to_dict(setpoint),
                     "dhw_supported": True,
                 }
             )
@@ -1576,19 +1481,11 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if state.HasField("current_temperature_celsius"):
             updates["room_temperature_c"] = state.current_temperature_celsius
         if state.HasField("setpoint"):
-            updates["room_heating_setpoint"] = {
-                "value_celsius": state.setpoint.value_celsius,
-                "min_celsius": state.setpoint.min_celsius,
-                "max_celsius": state.setpoint.max_celsius,
-                "step_celsius": state.setpoint.step_celsius,
-                "writable": state.setpoint.writable,
-            }
+            updates["room_heating_setpoint"] = _setpoint_to_dict(state.setpoint)
         if state.HasField("system_function"):
-            updates["room_heating_system_function"] = {
-                "operation_mode": state.system_function.operation_mode,
-                "available_modes": list(state.system_function.available_modes),
-                "mode_writable": state.system_function.mode_writable,
-            }
+            updates["room_heating_system_function"] = _system_function_to_dict(
+                state.system_function
+            )
         self._push_data(updates)
 
     async def async_shutdown(self) -> None:
