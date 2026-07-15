@@ -224,7 +224,15 @@ func main() {
 		}
 	}()
 
-	grpcSrv := bridgegrpc.NewServer(cfg.GRPC.Bind, cfg.GRPC.Port, cfg.GRPC.EnableReflection)
+	grpcSrv, err := bridgegrpc.NewServerWithSecurity(
+		cfg.GRPC.Bind,
+		cfg.GRPC.Port,
+		cfg.GRPC.EnableReflection,
+		cfg.GRPC.Security,
+	)
+	if err != nil {
+		log.Fatalf("configuring gRPC server security: %v", err)
+	}
 
 	deviceSvc := bridgegrpc.NewDeviceService(bridgeSvc.Callbacks(), bus, ski, registry)
 	lpcSvc := bridgegrpc.NewLPCService(lpcWrapper, bus, registry)
@@ -262,14 +270,11 @@ func main() {
 	pb.RegisterDHWServiceServer(grpcSrv.GRPCServer(), dhwSvc)
 	pb.RegisterHVACServiceServer(grpcSrv.GRPCServer(), hvacSvc)
 
-	// The grid/PV/battery publish RPCs inject values into EEBUS state that
-	// downstream equipment consumes, and the gRPC server has no transport auth.
-	// Only expose them when bound to loopback so a routable bind can't let any
-	// reachable client forge grid/PV/battery readings.
-	if bridgegrpc.RegisterPushServices(grpcSrv, cfg.GRPC.Bind, gridSvc, visualizationSvc) {
-		log.Println("Registered provider push services (grid/PV/battery) on loopback bind")
+	// Provider push services are safe on loopback or behind tls_token auth.
+	if bridgegrpc.RegisterPushServices(grpcSrv, cfg.GRPC.Bind, cfg.GRPC.Security.Mode, gridSvc, visualizationSvc) {
+		log.Println("Registered provider push services (grid/PV/battery)")
 	} else {
-		log.Printf("Refusing to register provider push services: gRPC bind %q is not loopback; grid/PV/battery publish RPCs disabled", cfg.GRPC.Bind)
+		log.Printf("Refusing to register provider push services: gRPC bind %q is not secured", cfg.GRPC.Bind)
 	}
 
 	go func() {

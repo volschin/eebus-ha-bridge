@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"sort"
@@ -14,9 +15,9 @@ import (
 	"time"
 
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
-	"google.golang.org/grpc"
+	"github.com/volschin/eebus-bridge/internal/config"
+	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -51,12 +52,17 @@ func main() {
 	noClear := flag.Bool("no-clear", false, "do not clear the terminal between snapshots")
 	debug := flag.Bool("debug", false, "show all RPC errors, including not found/unavailable")
 	register := flag.Bool("register", false, "register/trust the requested SKI before reading")
+	securityMode := flag.String("security-mode", string(config.GRPCSecurityModeLoopback), "gRPC security mode: loopback or tls_token")
+	tlsCAFile := flag.String("tls-ca-file", "", "CA certificate file for tls_token mode")
+	tokenFile := flag.String("token-file", "", "bearer token file for tls_token mode")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if err := run(ctx, *host, *port, *ski, *interval, *once, !*noClear, *debug, *register, os.Stdout, os.Stderr); err != nil {
+	if err := run(ctx, *host, *port, *ski, *interval, *once, !*noClear, *debug, *register, bridgegrpc.ClientSecurityConfig{
+		Mode: config.GRPCSecurityMode(*securityMode), CACertFile: *tlsCAFile, TokenFile: *tokenFile,
+	}, os.Stdout, os.Stderr); err != nil {
 		log.Fatalf("%v", err)
 	}
 }
@@ -71,6 +77,7 @@ func run(
 	clearScreen bool,
 	debug bool,
 	register bool,
+	security bridgegrpc.ClientSecurityConfig,
 	out io.Writer,
 	errOut io.Writer,
 ) error {
@@ -78,10 +85,7 @@ func run(
 		return fmt.Errorf("interval must be > 0")
 	}
 
-	conn, err := grpc.NewClient(
-		fmt.Sprintf("%s:%d", host, port),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	conn, err := bridgegrpc.NewClient(net.JoinHostPort(host, fmt.Sprintf("%d", port)), security)
 	if err != nil {
 		return fmt.Errorf("dial bridge: %w", err)
 	}

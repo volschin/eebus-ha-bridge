@@ -1,9 +1,12 @@
 package config
 
 import (
+	"crypto/tls"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -56,9 +59,27 @@ type ExperimentalConfig struct {
 }
 
 type GRPCConfig struct {
-	Port             int    `yaml:"port"`
-	Bind             string `yaml:"bind"`
-	EnableReflection bool   `yaml:"enable_reflection"`
+	Port             int                `yaml:"port"`
+	Bind             string             `yaml:"bind"`
+	EnableReflection bool               `yaml:"enable_reflection"`
+	Security         GRPCSecurityConfig `yaml:"security"`
+}
+
+type GRPCSecurityMode string
+
+const (
+	GRPCSecurityModeLoopback GRPCSecurityMode = "loopback"
+	GRPCSecurityModeTLSToken GRPCSecurityMode = "tls_token"
+)
+
+// GRPCSecurityConfig controls transport security for the bridge API. The
+// certificate, private key, and bearer token are deliberately referenced by
+// path so secret material never becomes part of the parsed configuration.
+type GRPCSecurityConfig struct {
+	Mode        GRPCSecurityMode `yaml:"mode"`
+	TLSCertFile string           `yaml:"tls_cert_file"`
+	TLSKeyFile  string           `yaml:"tls_key_file"`
+	TokenFile   string           `yaml:"token_file"`
 }
 
 type EEBUSConfig struct {
@@ -98,6 +119,9 @@ func LoadFromFile(path string) (*Config, error) {
 
 	applyDefaults(cfg)
 	applyEnvOverrides(cfg)
+	if err := validateGRPCSecurity(cfg.GRPC); err != nil {
+		return nil, fmt.Errorf("validating gRPC security: %w", err)
+	}
 
 	return cfg, nil
 }
@@ -108,6 +132,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.GRPC.Bind == "" {
 		cfg.GRPC.Bind = "127.0.0.1"
+	}
+	if cfg.GRPC.Security.Mode == "" {
+		cfg.GRPC.Security.Mode = GRPCSecurityModeLoopback
 	}
 	if cfg.EEBUS.Port == 0 {
 		cfg.EEBUS.Port = 4712
@@ -146,6 +173,18 @@ func applyEnvOverrides(cfg *Config) {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			cfg.GRPC.EnableReflection = enabled
 		}
+	}
+	if v := os.Getenv("EEBUS_GRPC_SECURITY_MODE"); v != "" {
+		cfg.GRPC.Security.Mode = GRPCSecurityMode(v)
+	}
+	if v := os.Getenv("EEBUS_GRPC_TLS_CERT_FILE"); v != "" {
+		cfg.GRPC.Security.TLSCertFile = v
+	}
+	if v := os.Getenv("EEBUS_GRPC_TLS_KEY_FILE"); v != "" {
+		cfg.GRPC.Security.TLSKeyFile = v
+	}
+	if v := os.Getenv("EEBUS_GRPC_TOKEN_FILE"); v != "" {
+		cfg.GRPC.Security.TokenFile = v
 	}
 	if v := os.Getenv("EEBUS_PORT"); v != "" {
 		if port, err := strconv.Atoi(v); err == nil {
@@ -211,4 +250,39 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("EEBUS_EXP_TRUST_SKI"); v != "" {
 		cfg.Experimental.TrustSKI = v
 	}
+}
+
+func validateGRPCSecurity(cfg GRPCConfig) error {
+	switch cfg.Security.Mode {
+	case GRPCSecurityModeLoopback:
+		if !isLoopbackBind(cfg.Bind) {
+			return fmt.Errorf("security mode %q requires a loopback bind address; bind %q requires tls_token", cfg.Security.Mode, cfg.Bind)
+		}
+		return nil
+	case GRPCSecurityModeTLSToken:
+		if cfg.Security.TLSCertFile == "" || cfg.Security.TLSKeyFile == "" || cfg.Security.TokenFile == "" {
+			return fmt.Errorf("security mode %q requires tls_cert_file, tls_key_file, and token_file", cfg.Security.Mode)
+		}
+		if _, err := tls.LoadX509KeyPair(cfg.Security.TLSCertFile, cfg.Security.TLSKeyFile); err != nil {
+			return fmt.Errorf("loading gRPC TLS certificate/key: %w", err)
+		}
+		token, err := os.ReadFile(cfg.Security.TokenFile) // #nosec G304 -- operator-supplied configuration path
+		if err != nil {
+			return fmt.Errorf("reading gRPC token file %q: %w", cfg.Security.TokenFile, err)
+		}
+		if strings.TrimSpace(string(token)) == "" {
+			return fmt.Errorf("gRPC token file %q is empty", cfg.Security.TokenFile)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown security mode %q (expected loopback or tls_token)", cfg.Security.Mode)
+	}
+}
+
+func isLoopbackBind(bind string) bool {
+	if strings.EqualFold(bind, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(bind)
+	return ip != nil && ip.IsLoopback()
 }

@@ -67,6 +67,79 @@ Alternativ als Binary:
 ./eebus-bridge --config config.yaml
 ```
 
+Bestehende Installationen, die gRPC auf `127.0.0.1` oder `::1` binden,
+benoetigen keine Migration: Ohne weitere Konfiguration bleibt der Modus
+`loopback` aktiv und verwendet lokal weiterhin Plaintext. Ein Bind auf
+`0.0.0.0`, `::` oder eine LAN-Adresse wird dagegen ohne `tls_token` abgelehnt.
+
+### Migration: Bridge auf einem entfernten Host
+
+Remote-gRPC verwendet ein Serverzertifikat und ein Token. Zertifikat,
+Private Key und Token liegen als Dateien auf dem Bridge-Host; Home Assistant
+erhaelt nur das CA-Zertifikat und das Token. Der Private Key darf den
+Bridge-Host nie verlassen.
+
+1. Eine eigene CA und ein Serverzertifikat erstellen. Der Hostname oder die
+   IP-Adresse, die spaeter in Home Assistant eingetragen wird, muss als SAN im
+   Serverzertifikat stehen. Beispiel mit OpenSSL (Hostname/IP anpassen):
+
+   ```bash
+   install -d -m 700 grpc-secrets
+   openssl genrsa -out grpc-secrets/ca.key 4096
+   openssl req -x509 -new -sha256 -days 3650 \
+     -key grpc-secrets/ca.key -out grpc-secrets/ca.crt \
+     -subj "/CN=EEBUS Bridge CA"
+   openssl genrsa -out grpc-secrets/server.key 3072
+   openssl req -new -key grpc-secrets/server.key \
+     -out grpc-secrets/server.csr -subj "/CN=eebus-bridge" \
+     -addext "subjectAltName=DNS:eebus-bridge,IP:192.168.1.50"
+   openssl x509 -req -sha256 -days 825 \
+     -in grpc-secrets/server.csr -CA grpc-secrets/ca.crt \
+     -CAkey grpc-secrets/ca.key -CAcreateserial \
+     -copy_extensions copy -out grpc-secrets/server.crt
+   openssl rand -hex 32 > grpc-secrets/token
+   chmod 600 grpc-secrets/ca.key grpc-secrets/server.key grpc-secrets/token
+   ```
+
+2. Die Dateien read-only in den Bridge-Container mounten und `grpc` in
+   `config.yaml` konfigurieren:
+
+   ```yaml
+   grpc:
+     bind: "0.0.0.0"
+     port: 50051
+     enable_reflection: false
+     security:
+       mode: "tls_token"
+       tls_cert_file: "/etc/eebus-bridge/grpc/server.crt"
+       tls_key_file: "/etc/eebus-bridge/grpc/server.key"
+       token_file: "/etc/eebus-bridge/grpc/token"
+   ```
+
+   Fuer Docker Compose beispielsweise zusaetzlich:
+
+   ```yaml
+   volumes:
+     - ./grpc-secrets:/etc/eebus-bridge/grpc:ro
+   ```
+
+3. TCP-Port 50051 nur fuer den Home-Assistant-Host in der Firewall freigeben
+   und die Bridge neu starten. Bei fehlenden/unlesbaren Dateien oder einem
+   leeren Token verweigert die Bridge den Start.
+
+4. In Home Assistant die EEBUS-Integration neu einrichten oder ueber
+   **Configure** rekonfigurieren:
+
+   - **Bridge Host:** exakt der DNS-Name oder die IP aus dem Zertifikat-SAN
+   - **Security mode:** `TLS + token`
+   - **TLS CA certificate:** kompletter PEM-Inhalt von `ca.crt`
+   - **Authentication token:** Inhalt der Datei `token`
+
+   Nach einer Token-Rotation startet ein `UNAUTHENTICATED`-Fehler automatisch
+   den Reauthentication Flow. Alternativ koennen CA und Token ueber
+   **Configure** ersetzt werden; ein leeres Tokenfeld behaelt dort das bisherige
+   Token.
+
 ### Diagnose: Live-Watcher
 
 Zum schnellen Pruefen, welche Daten die Bridge aktuell liefert, gibt es jetzt
@@ -82,19 +155,30 @@ Ohne `--ski` nimmt das Tool automatisch das erste gepaarte Geraet. Mit
 damit der SHIP/EEBUS-Verbindungsaufbau angestossen wird. Mit `--once` gibt es
 nur einen Snapshot aus, mit `--debug` werden auch `NotFound`-/`Unavailable`-
 Fehler angezeigt, und mit `--no-clear` bleibt der Verlauf im Terminal sichtbar.
+Fuer eine entfernte Bridge dieselben Dateien verwenden wie der sichere Kanal:
+
+```bash
+go run ./cmd/eebus-watch --host eebus-bridge --port 50051 \
+  --security-mode tls_token --tls-ca-file ./grpc-secrets/ca.crt \
+  --token-file ./grpc-secrets/token --ski <REMOTE-SKI>
+```
 
 ## Einrichtung
 
 1. **Settings** > **Devices & Services** > **Add Integration**
 2. Nach **EEBUS** suchen
 3. **Bridge-Host** und **Bridge-Port** eingeben (Standard: `localhost:50051`)
-4. Die Integration testet die Verbindung zur Bridge
-5. **Geraete-SKI** eingeben (wird in der Bridge-Log beim Discovery angezeigt)
-6. In der **myVaillant-App** das Pairing bestaetigen
+4. Sicherheitsmodus waehlen. Fuer eine lokale Loopback-Verbindung ist keine
+   weitere Eingabe noetig; fuer Remote-Verbindungen CA-Zertifikat und Token
+   eingeben.
+5. Die Integration testet den gesicherten Kanal zur Bridge.
+6. **Geraete-SKI** eingeben (wird in der Bridge-Log beim Discovery angezeigt)
+7. In der **myVaillant-App** das Pairing bestaetigen
 
 ### Rekonfiguration
 
-Bridge-Adresse aendern: **Settings** > **Devices & Services** > **EEBUS** > **Configure**
+Bridge-Adresse, Sicherheitsmodus, CA-Zertifikat oder Token aendern:
+**Settings** > **Devices & Services** > **EEBUS** > **Configure**
 
 ### Entfernen
 

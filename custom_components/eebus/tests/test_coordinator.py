@@ -4,10 +4,12 @@ import asyncio
 import inspect
 from datetime import timedelta
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import grpc
+import pytest
 from grpc.aio import AioRpcError, Metadata
+from homeassistant.exceptions import ConfigEntryAuthFailed
 
 from custom_components.eebus import proto_stubs
 from custom_components.eebus.coordinator import EebusCoordinator, POLL_INTERVAL
@@ -59,6 +61,28 @@ def test_coordinator_init():
     assert coordinator.ski == "test-ski"
     assert coordinator._channel is None
     assert coordinator._was_unavailable is False
+
+
+async def test_unauthenticated_poll_starts_reauthentication():
+    """An invalid bridge token is surfaced as a config-entry auth failure."""
+    coordinator = EebusCoordinator.__new__(EebusCoordinator)
+    coordinator._channel = None
+    coordinator._not_found_streak = 0
+    coordinator._was_unavailable = False
+    coordinator._ensure_channel = AsyncMock(return_value=MagicMock())
+    stub = MagicMock()
+    stub.GetStatus = AsyncMock(
+        side_effect=AioRpcError(
+            grpc.StatusCode.UNAUTHENTICATED,
+            Metadata(),
+            Metadata(),
+            details="valid bearer token required",
+        )
+    )
+
+    with patch.object(proto_stubs, "device_service_stub", return_value=stub):
+        with pytest.raises(ConfigEntryAuthFailed):
+            await coordinator._async_update_data()
 
 
 def _make_coordinator(ski="test-ski", data=None):
