@@ -95,7 +95,7 @@ func (s *MonitoringService) GetPowerConsumption(_ context.Context, req *pb.Devic
 	if s.monitoring == nil {
 		return nil, status.Error(codes.Unavailable, "monitoring use case not initialized")
 	}
-	value, err := s.readPower(req.Ski)
+	value, err := readMetric("power", s.resolveForRead(req.Ski), s.monitoring.Power)
 	if err != nil {
 		log.Printf("[DEBUG] Monitoring.GetPowerConsumption read failed: requested_ski=%s err=%v", req.Ski, err)
 		if status.Code(err) != codes.Unknown {
@@ -117,7 +117,7 @@ func (s *MonitoringService) GetEnergyConsumed(_ context.Context, req *pb.DeviceR
 	if s.monitoring == nil {
 		return nil, status.Error(codes.Unavailable, "monitoring use case not initialized")
 	}
-	value, err := s.readEnergyConsumed(req.Ski)
+	value, err := readMetric("energy-consumed", s.resolveForRead(req.Ski), s.monitoring.EnergyConsumed)
 	if err != nil {
 		log.Printf("[DEBUG] Monitoring.GetEnergyConsumed read failed: requested_ski=%s err=%v", req.Ski, err)
 		if status.Code(err) != codes.Unknown {
@@ -141,38 +141,39 @@ func (s *MonitoringService) GetMeasurements(_ context.Context, req *pb.DeviceReq
 	}
 	now := timestamppb.Now()
 	measurements := make([]*pb.MeasurementEntry, 0, 12)
+	resolved := s.resolveForRead(req.Ski)
 
-	if value, err := s.readPower(req.Ski); err == nil {
+	if value, err := readMetric("power", resolved, s.monitoring.Power); err == nil {
 		appendMeasurement(&measurements, now, "power_consumption", value, "W")
 	}
 
-	if values, err := s.readPowerPerPhase(req.Ski); err == nil {
+	if values, err := readMetric("power-per-phase", resolved, s.monitoring.PowerPerPhase); err == nil {
 		for idx, value := range values {
 			appendMeasurement(&measurements, now, fmt.Sprintf("power_l%d", idx+1), value, "W")
 		}
 	}
 
-	if values, err := s.readCurrentPerPhase(req.Ski); err == nil {
+	if values, err := readMetric("current-per-phase", resolved, s.monitoring.CurrentPerPhase); err == nil {
 		for idx, value := range values {
 			appendMeasurement(&measurements, now, fmt.Sprintf("current_l%d", idx+1), value, "A")
 		}
 	}
 
-	if values, err := s.readVoltagePerPhase(req.Ski); err == nil {
+	if values, err := readMetric("voltage-per-phase", resolved, s.monitoring.VoltagePerPhase); err == nil {
 		for idx, value := range values {
 			appendMeasurement(&measurements, now, fmt.Sprintf("voltage_l%d", idx+1), value, "V")
 		}
 	}
 
-	if value, err := s.readFrequency(req.Ski); err == nil {
+	if value, err := readMetric("frequency", resolved, s.monitoring.Frequency); err == nil {
 		appendMeasurement(&measurements, now, "frequency", value, "Hz")
 	}
 
-	if value, err := s.readEnergyConsumed(req.Ski); err == nil {
+	if value, err := readMetric("energy-consumed", resolved, s.monitoring.EnergyConsumed); err == nil {
 		appendMeasurement(&measurements, now, "energy_consumed", value, "kWh")
 	}
 
-	if value, err := s.readEnergyProduced(req.Ski); err == nil {
+	if value, err := readMetric("energy-produced", resolved, s.monitoring.EnergyProduced); err == nil {
 		appendMeasurement(&measurements, now, "energy_produced", value, "kWh")
 	}
 
@@ -287,14 +288,14 @@ func (s *MonitoringService) SubscribeMeasurements(req *pb.DeviceRequest, stream 
 func (s *MonitoringService) attachMeasurementPayload(event *pb.MeasurementEvent, ski string, eventType pb.MeasurementEventType) {
 	switch eventType {
 	case pb.MeasurementEventType_MEASUREMENT_EVENT_POWER_UPDATED:
-		if value, err := s.readPower(ski); err == nil {
+		if value, err := readMetric("power", s.resolveForRead(ski), s.monitoring.Power); err == nil {
 			event.Data = &pb.MeasurementEvent_Power{Power: &pb.PowerMeasurement{
 				Watts:     value,
 				Timestamp: timestamppb.Now(),
 			}}
 		}
 	case pb.MeasurementEventType_MEASUREMENT_EVENT_ENERGY_UPDATED:
-		if value, err := s.readEnergyConsumed(ski); err == nil {
+		if value, err := readMetric("energy-consumed", s.resolveForRead(ski), s.monitoring.EnergyConsumed); err == nil {
 			event.Data = &pb.MeasurementEvent_Energy{Energy: &pb.EnergyMeasurement{
 				KilowattHours: value,
 				Timestamp:     timestamppb.Now(),
@@ -373,125 +374,52 @@ func (s *MonitoringService) resolveEntity(ski string) (spineapi.EntityRemoteInte
 	return entity, nil
 }
 
-func (s *MonitoringService) readPower(ski string) (float64, error) {
+// resolvedEntity carries the outcome of resolveEntity so multi-metric callers
+// like GetMeasurements resolve once and share the result across all reads.
+type resolvedEntity struct {
+	ski    string
+	entity spineapi.EntityRemoteInterface
+	err    error
+}
+
+func (s *MonitoringService) resolveForRead(ski string) resolvedEntity {
 	entity, err := s.resolveEntity(ski)
-	if err == nil {
-		return s.monitoring.Power(entity)
+	return resolvedEntity{ski: ski, entity: entity, err: err}
+}
+
+// readMetric reads one measurement through the monitoring use case. Reads are
+// best-effort: GetMeasurements only appends a result when the read succeeds,
+// so a device that does not advertise a given measurement simply omits it.
+// When the SKI did not resolve, the read is retried once with a nil entity
+// (guarded against panics inside eebus-go), matching the behaviour of the
+// former per-metric readers.
+func readMetric[T any](label string, r resolvedEntity, read func(spineapi.EntityRemoteInterface) (T, error)) (T, error) {
+	var zero T
+	if r.err == nil {
+		return read(r.entity)
 	}
-	if status.Code(err) != codes.NotFound {
-		log.Printf("[DEBUG] Monitoring.readPower resolveEntity failed without fallback: requested_ski=%s err=%v", ski, err)
-		return 0, err
+	if status.Code(r.err) != codes.NotFound {
+		log.Printf("[DEBUG] Monitoring.readMetric %s resolveEntity failed without fallback: requested_ski=%s err=%v", label, r.ski, r.err)
+		return zero, r.err
 	}
-	log.Printf("[DEBUG] Monitoring.readPower attempting nil-entity fallback: requested_ski=%s", ski)
-	value, fallbackErr := s.safePowerNilEntity()
+	log.Printf("[DEBUG] Monitoring.readMetric %s attempting nil-entity fallback: requested_ski=%s", label, r.ski)
+	value, fallbackErr := safeRead(label, func() (T, error) { return read(nil) })
 	if fallbackErr != nil {
-		log.Printf("[DEBUG] Monitoring.readPower nil-entity fallback failed: requested_ski=%s err=%v", ski, fallbackErr)
-		return 0, err
+		log.Printf("[DEBUG] Monitoring.readMetric %s nil-entity fallback failed: requested_ski=%s err=%v", label, r.ski, fallbackErr)
+		return zero, r.err
 	}
-	log.Printf("[DEBUG] Monitoring.readPower nil-entity fallback succeeded: requested_ski=%s watts=%g", ski, value)
+	log.Printf("[DEBUG] Monitoring.readMetric %s nil-entity fallback succeeded: requested_ski=%s", label, r.ski)
 	return value, nil
 }
 
-func (s *MonitoringService) readEnergyConsumed(ski string) (float64, error) {
-	entity, err := s.resolveEntity(ski)
-	if err == nil {
-		return s.monitoring.EnergyConsumed(entity)
-	}
-	if status.Code(err) != codes.NotFound {
-		log.Printf("[DEBUG] Monitoring.readEnergyConsumed resolveEntity failed without fallback: requested_ski=%s err=%v", ski, err)
-		return 0, err
-	}
-	log.Printf("[DEBUG] Monitoring.readEnergyConsumed attempting nil-entity fallback: requested_ski=%s", ski)
-	value, fallbackErr := s.safeEnergyConsumedNilEntity()
-	if fallbackErr != nil {
-		log.Printf("[DEBUG] Monitoring.readEnergyConsumed nil-entity fallback failed: requested_ski=%s err=%v", ski, fallbackErr)
-		return 0, err
-	}
-	log.Printf("[DEBUG] Monitoring.readEnergyConsumed nil-entity fallback succeeded: requested_ski=%s kWh=%f", ski, value)
-	return value, nil
-}
-
-// The following readers expose the additional MPC measurements (per-phase
-// power/current/voltage, grid frequency and produced energy). They are
-// best-effort: GetMeasurements only appends their results when the read
-// succeeds, so a device that does not advertise a given measurement simply
-// omits it rather than failing the whole call. Each falls back to a nil-entity
-// read (guarded against panics) when the SKI cannot be resolved, matching the
-// behaviour of readPower / readEnergyConsumed.
-
-func (s *MonitoringService) readEnergyProduced(ski string) (float64, error) {
-	entity, err := s.resolveEntity(ski)
-	if err == nil {
-		return s.monitoring.EnergyProduced(entity)
-	}
-	if status.Code(err) != codes.NotFound {
-		return 0, err
-	}
-	value, fallbackErr := s.safeEnergyProducedNilEntity()
-	if fallbackErr != nil {
-		return 0, err
-	}
-	return value, nil
-}
-
-func (s *MonitoringService) readPowerPerPhase(ski string) ([]float64, error) {
-	entity, err := s.resolveEntity(ski)
-	if err == nil {
-		return s.monitoring.PowerPerPhase(entity)
-	}
-	if status.Code(err) != codes.NotFound {
-		return nil, err
-	}
-	values, fallbackErr := s.safePowerPerPhaseNilEntity()
-	if fallbackErr != nil {
-		return nil, err
-	}
-	return values, nil
-}
-
-func (s *MonitoringService) readCurrentPerPhase(ski string) ([]float64, error) {
-	entity, err := s.resolveEntity(ski)
-	if err == nil {
-		return s.monitoring.CurrentPerPhase(entity)
-	}
-	if status.Code(err) != codes.NotFound {
-		return nil, err
-	}
-	values, fallbackErr := s.safeCurrentPerPhaseNilEntity()
-	if fallbackErr != nil {
-		return nil, err
-	}
-	return values, nil
-}
-
-func (s *MonitoringService) readVoltagePerPhase(ski string) ([]float64, error) {
-	entity, err := s.resolveEntity(ski)
-	if err == nil {
-		return s.monitoring.VoltagePerPhase(entity)
-	}
-	if status.Code(err) != codes.NotFound {
-		return nil, err
-	}
-	values, fallbackErr := s.safeVoltagePerPhaseNilEntity()
-	if fallbackErr != nil {
-		return nil, err
-	}
-	return values, nil
-}
-
-func (s *MonitoringService) readFrequency(ski string) (float64, error) {
-	entity, err := s.resolveEntity(ski)
-	if err == nil {
-		return s.monitoring.Frequency(entity)
-	}
-	if status.Code(err) != codes.NotFound {
-		return 0, err
-	}
-	value, fallbackErr := s.safeFrequencyNilEntity()
-	if fallbackErr != nil {
-		return 0, err
-	}
-	return value, nil
+// safeRead guards a nil-entity read against panics inside eebus-go.
+func safeRead[T any](label string, read func() (T, error)) (value T, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("panic during nil-entity %s read: %v", label, recovered)
+		}
+	}()
+	return read()
 }
 
 func appendMeasurement(measurements *[]*pb.MeasurementEntry, now *timestamppb.Timestamp, measurementType string, value float64, unit string) {
@@ -501,67 +429,4 @@ func appendMeasurement(measurements *[]*pb.MeasurementEntry, now *timestamppb.Ti
 		Unit:      unit,
 		Timestamp: now,
 	})
-}
-
-func (s *MonitoringService) safeEnergyProducedNilEntity() (value float64, err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("panic during nil-entity produced energy read: %v", recovered)
-		}
-	}()
-	return s.monitoring.EnergyProduced(nil)
-}
-
-func (s *MonitoringService) safePowerPerPhaseNilEntity() (values []float64, err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("panic during nil-entity power-per-phase read: %v", recovered)
-		}
-	}()
-	return s.monitoring.PowerPerPhase(nil)
-}
-
-func (s *MonitoringService) safeCurrentPerPhaseNilEntity() (values []float64, err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("panic during nil-entity current-per-phase read: %v", recovered)
-		}
-	}()
-	return s.monitoring.CurrentPerPhase(nil)
-}
-
-func (s *MonitoringService) safeVoltagePerPhaseNilEntity() (values []float64, err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("panic during nil-entity voltage-per-phase read: %v", recovered)
-		}
-	}()
-	return s.monitoring.VoltagePerPhase(nil)
-}
-
-func (s *MonitoringService) safeFrequencyNilEntity() (value float64, err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("panic during nil-entity frequency read: %v", recovered)
-		}
-	}()
-	return s.monitoring.Frequency(nil)
-}
-
-func (s *MonitoringService) safePowerNilEntity() (value float64, err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("panic during nil-entity power read: %v", recovered)
-		}
-	}()
-	return s.monitoring.Power(nil)
-}
-
-func (s *MonitoringService) safeEnergyConsumedNilEntity() (value float64, err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("panic during nil-entity energy read: %v", recovered)
-		}
-	}()
-	return s.monitoring.EnergyConsumed(nil)
 }
