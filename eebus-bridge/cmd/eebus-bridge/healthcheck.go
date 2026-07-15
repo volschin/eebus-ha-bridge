@@ -30,8 +30,11 @@ func runHealthcheck(configPath string) error {
 		if err != nil {
 			return fmt.Errorf("reading TLS server identity: %w", err)
 		}
-		if host == "0.0.0.0" || host == "::" {
+		switch host {
+		case "0.0.0.0":
 			host = "127.0.0.1"
+		case "::":
+			host = "::1"
 		}
 	}
 	addr := net.JoinHostPort(host, fmt.Sprintf("%d", cfg.GRPC.Port))

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -133,6 +134,31 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
         self._tls_ca_certificate: str | None = None
         self._auth_token: str | None = None
 
+    async def _async_port_reachable(self, host: str, port: int) -> bool:
+        """Check whether something is listening on host:port.
+
+        Zeroconf-discovered SHIP devices are not necessarily the bridge
+        itself (every EEBUS device advertises `_ship._tcp`), and the real
+        probe in `_async_probe_bridge` needs a security mode/credentials the
+        discovery flow doesn't have yet. A bare TCP connect can't confirm
+        it's actually the bridge, but it does reject discoveries where
+        nothing is listening on the gRPC port at all (e.g. the heat pump
+        itself), instead of always sending the user to a security form that
+        can never connect.
+        """
+        try:
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port), timeout=3
+            )
+        except (OSError, TimeoutError):
+            return False
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except OSError:
+            pass
+        return True
+
     async def _async_probe_bridge(self, host: str, port: int) -> str | None:
         """Check bridge reachability; return its local SKI or None."""
         try:
@@ -203,6 +229,9 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
         """
         host = discovery_info.host
         ski = discovery_info.properties.get("ski", "")
+
+        if not await self._async_port_reachable(host, DEFAULT_GRPC_PORT):
+            return self.async_abort(reason="not_eebus_bridge")
 
         if ski:
             await self.async_set_unique_id(f"bridge_{ski}")
@@ -383,9 +412,13 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
                 errors["base"] = "cannot_connect"
 
+        form_mode = self._security_mode if user_input is not None else current_mode
+        form_ca = (
+            (self._tls_ca_certificate or "") if user_input is not None else current_ca
+        )
         return self.async_show_form(
             step_id="reconfigure_security",
-            data_schema=_security_schema(current_mode, current_ca),
+            data_schema=_security_schema(form_mode, form_ca),
             errors=errors,
         )
 
