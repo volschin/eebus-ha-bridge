@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -27,13 +29,176 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
 
+_OHPCF_STATUS_OPTIONS = [
+    "available",
+    "scheduled",
+    "running",
+    "paused",
+    "completed",
+    "stopped",
+]
+_OHPCF_STATE_PREFIX = "COMPRESSOR_STATE_"
+
+
+def _nested_float(
+    container_key: str, value_key: str
+) -> Callable[[dict[str, Any]], float | None]:
+    """Build a value_fn reading ``data[container_key][value_key]`` as float."""
+
+    def _get(data: dict[str, Any]) -> float | None:
+        container = data.get(container_key)
+        if container is None:
+            return None
+        value = container.get(value_key)
+        return None if value is None else float(value)
+
+    return _get
+
+
+def _key_is_present(key: str) -> Callable[[dict[str, Any]], bool]:
+    """Build an available_fn requiring ``data[key]`` to be non-None."""
+
+    def _check(data: dict[str, Any]) -> bool:
+        return data.get(key) is not None
+
+    return _check
+
+
+def _failsafe_available(data: dict[str, Any]) -> bool:
+    """Failsafe sensors stay available until support is known to be absent."""
+    return data.get("failsafe_supported") is not False
+
+
+def _ohpcf_status(data: dict[str, Any]) -> str | None:
+    """Return the raw OHPCF process state, lower-cased and without the enum prefix.
+
+    The compressor_flexibility select folds five of the six process states into
+    on/paused/off for control purposes; this exposes the raw state for
+    visibility.
+    """
+    flex = data.get("compressor_flexibility")
+    if flex is None:
+        return None
+    option = str(flex.get("state", "")).removeprefix(_OHPCF_STATE_PREFIX).lower()
+    return option if option in _OHPCF_STATUS_OPTIONS else None
+
 
 @dataclass(frozen=True, kw_only=True)
 class EebusMeasurementDescription(SensorEntityDescription):
-    """Describes a coordinator-data-backed EEBUS measurement sensor."""
+    """Describes a coordinator-data-backed EEBUS sensor.
 
-    data_key: str
+    Simple sensors name a flat ``data_key``; sensors reading nested containers
+    supply ``value_fn`` instead. ``available_fn`` gates availability on
+    coordinator data (support flags, offer presence). ``unique_id_suffix``
+    defaults to ``key`` and exists only to keep historical unique IDs stable.
+    """
 
+    data_key: str = ""
+    value_fn: Callable[[dict[str, Any]], float | str | None] | None = None
+    available_fn: Callable[[dict[str, Any]], bool] | None = None
+    unique_id_suffix: str | None = None
+
+
+# Primary readings plus LPC and OHPCF diagnostics.
+STATE_SENSORS: tuple[EebusMeasurementDescription, ...] = (
+    EebusMeasurementDescription(
+        key="power",
+        data_key="power_watts",
+        translation_key="power_consumption",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    EebusMeasurementDescription(
+        key="energy_consumed",
+        data_key="energy_consumed_kwh",
+        translation_key="energy_consumed",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    EebusMeasurementDescription(
+        key="energy_consumed_heating",
+        data_key="energy_consumed_heating_kwh",
+        translation_key="energy_consumed_heating",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    EebusMeasurementDescription(
+        key="energy_consumed_dhw",
+        data_key="energy_consumed_dhw_kwh",
+        translation_key="energy_consumed_dhw",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    EebusMeasurementDescription(
+        key="consumption_limit",
+        value_fn=_nested_float("consumption_limit", "value_watts"),
+        translation_key="consumption_limit",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    # The failsafe number entity is disabled by default (Gold: less popular
+    # entities disabled), so this diagnostic sensor is the only place most
+    # users will ever see the value the device falls back to once its
+    # heartbeat lapses.
+    EebusMeasurementDescription(
+        key="failsafe_limit",
+        unique_id_suffix="failsafe_limit_diagnostic",
+        value_fn=_nested_float("failsafe_limit", "value_watts"),
+        available_fn=_failsafe_available,
+        translation_key="failsafe_limit",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    EebusMeasurementDescription(
+        key="failsafe_duration",
+        value_fn=_nested_float("failsafe_limit", "duration_minimum_seconds"),
+        available_fn=_failsafe_available,
+        translation_key="failsafe_duration",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    EebusMeasurementDescription(
+        key="compressor_flexibility_status",
+        value_fn=_ohpcf_status,
+        available_fn=_key_is_present("compressor_flexibility"),
+        translation_key="compressor_flexibility_status",
+        device_class=SensorDeviceClass.ENUM,
+        options=_OHPCF_STATUS_OPTIONS,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    EebusMeasurementDescription(
+        key="compressor_flexibility_power_estimate",
+        value_fn=_nested_float("compressor_flexibility", "requested_power_estimate_w"),
+        available_fn=_key_is_present("compressor_flexibility"),
+        translation_key="compressor_flexibility_power_estimate",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+    EebusMeasurementDescription(
+        key="compressor_flexibility_power_max",
+        value_fn=_nested_float("compressor_flexibility", "requested_power_max_w"),
+        available_fn=_key_is_present("compressor_flexibility"),
+        translation_key="compressor_flexibility_power_max",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+)
 
 # Per-phase power/current/voltage, grid frequency and produced energy. These are
 # only meaningful when the device advertises them; the sensors report None
@@ -171,27 +336,14 @@ async def async_setup_entry(
 ) -> None:
     """Set up EEBUS sensors."""
     coordinator: EebusCoordinator = entry.runtime_data
-    entities: list[SensorEntity] = [
-        EebusPowerSensor(coordinator),
-        EebusEnergyConsumedSensor(coordinator),
-        EebusEnergyConsumedHeatingSensor(coordinator),
-        EebusEnergyConsumedDhwSensor(coordinator),
-        EebusConsumptionLimitSensor(coordinator),
-        EebusFailsafeLimitSensor(coordinator),
-        EebusFailsafeDurationSensor(coordinator),
-        EebusCompressorFlexibilityStatusSensor(coordinator),
-        EebusCompressorFlexibilityPowerEstimateSensor(coordinator),
-        EebusCompressorFlexibilityPowerMaxSensor(coordinator),
-    ]
-    entities.extend(
+    async_add_entities(
         EebusMeasurementSensor(coordinator, description)
-        for description in MEASUREMENT_SENSORS
+        for description in (*STATE_SENSORS, *MEASUREMENT_SENSORS)
     )
-    async_add_entities(entities)
 
 
 class EebusMeasurementSensor(EebusEntity, SensorEntity):
-    """Generic sensor backed by a coordinator data key."""
+    """Generic sensor backed by a coordinator data key or value function."""
 
     entity_description: EebusMeasurementDescription
 
@@ -203,329 +355,27 @@ class EebusMeasurementSensor(EebusEntity, SensorEntity):
         """Initialize."""
         super().__init__(coordinator)
         self.entity_description = description
-        self._attr_unique_id = f"{coordinator.ski}_{description.key}"
+        suffix = description.unique_id_suffix or description.key
+        self._attr_unique_id = f"{coordinator.ski}_{suffix}"
+
+    @property
+    def available(self) -> bool:
+        """Apply the description's availability gate on top of the base check."""
+        if not super().available:
+            return False
+        available_fn = self.entity_description.available_fn
+        if available_fn is None:
+            return True
+        data = self.coordinator.data
+        return data is not None and available_fn(data)
 
     @property
     def native_value(self) -> float | str | None:
-        """Return the measurement value, or None when unavailable."""
-        if self.coordinator.data is None:
+        """Return the sensor value, or None when unavailable."""
+        data = self.coordinator.data
+        if data is None:
             return None
-        return self.coordinator.data.get(self.entity_description.data_key)
-
-
-class EebusPowerSensor(EebusEntity, SensorEntity):
-    """Sensor for current power consumption."""
-
-    _attr_device_class = SensorDeviceClass.POWER
-    _attr_native_unit_of_measurement = UnitOfPower.WATT
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_translation_key = "power_consumption"
-
-    def __init__(self, coordinator: EebusCoordinator) -> None:
-        """Initialize."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.ski}_power"
-
-    @property
-    def native_value(self) -> float | None:
-        """Return current power in watts."""
-        if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.get("power_watts")
-
-
-class EebusEnergyConsumedSensor(EebusEntity, SensorEntity):
-    """Sensor for cumulative consumed energy."""
-
-    _attr_device_class = SensorDeviceClass.ENERGY
-    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
-    _attr_translation_key = "energy_consumed"
-
-    def __init__(self, coordinator: EebusCoordinator) -> None:
-        """Initialize."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.ski}_energy_consumed"
-
-    @property
-    def native_value(self) -> float | None:
-        """Return consumed energy in kWh."""
-        if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.get("energy_consumed_kwh")
-
-
-class EebusEnergyConsumedHeatingSensor(EebusEntity, SensorEntity):
-    """Sensor for cumulative consumed energy for space heating."""
-
-    _attr_device_class = SensorDeviceClass.ENERGY
-    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
-    _attr_translation_key = "energy_consumed_heating"
-
-    def __init__(self, coordinator: EebusCoordinator) -> None:
-        """Initialize."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.ski}_energy_consumed_heating"
-
-    @property
-    def native_value(self) -> float | None:
-        """Return consumed heating energy in kWh."""
-        if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.get("energy_consumed_heating_kwh")
-
-
-class EebusEnergyConsumedDhwSensor(EebusEntity, SensorEntity):
-    """Sensor for cumulative consumed energy for domestic hot water."""
-
-    _attr_device_class = SensorDeviceClass.ENERGY
-    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
-    _attr_translation_key = "energy_consumed_dhw"
-
-    def __init__(self, coordinator: EebusCoordinator) -> None:
-        """Initialize."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.ski}_energy_consumed_dhw"
-
-    @property
-    def native_value(self) -> float | None:
-        """Return consumed DHW energy in kWh."""
-        if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.get("energy_consumed_dhw_kwh")
-
-
-class EebusConsumptionLimitSensor(EebusEntity, SensorEntity):
-    """Read-only sensor showing current consumption limit."""
-
-    _attr_device_class = SensorDeviceClass.POWER
-    _attr_native_unit_of_measurement = UnitOfPower.WATT
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_translation_key = "consumption_limit"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    def __init__(self, coordinator: EebusCoordinator) -> None:
-        """Initialize."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.ski}_consumption_limit"
-
-    @property
-    def native_value(self) -> float | None:
-        """Return current limit in watts."""
-        if self.coordinator.data is None:
-            return None
-        limit = self.coordinator.data.get("consumption_limit")
-        if limit is None:
-            return None
-        value = limit.get("value_watts")
-        return None if value is None else float(value)
-
-
-class EebusFailsafeLimitSensor(EebusEntity, SensorEntity):
-    """Read-only sensor showing the configured LPC failsafe power limit.
-
-    The corresponding number entity is disabled by default (Gold: less
-    popular entities disabled), so this diagnostic sensor is the only place
-    most users will ever see the value the device falls back to once its
-    heartbeat lapses.
-    """
-
-    _attr_device_class = SensorDeviceClass.POWER
-    _attr_native_unit_of_measurement = UnitOfPower.WATT
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_translation_key = "failsafe_limit"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    def __init__(self, coordinator: EebusCoordinator) -> None:
-        """Initialize."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.ski}_failsafe_limit_diagnostic"
-
-    @property
-    def available(self) -> bool:
-        """Disable entity when failsafe is known to be unsupported."""
-        if not super().available:
-            return False
-        if self.coordinator.data is None:
-            return False
-        return self.coordinator.data.get("failsafe_supported") is not False
-
-    @property
-    def native_value(self) -> float | None:
-        """Return current failsafe limit in watts."""
-        if self.coordinator.data is None:
-            return None
-        failsafe = self.coordinator.data.get("failsafe_limit")
-        if failsafe is None:
-            return None
-        value = failsafe.get("value_watts")
-        return None if value is None else float(value)
-
-
-class EebusFailsafeDurationSensor(EebusEntity, SensorEntity):
-    """Read-only sensor showing the configured LPC failsafe minimum duration.
-
-    No writable entity exists for this value; it is only otherwise
-    accessible via the gRPC GetFailsafeLimit call.
-    """
-
-    _attr_device_class = SensorDeviceClass.DURATION
-    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_translation_key = "failsafe_duration"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    def __init__(self, coordinator: EebusCoordinator) -> None:
-        """Initialize."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.ski}_failsafe_duration"
-
-    @property
-    def available(self) -> bool:
-        """Disable entity when failsafe is known to be unsupported."""
-        if not super().available:
-            return False
-        if self.coordinator.data is None:
-            return False
-        return self.coordinator.data.get("failsafe_supported") is not False
-
-    @property
-    def native_value(self) -> float | None:
-        """Return current failsafe minimum duration in seconds."""
-        if self.coordinator.data is None:
-            return None
-        failsafe = self.coordinator.data.get("failsafe_limit")
-        if failsafe is None:
-            return None
-        value = failsafe.get("duration_minimum_seconds")
-        return None if value is None else float(value)
-
-
-_OHPCF_STATUS_OPTIONS = [
-    "available",
-    "scheduled",
-    "running",
-    "paused",
-    "completed",
-    "stopped",
-]
-_OHPCF_STATE_PREFIX = "COMPRESSOR_STATE_"
-
-
-class EebusCompressorFlexibilityStatusSensor(EebusEntity, SensorEntity):
-    """Diagnostic sensor for the OHPCF compressor's raw process status.
-
-    The compressor_flexibility select folds five of the six process states
-    into on/paused/off for control purposes; this exposes the raw state
-    (available/scheduled/running/paused/completed/stopped) for visibility.
-    """
-
-    _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = _OHPCF_STATUS_OPTIONS
-    _attr_translation_key = "compressor_flexibility_status"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    def __init__(self, coordinator: EebusCoordinator) -> None:
-        """Initialize."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.ski}_compressor_flexibility_status"
-
-    @property
-    def available(self) -> bool:
-        """Available only while the compressor advertises a flexibility offer."""
-        if not super().available:
-            return False
-        if self.coordinator.data is None:
-            return False
-        return self.coordinator.data.get("compressor_flexibility") is not None
-
-    @property
-    def native_value(self) -> str | None:
-        """Return the raw process state, lower-cased and without the enum prefix."""
-        if self.coordinator.data is None:
-            return None
-        flex = self.coordinator.data.get("compressor_flexibility")
-        if flex is None:
-            return None
-        state = flex.get("state", "")
-        option = state.removeprefix(_OHPCF_STATE_PREFIX).lower()
-        return option if option in _OHPCF_STATUS_OPTIONS else None
-
-
-class EebusCompressorFlexibilityPowerEstimateSensor(EebusEntity, SensorEntity):
-    """Diagnostic sensor for the OHPCF compressor's estimated optional power draw.
-
-    Read by the coordinator alongside the flexibility state used to drive the
-    compressor_flexibility select, but otherwise unused; surfaced here so the
-    offer's power estimate isn't silently discarded.
-    """
-
-    _attr_device_class = SensorDeviceClass.POWER
-    _attr_native_unit_of_measurement = UnitOfPower.WATT
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_translation_key = "compressor_flexibility_power_estimate"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_entity_registry_enabled_default = False
-
-    def __init__(self, coordinator: EebusCoordinator) -> None:
-        """Initialize."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.ski}_compressor_flexibility_power_estimate"
-
-    @property
-    def available(self) -> bool:
-        """Available only while the compressor advertises a flexibility offer."""
-        if not super().available:
-            return False
-        if self.coordinator.data is None:
-            return False
-        return self.coordinator.data.get("compressor_flexibility") is not None
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the offer's estimated power draw in watts."""
-        if self.coordinator.data is None:
-            return None
-        flex = self.coordinator.data.get("compressor_flexibility")
-        if flex is None:
-            return None
-        value = flex.get("requested_power_estimate_w")
-        return None if value is None else float(value)
-
-
-class EebusCompressorFlexibilityPowerMaxSensor(EebusEntity, SensorEntity):
-    """Diagnostic sensor for the OHPCF compressor's maximum optional power draw."""
-
-    _attr_device_class = SensorDeviceClass.POWER
-    _attr_native_unit_of_measurement = UnitOfPower.WATT
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_translation_key = "compressor_flexibility_power_max"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_entity_registry_enabled_default = False
-
-    def __init__(self, coordinator: EebusCoordinator) -> None:
-        """Initialize."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.ski}_compressor_flexibility_power_max"
-
-    @property
-    def available(self) -> bool:
-        """Available only while the compressor advertises a flexibility offer."""
-        if not super().available:
-            return False
-        if self.coordinator.data is None:
-            return False
-        return self.coordinator.data.get("compressor_flexibility") is not None
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the offer's maximum power draw in watts."""
-        if self.coordinator.data is None:
-            return None
-        flex = self.coordinator.data.get("compressor_flexibility")
-        if flex is None:
-            return None
-        value = flex.get("requested_power_max_w")
-        return None if value is None else float(value)
+        description = self.entity_description
+        if description.value_fn is not None:
+            return description.value_fn(data)
+        return data.get(description.data_key)
