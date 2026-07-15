@@ -2,13 +2,6 @@ package eebus
 
 import "sync"
 
-// Event represents an internal event from eebus-go callbacks.
-type Event struct {
-	SKI  string
-	Type string
-	Data map[string]any
-}
-
 // EventBus provides fan-out event distribution to multiple subscribers.
 type EventBus struct {
 	mu          sync.RWMutex

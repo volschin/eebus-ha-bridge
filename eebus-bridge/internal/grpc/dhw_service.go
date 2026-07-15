@@ -135,9 +135,9 @@ func (s *DHWService) SubscribeDHWEvents(req *pb.DeviceRequest, stream pb.DHWServ
 			}
 			var eventType pb.DHWEventType
 			switch evt.Type {
-			case "dhw.use_case_support_updated":
+			case eebus.EventTypeDHWUseCaseSupportUpdated:
 				eventType = pb.DHWEventType_DHW_EVENT_SUPPORT_UPDATED
-			case "dhw.setpoint_updated":
+			case eebus.EventTypeDHWSetpointUpdated:
 				eventType = pb.DHWEventType_DHW_EVENT_SETPOINT_UPDATED
 			default:
 				continue
@@ -178,9 +178,9 @@ func (s *DHWService) SubscribeDHWSystemFunctionEvents(
 			}
 			var eventType pb.DHWSystemFunctionEventType
 			switch evt.Type {
-			case "dhwsysfn.use_case_support_updated":
+			case eebus.EventTypeDHWSystemFunctionSupportUpdated:
 				eventType = pb.DHWSystemFunctionEventType_DHW_SYSTEM_FUNCTION_EVENT_SUPPORT_UPDATED
-			case "dhwsysfn.updated":
+			case eebus.EventTypeDHWSystemFunctionUpdated:
 				eventType = pb.DHWSystemFunctionEventType_DHW_SYSTEM_FUNCTION_EVENT_STATE_UPDATED
 			default:
 				continue

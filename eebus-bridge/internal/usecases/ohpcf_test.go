@@ -24,7 +24,7 @@ func TestOHPCFEventRouting(t *testing.T) {
 
 	select {
 	case evt := <-ch:
-		if evt.Type != "ohpcf.consumption_state_updated" {
+		if evt.Type != eebus.EventTypeOHPCFConsumptionStateUpdated {
 			t.Errorf("Type = %q, want ohpcf.consumption_state_updated", evt.Type)
 		}
 		if evt.SKI != "ohpcf-ski" {

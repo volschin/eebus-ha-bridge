@@ -58,7 +58,7 @@ func (d *DeviceOperatingState) HandleEvent(payload spineapi.EventPayload) {
 		return
 	}
 	ski := eebus.NormalizeSKI(payload.Ski)
-	d.bus.Publish(eebus.Event{SKI: ski, Type: "monitoring.device_operating_state_updated"})
+	d.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeMonitoringDeviceOperatingStateUpdated})
 }
 
 // OperatingState actively reads and returns the remote device operating state.

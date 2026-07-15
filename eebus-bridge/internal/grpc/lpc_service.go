@@ -190,11 +190,11 @@ func (s *LPCService) SubscribeLPCEvents(req *pb.DeviceRequest, stream pb.LPCServ
 			}
 			var eventType pb.LPCEventType
 			switch evt.Type {
-			case "lpc.limit_updated":
+			case eebus.EventTypeLPCLimitUpdated:
 				eventType = pb.LPCEventType_LPC_EVENT_LIMIT_UPDATED
-			case "lpc.failsafe_power_updated", "lpc.failsafe_duration_updated":
+			case eebus.EventTypeLPCFailsafePowerUpdated, eebus.EventTypeLPCFailsafeDurationUpdated:
 				eventType = pb.LPCEventType_LPC_EVENT_FAILSAFE_UPDATED
-			case "lpc.heartbeat_updated":
+			case eebus.EventTypeLPCHeartbeatUpdated:
 				eventType = pb.LPCEventType_LPC_EVENT_HEARTBEAT_TIMEOUT
 			default:
 				continue

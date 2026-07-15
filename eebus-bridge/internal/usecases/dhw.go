@@ -115,7 +115,7 @@ func (d *DHWTemperature) HandleEvent(payload spineapi.EventPayload) {
 		d.request(payload.Entity, model.FunctionTypeSetpointListData)
 	case *model.SetpointListDataType:
 		if _, err := d.State(payload.Entity); err == nil && d.bus != nil {
-			d.bus.Publish(eebus.Event{SKI: payload.Ski, Type: "dhw.setpoint_updated"})
+			d.bus.Publish(eebus.Event{SKI: payload.Ski, Type: eebus.EventTypeDHWSetpointUpdated})
 		}
 	}
 }
@@ -130,7 +130,7 @@ func (d *DHWTemperature) handleUseCaseEvent(
 		d.registry.UpsertObservation(ski, device, entity, "dhw_temperature")
 	}
 	if d.bus != nil {
-		d.bus.Publish(eebus.Event{SKI: ski, Type: "dhw.use_case_support_updated"})
+		d.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeDHWUseCaseSupportUpdated})
 	}
 }
 

@@ -14,10 +14,10 @@ func TestOutdoorMonitoringWrapperPublishesEvents(t *testing.T) {
 	tests := []struct {
 		name string
 		in   eebusapi.EventType
-		want string
+		want eebus.EventType
 	}{
-		{name: "temperature", in: mamot.DataUpdateTemperature, want: "outdoor.temperature_updated"},
-		{name: "support", in: mamot.UseCaseSupportUpdate, want: "outdoor.monitoring_support_updated"},
+		{name: "temperature", in: mamot.DataUpdateTemperature, want: eebus.EventTypeOutdoorTemperatureUpdated},
+		{name: "support", in: mamot.UseCaseSupportUpdate, want: eebus.EventTypeOutdoorMonitoringSupportUpdated},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -118,7 +118,7 @@ func TestUnregisterRemoteSKIPublishesEvent(t *testing.T) {
 
 	select {
 	case evt := <-ch:
-		if evt.Type != "device.unregister_ski" || evt.SKI != testValidSKI {
+		if evt.Type != eebus.EventTypeDeviceUnregisterSKI || evt.SKI != testValidSKI {
 			t.Errorf("event = %+v, want type=device.unregister_ski ski=%s", evt, testValidSKI)
 		}
 	case <-time.After(time.Second):
@@ -150,7 +150,7 @@ func TestSubscribeDeviceEventsTrustRemoved(t *testing.T) {
 	}
 	time.Sleep(100 * time.Millisecond)
 
-	bus.Publish(eebus.Event{SKI: testValidSKI, Type: "device.trust_removed"})
+	bus.Publish(eebus.Event{SKI: testValidSKI, Type: eebus.EventTypeDeviceTrustRemoved})
 
 	evt, err := stream.Recv()
 	if err != nil {

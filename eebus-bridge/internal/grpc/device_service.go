@@ -49,7 +49,7 @@ func (s *DeviceService) RegisterRemoteSKI(_ context.Context, req *pb.RegisterSKI
 	if !validSKI(ski) {
 		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
 	}
-	s.bus.Publish(eebus.Event{SKI: ski, Type: "device.register_ski"})
+	s.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeDeviceRegisterSKI})
 	return &pb.Empty{}, nil
 }
 
@@ -62,7 +62,7 @@ func (s *DeviceService) UnregisterRemoteSKI(_ context.Context, req *pb.RegisterS
 	if !validSKI(ski) {
 		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
 	}
-	s.bus.Publish(eebus.Event{SKI: ski, Type: "device.unregister_ski"})
+	s.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeDeviceUnregisterSKI})
 	return &pb.Empty{}, nil
 }
 
@@ -94,11 +94,11 @@ func (s *DeviceService) SubscribeDeviceEvents(_ *pb.Empty, stream pb.DeviceServi
 			}
 			var eventType pb.DeviceEventType
 			switch evt.Type {
-			case "device.connected":
+			case eebus.EventTypeDeviceConnected:
 				eventType = pb.DeviceEventType_DEVICE_EVENT_CONNECTED
-			case "device.disconnected":
+			case eebus.EventTypeDeviceDisconnected:
 				eventType = pb.DeviceEventType_DEVICE_EVENT_DISCONNECTED
-			case "device.trust_removed":
+			case eebus.EventTypeDeviceTrustRemoved:
 				eventType = pb.DeviceEventType_DEVICE_EVENT_TRUST_REMOVED
 			default:
 				continue

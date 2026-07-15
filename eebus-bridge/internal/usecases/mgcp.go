@@ -239,7 +239,7 @@ func (p *MGCPProvider) handleEvent(ski string, _ spineapi.DeviceRemoteInterface,
 	if event == mgcpUseCaseSupportUpdate {
 		log.Printf("[MGCP] consumer support update from ski=%s", ski)
 		if p.bus != nil {
-			p.bus.Publish(eebus.Event{SKI: ski, Type: "mgcp.consumer_updated"})
+			p.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeMGCPConsumerUpdated})
 		}
 	}
 }

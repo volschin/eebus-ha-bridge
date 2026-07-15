@@ -42,8 +42,8 @@ type TemperatureMonitoringWrapper struct {
 	newUseCase        func(spineapi.EntityLocalInterface, eebusapi.EntityEventCallback) temperatureUseCase
 	dataEvent         eebusapi.EventType
 	supportEvent      eebusapi.EventType
-	publishData       string
-	publishSupport    string
+	publishData       eebus.EventType
+	publishSupport    eebus.EventType
 	errNotInitialized error
 }
 
@@ -62,8 +62,8 @@ func NewDHWMonitoringWrapper(
 		},
 		dataEvent:         mamdt.DataUpdateTemperature,
 		supportEvent:      mamdt.UseCaseSupportUpdate,
-		publishData:       "dhw.temperature_updated",
-		publishSupport:    "dhw.monitoring_support_updated",
+		publishData:       eebus.EventTypeDHWTemperatureUpdated,
+		publishSupport:    eebus.EventTypeDHWMonitoringSupportUpdated,
 		errNotInitialized: errDHWMonitoringNotInitialized,
 	}
 }
@@ -83,8 +83,8 @@ func NewRoomMonitoringWrapper(
 		},
 		dataEvent:         mamrt.DataUpdateTemperature,
 		supportEvent:      mamrt.UseCaseSupportUpdate,
-		publishData:       "room.temperature_updated",
-		publishSupport:    "room.monitoring_support_updated",
+		publishData:       eebus.EventTypeRoomTemperatureUpdated,
+		publishSupport:    eebus.EventTypeRoomMonitoringSupportUpdated,
 		errNotInitialized: errRoomMonitoringNotInitialized,
 	}
 }
@@ -104,8 +104,8 @@ func NewOutdoorMonitoringWrapper(
 		},
 		dataEvent:         mamot.DataUpdateTemperature,
 		supportEvent:      mamot.UseCaseSupportUpdate,
-		publishData:       "outdoor.temperature_updated",
-		publishSupport:    "outdoor.monitoring_support_updated",
+		publishData:       eebus.EventTypeOutdoorTemperatureUpdated,
+		publishSupport:    eebus.EventTypeOutdoorMonitoringSupportUpdated,
 		errNotInitialized: errOutdoorMonitoringNotInitialized,
 	}
 }
@@ -132,7 +132,7 @@ func (w *TemperatureMonitoringWrapper) HandleEvent(
 		w.registry.UpsertObservation(ski, device, entity, w.registryTag)
 	}
 
-	var eventType string
+	var eventType eebus.EventType
 	switch event {
 	case w.dataEvent:
 		eventType = w.publishData

@@ -67,20 +67,20 @@ func (w *LPCWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInterfa
 		enrichDeviceClassification(w.registry, w.localEntity, ski, device, entity)
 	}
 
-	var eventType string
+	var eventType eebus.EventType
 	switch event {
 	case eglpc.DataUpdateLimit:
-		eventType = "lpc.limit_updated"
+		eventType = eebus.EventTypeLPCLimitUpdated
 	case eglpc.DataUpdateFailsafeConsumptionActivePowerLimit:
-		eventType = "lpc.failsafe_power_updated"
+		eventType = eebus.EventTypeLPCFailsafePowerUpdated
 	case eglpc.DataUpdateFailsafeDurationMinimum:
-		eventType = "lpc.failsafe_duration_updated"
+		eventType = eebus.EventTypeLPCFailsafeDurationUpdated
 	case eglpc.UseCaseSupportUpdate:
-		eventType = "lpc.use_case_support_updated"
+		eventType = eebus.EventTypeLPCUseCaseSupportUpdated
 	case eglpc.DataUpdateHeartbeat:
 		// Per eebus-go: signals the remote entering or leaving failsafe state.
 		// No payload is attached; HA reconciles via GetHeartbeatStatus on refresh.
-		eventType = "lpc.heartbeat_updated"
+		eventType = eebus.EventTypeLPCHeartbeatUpdated
 	default:
 		return
 	}

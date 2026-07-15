@@ -245,27 +245,27 @@ func (s *MonitoringService) SubscribeMeasurements(req *pb.DeviceRequest, stream 
 			}
 			var eventType pb.MeasurementEventType
 			switch evt.Type {
-			case "monitoring.power_updated":
+			case eebus.EventTypeMonitoringPowerUpdated:
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_POWER_UPDATED
-			case "monitoring.energy_consumed_updated":
+			case eebus.EventTypeMonitoringEnergyConsumedUpdated:
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_ENERGY_UPDATED
-			case "dhw.temperature_updated":
+			case eebus.EventTypeDHWTemperatureUpdated:
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED
-			case "dhw.monitoring_support_updated":
+			case eebus.EventTypeDHWMonitoringSupportUpdated:
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_SUPPORT_UPDATED
-			case "room.temperature_updated":
+			case eebus.EventTypeRoomTemperatureUpdated:
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED
-			case "room.monitoring_support_updated":
+			case eebus.EventTypeRoomMonitoringSupportUpdated:
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_ROOM_TEMPERATURE_SUPPORT_UPDATED
-			case "outdoor.temperature_updated":
+			case eebus.EventTypeOutdoorTemperatureUpdated:
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED
-			case "outdoor.monitoring_support_updated":
+			case eebus.EventTypeOutdoorMonitoringSupportUpdated:
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED
-			case "monitoring.flow_temperature_updated":
+			case eebus.EventTypeMonitoringFlowTemperatureUpdated:
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED
-			case "monitoring.return_temperature_updated":
+			case eebus.EventTypeMonitoringReturnTemperatureUpdated:
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED
-			case "monitoring.device_operating_state_updated":
+			case eebus.EventTypeMonitoringDeviceOperatingStateUpdated:
 				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED
 			default:
 				continue

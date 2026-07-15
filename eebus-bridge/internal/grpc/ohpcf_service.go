@@ -93,17 +93,17 @@ func (s *OHPCFService) SubscribeOHPCFEvents(req *pb.DeviceRequest, stream pb.OHP
 			}
 			var eventType pb.OHPCFEventType
 			switch evt.Type {
-			case "ohpcf.use_case_support_updated":
+			case eebus.EventTypeOHPCFUseCaseSupportUpdated:
 				eventType = pb.OHPCFEventType_OHPCF_EVENT_SUPPORT_UPDATED
-			case "ohpcf.consumption_state_updated":
+			case eebus.EventTypeOHPCFConsumptionStateUpdated:
 				eventType = pb.OHPCFEventType_OHPCF_EVENT_STATE_UPDATED
-			case "ohpcf.consumption_stoppable_updated",
-				"ohpcf.consumption_pausable_updated",
-				"ohpcf.consumption_start_time_updated",
-				"ohpcf.requested_power_estimate_updated",
-				"ohpcf.requested_power_max_updated",
-				"ohpcf.minimal_run_duration_updated",
-				"ohpcf.minimal_pause_duration_updated":
+			case eebus.EventTypeOHPCFConsumptionStoppableUpdated,
+				eebus.EventTypeOHPCFConsumptionPausableUpdated,
+				eebus.EventTypeOHPCFConsumptionStartTimeUpdated,
+				eebus.EventTypeOHPCFRequestedPowerEstimateUpdated,
+				eebus.EventTypeOHPCFRequestedPowerMaxUpdated,
+				eebus.EventTypeOHPCFMinimalRunDurationUpdated,
+				eebus.EventTypeOHPCFMinimalPauseDurationUpdated:
 				eventType = pb.OHPCFEventType_OHPCF_EVENT_DATA_UPDATED
 			default:
 				continue
