@@ -202,28 +202,6 @@ func main() {
 	}
 	log.Printf("Registered EEBUS use cases: %s", strings.Join(registeredUseCases, ", "))
 
-	go func() {
-		ch := bus.Subscribe()
-		defer bus.Unsubscribe(ch)
-		for evt := range ch {
-			switch evt.Type {
-			case eebus.EventTypeDeviceRegisterSKI:
-				bridgeSvc.RegisterRemoteSKI(evt.SKI)
-				log.Printf("Registered remote SKI: %s", evt.SKI)
-			case eebus.EventTypeDeviceUnregisterSKI:
-				// eebus-go's UnregisterRemoteService only notifies via
-				// ServicePairingDetailUpdate, not ServiceAutoTrustRemoved, so the
-				// registry is cleared explicitly here rather than relying on a
-				// callback (cf. ServiceAutoTrustRemoved in callbacks.go, which
-				// handles the remote-initiated revocation case).
-				bridgeSvc.UnregisterRemoteSKI(evt.SKI)
-				registry.RemoveDevice(evt.SKI)
-				bus.Publish(eebus.Event{SKI: evt.SKI, Type: eebus.EventTypeDeviceTrustRemoved})
-				log.Printf("Unregistered remote SKI: %s", evt.SKI)
-			}
-		}
-	}()
-
 	grpcSrv, err := bridgegrpc.NewServerWithSecurity(
 		cfg.GRPC.Bind,
 		cfg.GRPC.Port,
@@ -234,7 +212,8 @@ func main() {
 		log.Fatalf("configuring gRPC server security: %v", err)
 	}
 
-	deviceSvc := bridgegrpc.NewDeviceService(bridgeSvc.Callbacks(), bus, ski, registry)
+	trustController := eebus.NewTrustController(bridgeSvc, registry, bus)
+	deviceSvc := bridgegrpc.NewDeviceService(bridgeSvc.Callbacks(), bus, ski, registry, trustController)
 	lpcSvc := bridgegrpc.NewLPCService(lpcWrapper, bus, registry)
 	monitoringSvc := bridgegrpc.NewMonitoringService(
 		monitoringWrapper,

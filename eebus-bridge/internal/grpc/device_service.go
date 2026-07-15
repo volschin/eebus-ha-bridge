@@ -10,20 +10,27 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+type TrustController interface {
+	RegisterSKI(ski string) error
+	UnregisterSKI(ski string) error
+}
+
 type DeviceService struct {
 	pb.UnimplementedDeviceServiceServer
 	callbacks *eebus.Callbacks
 	bus       *eebus.EventBus
 	localSKI  string
 	registry  *eebus.DeviceRegistry
+	trust     TrustController
 }
 
-func NewDeviceService(callbacks *eebus.Callbacks, bus *eebus.EventBus, localSKI string, registry *eebus.DeviceRegistry) *DeviceService {
+func NewDeviceService(callbacks *eebus.Callbacks, bus *eebus.EventBus, localSKI string, registry *eebus.DeviceRegistry, trust TrustController) *DeviceService {
 	return &DeviceService{
 		callbacks: callbacks,
 		bus:       bus,
 		localSKI:  localSKI,
 		registry:  registry,
+		trust:     trust,
 	}
 }
 
@@ -53,7 +60,9 @@ func (s *DeviceService) RegisterRemoteSKI(_ context.Context, req *pb.RegisterSKI
 	if !validSKI(ski) {
 		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
 	}
-	s.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeDeviceRegisterSKI})
+	if err := s.trust.RegisterSKI(ski); err != nil {
+		return nil, status.Errorf(codes.Internal, "registering remote SKI: %v", err)
+	}
 	return &pb.Empty{}, nil
 }
 
@@ -66,7 +75,9 @@ func (s *DeviceService) UnregisterRemoteSKI(_ context.Context, req *pb.RegisterS
 	if !validSKI(ski) {
 		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
 	}
-	s.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeDeviceUnregisterSKI})
+	if err := s.trust.UnregisterSKI(ski); err != nil {
+		return nil, status.Errorf(codes.Internal, "unregistering remote SKI: %v", err)
+	}
 	return &pb.Empty{}, nil
 }
 

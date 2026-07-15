@@ -20,7 +20,7 @@ func TestIntegrationDeviceServiceRoundTrip(t *testing.T) {
 	callbacks := eebus.NewCallbacks(bus, false)
 	registry := eebus.NewDeviceRegistry()
 
-	deviceSvc := bridgegrpc.NewDeviceService(callbacks, bus, "integration-test-ski", registry)
+	deviceSvc := bridgegrpc.NewDeviceService(callbacks, bus, "integration-test-ski", registry, &recordingTrustController{})
 	lpcSvc := bridgegrpc.NewLPCService(nil, bus, registry)
 	monSvc := bridgegrpc.NewMonitoringService(nil, bridgegrpc.MonitoringReaders{}, bus, registry)
 
