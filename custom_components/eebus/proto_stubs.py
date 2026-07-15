@@ -52,7 +52,6 @@ from .generated.eebus.v1.lpc_service_pb2 import (  # noqa: F401
 )
 from .generated.eebus.v1.monitoring_service_pb2 import (  # noqa: F401
     DeviceDiagnosticsData,
-    MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED,
     MeasurementEventType,
 )
 from .generated.eebus.v1.lpc_service_pb2_grpc import LPCServiceStub  # noqa: F401
@@ -134,7 +133,6 @@ __all__ = [
     "LPCServiceStub",
     "LoadLimit",
     "MeasurementEntry",
-    "MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED",
     "MeasurementEventType",
     "MonitoringServiceStub",
     "OHPCFAction",

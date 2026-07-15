@@ -73,6 +73,32 @@ func TestDeviceOperatingStatePassesThroughUnknownState(t *testing.T) {
 	}
 }
 
+func TestDeviceOperatingStateHandleEventPublishesFromPayload(t *testing.T) {
+	bus := eebus.NewEventBus()
+	// No local/remote feature mocks: HandleEvent must publish from the payload
+	// alone, without issuing a network read.
+	reader := NewDeviceOperatingState(bus, eebus.NewDeviceRegistry(), false)
+	ch := bus.Subscribe()
+	t.Cleanup(func() { bus.Unsubscribe(ch) })
+
+	reader.HandleEvent(spineapi.EventPayload{
+		Ski:        "test-ski",
+		Entity:     mocks.NewEntityRemoteInterface(t),
+		EventType:  spineapi.EventTypeDataChange,
+		ChangeType: spineapi.ElementChangeUpdate,
+		Data:       diagnosisState("normalOperation"),
+	})
+
+	select {
+	case evt := <-ch:
+		if evt.Type != "monitoring.device_operating_state_updated" || evt.SKI != "TEST-SKI" {
+			t.Fatalf("event = %+v", evt)
+		}
+	default:
+		t.Fatal("expected published event")
+	}
+}
+
 func TestDeviceOperatingStateHandleEventIgnoresUnrelatedUpdates(t *testing.T) {
 	reader := NewDeviceOperatingState(eebus.NewEventBus(), eebus.NewDeviceRegistry(), false)
 

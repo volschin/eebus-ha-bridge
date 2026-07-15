@@ -2,7 +2,6 @@ package grpc_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -35,9 +33,13 @@ func (f fakeDeviceOperatingStateReader) OperatingState(string) (string, error) {
 	return f.value, f.err
 }
 
+func (f fakeDeviceOperatingStateReader) CachedOperatingState(string) (string, error) {
+	return f.value, f.err
+}
+
 func TestSubscribeMeasurements(t *testing.T) {
 	bus := eebus.NewEventBus()
-	svc := bridgegrpc.NewMonitoringService(nil, nil, nil, nil, nil, nil, nil, bus, eebus.NewDeviceRegistry())
+	svc := bridgegrpc.NewMonitoringService(nil, bridgegrpc.MonitoringReaders{}, bus, eebus.NewDeviceRegistry())
 
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterMonitoringServiceServer(srv.GRPCServer(), svc)
@@ -76,12 +78,13 @@ func TestSubscribeMeasurements(t *testing.T) {
 func TestGetMeasurementsIncludesTemperatureUseCases(t *testing.T) {
 	svc := bridgegrpc.NewMonitoringService(
 		usecases.NewMonitoringWrapper(nil, eebus.NewDeviceRegistry(), false),
-		fakeDHWTemperatureReader{value: 48.5},
-		fakeDHWTemperatureReader{value: 21.25},
-		fakeDHWTemperatureReader{value: 7.75},
-		fakeDHWTemperatureReader{value: 42.5},
-		fakeDHWTemperatureReader{value: 37.25},
-		nil,
+		bridgegrpc.MonitoringReaders{
+			DHW:     fakeDHWTemperatureReader{value: 48.5},
+			Room:    fakeDHWTemperatureReader{value: 21.25},
+			Outdoor: fakeDHWTemperatureReader{value: 7.75},
+			Flow:    fakeDHWTemperatureReader{value: 42.5},
+			Return:  fakeDHWTemperatureReader{value: 37.25},
+		},
 		eebus.NewEventBus(),
 		eebus.NewDeviceRegistry(),
 	)
@@ -115,12 +118,13 @@ func TestSubscribeMeasurementsIncludesTemperaturePayloads(t *testing.T) {
 	bus := eebus.NewEventBus()
 	svc := bridgegrpc.NewMonitoringService(
 		nil,
-		fakeDHWTemperatureReader{value: 49},
-		fakeDHWTemperatureReader{value: 20.5},
-		fakeDHWTemperatureReader{value: 6.5},
-		fakeDHWTemperatureReader{value: 43},
-		fakeDHWTemperatureReader{value: 38},
-		nil,
+		bridgegrpc.MonitoringReaders{
+			DHW:     fakeDHWTemperatureReader{value: 49},
+			Room:    fakeDHWTemperatureReader{value: 20.5},
+			Outdoor: fakeDHWTemperatureReader{value: 6.5},
+			Flow:    fakeDHWTemperatureReader{value: 43},
+			Return:  fakeDHWTemperatureReader{value: 38},
+		},
 		bus,
 		eebus.NewDeviceRegistry(),
 	)
@@ -192,8 +196,8 @@ func TestSubscribeMeasurementsIncludesTemperaturePayloads(t *testing.T) {
 
 func TestGetDeviceDiagnostics(t *testing.T) {
 	svc := bridgegrpc.NewMonitoringService(
-		nil, nil, nil, nil, nil, nil,
-		fakeDeviceOperatingStateReader{value: "normalOperation"},
+		nil,
+		bridgegrpc.MonitoringReaders{Diagnostics: fakeDeviceOperatingStateReader{value: "normalOperation"}},
 		eebus.NewEventBus(),
 		eebus.NewDeviceRegistry(),
 	)
@@ -209,8 +213,8 @@ func TestGetDeviceDiagnostics(t *testing.T) {
 
 func TestGetDeviceDiagnosticsReturnsNotFoundWhenUnavailable(t *testing.T) {
 	svc := bridgegrpc.NewMonitoringService(
-		nil, nil, nil, nil, nil, nil,
-		fakeDeviceOperatingStateReader{err: usecases.ErrDeviceOperatingStateUnavailable},
+		nil,
+		bridgegrpc.MonitoringReaders{Diagnostics: fakeDeviceOperatingStateReader{err: usecases.ErrDeviceOperatingStateUnavailable}},
 		eebus.NewEventBus(),
 		eebus.NewDeviceRegistry(),
 	)
@@ -224,56 +228,42 @@ func TestGetDeviceDiagnosticsReturnsNotFoundWhenUnavailable(t *testing.T) {
 func TestSubscribeMeasurementsForwardsDeviceOperatingState(t *testing.T) {
 	bus := eebus.NewEventBus()
 	svc := bridgegrpc.NewMonitoringService(
-		nil, nil, nil, nil, nil, nil,
-		fakeDeviceOperatingStateReader{value: "futureVendorState"},
+		nil,
+		bridgegrpc.MonitoringReaders{Diagnostics: fakeDeviceOperatingStateReader{value: "futureVendorState"}},
 		bus,
 		eebus.NewDeviceRegistry(),
 	)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	stream := newFakeMeasurementStream(ctx)
-	done := make(chan error, 1)
-	go func() {
-		done <- svc.SubscribeMeasurements(&pb.DeviceRequest{Ski: "test-ski"}, stream)
-	}()
 
-	time.Sleep(10 * time.Millisecond)
+	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
+	pb.RegisterMonitoringServiceServer(srv.GRPCServer(), svc)
+	go srv.Start()
+	t.Cleanup(srv.Stop)
+
+	time.Sleep(100 * time.Millisecond)
+	conn, err := grpc.NewClient(srv.Addr(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	client := pb.NewMonitoringServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	stream, err := client.SubscribeMeasurements(ctx, &pb.DeviceRequest{Ski: "test-ski"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
 	bus.Publish(eebus.Event{SKI: "test-ski", Type: "monitoring.device_operating_state_updated"})
 
-	select {
-	case event := <-stream.events:
-		if event.EventType != pb.MeasurementEventType_MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED ||
-			event.GetDeviceDiagnostics().GetOperatingState() != "futureVendorState" ||
-			event.GetDeviceDiagnostics().GetTimestamp() == nil {
-			t.Fatalf("event = %+v", event)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for device operating state event")
+	event, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("Recv: %v", err)
 	}
-
-	cancel()
-	if err := <-done; !errors.Is(err, context.Canceled) {
-		t.Fatalf("SubscribeMeasurements() error = %v, want context.Canceled", err)
+	if event.EventType != pb.MeasurementEventType_MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED ||
+		event.GetDeviceDiagnostics().GetOperatingState() != "futureVendorState" ||
+		event.GetDeviceDiagnostics().GetTimestamp() == nil {
+		t.Fatalf("event = %+v", event)
 	}
 }
-
-type fakeMeasurementStream struct {
-	ctx    context.Context
-	events chan *pb.MeasurementEvent
-}
-
-func newFakeMeasurementStream(ctx context.Context) *fakeMeasurementStream {
-	return &fakeMeasurementStream{ctx: ctx, events: make(chan *pb.MeasurementEvent, 1)}
-}
-
-func (s *fakeMeasurementStream) Send(event *pb.MeasurementEvent) error {
-	s.events <- event
-	return nil
-}
-
-func (s *fakeMeasurementStream) SetHeader(metadata.MD) error  { return nil }
-func (s *fakeMeasurementStream) SendHeader(metadata.MD) error { return nil }
-func (s *fakeMeasurementStream) SetTrailer(metadata.MD)       {}
-func (s *fakeMeasurementStream) Context() context.Context     { return s.ctx }
-func (s *fakeMeasurementStream) SendMsg(any) error            { return nil }
-func (s *fakeMeasurementStream) RecvMsg(any) error            { return nil }

@@ -262,12 +262,14 @@ func main() {
 	lpcSvc := bridgegrpc.NewLPCService(lpcWrapper, bus, registry)
 	monitoringSvc := bridgegrpc.NewMonitoringService(
 		monitoringWrapper,
-		dhwMonitoringWrapper,
-		roomMonitoringWrapper,
-		outdoorMonitoringWrapper,
-		usecases.FlowTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
-		usecases.ReturnTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
-		deviceOperatingState,
+		bridgegrpc.MonitoringReaders{
+			DHW:         dhwMonitoringWrapper,
+			Room:        roomMonitoringWrapper,
+			Outdoor:     outdoorMonitoringWrapper,
+			Flow:        usecases.FlowTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
+			Return:      usecases.ReturnTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
+			Diagnostics: deviceOperatingState,
+		},
 		bus,
 		registry,
 	)
