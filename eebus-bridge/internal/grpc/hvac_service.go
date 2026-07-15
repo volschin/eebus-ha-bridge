@@ -2,7 +2,6 @@ package grpc
 
 import (
 	"context"
-	"errors"
 
 	spineapi "github.com/enbility/spine-go/api"
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
@@ -182,22 +181,12 @@ func convertRoomHeatingSystemFunction(state usecases.RoomHeatingSystemFunctionSt
 	}
 }
 
+var roomHeatingErrorClasses = usecaseErrorClasses{
+	invalidArgument:    []error{usecases.ErrRoomHeatingOutOfRange, usecases.ErrRoomHeatingInvalidStep, usecases.ErrRoomHeatingSysFnInvalidMode},
+	failedPrecondition: []error{usecases.ErrRoomHeatingNotWritable, usecases.ErrRoomHeatingSysFnNotWritable, usecases.ErrRoomHeatingSysFnRejected},
+	notFound:           []error{usecases.ErrRoomHeatingDataUnavailable, usecases.ErrRoomHeatingSysFnDataUnavailable},
+}
+
 func mapRoomHeatingError(action string, err error) error {
-	switch {
-	case errors.Is(err, usecases.ErrRoomHeatingOutOfRange), errors.Is(err, usecases.ErrRoomHeatingInvalidStep),
-		errors.Is(err, usecases.ErrRoomHeatingSysFnInvalidMode):
-		return status.Errorf(codes.InvalidArgument, "%s: %v", action, err)
-	case errors.Is(err, usecases.ErrRoomHeatingNotWritable), errors.Is(err, usecases.ErrRoomHeatingSysFnNotWritable),
-		errors.Is(err, usecases.ErrRoomHeatingSysFnRejected):
-		return status.Errorf(codes.FailedPrecondition, "%s: %v", action, err)
-	case errors.Is(err, usecases.ErrRoomHeatingDataUnavailable),
-		errors.Is(err, usecases.ErrRoomHeatingSysFnDataUnavailable):
-		return status.Errorf(codes.NotFound, "%s: %v", action, err)
-	case errors.Is(err, context.Canceled):
-		return status.Errorf(codes.Canceled, "%s: %v", action, err)
-	case errors.Is(err, context.DeadlineExceeded):
-		return status.Errorf(codes.DeadlineExceeded, "%s: %v", action, err)
-	default:
-		return status.Errorf(codes.Internal, "%s: %v", action, err)
-	}
+	return mapUsecaseError(action, err, roomHeatingErrorClasses)
 }
