@@ -21,8 +21,8 @@ func TestLPCEventRouting(t *testing.T) {
 
 	select {
 	case evt := <-ch:
-		if evt.SKI != "test-ski" {
-			t.Errorf("SKI = %q, want test-ski", evt.SKI)
+		if evt.SKI != "TEST-SKI" {
+			t.Errorf("SKI = %q, want TEST-SKI", evt.SKI)
 		}
 		if evt.Type != eebus.EventTypeLPCLimitUpdated {
 			t.Errorf("Type = %q, want lpc.limit_updated", evt.Type)

@@ -123,6 +123,7 @@ func (s *DHWService) SubscribeDHWEvents(req *pb.DeviceRequest, stream pb.DHWServ
 	}
 	ch := s.bus.Subscribe()
 	defer s.bus.Unsubscribe(ch)
+	reqSKI := eebus.NormalizeSKI(req.Ski)
 
 	for {
 		select {
@@ -130,7 +131,7 @@ func (s *DHWService) SubscribeDHWEvents(req *pb.DeviceRequest, stream pb.DHWServ
 			if !ok {
 				return nil
 			}
-			if req.Ski != "" && eebus.NormalizeSKI(evt.SKI) != eebus.NormalizeSKI(req.Ski) {
+			if reqSKI != "" && evt.SKI != reqSKI {
 				continue
 			}
 			var eventType pb.DHWEventType
@@ -166,6 +167,7 @@ func (s *DHWService) SubscribeDHWSystemFunctionEvents(
 	}
 	ch := s.bus.Subscribe()
 	defer s.bus.Unsubscribe(ch)
+	reqSKI := eebus.NormalizeSKI(req.Ski)
 
 	for {
 		select {
@@ -173,7 +175,7 @@ func (s *DHWService) SubscribeDHWSystemFunctionEvents(
 			if !ok {
 				return nil
 			}
-			if req.Ski != "" && eebus.NormalizeSKI(evt.SKI) != eebus.NormalizeSKI(req.Ski) {
+			if reqSKI != "" && evt.SKI != reqSKI {
 				continue
 			}
 			var eventType pb.DHWSystemFunctionEventType

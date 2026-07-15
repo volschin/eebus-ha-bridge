@@ -22,11 +22,28 @@ func TestEventBusSubscribeAndPublish(t *testing.T) {
 
 	select {
 	case received := <-ch:
-		if received.SKI != "test-ski" {
-			t.Errorf("SKI = %q, want test-ski", received.SKI)
+		if received.SKI != "TEST-SKI" {
+			t.Errorf("SKI = %q, want TEST-SKI (Publish normalizes)", received.SKI)
 		}
 		if received.Type != "test-event" {
 			t.Errorf("Type = %q, want test-event", received.Type)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for event")
+	}
+}
+
+func TestEventBusPublishNormalizesSKI(t *testing.T) {
+	bus := eebus.NewEventBus()
+	ch := bus.Subscribe()
+	defer bus.Unsubscribe(ch)
+
+	bus.Publish(eebus.Event{SKI: " test:ski 123 ", Type: "evt"})
+
+	select {
+	case evt := <-ch:
+		if evt.SKI != "TEST:SKI123" {
+			t.Errorf("SKI = %q, want TEST:SKI123", evt.SKI)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for event")

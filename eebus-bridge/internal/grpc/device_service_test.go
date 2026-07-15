@@ -85,10 +85,11 @@ func TestRegisterRemoteSKINormalizesColonSeparatedSKI(t *testing.T) {
 		t.Fatalf("RegisterRemoteSKI(colon-separated): %v", err)
 	}
 
+	want := eebus.NormalizeSKI(testValidSKI)
 	select {
 	case evt := <-ch:
-		if evt.SKI != testValidSKI {
-			t.Errorf("published SKI = %q, want normalized %q", evt.SKI, testValidSKI)
+		if evt.SKI != want {
+			t.Errorf("published SKI = %q, want normalized %q", evt.SKI, want)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for register event")
@@ -116,10 +117,11 @@ func TestUnregisterRemoteSKIPublishesEvent(t *testing.T) {
 		t.Fatalf("UnregisterRemoteSKI: %v", err)
 	}
 
+	want := eebus.NormalizeSKI(testValidSKI)
 	select {
 	case evt := <-ch:
-		if evt.Type != eebus.EventTypeDeviceUnregisterSKI || evt.SKI != testValidSKI {
-			t.Errorf("event = %+v, want type=device.unregister_ski ski=%s", evt, testValidSKI)
+		if evt.Type != eebus.EventTypeDeviceUnregisterSKI || evt.SKI != want {
+			t.Errorf("event = %+v, want type=device.unregister_ski ski=%s", evt, want)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for unregister event")
@@ -159,7 +161,8 @@ func TestSubscribeDeviceEventsTrustRemoved(t *testing.T) {
 	if evt.EventType != pb.DeviceEventType_DEVICE_EVENT_TRUST_REMOVED {
 		t.Errorf("EventType = %v, want DEVICE_EVENT_TRUST_REMOVED", evt.EventType)
 	}
-	if evt.Ski != testValidSKI {
-		t.Errorf("Ski = %q, want %q", evt.Ski, testValidSKI)
+	want := eebus.NormalizeSKI(testValidSKI)
+	if evt.Ski != want {
+		t.Errorf("Ski = %q, want %q", evt.Ski, want)
 	}
 }

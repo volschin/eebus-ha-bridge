@@ -178,6 +178,7 @@ func (s *LPCService) GetHeartbeatStatus(_ context.Context, req *pb.DeviceRequest
 func (s *LPCService) SubscribeLPCEvents(req *pb.DeviceRequest, stream pb.LPCService_SubscribeLPCEventsServer) error {
 	ch := s.bus.Subscribe()
 	defer s.bus.Unsubscribe(ch)
+	reqSKI := eebus.NormalizeSKI(req.Ski)
 
 	for {
 		select {
@@ -185,7 +186,7 @@ func (s *LPCService) SubscribeLPCEvents(req *pb.DeviceRequest, stream pb.LPCServ
 			if !ok {
 				return nil
 			}
-			if req.Ski != "" && evt.SKI != req.Ski {
+			if reqSKI != "" && evt.SKI != reqSKI {
 				continue
 			}
 			var eventType pb.LPCEventType

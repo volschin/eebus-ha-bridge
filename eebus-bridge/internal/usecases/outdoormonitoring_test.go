@@ -29,7 +29,7 @@ func TestOutdoorMonitoringWrapperPublishesEvents(t *testing.T) {
 			wrapper.HandleEvent("test-ski", nil, nil, tt.in)
 			select {
 			case event := <-ch:
-				if event.SKI != "test-ski" || event.Type != tt.want {
+				if event.SKI != "TEST-SKI" || event.Type != tt.want {
 					t.Fatalf("event = %+v", event)
 				}
 			case <-time.After(time.Second):
