@@ -27,8 +27,8 @@ func TestOHPCFEventRouting(t *testing.T) {
 		if evt.Type != eebus.EventTypeOHPCFConsumptionStateUpdated {
 			t.Errorf("Type = %q, want ohpcf.consumption_state_updated", evt.Type)
 		}
-		if evt.SKI != "OHPCF-SKI" {
-			t.Errorf("SKI = %q, want OHPCF-SKI", evt.SKI)
+		if evt.SKI != "OHPCFSKI" {
+			t.Errorf("SKI = %q, want OHPCFSKI", evt.SKI)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for ohpcf event")

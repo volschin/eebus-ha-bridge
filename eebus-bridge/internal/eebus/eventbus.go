@@ -1,11 +1,15 @@
 package eebus
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 // EventBus provides fan-out event distribution to multiple subscribers.
 type EventBus struct {
-	mu          sync.RWMutex
-	subscribers map[chan Event]struct{}
+	mu                      sync.RWMutex
+	subscribers             map[chan Event]struct{}
+	droppedUnresolvedEvents atomic.Uint64
 }
 
 func NewEventBus() *EventBus {
@@ -37,13 +41,17 @@ func (b *EventBus) Unsubscribe(ch chan Event) {
 // Publish sends an event to all subscribers. Non-blocking: drops events
 // for subscribers whose buffer is full.
 //
-// evt.SKI is normalized here so every subscriber sees a canonical SKI
-// regardless of what the publishing call site passed in — callers used to
-// normalize inconsistently (or not at all), forcing every stream filter to
-// re-normalize both sides of the comparison.
+// evt.SKI is normalized here so every subscriber sees a canonical SKI.
+// Device-scoped events without a resolvable device identity are dropped at
+// this boundary, never broadcast as wildcards, and included in
+// DroppedUnresolvedEvents. EventTypeDiscoveryUpdated is exempt: it reports on
+// the whole visible-services list, not a single device, so it has no SKI to
+// resolve in the first place.
 func (b *EventBus) Publish(evt Event) {
-	if evt.SKI != "" {
-		evt.SKI = NormalizeSKI(evt.SKI)
+	evt.SKI = NormalizeSKI(evt.SKI)
+	if evt.SKI == "" && evt.Type != EventTypeDiscoveryUpdated {
+		b.droppedUnresolvedEvents.Add(1)
+		return
 	}
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -54,4 +62,10 @@ func (b *EventBus) Publish(evt Event) {
 			// subscriber too slow, drop event
 		}
 	}
+}
+
+// DroppedUnresolvedEvents returns the number of publish attempts rejected
+// because no canonical device SKI was supplied.
+func (b *EventBus) DroppedUnresolvedEvents() uint64 {
+	return b.droppedUnresolvedEvents.Load()
 }

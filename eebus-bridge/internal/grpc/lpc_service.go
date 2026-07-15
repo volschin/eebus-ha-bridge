@@ -255,8 +255,12 @@ func (s *LPCService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, 
 	// registry returns whichever was observed first (often the monitoring meter),
 	// which eebus-go rejects on write with ErrNoCompatibleEntity (issue #47).
 	if s.lpc != nil {
-		if entity := s.lpc.CompatibleEntity(ski); entity != nil {
-			return entity, nil
+		resolution := s.lpc.CompatibleEntity(ski)
+		if resolution.Ambiguous() {
+			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+		}
+		if resolution.Entity != nil {
+			return resolution.Entity, nil
 		}
 	}
 	if s.registry == nil {
@@ -264,7 +268,11 @@ func (s *LPCService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, 
 	}
 	entity := s.registry.FirstEntity(ski)
 	if entity == nil && ski == "" {
-		entity = s.registry.FirstAvailableEntity()
+		resolution := s.registry.FirstAvailableEntity()
+		if resolution.Ambiguous() {
+			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+		}
+		entity = resolution.Entity
 	}
 	if entity == nil {
 		return nil, status.Errorf(codes.NotFound, "no remote entity found for ski %s", ski)

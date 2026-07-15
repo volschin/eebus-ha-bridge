@@ -181,7 +181,7 @@ func (d *DHWTemperature) request(entity spineapi.EntityRemoteInterface, function
 }
 
 // CompatibleEntity returns the negotiated DHWCircuit for a device SKI.
-func (d *DHWTemperature) CompatibleEntity(ski string) spineapi.EntityRemoteInterface {
+func (d *DHWTemperature) CompatibleEntity(ski string) eebus.EntityResolution {
 	return compatibleEntity(d.RemoteEntitiesScenarios(), ski)
 }
 

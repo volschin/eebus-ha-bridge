@@ -159,9 +159,9 @@ func (w *MonitoringWrapper) Frequency(entity spineapi.EntityRemoteInterface) (fl
 	return w.uc.Frequency(entity)
 }
 
-func (w *MonitoringWrapper) CompatibleEntity(ski string) spineapi.EntityRemoteInterface {
+func (w *MonitoringWrapper) CompatibleEntity(ski string) eebus.EntityResolution {
 	if w.uc == nil {
-		return nil
+		return eebus.EntityResolution{}
 	}
 	return compatibleEntity(w.uc.RemoteEntitiesScenarios(), ski)
 }

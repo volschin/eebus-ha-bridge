@@ -178,8 +178,12 @@ func convertCompressorState(st ucapi.CompressorPowerConsumptionStateType) pb.Com
 // the wrong one.
 func (s *OHPCFService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, error) {
 	if s.ohpcf != nil {
-		if entity := s.ohpcf.CompatibleEntity(ski); entity != nil {
-			return entity, nil
+		resolution := s.ohpcf.CompatibleEntity(ski)
+		if resolution.Ambiguous() {
+			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+		}
+		if resolution.Entity != nil {
+			return resolution.Entity, nil
 		}
 	}
 	if s.registry == nil {
@@ -187,7 +191,11 @@ func (s *OHPCFService) resolveEntity(ski string) (spineapi.EntityRemoteInterface
 	}
 	entity := s.registry.FirstEntity(ski)
 	if entity == nil && ski == "" {
-		entity = s.registry.FirstAvailableEntity()
+		resolution := s.registry.FirstAvailableEntity()
+		if resolution.Ambiguous() {
+			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+		}
+		entity = resolution.Entity
 	}
 	if entity == nil {
 		return nil, status.Errorf(codes.NotFound, "no compatible OHPCF entity found for ski %s", ski)

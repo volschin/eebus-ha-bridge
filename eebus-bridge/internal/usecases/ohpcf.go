@@ -123,11 +123,10 @@ func (w *OHPCFWrapper) OptionalPowerConsumptionAvailable(entity spineapi.EntityR
 // such as the Vaillant VR940 registers several entities under one device SKI;
 // RemoteEntitiesScenarios lists only entities that advertise OHPCF, so resolving
 // from it picks the Compressor rather than e.g. the monitoring meter (issue #47).
-// An empty ski matches the first OHPCF-capable entity of any device. Returns nil
-// when the use case is not set up or no compatible entity has been negotiated yet.
-func (w *OHPCFWrapper) CompatibleEntity(ski string) spineapi.EntityRemoteInterface {
+// An empty ski resolves only when exactly one device is OHPCF-capable.
+func (w *OHPCFWrapper) CompatibleEntity(ski string) eebus.EntityResolution {
 	if w.uc == nil {
-		return nil
+		return eebus.EntityResolution{}
 	}
 	return compatibleEntity(w.uc.RemoteEntitiesScenarios(), ski)
 }

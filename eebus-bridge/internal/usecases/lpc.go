@@ -96,11 +96,10 @@ func (w *LPCWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInterfa
 // ("no compatible entity"). RemoteEntitiesScenarios lists only entities that
 // advertise the LPC use case, so resolving from it picks the correct one (issue #47).
 //
-// An empty ski matches the first LPC-capable entity of any device. Returns nil when
-// the use case is not set up or no compatible entity has been negotiated yet.
-func (w *LPCWrapper) CompatibleEntity(ski string) spineapi.EntityRemoteInterface {
+// An empty ski resolves only when exactly one device is LPC-capable.
+func (w *LPCWrapper) CompatibleEntity(ski string) eebus.EntityResolution {
 	if w.uc == nil {
-		return nil
+		return eebus.EntityResolution{}
 	}
 	return compatibleEntity(w.uc.RemoteEntitiesScenarios(), ski)
 }

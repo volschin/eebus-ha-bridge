@@ -7,22 +7,76 @@ import (
 	spineapi "github.com/enbility/spine-go/api"
 	"github.com/enbility/spine-go/mocks"
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
+	"github.com/volschin/eebus-bridge/internal/eebus"
 	"github.com/volschin/eebus-bridge/internal/usecases"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type fakeRoomHeatingTemp struct {
-	entity spineapi.EntityRemoteInterface
-	state  usecases.RoomHeatingSetpoint
-	err    error
+	entity   spineapi.EntityRemoteInterface
+	entities map[string]spineapi.EntityRemoteInterface
+	state    usecases.RoomHeatingSetpoint
+	states   map[spineapi.EntityRemoteInterface]usecases.RoomHeatingSetpoint
+	err      error
 }
 
-func (f *fakeRoomHeatingTemp) CompatibleEntity(string) spineapi.EntityRemoteInterface {
-	return f.entity
+func (f *fakeRoomHeatingTemp) CompatibleEntity(ski string) eebus.EntityResolution {
+	if f.entities == nil {
+		return eebus.EntityResolution{Entity: f.entity, DeviceCount: 1}
+	}
+	if eebus.NormalizeSKI(ski) == "" {
+		return eebus.EntityResolution{DeviceCount: len(f.entities)}
+	}
+	entity := f.entities[eebus.NormalizeSKI(ski)]
+	if entity == nil {
+		return eebus.EntityResolution{}
+	}
+	return eebus.EntityResolution{Entity: entity, DeviceCount: 1}
 }
-func (f *fakeRoomHeatingTemp) State(spineapi.EntityRemoteInterface) (usecases.RoomHeatingSetpoint, error) {
+func (f *fakeRoomHeatingTemp) State(entity spineapi.EntityRemoteInterface) (usecases.RoomHeatingSetpoint, error) {
+	if f.states != nil {
+		return f.states[entity], f.err
+	}
 	return f.state, f.err
+}
+
+func TestHVACServiceIsolatesCompatibleDevices(t *testing.T) {
+	deviceA := mocks.NewEntityRemoteInterface(t)
+	deviceB := mocks.NewEntityRemoteInterface(t)
+	temp := &fakeRoomHeatingTemp{
+		entities: map[string]spineapi.EntityRemoteInterface{
+			"AABBCC": deviceA,
+			"DDEEFF": deviceB,
+		},
+		states: map[spineapi.EntityRemoteInterface]usecases.RoomHeatingSetpoint{
+			deviceA: {Value: 19},
+			deviceB: {Value: 23},
+		},
+	}
+	svc := NewHVACService(temp, nil, nil, nil)
+
+	if _, err := svc.GetRoomHeating(context.Background(), &pb.DeviceRequest{}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("empty SKI error = %v, want FailedPrecondition", err)
+	}
+	for _, test := range []struct {
+		ski  string
+		want float64
+	}{
+		{ski: "aa:bb-cc", want: 19},
+		{ski: "DDEEFF", want: 23},
+	} {
+		state, err := svc.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: test.ski})
+		if err != nil {
+			t.Fatalf("GetRoomHeating(%q): %v", test.ski, err)
+		}
+		if state.Setpoint == nil || state.Setpoint.ValueCelsius != test.want {
+			t.Errorf("GetRoomHeating(%q) = %+v, want setpoint %v", test.ski, state, test.want)
+		}
+	}
+	if _, err := svc.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: "unknown"}); status.Code(err) != codes.NotFound {
+		t.Fatalf("unknown explicit SKI error = %v, want NotFound", err)
+	}
 }
 func (f *fakeRoomHeatingTemp) Write(context.Context, spineapi.EntityRemoteInterface, float64) error {
 	return f.err

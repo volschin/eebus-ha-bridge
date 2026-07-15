@@ -22,8 +22,8 @@ type fakeDHWController struct {
 	writtenValue float64
 }
 
-func (f *fakeDHWController) CompatibleEntity(string) spineapi.EntityRemoteInterface {
-	return f.entity
+func (f *fakeDHWController) CompatibleEntity(string) eebus.EntityResolution {
+	return eebus.EntityResolution{Entity: f.entity, DeviceCount: 1}
 }
 
 func (f *fakeDHWController) State(spineapi.EntityRemoteInterface) (usecases.DHWSetpoint, error) {
@@ -45,8 +45,8 @@ type fakeDHWSysFnController struct {
 	writtenMode  string
 }
 
-func (f *fakeDHWSysFnController) CompatibleEntity(string) spineapi.EntityRemoteInterface {
-	return f.entity
+func (f *fakeDHWSysFnController) CompatibleEntity(string) eebus.EntityResolution {
+	return eebus.EntityResolution{Entity: f.entity, DeviceCount: 1}
 }
 
 func (f *fakeDHWSysFnController) State(spineapi.EntityRemoteInterface) (usecases.DHWSystemFunctionState, error) {

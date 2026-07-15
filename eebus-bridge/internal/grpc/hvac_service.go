@@ -12,13 +12,13 @@ import (
 )
 
 type roomHeatingTempController interface {
-	CompatibleEntity(string) spineapi.EntityRemoteInterface
+	CompatibleEntity(string) eebus.EntityResolution
 	State(spineapi.EntityRemoteInterface) (usecases.RoomHeatingSetpoint, error)
 	Write(context.Context, spineapi.EntityRemoteInterface, float64) error
 }
 
 type roomHeatingSysFnController interface {
-	CompatibleEntity(string) spineapi.EntityRemoteInterface
+	CompatibleEntity(string) eebus.EntityResolution
 	State(spineapi.EntityRemoteInterface) (usecases.RoomHeatingSystemFunctionState, error)
 	WriteOperationMode(context.Context, spineapi.EntityRemoteInterface, string) error
 }
@@ -54,17 +54,25 @@ func (s *HVACService) GetRoomHeating(_ context.Context, req *pb.DeviceRequest) (
 		}
 	}
 	if s.temp != nil {
-		if entity := s.temp.CompatibleEntity(req.Ski); entity != nil {
+		resolution := s.temp.CompatibleEntity(req.Ski)
+		if resolution.Ambiguous() {
+			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+		}
+		if resolution.Entity != nil {
 			resolved = true
-			if setpoint, err := s.temp.State(entity); err == nil {
+			if setpoint, err := s.temp.State(resolution.Entity); err == nil {
 				state.Setpoint = convertRoomHeatingSetpoint(setpoint)
 			}
 		}
 	}
 	if s.sysfn != nil {
-		if entity := s.sysfn.CompatibleEntity(req.Ski); entity != nil {
+		resolution := s.sysfn.CompatibleEntity(req.Ski)
+		if resolution.Ambiguous() {
+			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+		}
+		if resolution.Entity != nil {
 			resolved = true
-			if sysfn, err := s.sysfn.State(entity); err == nil {
+			if sysfn, err := s.sysfn.State(resolution.Entity); err == nil {
 				state.SystemFunction = convertRoomHeatingSystemFunction(sysfn)
 			}
 		}
@@ -85,11 +93,14 @@ func (s *HVACService) SetRoomHeatingTemperature(
 	if s.temp == nil {
 		return nil, status.Error(codes.Unavailable, "room heating temperature use case not initialized")
 	}
-	entity := s.temp.CompatibleEntity(req.Ski)
-	if entity == nil {
+	resolution := s.temp.CompatibleEntity(req.Ski)
+	if resolution.Ambiguous() {
+		return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+	}
+	if resolution.Entity == nil {
 		return nil, status.Errorf(codes.NotFound, "no compatible HVACRoom found for ski %s", req.Ski)
 	}
-	if err := s.temp.Write(ctx, entity, req.ValueCelsius); err != nil {
+	if err := s.temp.Write(ctx, resolution.Entity, req.ValueCelsius); err != nil {
 		return nil, mapRoomHeatingError("writing room heating setpoint", err)
 	}
 	return &pb.Empty{}, nil
@@ -105,11 +116,14 @@ func (s *HVACService) SetRoomHeatingMode(
 	if s.sysfn == nil {
 		return nil, status.Error(codes.Unavailable, "room heating system function use case not initialized")
 	}
-	entity := s.sysfn.CompatibleEntity(req.Ski)
-	if entity == nil {
+	resolution := s.sysfn.CompatibleEntity(req.Ski)
+	if resolution.Ambiguous() {
+		return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+	}
+	if resolution.Entity == nil {
 		return nil, status.Errorf(codes.NotFound, "no compatible HVACRoom found for ski %s", req.Ski)
 	}
-	if err := s.sysfn.WriteOperationMode(ctx, entity, req.Mode); err != nil {
+	if err := s.sysfn.WriteOperationMode(ctx, resolution.Entity, req.Mode); err != nil {
 		return nil, mapRoomHeatingError("writing room heating mode", err)
 	}
 	return &pb.Empty{}, nil

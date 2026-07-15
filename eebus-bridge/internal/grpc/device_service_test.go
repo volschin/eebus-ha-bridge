@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	shipapi "github.com/enbility/ship-go/api"
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
@@ -50,6 +51,41 @@ func TestGetStatus(t *testing.T) {
 	}
 	if !resp.Running {
 		t.Error("Running = false, want true")
+	}
+}
+
+func TestListDevicesResponsesAreSortedByNormalizedSKI(t *testing.T) {
+	bus := eebus.NewEventBus()
+	callbacks := eebus.NewCallbacks(bus, false)
+	callbacks.VisibleRemoteMdnsServicesUpdated(nil, []shipapi.RemoteMdnsService{
+		{Ski: "cc:03"},
+		{Ski: "AA-01"},
+		{Ski: " bb 02 "},
+	})
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice("cc:03", eebus.DeviceInfo{})
+	registry.AddDevice("AA-01", eebus.DeviceInfo{})
+	registry.AddDevice(" bb 02 ", eebus.DeviceInfo{})
+	svc := bridgegrpc.NewDeviceService(callbacks, bus, "local", registry)
+
+	discovered, err := svc.ListDiscoveredDevices(context.Background(), &pb.Empty{})
+	if err != nil {
+		t.Fatalf("ListDiscoveredDevices: %v", err)
+	}
+	for index, want := range []string{"AA-01", " bb 02 ", "cc:03"} {
+		if discovered.Devices[index].Ski != want {
+			t.Errorf("discovered[%d].ski = %q, want %q", index, discovered.Devices[index].Ski, want)
+		}
+	}
+
+	paired, err := svc.ListPairedDevices(context.Background(), &pb.Empty{})
+	if err != nil {
+		t.Fatalf("ListPairedDevices: %v", err)
+	}
+	for index, want := range []string{"AA01", "BB02", "CC03"} {
+		if paired.Devices[index].Ski != want {
+			t.Errorf("paired[%d].ski = %q, want %q", index, paired.Devices[index].Ski, want)
+		}
 	}
 }
 

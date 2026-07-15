@@ -317,26 +317,24 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             monitoring_stub = proto_stubs.monitoring_service_stub(channel)
             lpc_stub = proto_stubs.lpc_service_stub(channel)
             request = proto_stubs.DeviceRequest(ski=self.ski)
-            fallback_request = proto_stubs.DeviceRequest(ski="")
-            flags = {"saw_not_found": False, "used_fallback": False}
+            flags = {"saw_not_found": False}
 
             # The reads are independent; run them concurrently so poll latency
             # is the slowest single read instead of the sum of all round-trips.
             power, measurements, energy, limit, failsafe, hb = await asyncio.gather(
                 self._poll_read(
-                    "power", monitoring_stub.GetPowerConsumption, request, fallback_request, flags
+                    "power", monitoring_stub.GetPowerConsumption, request, flags
                 ),
                 self._poll_read(
-                    "scoped energy", monitoring_stub.GetMeasurements, request, fallback_request, flags
+                    "scoped energy", monitoring_stub.GetMeasurements, request, flags
                 ),
                 self._poll_read(
-                    "total energy", monitoring_stub.GetEnergyConsumed, request, fallback_request, flags
+                    "total energy", monitoring_stub.GetEnergyConsumed, request, flags
                 ),
                 self._poll_read(
                     "consumption limit",
                     lpc_stub.GetConsumptionLimit,
                     request,
-                    fallback_request,
                     flags,
                     unsupported_attr="_lpc_supported",
                 ),
@@ -344,7 +342,6 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "failsafe",
                     lpc_stub.GetFailsafeLimit,
                     request,
-                    fallback_request,
                     flags,
                     unsupported_attr="_failsafe_supported",
                 ),
@@ -352,7 +349,6 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "heartbeat",
                     lpc_stub.GetHeartbeatStatus,
                     request,
-                    fallback_request,
                     flags,
                     unsupported_attr="_heartbeat_supported",
                 ),
@@ -402,16 +398,13 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data["heartbeat_status"] = None
 
             saw_not_found = flags["saw_not_found"]
-            used_fallback = flags["used_fallback"]
             data["heartbeat_supported"] = self._heartbeat_supported
             data["lpc_supported"] = self._lpc_supported
             data["failsafe_supported"] = self._failsafe_supported
-            data["read_fallback_used"] = used_fallback
 
-            # Remaining reads are independent too; the device-info read needs
-            # used_fallback from the first batch, so this is a second gather.
-            # OHPCF/DHW/room-heating stay unavailable when the bridge side is
-            # off; device diagnostics is best-effort.
+            # Remaining reads are independent too. OHPCF/DHW/room-heating stay
+            # unavailable when the bridge side is off; device diagnostics is
+            # best-effort.
             (
                 data["device_info"],
                 data["compressor_flexibility"],
@@ -420,9 +413,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 room_heating,
                 data["device_operating_state"],
             ) = await asyncio.gather(
-                self._async_fetch_device_info(
-                    device_stub, proto_stubs, allow_fallback=used_fallback
-                ),
+                self._async_fetch_device_info(device_stub, proto_stubs),
                 self._async_read_compressor_flexibility(channel, proto_stubs, request),
                 self._async_read_dhw_setpoint(channel, proto_stubs, request),
                 self._async_read_dhw_system_function(channel, proto_stubs, request),
@@ -453,13 +444,12 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._not_found_streak = 0
 
             _LOGGER.debug(
-                "EEBUS poll summary for SKI %s: power=%s energy_total=%s energy_heating=%s energy_dhw=%s fallback=%s",
+                "EEBUS poll summary for SKI %s: power=%s energy_total=%s energy_heating=%s energy_dhw=%s",
                 self.ski,
                 data["power_watts"],
                 data["energy_consumed_kwh"],
                 data["energy_consumed_heating_kwh"],
                 data["energy_consumed_dhw_kwh"],
-                used_fallback,
             )
 
             if self._was_unavailable:
@@ -489,38 +479,20 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         label: str,
         call: Any,
         request: Any,
-        fallback_request: Any,
         flags: dict[str, bool],
         unsupported_attr: str | None = None,
     ) -> Any:
-        """Call a read RPC, retrying once with the fallback SKI on NOT_FOUND.
+        """Call a device-scoped read RPC once.
 
-        Returns the response, or None on failure. Records NOT_FOUND and
-        fallback use in ``flags``; when ``unsupported_attr`` is given, clears
-        that support flag on UNIMPLEMENTED.
+        Returns the response, or None on failure. Records NOT_FOUND in
+        ``flags``; when ``unsupported_attr`` is given, clears that support flag
+        on UNIMPLEMENTED.
         """
         try:
             response = await call(request, timeout=RPC_TIMEOUT)
         except grpc.aio.AioRpcError as err:
             if _is_not_found(err):
                 flags["saw_not_found"] = True
-                try:
-                    response = await call(fallback_request, timeout=RPC_TIMEOUT)
-                except grpc.aio.AioRpcError as retry_err:
-                    _LOGGER.debug(
-                        "EEBUS %s read failed for SKI %s and fallback: %s",
-                        label,
-                        self.ski,
-                        _rpc_error_text(retry_err),
-                    )
-                    if unsupported_attr is not None and _is_unimplemented(retry_err):
-                        setattr(self, unsupported_attr, False)
-                    return None
-                flags["used_fallback"] = True
-                _LOGGER.debug(
-                    "EEBUS %s read for SKI %s used fallback entity", label, self.ski
-                )
-                return response
             _LOGGER.debug(
                 "EEBUS %s read failed for SKI %s: %s",
                 label,
@@ -537,7 +509,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return response
 
     async def _async_fetch_device_info(
-        self, device_stub: Any, proto_stubs: Any, allow_fallback: bool
+        self, device_stub: Any, proto_stubs: Any
     ) -> dict[str, str] | None:
         """Read manufacturer/model metadata for the configured device.
 
@@ -566,8 +538,6 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
 
         match = next((d for d in devices if d.ski == self.ski), None)
-        if match is None and allow_fallback and len(devices) == 1:
-            match = devices[0]
         if match is None:
             return None
 
@@ -1359,10 +1329,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _event_matches(self, event_ski: str) -> bool:
         """Return True when an event applies to the configured device."""
-        if not event_ski or _normalize_ski(event_ski) == _normalize_ski(self.ski):
-            return True
-        # Reads fell back to the first available entity; its events are ours.
-        return bool(self.data and self.data.get("read_fallback_used"))
+        return _normalize_ski(event_ski) == _normalize_ski(self.ski)
 
     def _push_data(self, updates: dict[str, Any]) -> None:
         """Merge stream updates into coordinator data and notify listeners."""

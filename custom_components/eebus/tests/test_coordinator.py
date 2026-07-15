@@ -179,10 +179,8 @@ async def test_read_device_diagnostics_unavailable_returns_none():
 
 
 def test_measurement_event_other_ski_ignored():
-    """Events for a different SKI are ignored unless fallback reads are active."""
-    coordinator, pushed = _make_coordinator(
-        data={"power_watts": 100.0, "read_fallback_used": False}
-    )
+    """Events for a different SKI are always ignored."""
+    coordinator, pushed = _make_coordinator(data={"power_watts": 100.0})
     event = monitoring_service_pb2.MeasurementEvent(
         ski="other-ski",
         event_type=monitoring_service_pb2.MEASUREMENT_EVENT_POWER_UPDATED,
@@ -195,7 +193,7 @@ def test_measurement_event_other_ski_ignored():
 def test_measurement_event_matches_canonicalized_ski():
     """Canonical bridge events match a differently formatted configured SKI."""
     coordinator, pushed = _make_coordinator(
-        ski="ab:cd-ef", data={"power_watts": 100.0, "read_fallback_used": False}
+        ski="ab:cd-ef", data={"power_watts": 100.0}
     )
     event = monitoring_service_pb2.MeasurementEvent(
         ski="ABCDEF",
@@ -208,18 +206,16 @@ def test_measurement_event_matches_canonicalized_ski():
     assert pushed["power_watts"] == 1234.5
 
 
-def test_measurement_event_fallback_ski_accepted():
-    """When reads fell back to first entity, its events are accepted."""
-    coordinator, pushed = _make_coordinator(
-        data={"power_watts": 100.0, "read_fallback_used": True}
-    )
+def test_measurement_event_empty_ski_ignored():
+    """An empty event SKI is never treated as a wildcard."""
+    coordinator, pushed = _make_coordinator(data={"power_watts": 100.0})
     event = monitoring_service_pb2.MeasurementEvent(
-        ski="other-ski",
+        ski="",
         event_type=monitoring_service_pb2.MEASUREMENT_EVENT_POWER_UPDATED,
         power={"watts": 7.0},
     )
     coordinator._handle_measurement_event(event)
-    assert pushed["power_watts"] == 7.0
+    assert not pushed
 
 
 def test_measurement_event_before_first_poll_ignored():
@@ -308,9 +304,7 @@ def test_fetch_device_info_uses_matching_ski():
             device_type="HeatPumpAppliance",
         ),
     )
-    info = asyncio.run(
-        coordinator._async_fetch_device_info(stub, proto_stubs, allow_fallback=False)
-    )
+    info = asyncio.run(coordinator._async_fetch_device_info(stub, proto_stubs))
     assert info == {
         "manufacturer": "Bosch",
         "model": "Compress 5800i",
@@ -319,29 +313,78 @@ def test_fetch_device_info_uses_matching_ski():
     }
 
 
-def test_fetch_device_info_fallback_single_device():
-    """When reads fell back to the only device, its info is used despite SKI mismatch."""
+def test_fetch_device_info_single_mismatched_device_returns_none():
+    """A sole mismatched device is not used as metadata fallback."""
     coordinator, _ = _make_coordinator(ski="configured-ski")
     stub = _device_stub_returning(
         device_service_pb2.PairedDevice(ski="actual-ski", brand="Bosch")
     )
-    info = asyncio.run(
-        coordinator._async_fetch_device_info(stub, proto_stubs, allow_fallback=True)
-    )
-    assert info == {"manufacturer": "Bosch"}
+    info = asyncio.run(coordinator._async_fetch_device_info(stub, proto_stubs))
+    assert info is None
 
 
 def test_fetch_device_info_no_match_returns_none():
-    """No SKI match and no fallback yields None (no mislabeling)."""
+    """No SKI match yields None (no cross-device mislabeling)."""
     coordinator, _ = _make_coordinator(ski="configured-ski")
     stub = _device_stub_returning(
         device_service_pb2.PairedDevice(ski="a", brand="Bosch"),
         device_service_pb2.PairedDevice(ski="b", brand="Vaillant"),
     )
-    info = asyncio.run(
-        coordinator._async_fetch_device_info(stub, proto_stubs, allow_fallback=True)
-    )
+    info = asyncio.run(coordinator._async_fetch_device_info(stub, proto_stubs))
     assert info is None
+
+
+async def test_two_coordinators_isolate_device_info_and_events():
+    """Each config entry surfaces only metadata and events for its own SKI."""
+    coordinator_a, pushed_a = _make_coordinator(
+        ski="ski-a", data={"power_watts": 100.0}
+    )
+    coordinator_b, pushed_b = _make_coordinator(
+        ski="ski-b", data={"power_watts": 200.0}
+    )
+    stub = _device_stub_returning(
+        device_service_pb2.PairedDevice(ski="ski-b", brand="Brand B"),
+        device_service_pb2.PairedDevice(ski="ski-a", brand="Brand A"),
+    )
+
+    info_a, info_b = await asyncio.gather(
+        coordinator_a._async_fetch_device_info(stub, proto_stubs),
+        coordinator_b._async_fetch_device_info(stub, proto_stubs),
+    )
+    assert info_a == {"manufacturer": "Brand A"}
+    assert info_b == {"manufacturer": "Brand B"}
+
+    event_b = monitoring_service_pb2.MeasurementEvent(
+        ski="ski-b",
+        event_type=monitoring_service_pb2.MEASUREMENT_EVENT_POWER_UPDATED,
+        power={"watts": 250.0},
+    )
+    coordinator_a._handle_measurement_event(event_b)
+    coordinator_b._handle_measurement_event(event_b)
+
+    assert not pushed_a
+    assert pushed_b["power_watts"] == 250.0
+
+
+async def test_poll_read_not_found_does_not_retry_with_empty_ski():
+    """A failed device-scoped read is attempted exactly once."""
+    coordinator, _ = _make_coordinator(ski="ski-a")
+    call = AsyncMock(
+        side_effect=AioRpcError(
+            grpc.StatusCode.NOT_FOUND,
+            Metadata(),
+            Metadata(),
+            details="not found",
+        )
+    )
+    request = proto_stubs.DeviceRequest(ski="ski-a")
+    flags = {"saw_not_found": False}
+
+    result = await coordinator._poll_read("power", call, request, flags)
+
+    assert result is None
+    assert flags["saw_not_found"] is True
+    call.assert_awaited_once_with(request, timeout=10)
 
 
 def test_device_event_triggers_refresh():

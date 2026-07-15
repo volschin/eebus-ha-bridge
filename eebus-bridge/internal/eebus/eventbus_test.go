@@ -22,8 +22,8 @@ func TestEventBusSubscribeAndPublish(t *testing.T) {
 
 	select {
 	case received := <-ch:
-		if received.SKI != "TEST-SKI" {
-			t.Errorf("SKI = %q, want TEST-SKI (Publish normalizes)", received.SKI)
+		if received.SKI != "TESTSKI" {
+			t.Errorf("SKI = %q, want TESTSKI (Publish normalizes)", received.SKI)
 		}
 		if received.Type != "test-event" {
 			t.Errorf("Type = %q, want test-event", received.Type)
@@ -42,11 +42,28 @@ func TestEventBusPublishNormalizesSKI(t *testing.T) {
 
 	select {
 	case evt := <-ch:
-		if evt.SKI != "TEST:SKI123" {
-			t.Errorf("SKI = %q, want TEST:SKI123", evt.SKI)
+		if evt.SKI != "TESTSKI123" {
+			t.Errorf("SKI = %q, want TESTSKI123", evt.SKI)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for event")
+	}
+}
+
+func TestEventBusDropsAndCountsEmptySKI(t *testing.T) {
+	bus := eebus.NewEventBus()
+	ch := bus.Subscribe()
+	defer bus.Unsubscribe(ch)
+
+	bus.Publish(eebus.Event{Type: "device-event"})
+
+	if got := bus.DroppedUnresolvedEvents(); got != 1 {
+		t.Fatalf("DroppedUnresolvedEvents() = %d, want 1", got)
+	}
+	select {
+	case evt := <-ch:
+		t.Fatalf("received unresolved event %+v", evt)
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 
