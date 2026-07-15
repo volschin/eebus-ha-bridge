@@ -195,7 +195,7 @@ func (d *DHWSystemFunction) request(entity spineapi.EntityRemoteInterface, funct
 }
 
 // CompatibleEntity returns the negotiated DHWCircuit for a device SKI.
-func (d *DHWSystemFunction) CompatibleEntity(ski string) spineapi.EntityRemoteInterface {
+func (d *DHWSystemFunction) CompatibleEntity(ski string) eebus.EntityResolution {
 	return compatibleEntity(d.RemoteEntitiesScenarios(), ski)
 }
 

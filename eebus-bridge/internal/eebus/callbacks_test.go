@@ -20,8 +20,8 @@ func TestCallbacksDispatchConnect(t *testing.T) {
 	select {
 	case evt := <-ch:
 		// SKI is normalized (uppercased, whitespace stripped) before dispatch.
-		if evt.SKI != "TEST-SKI-123" {
-			t.Errorf("SKI = %q, want TEST-SKI-123", evt.SKI)
+		if evt.SKI != "TESTSKI123" {
+			t.Errorf("SKI = %q, want TESTSKI123", evt.SKI)
 		}
 		if evt.Type != eebus.EventTypeDeviceConnected {
 			t.Errorf("Type = %q, want device.connected", evt.Type)
@@ -114,8 +114,8 @@ func TestCallbacksTrustRemovedClearsCachedEntitiesAndPublishes(t *testing.T) {
 		if evt.Type != eebus.EventTypeDeviceTrustRemoved {
 			t.Errorf("Type = %q, want device.trust_removed", evt.Type)
 		}
-		if evt.SKI != "TEST-SKI-789" {
-			t.Errorf("SKI = %q, want TEST-SKI-789", evt.SKI)
+		if evt.SKI != "TESTSKI789" {
+			t.Errorf("SKI = %q, want TESTSKI789", evt.SKI)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for trust_removed event")
@@ -137,6 +137,9 @@ func TestCallbacksVisibleServicesUpdated(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout")
+	}
+	if got := bus.DroppedUnresolvedEvents(); got != 0 {
+		t.Errorf("DroppedUnresolvedEvents() = %d, want 0", got)
 	}
 
 	if got := cb.DiscoveredServices(); len(got) != 1 || got[0].Ski != "abc" {

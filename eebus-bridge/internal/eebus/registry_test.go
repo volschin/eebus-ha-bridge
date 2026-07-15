@@ -5,6 +5,7 @@ import (
 	"time"
 
 	spineapi "github.com/enbility/spine-go/api"
+	"github.com/enbility/spine-go/mocks"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
 
@@ -103,6 +104,8 @@ func TestNormalizeSKI(t *testing.T) {
 	cases := map[string]string{
 		"abcdef":       "ABCDEF",
 		"  ab cd ef  ": "ABCDEF",
+		"ab:cd-ef":     "ABCDEF",
+		"ab\tcd\nef":   "ABCDEF",
 		"AbCdEf":       "ABCDEF",
 		"":             "",
 	}
@@ -139,12 +142,43 @@ func TestRegistrySKINormalizationConsistency(t *testing.T) {
 
 func TestRegistryListDevices(t *testing.T) {
 	reg := eebus.NewDeviceRegistry()
-	reg.AddDevice("ski-1", eebus.DeviceInfo{Brand: "A"})
-	reg.AddDevice("ski-2", eebus.DeviceInfo{Brand: "B"})
+	reg.AddDevice("cc:03", eebus.DeviceInfo{Brand: "C"})
+	reg.AddDevice("AA-01", eebus.DeviceInfo{Brand: "A"})
+	reg.AddDevice(" bb 02 ", eebus.DeviceInfo{Brand: "B"})
 
 	devices := reg.ListDevices()
-	if len(devices) != 2 {
-		t.Errorf("len(devices) = %d, want 2", len(devices))
+	if len(devices) != 3 {
+		t.Fatalf("len(devices) = %d, want 3", len(devices))
+	}
+	for index, want := range []string{"AA01", "BB02", "CC03"} {
+		if devices[index].SKI != want {
+			t.Errorf("devices[%d].SKI = %q, want %q", index, devices[index].SKI, want)
+		}
+	}
+}
+
+func TestRegistryFirstAvailableEntityRequiresOneDevice(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	entityA := mocks.NewEntityRemoteInterface(t)
+	entityB := mocks.NewEntityRemoteInterface(t)
+
+	reg.AddDevice("ab:cd-ef", eebus.DeviceInfo{RemoteEntities: []spineapi.EntityRemoteInterface{entityA}})
+	reg.AddDevice(" AB-CD-EF ", eebus.DeviceInfo{RemoteEntities: []spineapi.EntityRemoteInterface{entityA}})
+	resolution := reg.FirstAvailableEntity()
+	if resolution.Ambiguous() || resolution.DeviceCount != 1 || resolution.Entity != entityA {
+		t.Fatalf("format variants resolved as %+v, want one physical device", resolution)
+	}
+
+	reg.AddDevice("DDEEFF", eebus.DeviceInfo{RemoteEntities: []spineapi.EntityRemoteInterface{entityB}})
+	resolution = reg.FirstAvailableEntity()
+	if !resolution.Ambiguous() || resolution.DeviceCount != 2 {
+		t.Fatalf("two devices resolved as %+v, want ambiguity", resolution)
+	}
+	if reg.FirstEntity("ab cd ef") != entityA || reg.FirstEntity("dd:ee:ff") != entityB {
+		t.Error("explicit registry lookup did not preserve device identity")
+	}
+	if reg.FirstEntity("unknown") != nil {
+		t.Error("unknown explicit registry lookup returned an entity")
 	}
 }
 

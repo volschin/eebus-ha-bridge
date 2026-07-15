@@ -91,7 +91,7 @@ func TestDeviceOperatingStateHandleEventPublishesFromPayload(t *testing.T) {
 
 	select {
 	case evt := <-ch:
-		if evt.Type != eebus.EventTypeMonitoringDeviceOperatingStateUpdated || evt.SKI != "TEST-SKI" {
+		if evt.Type != eebus.EventTypeMonitoringDeviceOperatingStateUpdated || evt.SKI != "TESTSKI" {
 			t.Fatalf("event = %+v", evt)
 		}
 	default:

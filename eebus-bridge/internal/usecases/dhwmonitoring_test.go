@@ -20,7 +20,7 @@ func TestDHWMonitoringWrapperPublishesTemperatureUpdate(t *testing.T) {
 
 	select {
 	case event := <-ch:
-		if event.SKI != "TEST-SKI" || event.Type != eebus.EventTypeDHWTemperatureUpdated {
+		if event.SKI != "TESTSKI" || event.Type != eebus.EventTypeDHWTemperatureUpdated {
 			t.Fatalf("event = %+v", event)
 		}
 	case <-time.After(time.Second):

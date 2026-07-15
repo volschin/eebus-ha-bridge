@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"sort"
 
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/eebus"
@@ -35,6 +36,9 @@ func (s *DeviceService) GetStatus(_ context.Context, _ *pb.Empty) (*pb.ServiceSt
 
 func (s *DeviceService) ListDiscoveredDevices(_ context.Context, _ *pb.Empty) (*pb.ListDevicesResponse, error) {
 	svcs := s.callbacks.DiscoveredServices()
+	sort.SliceStable(svcs, func(i, j int) bool {
+		return eebus.NormalizeSKI(svcs[i].Ski) < eebus.NormalizeSKI(svcs[j].Ski)
+	})
 	devices := make([]*pb.DiscoveredDevice, 0, len(svcs))
 	for _, svc := range svcs {
 		devices = append(devices, &pb.DiscoveredDevice{

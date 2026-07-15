@@ -142,6 +142,9 @@ func (s *MonitoringService) GetMeasurements(_ context.Context, req *pb.DeviceReq
 	now := timestamppb.Now()
 	measurements := make([]*pb.MeasurementEntry, 0, 12)
 	resolved := s.resolveForRead(req.Ski)
+	if status.Code(resolved.err) == codes.FailedPrecondition {
+		return nil, resolved.err
+	}
 
 	if value, err := readMetric("power", resolved, s.monitoring.Power); err == nil {
 		appendMeasurement(&measurements, now, "power_consumption", value, "W")
@@ -178,33 +181,33 @@ func (s *MonitoringService) GetMeasurements(_ context.Context, req *pb.DeviceReq
 	}
 
 	if s.dhw != nil {
-		if value, err := s.dhw.Temperature(req.Ski); err == nil {
+		if value, err := s.dhw.Temperature(resolved.ski); err == nil {
 			appendMeasurement(&measurements, now, "dhw_temperature", value, "degC")
 		}
 	}
 	if s.room != nil {
-		if value, err := s.room.Temperature(req.Ski); err == nil {
+		if value, err := s.room.Temperature(resolved.ski); err == nil {
 			appendMeasurement(&measurements, now, "room_temperature", value, "degC")
 		}
 	}
 	if s.outdoor != nil {
-		if value, err := s.outdoor.Temperature(req.Ski); err == nil {
+		if value, err := s.outdoor.Temperature(resolved.ski); err == nil {
 			appendMeasurement(&measurements, now, "outdoor_temperature", value, "degC")
 		}
 	}
 	if s.flow != nil {
-		if value, err := s.flow.Temperature(req.Ski); err == nil {
+		if value, err := s.flow.Temperature(resolved.ski); err == nil {
 			appendMeasurement(&measurements, now, "flow_temperature", value, "degC")
 		}
 	}
 	if s.returnTemp != nil {
-		if value, err := s.returnTemp.Temperature(req.Ski); err == nil {
+		if value, err := s.returnTemp.Temperature(resolved.ski); err == nil {
 			appendMeasurement(&measurements, now, "return_temperature", value, "degC")
 		}
 	}
 
 	if s.monitoring != nil {
-		values, err := s.monitoring.GenericMeasurements(req.Ski)
+		values, err := s.monitoring.GenericMeasurements(resolved.ski)
 		if err != nil {
 			values = nil
 		}
@@ -348,11 +351,15 @@ func (s *MonitoringService) attachTemperaturePayload(
 
 func (s *MonitoringService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, error) {
 	if s.monitoring != nil {
-		if entity := s.monitoring.CompatibleEntity(ski); entity != nil {
+		resolution := s.monitoring.CompatibleEntity(ski)
+		if resolution.Ambiguous() {
+			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+		}
+		if resolution.Entity != nil {
 			if s.registry != nil {
 				s.registry.RecordMonitoringSuccess()
 			}
-			return entity, nil
+			return resolution.Entity, nil
 		}
 	}
 	if s.registry == nil {
@@ -363,8 +370,12 @@ func (s *MonitoringService) resolveEntity(ski string) (spineapi.EntityRemoteInte
 		log.Printf("[DEBUG] Monitoring.resolveEntity no entity for requested SKI: requested_ski=%s", ski)
 	}
 	if entity == nil && ski == "" {
-		entity = s.registry.FirstAvailableEntity()
-		if entity != nil {
+		resolution := s.registry.FirstAvailableEntity()
+		if resolution.Ambiguous() {
+			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+		}
+		entity = resolution.Entity
+		if resolution.Entity != nil {
 			log.Printf("[DEBUG] Monitoring.resolveEntity selected fallback entity for empty SKI request")
 		}
 	}
@@ -373,6 +384,14 @@ func (s *MonitoringService) resolveEntity(ski string) (spineapi.EntityRemoteInte
 		return nil, status.Errorf(codes.NotFound, "no remote entity found for ski %s", ski)
 	}
 	return entity, nil
+}
+
+func ambiguousDeviceSelection(deviceCount int) error {
+	return status.Errorf(
+		codes.FailedPrecondition,
+		"ambiguous device selection: %d compatible devices found for empty ski, specify ski",
+		deviceCount,
+	)
 }
 
 // resolvedEntity carries the outcome of resolveEntity so multi-metric callers
@@ -385,42 +404,25 @@ type resolvedEntity struct {
 
 func (s *MonitoringService) resolveForRead(ski string) resolvedEntity {
 	entity, err := s.resolveEntity(ski)
-	return resolvedEntity{ski: ski, entity: entity, err: err}
+	resolvedSKI := eebus.NormalizeSKI(ski)
+	if resolvedSKI == "" && entity != nil && entity.Device() != nil {
+		resolvedSKI = eebus.NormalizeSKI(entity.Device().Ski())
+	}
+	return resolvedEntity{ski: resolvedSKI, entity: entity, err: err}
 }
 
 // readMetric reads one measurement through the monitoring use case. Reads are
 // best-effort: GetMeasurements only appends a result when the read succeeds,
 // so a device that does not advertise a given measurement simply omits it.
-// When the SKI did not resolve, the read is retried once with a nil entity
-// (guarded against panics inside eebus-go), matching the behaviour of the
-// former per-metric readers.
+// Resolution failures are returned unchanged so an unknown explicit SKI can
+// never fall through to eebus-go's implicit first-entity behavior.
 func readMetric[T any](label string, r resolvedEntity, read func(spineapi.EntityRemoteInterface) (T, error)) (T, error) {
 	var zero T
 	if r.err == nil {
 		return read(r.entity)
 	}
-	if status.Code(r.err) != codes.NotFound {
-		log.Printf("[DEBUG] Monitoring.readMetric %s resolveEntity failed without fallback: requested_ski=%s err=%v", label, r.ski, r.err)
-		return zero, r.err
-	}
-	log.Printf("[DEBUG] Monitoring.readMetric %s attempting nil-entity fallback: requested_ski=%s", label, r.ski)
-	value, fallbackErr := safeRead(label, func() (T, error) { return read(nil) })
-	if fallbackErr != nil {
-		log.Printf("[DEBUG] Monitoring.readMetric %s nil-entity fallback failed: requested_ski=%s err=%v", label, r.ski, fallbackErr)
-		return zero, r.err
-	}
-	log.Printf("[DEBUG] Monitoring.readMetric %s nil-entity fallback succeeded: requested_ski=%s", label, r.ski)
-	return value, nil
-}
-
-// safeRead guards a nil-entity read against panics inside eebus-go.
-func safeRead[T any](label string, read func() (T, error)) (value T, err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("panic during nil-entity %s read: %v", label, recovered)
-		}
-	}()
-	return read()
+	log.Printf("[DEBUG] Monitoring.readMetric %s resolveEntity failed: requested_ski=%s err=%v", label, r.ski, r.err)
+	return zero, r.err
 }
 
 func appendMeasurement(measurements *[]*pb.MeasurementEntry, now *timestamppb.Timestamp, measurementType string, value float64, unit string) {

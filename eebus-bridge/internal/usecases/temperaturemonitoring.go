@@ -151,16 +151,16 @@ func (w *TemperatureMonitoringWrapper) Temperature(ski string) (float64, error) 
 	if w.uc == nil {
 		return 0, w.errNotInitialized
 	}
-	entity := w.CompatibleEntity(ski)
-	if entity == nil {
+	resolution := w.CompatibleEntity(ski)
+	if resolution.Entity == nil {
 		return 0, eebusapi.ErrDataNotAvailable
 	}
-	return w.uc.Temperature(entity, model.UnitOfMeasurementTypedegC)
+	return w.uc.Temperature(resolution.Entity, model.UnitOfMeasurementTypedegC)
 }
 
-func (w *TemperatureMonitoringWrapper) CompatibleEntity(ski string) spineapi.EntityRemoteInterface {
+func (w *TemperatureMonitoringWrapper) CompatibleEntity(ski string) eebus.EntityResolution {
 	if w.uc == nil {
-		return nil
+		return eebus.EntityResolution{}
 	}
 	return compatibleEntity(w.uc.RemoteEntitiesScenarios(), ski)
 }

@@ -12,13 +12,13 @@ import (
 )
 
 type dhwController interface {
-	CompatibleEntity(string) spineapi.EntityRemoteInterface
+	CompatibleEntity(string) eebus.EntityResolution
 	State(spineapi.EntityRemoteInterface) (usecases.DHWSetpoint, error)
 	Write(context.Context, spineapi.EntityRemoteInterface, float64) error
 }
 
 type dhwSysFnController interface {
-	CompatibleEntity(string) spineapi.EntityRemoteInterface
+	CompatibleEntity(string) eebus.EntityResolution
 	State(spineapi.EntityRemoteInterface) (usecases.DHWSystemFunctionState, error)
 	WriteBoost(context.Context, spineapi.EntityRemoteInterface, bool) error
 	WriteOperationMode(context.Context, spineapi.EntityRemoteInterface, string) error
@@ -144,8 +144,8 @@ func (s *DHWService) SubscribeDHWEvents(req *pb.DeviceRequest, stream pb.DHWServ
 				continue
 			}
 			event := &pb.DHWEvent{Ski: evt.SKI, EventType: eventType}
-			if entity := s.dhw.CompatibleEntity(evt.SKI); entity != nil {
-				if state, err := s.dhw.State(entity); err == nil {
+			if resolution := s.dhw.CompatibleEntity(evt.SKI); resolution.Entity != nil {
+				if state, err := s.dhw.State(resolution.Entity); err == nil {
 					event.Setpoint = convertDHWSetpoint(state)
 				}
 			}
@@ -189,8 +189,8 @@ func (s *DHWService) SubscribeDHWSystemFunctionEvents(
 			}
 			event := &pb.DHWSystemFunctionEvent{Ski: evt.SKI, EventType: eventType}
 			if s.dhwSysFn != nil {
-				if entity := s.dhwSysFn.CompatibleEntity(evt.SKI); entity != nil {
-					if state, err := s.dhwSysFn.State(entity); err == nil {
+				if resolution := s.dhwSysFn.CompatibleEntity(evt.SKI); resolution.Entity != nil {
+					if state, err := s.dhwSysFn.State(resolution.Entity); err == nil {
 						event.State = convertDHWSystemFunctionState(state)
 					}
 				}
@@ -208,22 +208,28 @@ func (s *DHWService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, 
 	if s.dhw == nil {
 		return nil, status.Error(codes.Unavailable, "DHW temperature use case not initialized")
 	}
-	entity := s.dhw.CompatibleEntity(ski)
-	if entity == nil {
+	resolution := s.dhw.CompatibleEntity(ski)
+	if resolution.Ambiguous() {
+		return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+	}
+	if resolution.Entity == nil {
 		return nil, status.Errorf(codes.NotFound, "no compatible DHWCircuit found for ski %s", ski)
 	}
-	return entity, nil
+	return resolution.Entity, nil
 }
 
 func (s *DHWService) resolveSysFnEntity(ski string) (spineapi.EntityRemoteInterface, error) {
 	if s.dhwSysFn == nil {
 		return nil, status.Error(codes.Unavailable, "DHW system function use case not initialized")
 	}
-	entity := s.dhwSysFn.CompatibleEntity(ski)
-	if entity == nil {
+	resolution := s.dhwSysFn.CompatibleEntity(ski)
+	if resolution.Ambiguous() {
+		return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+	}
+	if resolution.Entity == nil {
 		return nil, status.Errorf(codes.NotFound, "no compatible DHWCircuit found for ski %s", ski)
 	}
-	return entity, nil
+	return resolution.Entity, nil
 }
 
 func convertDHWSetpoint(state usecases.DHWSetpoint) *pb.DHWSetpoint {

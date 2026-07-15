@@ -2,6 +2,7 @@ package eebus
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -28,6 +29,18 @@ type DeviceInfo struct {
 	RemoteDevice   spineapi.DeviceRemoteInterface
 	RemoteEntities []spineapi.EntityRemoteInterface
 	Entities       []EntityInfo
+}
+
+// EntityResolution describes a device-scoped entity lookup. DeviceCount is the
+// number of distinct normalized device SKIs that matched an unscoped lookup.
+// More than one match is ambiguous and deliberately has no selected Entity.
+type EntityResolution struct {
+	Entity      spineapi.EntityRemoteInterface
+	DeviceCount int
+}
+
+func (r EntityResolution) Ambiguous() bool {
+	return r.Entity == nil && r.DeviceCount > 1
 }
 
 type DeviceRegistry struct {
@@ -64,13 +77,13 @@ func (r *DeviceRegistry) MonitoringStale(threshold time.Duration) bool {
 	return time.Since(last) > threshold
 }
 
-// NormalizeSKI canonicalizes a SKI for use as a registry key: uppercase, no
-// surrounding or embedded whitespace. Remote peers (e.g. Bosch/Connect-Key) may
-// report the same SKI with differing case or spacing; normalizing prevents the
-// same device being stored under multiple keys, which later causes resolveEntity
-// lookups to fail with NOT_FOUND.
+// NormalizeSKI canonicalizes a SKI for use as a registry key: uppercase, with
+// whitespace and common display separators removed. Remote peers and clients
+// may report the same SKI with differing case or formatting; normalizing
+// prevents one physical device from being stored under multiple keys.
 func NormalizeSKI(ski string) string {
-	return strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(ski), " ", ""))
+	replacer := strings.NewReplacer(" ", "", "\t", "", "\n", "", "\r", "", ":", "", "-", "")
+	return strings.ToUpper(replacer.Replace(strings.TrimSpace(ski)))
 }
 
 func (r *DeviceRegistry) AddDevice(ski string, info DeviceInfo) {
@@ -205,6 +218,9 @@ func (r *DeviceRegistry) ListDevices() []DeviceInfo {
 	for _, info := range r.devices {
 		result = append(result, info)
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return NormalizeSKI(result[i].SKI) < NormalizeSKI(result[j].SKI)
+	})
 	return result
 }
 
@@ -219,17 +235,26 @@ func (r *DeviceRegistry) FirstEntity(ski string) spineapi.EntityRemoteInterface 
 	return info.RemoteEntities[0]
 }
 
-// FirstAvailableEntity returns the first entity from any known device.
-// Used as a fallback when a client-selected SKI has no mapped entity yet.
-func (r *DeviceRegistry) FirstAvailableEntity() spineapi.EntityRemoteInterface {
+// FirstAvailableEntity resolves an entity only when exactly one known device
+// currently has entities. Multiple devices are reported as ambiguous instead
+// of depending on randomized map iteration order.
+func (r *DeviceRegistry) FirstAvailableEntity() EntityResolution {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	var entity spineapi.EntityRemoteInterface
+	deviceCount := 0
 	for _, info := range r.devices {
 		if len(info.RemoteEntities) > 0 {
-			return info.RemoteEntities[0]
+			deviceCount++
+			if entity == nil {
+				entity = info.RemoteEntities[0]
+			}
 		}
 	}
-	return nil
+	if deviceCount != 1 {
+		entity = nil
+	}
+	return EntityResolution{Entity: entity, DeviceCount: deviceCount}
 }
 
 func (r *DeviceRegistry) Entities(ski string) []EntityInfo {
