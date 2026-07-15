@@ -44,21 +44,21 @@ func (d *DeviceOperatingState) Setup(localEntity spineapi.EntityLocalInterface) 
 }
 
 // HandleEvent republishes valid DeviceDiagnosis cache updates as typed events.
+// The payload already carries the fresh state; reading it here instead of
+// issuing another RequestRemoteData avoids a reply→event→read feedback loop.
 func (d *DeviceOperatingState) HandleEvent(payload spineapi.EventPayload) {
 	if payload.Entity == nil || payload.EventType != spineapi.EventTypeDataChange ||
 		payload.ChangeType != spineapi.ElementChangeUpdate {
 		return
 	}
-	if _, ok := payload.Data.(*model.DeviceDiagnosisStateDataType); !ok {
+	if _, ok := deviceOperatingState(payload.Data); !ok {
 		return
 	}
-	if d.registry == nil || d.bus == nil {
+	if d.bus == nil {
 		return
 	}
 	ski := eebus.NormalizeSKI(payload.Ski)
-	if _, err := d.OperatingState(ski); err == nil {
-		d.bus.Publish(eebus.Event{SKI: ski, Type: "monitoring.device_operating_state_updated"})
-	}
+	d.bus.Publish(eebus.Event{SKI: ski, Type: "monitoring.device_operating_state_updated"})
 }
 
 // OperatingState actively reads and returns the remote device operating state.
@@ -109,6 +109,17 @@ func (d *DeviceOperatingState) OperatingState(ski string) (string, error) {
 	case <-timer.C:
 		return operatingStateFromCache(remote)
 	}
+}
+
+// CachedOperatingState returns the operating state from the SPINE cache
+// without touching the network. Suitable for event fan-out, where the cache
+// was updated immediately before the event fired.
+func (d *DeviceOperatingState) CachedOperatingState(ski string) (string, error) {
+	remote := d.remoteDeviceDiagnosisFeature(ski)
+	if remote == nil {
+		return "", ErrDeviceOperatingStateUnavailable
+	}
+	return operatingStateFromCache(remote)
 }
 
 func (d *DeviceOperatingState) localDeviceDiagnosisFeature() spineapi.FeatureLocalInterface {

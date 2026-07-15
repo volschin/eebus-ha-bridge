@@ -35,27 +35,34 @@ type temperatureReader interface {
 
 type deviceOperatingStateReader interface {
 	OperatingState(string) (string, error)
+	CachedOperatingState(string) (string, error)
+}
+
+// MonitoringReaders bundles the optional per-reading dependencies of the
+// MonitoringService; leave a field nil when the reading is unsupported.
+type MonitoringReaders struct {
+	DHW         temperatureReader
+	Room        temperatureReader
+	Outdoor     temperatureReader
+	Flow        temperatureReader
+	Return      temperatureReader
+	Diagnostics deviceOperatingStateReader
 }
 
 func NewMonitoringService(
 	monitoring *usecases.MonitoringWrapper,
-	dhw temperatureReader,
-	room temperatureReader,
-	outdoor temperatureReader,
-	flow temperatureReader,
-	returnTemp temperatureReader,
-	diagnostics deviceOperatingStateReader,
+	readers MonitoringReaders,
 	bus *eebus.EventBus,
 	registry *eebus.DeviceRegistry,
 ) *MonitoringService {
 	return &MonitoringService{
 		monitoring:  monitoring,
-		dhw:         dhw,
-		room:        room,
-		outdoor:     outdoor,
-		flow:        flow,
-		returnTemp:  returnTemp,
-		diagnostics: diagnostics,
+		dhw:         readers.DHW,
+		room:        readers.Room,
+		outdoor:     readers.Outdoor,
+		flow:        readers.Flow,
+		returnTemp:  readers.Return,
+		diagnostics: readers.Diagnostics,
 		bus:         bus,
 		registry:    registry,
 	}
@@ -307,7 +314,9 @@ func (s *MonitoringService) attachMeasurementPayload(event *pb.MeasurementEvent,
 		if s.diagnostics == nil {
 			return
 		}
-		if state, err := s.diagnostics.OperatingState(ski); err == nil {
+		// The event fired because the SPINE cache was just updated, so a cache
+		// read is fresh; an active read here would block the send loop.
+		if state, err := s.diagnostics.CachedOperatingState(ski); err == nil {
 			event.Data = &pb.MeasurementEvent_DeviceDiagnostics{DeviceDiagnostics: &pb.DeviceDiagnosticsData{
 				OperatingState: state,
 				Timestamp:      timestamppb.Now(),
