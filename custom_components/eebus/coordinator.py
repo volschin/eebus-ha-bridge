@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from datetime import timedelta
 from functools import lru_cache
 from types import ModuleType
@@ -210,6 +212,77 @@ def _system_function_to_dict(system_function: Any) -> dict[str, Any]:
     }
 
 
+class _ProviderPusher:
+    """Serialize and coalesce state-triggered pushes for one provider."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        label: str,
+        ski: str,
+        tracked: tuple[str | None, ...],
+        push: Callable[[], Awaitable[None]],
+    ) -> None:
+        self._hass = hass
+        self._label = label
+        self._ski = ski
+        self._entity_ids = [entity_id for entity_id in tracked if entity_id]
+        self._push = push
+        self._dirty = asyncio.Event()
+        self._task: asyncio.Task[None] | None = None
+        self._unsub: Callable[[], None] | None = None
+
+    def start(self) -> None:
+        """Subscribe to state changes and schedule the initial push."""
+        if self._task is not None:
+            return
+
+        def _on_change(_event: Event[EventStateChangedData]) -> None:
+            self.signal()
+
+        self._unsub = async_track_state_change_event(
+            self._hass, self._entity_ids, _on_change
+        )
+        self.signal()
+        self._task = self._hass.async_create_background_task(
+            self._run(), name=f"eebus_{self._label}_provider_push_{self._ski}"
+        )
+
+    def signal(self) -> None:
+        """Mark provider data dirty, coalescing repeated signals."""
+        self._dirty.set()
+
+    async def stop(self) -> None:
+        """Unsubscribe, then cancel and await the worker task."""
+        unsub = self._unsub
+        self._unsub = None
+        task = self._task
+        if task is None:
+            if unsub is not None:
+                unsub()
+            return
+        try:
+            if unsub is not None:
+                unsub()
+        finally:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+            self._task = None
+
+    async def _run(self) -> None:
+        """Push the freshest state once per coalesced dirty signal."""
+        while True:
+            await self._dirty.wait()
+            self._dirty.clear()
+            try:
+                await self._push()
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Unexpected failure pushing %s provider data", self._label)
+
+
 class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator that manages gRPC connection and data updates."""
 
@@ -261,9 +334,8 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.battery_soc_entity = battery_soc_entity
         self._channel: grpc.aio.Channel | None = None
         self._stream_tasks: list[asyncio.Task[None]] = []
-        self._grid_unsub: Any = None
-        self._pv_unsub: Any = None
-        self._battery_unsub: Any = None
+        self._provider_pushers: list[_ProviderPusher] = []
+        self._provider_push_failing: dict[str, bool] = {}
         self._was_unavailable: bool = False
         self._heartbeat_supported: bool | None = None
         self._lpc_supported: bool | None = None
@@ -1026,8 +1098,15 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         from . import proto_stubs
 
         stub = getattr(proto_stubs, stub_factory)(channel)
+        failure_state: dict[str, bool] | None = getattr(
+            self, "_provider_push_failing", None
+        )
+        if failure_state is None:
+            failure_state = self._provider_push_failing = {}
         try:
             await getattr(stub, publish_method)(request, timeout=RPC_TIMEOUT)
+            if failure_state.pop(label, False):
+                _LOGGER.info("%s provider push recovered", label)
             _LOGGER.debug("Pushed %s data: %s", label, request)
         except grpc.aio.AioRpcError as err:
             if _is_unimplemented(err) or err.code() == grpc.StatusCode.UNAVAILABLE:
@@ -1035,32 +1114,28 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "%s provider not ready; skipping push: %s", label, _rpc_error_text(err)
                 )
                 return
-            _LOGGER.warning("Failed to push %s data: %s", label, _rpc_error_text(err))
+            if failure_state.get(label, False):
+                _LOGGER.debug("Failed to push %s data: %s", label, _rpc_error_text(err))
+            else:
+                _LOGGER.warning("Failed to push %s data: %s", label, _rpc_error_text(err))
+                failure_state[label] = True
 
     def _start_provider_push(
         self,
         label: str,
         tracked: tuple[str | None, ...],
-        unsub_attr: str,
-        push: Any,
+        push: Callable[[], Awaitable[None]],
     ) -> None:
-        """Track the mapped sensors and push provider data on every change."""
-
-        async def _on_change(_event: Event[EventStateChangedData]) -> None:
-            await push()
-
-        entity_ids = [entity_id for entity_id in tracked if entity_id]
-        setattr(
-            self,
-            unsub_attr,
-            async_track_state_change_event(self.hass, entity_ids, _on_change),
+        """Start one lifecycle-owning provider push worker."""
+        pusher = _ProviderPusher(
+            self.hass,
+            label,
+            self.ski,
+            tracked,
+            push,
         )
-        # Initial push so the provider has data before the first sensor change.
-        self._stream_tasks.append(
-            self.hass.async_create_background_task(
-                push(), name=f"eebus_{label}_initial_push_{self.ski}"
-            )
-        )
+        self._provider_pushers.append(pusher)
+        pusher.start()
 
     async def async_push_grid_data(self) -> None:
         """Push the mapped grid sensors to the bridge MGCP provider.
@@ -1103,7 +1178,6 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.grid_feed_in_energy_entity,
                 self.grid_consumption_energy_entity,
             ),
-            "_grid_unsub",
             self.async_push_grid_data,
         )
 
@@ -1154,7 +1228,6 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.pv_yield_energy_entity,
                 self.pv_peak_power_entity,
             ),
-            "_pv_unsub",
             self.async_push_pv_data,
         )
 
@@ -1210,7 +1283,6 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.battery_discharged_energy_entity,
                 self.battery_soc_entity,
             ),
-            "_battery_unsub",
             self.async_push_battery_data,
         )
 
@@ -1480,15 +1552,9 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_shutdown(self) -> None:
         """Close gRPC channel and cancel stream tasks."""
-        if self._grid_unsub is not None:
-            self._grid_unsub()
-            self._grid_unsub = None
-        if self._pv_unsub is not None:
-            self._pv_unsub()
-            self._pv_unsub = None
-        if self._battery_unsub is not None:
-            self._battery_unsub()
-            self._battery_unsub = None
+        for pusher in self._provider_pushers:
+            await pusher.stop()
+        self._provider_pushers.clear()
         for task in self._stream_tasks:
             task.cancel()
         self._stream_tasks.clear()
