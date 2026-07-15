@@ -82,15 +82,5 @@ func (w *OutdoorMonitoringWrapper) CompatibleEntity(ski string) spineapi.EntityR
 	if w.uc == nil {
 		return nil
 	}
-	want := eebus.NormalizeSKI(ski)
-	for _, remote := range w.uc.RemoteEntitiesScenarios() {
-		entity := remote.Entity
-		if entity == nil || entity.Device() == nil {
-			continue
-		}
-		if want == "" || eebus.NormalizeSKI(entity.Device().Ski()) == want {
-			return entity
-		}
-	}
-	return nil
+	return compatibleEntity(w.uc.RemoteEntitiesScenarios(), ski)
 }

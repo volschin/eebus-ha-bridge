@@ -104,27 +104,7 @@ func (w *LPCWrapper) CompatibleEntity(ski string) spineapi.EntityRemoteInterface
 	if w.uc == nil {
 		return nil
 	}
-	for _, rs := range w.uc.RemoteEntitiesScenarios() {
-		entity := rs.Entity
-		if entity == nil || entity.Device() == nil {
-			continue
-		}
-		if lpcEntityMatchesSKI(entity.Device().Ski(), ski) {
-			return entity
-		}
-	}
-	return nil
-}
-
-// lpcEntityMatchesSKI reports whether a remote entity advertising the given (raw)
-// SKI satisfies a resolve request for want. An empty want matches any entity;
-// otherwise SKIs are compared after normalization so case and spacing differences
-// reported by the remote do not cause a spurious mismatch.
-func lpcEntityMatchesSKI(entitySKI, want string) bool {
-	if want == "" {
-		return true
-	}
-	return eebus.NormalizeSKI(entitySKI) == eebus.NormalizeSKI(want)
+	return compatibleEntity(w.uc.RemoteEntitiesScenarios(), ski)
 }
 
 // ConsumptionLimit returns the current load control limit for the given remote entity.
