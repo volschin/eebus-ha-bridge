@@ -63,6 +63,11 @@ WRITE_VALIDATION_CODES = (
     grpc.StatusCode.NOT_FOUND,
 )
 
+
+def _normalize_ski(ski: str) -> str:
+    """Normalize an SKI for comparisons without changing its stored form."""
+    return ski.replace(":", "").replace("-", "").replace(" ", "").casefold()
+
 # Maps a GetMeasurements entry type (as emitted by the Go bridge) to the
 # coordinator data key consumed by the per-phase / grid / produced-energy
 # sensors. Types not present here (e.g. power_consumption, energy_consumed) are
@@ -1336,7 +1341,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _event_matches(self, event_ski: str) -> bool:
         """Return True when an event applies to the configured device."""
-        if not event_ski or event_ski == self.ski:
+        if not event_ski or _normalize_ski(event_ski) == _normalize_ski(self.ski):
             return True
         # Reads fell back to the first available entity; its events are ours.
         return bool(self.data and self.data.get("read_fallback_used"))
