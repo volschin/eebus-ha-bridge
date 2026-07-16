@@ -159,7 +159,6 @@
     },
     "switch": {
       "lpc_active": { "name": "LPC Active" },
-      "heartbeat": { "name": "Heartbeat" },
       "dhw_boost": { "name": "Domestic Hot Water Boost" }
     },
     "binary_sensor": {

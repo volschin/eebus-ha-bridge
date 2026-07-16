@@ -37,7 +37,13 @@ type LPCServiceClient interface {
 	WriteConsumptionLimit(ctx context.Context, in *WriteLoadLimitRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetFailsafeLimit(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*FailsafeLimit, error)
 	WriteFailsafeLimit(ctx context.Context, in *WriteFailsafeLimitRequest, opts ...grpc.CallOption) (*Empty, error)
+	// Deprecated: Do not use.
+	// Deprecated: Heartbeat is bridge-lifecycle-scoped and the ski field is
+	// ignored. This RPC will be removed in a future breaking API version.
 	StartHeartbeat(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*Empty, error)
+	// Deprecated: Do not use.
+	// Deprecated: Heartbeat is bridge-lifecycle-scoped and the ski field is
+	// ignored. This RPC will be removed in a future breaking API version.
 	StopHeartbeat(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetHeartbeatStatus(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*HeartbeatStatus, error)
 	SubscribeLPCEvents(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LPCEvent], error)
@@ -91,6 +97,7 @@ func (c *lPCServiceClient) WriteFailsafeLimit(ctx context.Context, in *WriteFail
 	return out, nil
 }
 
+// Deprecated: Do not use.
 func (c *lPCServiceClient) StartHeartbeat(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Empty)
@@ -101,6 +108,7 @@ func (c *lPCServiceClient) StartHeartbeat(ctx context.Context, in *DeviceRequest
 	return out, nil
 }
 
+// Deprecated: Do not use.
 func (c *lPCServiceClient) StopHeartbeat(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Empty)
@@ -148,7 +156,13 @@ type LPCServiceServer interface {
 	WriteConsumptionLimit(context.Context, *WriteLoadLimitRequest) (*Empty, error)
 	GetFailsafeLimit(context.Context, *DeviceRequest) (*FailsafeLimit, error)
 	WriteFailsafeLimit(context.Context, *WriteFailsafeLimitRequest) (*Empty, error)
+	// Deprecated: Do not use.
+	// Deprecated: Heartbeat is bridge-lifecycle-scoped and the ski field is
+	// ignored. This RPC will be removed in a future breaking API version.
 	StartHeartbeat(context.Context, *DeviceRequest) (*Empty, error)
+	// Deprecated: Do not use.
+	// Deprecated: Heartbeat is bridge-lifecycle-scoped and the ski field is
+	// ignored. This RPC will be removed in a future breaking API version.
 	StopHeartbeat(context.Context, *DeviceRequest) (*Empty, error)
 	GetHeartbeatStatus(context.Context, *DeviceRequest) (*HeartbeatStatus, error)
 	SubscribeLPCEvents(*DeviceRequest, grpc.ServerStreamingServer[LPCEvent]) error

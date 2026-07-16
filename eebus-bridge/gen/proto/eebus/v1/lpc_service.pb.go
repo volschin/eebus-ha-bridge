@@ -437,15 +437,15 @@ const file_eebus_v1_lpc_service_proto_rawDesc = "" +
 	"\x15LPC_EVENT_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17LPC_EVENT_LIMIT_UPDATED\x10\x01\x12\x1e\n" +
 	"\x1aLPC_EVENT_FAILSAFE_UPDATED\x10\x02\x12\x1f\n" +
-	"\x1bLPC_EVENT_HEARTBEAT_TIMEOUT\x10\x032\xb4\x04\n" +
+	"\x1bLPC_EVENT_HEARTBEAT_TIMEOUT\x10\x032\xbe\x04\n" +
 	"\n" +
 	"LPCService\x12C\n" +
 	"\x13GetConsumptionLimit\x12\x17.eebus.v1.DeviceRequest\x1a\x13.eebus.v1.LoadLimit\x12I\n" +
 	"\x15WriteConsumptionLimit\x12\x1f.eebus.v1.WriteLoadLimitRequest\x1a\x0f.eebus.v1.Empty\x12D\n" +
 	"\x10GetFailsafeLimit\x12\x17.eebus.v1.DeviceRequest\x1a\x17.eebus.v1.FailsafeLimit\x12J\n" +
-	"\x12WriteFailsafeLimit\x12#.eebus.v1.WriteFailsafeLimitRequest\x1a\x0f.eebus.v1.Empty\x12:\n" +
-	"\x0eStartHeartbeat\x12\x17.eebus.v1.DeviceRequest\x1a\x0f.eebus.v1.Empty\x129\n" +
-	"\rStopHeartbeat\x12\x17.eebus.v1.DeviceRequest\x1a\x0f.eebus.v1.Empty\x12H\n" +
+	"\x12WriteFailsafeLimit\x12#.eebus.v1.WriteFailsafeLimitRequest\x1a\x0f.eebus.v1.Empty\x12?\n" +
+	"\x0eStartHeartbeat\x12\x17.eebus.v1.DeviceRequest\x1a\x0f.eebus.v1.Empty\"\x03\x88\x02\x01\x12>\n" +
+	"\rStopHeartbeat\x12\x17.eebus.v1.DeviceRequest\x1a\x0f.eebus.v1.Empty\"\x03\x88\x02\x01\x12H\n" +
 	"\x12GetHeartbeatStatus\x12\x17.eebus.v1.DeviceRequest\x1a\x19.eebus.v1.HeartbeatStatus\x12C\n" +
 	"\x12SubscribeLPCEvents\x12\x17.eebus.v1.DeviceRequest\x1a\x12.eebus.v1.LPCEvent0\x01B=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3"
 

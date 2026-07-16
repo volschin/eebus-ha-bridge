@@ -160,7 +160,6 @@
     },
     "switch": {
       "lpc_active": { "name": "LPC aktiv" },
-      "heartbeat": { "name": "Heartbeat" },
       "dhw_boost": { "name": "Warmwasser Einmalladung" }
     },
     "binary_sensor": {

@@ -212,7 +212,6 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 | `water_heater.eebus_domestic_hot_water` | water_heater | Warmwasser mit Ist-/Solltemperatur und Betriebsart; Grenzen und Optionen kommen vom Geraet |
 | `climate.eebus_room_heating` | climate | Raumheizung mit Ist-/Solltemperatur und `auto`/`on`/`off`; Grenzen und Optionen kommen vom Geraet |
 | `switch.eebus_lpc_active` | switch | Limit aktivieren/deaktivieren |
-| `switch.eebus_heartbeat` | switch | Heartbeat an/aus, standardmaessig deaktiviert |
 | `switch.eebus_dhw_boost` | switch | Warmwasser-Einmalladung aktivieren/deaktivieren |
 | `select.eebus_compressor_flexibility` | select | OHPCF-Verdichter-Flexibilitaet: `on`/`paused`/`off`, nur vorhanden wenn WP ein Angebot meldet |
 
