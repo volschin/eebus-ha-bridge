@@ -25,7 +25,6 @@
     },
     "switch": {
       "lpc_active": { "default": "mdi:power-plug" },
-      "heartbeat": { "default": "mdi:heart-pulse" },
       "dhw_boost": { "default": "mdi:water-boiler" }
     },
     "select": {},

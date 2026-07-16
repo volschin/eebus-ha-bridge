@@ -41,6 +41,7 @@ async def test_setup_entry():
         entity_registry.async_get_entity_id.side_effect = [
             "number.eebus_dhw_setpoint",
             "select.eebus_dhw_operation_mode",
+            "switch.eebus_heartbeat",
         ]
         async_get_entity_registry.return_value = entity_registry
 
@@ -58,7 +59,27 @@ async def test_setup_entry():
         assert entity_registry.async_remove.call_args_list == [
             call("number.eebus_dhw_setpoint"),
             call("select.eebus_dhw_operation_mode"),
+            call("switch.eebus_heartbeat"),
         ]
+
+
+def test_remove_replaced_heartbeat_switch():
+    """Test the retired per-device heartbeat switch is removed from the registry."""
+    from custom_components.eebus import _remove_replaced_heartbeat_switch
+
+    hass = MagicMock()
+    entity_registry = MagicMock()
+    entity_registry.async_get_entity_id.return_value = "switch.eebus_heartbeat"
+
+    with patch(
+        "custom_components.eebus.er.async_get", return_value=entity_registry
+    ):
+        _remove_replaced_heartbeat_switch(hass, "test-ski")
+
+    entity_registry.async_get_entity_id.assert_called_once_with(
+        "switch", "eebus", "test-ski_heartbeat"
+    )
+    entity_registry.async_remove.assert_called_once_with("switch.eebus_heartbeat")
 
 
 @pytest.mark.asyncio

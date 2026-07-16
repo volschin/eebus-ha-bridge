@@ -11,8 +11,16 @@ service LPCService {
   rpc WriteConsumptionLimit(WriteLoadLimitRequest) returns (Empty);
   rpc GetFailsafeLimit(DeviceRequest) returns (FailsafeLimit);
   rpc WriteFailsafeLimit(WriteFailsafeLimitRequest) returns (Empty);
-  rpc StartHeartbeat(DeviceRequest) returns (Empty);
-  rpc StopHeartbeat(DeviceRequest) returns (Empty);
+  // Deprecated: Heartbeat is bridge-lifecycle-scoped and the ski field is
+  // ignored. This RPC will be removed in a future breaking API version.
+  rpc StartHeartbeat(DeviceRequest) returns (Empty) {
+    option deprecated = true;
+  }
+  // Deprecated: Heartbeat is bridge-lifecycle-scoped and the ski field is
+  // ignored. This RPC will be removed in a future breaking API version.
+  rpc StopHeartbeat(DeviceRequest) returns (Empty) {
+    option deprecated = true;
+  }
   rpc GetHeartbeatStatus(DeviceRequest) returns (HeartbeatStatus);
   rpc SubscribeLPCEvents(DeviceRequest) returns (stream LPCEvent);
 }

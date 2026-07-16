@@ -390,30 +390,6 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             validation=True,
         )
 
-    async def async_start_heartbeat(self) -> None:
-        """Start EEBUS heartbeat via gRPC."""
-        channel = await self._ensure_channel()
-        from . import proto_stubs
-        stub = proto_stubs.lpc_service_stub(channel)
-        await self._async_write_rpc(
-            "Heartbeat start",
-            stub.StartHeartbeat,
-            proto_stubs.DeviceRequest(ski=self.ski),
-            support_attr="_heartbeat_supported",
-        )
-
-    async def async_stop_heartbeat(self) -> None:
-        """Stop EEBUS heartbeat via gRPC."""
-        channel = await self._ensure_channel()
-        from . import proto_stubs
-        stub = proto_stubs.lpc_service_stub(channel)
-        await self._async_write_rpc(
-            "Heartbeat stop",
-            stub.StopHeartbeat,
-            proto_stubs.DeviceRequest(ski=self.ski),
-            support_attr="_heartbeat_supported",
-        )
-
     @property
     def grid_push_enabled(self) -> bool:
         """Return True when a grid power sensor is mapped to the MGCP provider."""

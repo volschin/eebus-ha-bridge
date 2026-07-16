@@ -105,13 +105,17 @@ class LPCServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def StartHeartbeat(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Deprecated: Heartbeat is bridge-lifecycle-scoped and the ski field is
+        ignored. This RPC will be removed in a future breaking API version.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def StopHeartbeat(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Deprecated: Heartbeat is bridge-lifecycle-scoped and the ski field is
+        ignored. This RPC will be removed in a future breaking API version.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')

@@ -130,6 +130,10 @@ func (s *LPCService) WriteFailsafeLimit(_ context.Context, req *pb.WriteFailsafe
 	return &pb.Empty{}, nil
 }
 
+// StartHeartbeat starts the bridge-lifecycle-scoped heartbeat. The request's
+// SKI is ignored.
+//
+// Deprecated: This RPC will be removed in a future breaking API version.
 func (s *LPCService) StartHeartbeat(_ context.Context, req *pb.DeviceRequest) (*pb.Empty, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
@@ -143,6 +147,10 @@ func (s *LPCService) StartHeartbeat(_ context.Context, req *pb.DeviceRequest) (*
 	return &pb.Empty{}, nil
 }
 
+// StopHeartbeat stops the bridge-lifecycle-scoped heartbeat. The request's SKI
+// is ignored.
+//
+// Deprecated: This RPC will be removed in a future breaking API version.
 func (s *LPCService) StopHeartbeat(_ context.Context, _ *pb.DeviceRequest) (*pb.Empty, error) {
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
