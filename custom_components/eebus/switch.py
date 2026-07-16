@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
+from .models import DHWSystemFunctionState
 
 PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling
 
@@ -110,7 +111,7 @@ class EebusDHWBoostSwitch(EebusEntity, SwitchEntity):
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.ski}_dhw_boost"
 
-    def _state(self) -> dict[str, Any] | None:
+    def _state(self) -> DHWSystemFunctionState | None:
         if self.coordinator.data is None:
             return None
         return self.coordinator.data.get("dhw_system_function")

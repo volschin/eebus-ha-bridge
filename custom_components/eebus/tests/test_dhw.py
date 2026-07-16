@@ -12,6 +12,10 @@ from homeassistant.const import ATTR_TEMPERATURE
 from custom_components.eebus import proto_stubs
 from custom_components.eebus.coordinator import EebusCoordinator
 from custom_components.eebus.generated.eebus.v1 import dhw_service_pb2
+from custom_components.eebus.snapshot import (
+    _async_read_dhw_setpoint,
+    _async_read_dhw_system_function,
+)
 from custom_components.eebus.switch import EebusDHWBoostSwitch
 from custom_components.eebus.water_heater import EebusDHWWaterHeater
 
@@ -23,10 +27,6 @@ def _coordinator(data=None):
     coordinator._dhw_supported = None
     coordinator._dhw_sysfn_supported = None
     return coordinator
-
-
-def _fake_proto(stub):
-    return SimpleNamespace(dhw_service_stub=lambda _channel: stub)
 
 
 def test_read_dhw_setpoint_maps_value_and_constraints():
@@ -41,20 +41,25 @@ def test_read_dhw_setpoint_maps_value_and_constraints():
     stub = SimpleNamespace(GetDHWSetpoint=AsyncMock(return_value=response))
     coordinator = _coordinator()
 
-    result = asyncio.run(
-        coordinator._async_read_dhw_setpoint(
-            None, _fake_proto(stub), proto_stubs.DeviceRequest(ski=coordinator.ski)
+    with patch.object(proto_stubs, "dhw_service_stub", return_value=stub):
+        result = asyncio.run(
+            _async_read_dhw_setpoint(
+                None,
+                proto_stubs.DeviceRequest(ski=coordinator.ski),
+                coordinator.ski,
+                coordinator._dhw_supported,
+            )
         )
-    )
 
-    assert result == {
+    assert result.value == {
         "value_celsius": 46,
         "min_celsius": 35,
         "max_celsius": 70,
         "step_celsius": 1,
         "writable": True,
     }
-    assert coordinator._dhw_supported is True
+    assert result.supported is True
+    assert coordinator._dhw_supported is None
 
 
 def test_read_dhw_setpoint_not_found_marks_unsupported():
@@ -63,14 +68,19 @@ def test_read_dhw_setpoint_not_found_marks_unsupported():
     stub = SimpleNamespace(GetDHWSetpoint=AsyncMock(side_effect=error))
     coordinator = _coordinator()
 
-    result = asyncio.run(
-        coordinator._async_read_dhw_setpoint(
-            None, _fake_proto(stub), proto_stubs.DeviceRequest(ski=coordinator.ski)
+    with patch.object(proto_stubs, "dhw_service_stub", return_value=stub):
+        result = asyncio.run(
+            _async_read_dhw_setpoint(
+                None,
+                proto_stubs.DeviceRequest(ski=coordinator.ski),
+                coordinator.ski,
+                coordinator._dhw_supported,
+            )
         )
-    )
 
-    assert result is None
-    assert coordinator._dhw_supported is False
+    assert result.value is None
+    assert result.supported is False
+    assert coordinator._dhw_supported is None
 
 
 def test_dhw_water_heater_combines_temperatures_modes_and_writes():
@@ -197,20 +207,25 @@ def test_read_dhw_system_function_maps_state():
     stub = SimpleNamespace(GetDHWSystemFunction=AsyncMock(return_value=response))
     coordinator = _coordinator()
 
-    result = asyncio.run(
-        coordinator._async_read_dhw_system_function(
-            None, _fake_proto(stub), proto_stubs.DeviceRequest(ski=coordinator.ski)
+    with patch.object(proto_stubs, "dhw_service_stub", return_value=stub):
+        result = asyncio.run(
+            _async_read_dhw_system_function(
+                None,
+                proto_stubs.DeviceRequest(ski=coordinator.ski),
+                coordinator.ski,
+                coordinator._dhw_sysfn_supported,
+            )
         )
-    )
 
-    assert result == {
+    assert result.value == {
         "boost_status": "running",
         "boost_writable": True,
         "operation_mode": "auto",
         "available_modes": ["auto", "on", "off"],
         "mode_writable": True,
     }
-    assert coordinator._dhw_sysfn_supported is True
+    assert result.supported is True
+    assert coordinator._dhw_sysfn_supported is None
 
 
 def test_read_dhw_system_function_not_found_marks_unsupported():
@@ -219,14 +234,19 @@ def test_read_dhw_system_function_not_found_marks_unsupported():
     stub = SimpleNamespace(GetDHWSystemFunction=AsyncMock(side_effect=error))
     coordinator = _coordinator()
 
-    result = asyncio.run(
-        coordinator._async_read_dhw_system_function(
-            None, _fake_proto(stub), proto_stubs.DeviceRequest(ski=coordinator.ski)
+    with patch.object(proto_stubs, "dhw_service_stub", return_value=stub):
+        result = asyncio.run(
+            _async_read_dhw_system_function(
+                None,
+                proto_stubs.DeviceRequest(ski=coordinator.ski),
+                coordinator.ski,
+                coordinator._dhw_sysfn_supported,
+            )
         )
-    )
 
-    assert result is None
-    assert coordinator._dhw_sysfn_supported is False
+    assert result.value is None
+    assert result.supported is False
+    assert coordinator._dhw_sysfn_supported is None
 
 
 def test_dhw_system_function_writes_map_validation_errors():
