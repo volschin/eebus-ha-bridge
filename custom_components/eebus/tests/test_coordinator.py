@@ -298,18 +298,21 @@ def test_start_streams_delegates_all_consumers_to_stream_manager():
 async def test_shutdown_stops_streams_before_closing_channel():
     """Shutdown fully stops stream tasks before closing the shared channel."""
     coordinator = EebusCoordinator.__new__(EebusCoordinator)
-    coordinator._provider_pushers = []
     lifecycle = MagicMock()
+    coordinator._provider_manager = MagicMock()
+    coordinator._provider_manager.async_stop = AsyncMock()
     coordinator._stream_manager = MagicMock()
     coordinator._stream_manager.stop = AsyncMock()
     coordinator._channel_manager = MagicMock()
     coordinator._channel_manager.close = AsyncMock()
+    lifecycle.attach_mock(coordinator._provider_manager.async_stop, "stop_providers")
     lifecycle.attach_mock(coordinator._stream_manager.stop, "stop_streams")
     lifecycle.attach_mock(coordinator._channel_manager.close, "close_channel")
 
     await coordinator.async_shutdown()
 
     assert lifecycle.mock_calls == [
+        call.stop_providers(),
         call.stop_streams(),
         call.close_channel(),
     ]

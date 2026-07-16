@@ -4,10 +4,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.eebus import proto_stubs
-from custom_components.eebus.coordinator import (
+from custom_components.eebus.coordinator import EebusCoordinator
+from custom_components.eebus.providers import (
     ENERGY_UNIT_TO_WH,
     POWER_UNIT_TO_W,
-    EebusCoordinator,
+    ProviderManager,
 )
 
 
@@ -20,32 +21,52 @@ def _make_grid_coordinator(states, power=None, feed_in=None, consumed=None):
     """Build a coordinator skeleton wired for grid-push tests."""
     coordinator = EebusCoordinator.__new__(EebusCoordinator)
     coordinator.ski = "test-ski"
-    coordinator.grid_power_entity = power
-    coordinator.grid_feed_in_energy_entity = feed_in
-    coordinator.grid_consumption_energy_entity = consumed
     hass = MagicMock()
     hass.states.get = lambda entity_id: states.get(entity_id)
     coordinator.hass = hass
     coordinator._ensure_channel = AsyncMock(return_value=object())
+    coordinator._provider_manager = ProviderManager(
+        hass,
+        coordinator.ski,
+        lambda: coordinator._ensure_channel(),
+        grid_power_entity=power,
+        grid_feed_in_energy_entity=feed_in,
+        grid_consumption_energy_entity=consumed,
+    )
     return coordinator
 
 
 def test_read_sensor_value_normalizes_power_units():
     """kW is scaled to W; W passes through; export stays negative."""
     coordinator = _make_grid_coordinator({"sensor.p": _state("-1.5", "kW")}, power="sensor.p")
-    assert coordinator._read_sensor_value("sensor.p", POWER_UNIT_TO_W, "power") == -1500.0
+    assert (
+        coordinator._provider_manager._read_sensor_value(
+            "sensor.p", POWER_UNIT_TO_W, "power"
+        )
+        == -1500.0
+    )
 
 
 def test_read_sensor_value_normalizes_energy_units():
     """kWh is scaled to Wh."""
     coordinator = _make_grid_coordinator({"sensor.e": _state("12.34", "kWh")})
-    assert coordinator._read_sensor_value("sensor.e", ENERGY_UNIT_TO_WH, "energy") == 12340.0
+    assert (
+        coordinator._provider_manager._read_sensor_value(
+            "sensor.e", ENERGY_UNIT_TO_WH, "energy"
+        )
+        == 12340.0
+    )
 
 
 def test_read_sensor_value_unknown_unit_assumes_base():
     """Unknown unit falls back to the base unit (factor 1)."""
     coordinator = _make_grid_coordinator({"sensor.p": _state("42", None)})
-    assert coordinator._read_sensor_value("sensor.p", POWER_UNIT_TO_W, "power") == 42.0
+    assert (
+        coordinator._provider_manager._read_sensor_value(
+            "sensor.p", POWER_UNIT_TO_W, "power"
+        )
+        == 42.0
+    )
 
 
 def test_read_sensor_value_unavailable_returns_none():
@@ -53,9 +74,10 @@ def test_read_sensor_value_unavailable_returns_none():
     coordinator = _make_grid_coordinator(
         {"sensor.u": _state("unavailable", "W"), "sensor.x": _state("foo", "W")}
     )
-    assert coordinator._read_sensor_value("sensor.u", POWER_UNIT_TO_W, "power") is None
-    assert coordinator._read_sensor_value("sensor.x", POWER_UNIT_TO_W, "power") is None
-    assert coordinator._read_sensor_value(None, POWER_UNIT_TO_W, "power") is None
+    manager = coordinator._provider_manager
+    assert manager._read_sensor_value("sensor.u", POWER_UNIT_TO_W, "power") is None
+    assert manager._read_sensor_value("sensor.x", POWER_UNIT_TO_W, "power") is None
+    assert manager._read_sensor_value(None, POWER_UNIT_TO_W, "power") is None
 
 
 async def test_push_skips_without_power_entity():

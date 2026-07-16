@@ -4,10 +4,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.eebus import proto_stubs
-from custom_components.eebus.coordinator import (
-    SOC_UNIT_TO_PCT,
-    EebusCoordinator,
-)
+from custom_components.eebus.coordinator import EebusCoordinator
+from custom_components.eebus.providers import SOC_UNIT_TO_PCT, ProviderManager
 
 
 def _state(value, unit):
@@ -15,29 +13,48 @@ def _state(value, unit):
     return SimpleNamespace(state=value, attributes={"unit_of_measurement": unit})
 
 
-def _make_coordinator(states):
+def _make_coordinator(
+    states,
+    *,
+    pv_power=None,
+    pv_yield=None,
+    pv_peak=None,
+    battery_power=None,
+    battery_charged=None,
+    battery_discharged=None,
+    battery_soc=None,
+):
     """Build a coordinator skeleton wired for visualization-push tests."""
     coordinator = EebusCoordinator.__new__(EebusCoordinator)
     coordinator.ski = "test-ski"
-    # PV + battery entities default to unmapped; tests set what they need.
-    coordinator.pv_power_entity = None
-    coordinator.pv_yield_energy_entity = None
-    coordinator.pv_peak_power_entity = None
-    coordinator.battery_power_entity = None
-    coordinator.battery_charged_energy_entity = None
-    coordinator.battery_discharged_energy_entity = None
-    coordinator.battery_soc_entity = None
     hass = MagicMock()
     hass.states.get = lambda entity_id: states.get(entity_id)
     coordinator.hass = hass
     coordinator._ensure_channel = AsyncMock(return_value=object())
+    coordinator._provider_manager = ProviderManager(
+        hass,
+        coordinator.ski,
+        lambda: coordinator._ensure_channel(),
+        pv_power_entity=pv_power,
+        pv_yield_energy_entity=pv_yield,
+        pv_peak_power_entity=pv_peak,
+        battery_power_entity=battery_power,
+        battery_charged_energy_entity=battery_charged,
+        battery_discharged_energy_entity=battery_discharged,
+        battery_soc_entity=battery_soc,
+    )
     return coordinator
 
 
 def test_read_sensor_value_normalizes_soc_percentage():
     """State of charge passes through as a plain percentage."""
     coordinator = _make_coordinator({"sensor.soc": _state("73", "%")})
-    assert coordinator._read_sensor_value("sensor.soc", SOC_UNIT_TO_PCT, "battery SoC") == 73.0
+    assert (
+        coordinator._provider_manager._read_sensor_value(
+            "sensor.soc", SOC_UNIT_TO_PCT, "battery SoC"
+        )
+        == 73.0
+    )
 
 
 def test_read_sensor_value_rejects_non_finite():
@@ -45,8 +62,9 @@ def test_read_sensor_value_rejects_non_finite():
     coordinator = _make_coordinator(
         {"sensor.bad": _state("nan", "%"), "sensor.inf": _state("inf", "%")}
     )
-    assert coordinator._read_sensor_value("sensor.bad", SOC_UNIT_TO_PCT, "battery SoC") is None
-    assert coordinator._read_sensor_value("sensor.inf", SOC_UNIT_TO_PCT, "battery SoC") is None
+    manager = coordinator._provider_manager
+    assert manager._read_sensor_value("sensor.bad", SOC_UNIT_TO_PCT, "battery SoC") is None
+    assert manager._read_sensor_value("sensor.inf", SOC_UNIT_TO_PCT, "battery SoC") is None
 
 
 def test_read_sensor_value_enforces_range():
@@ -56,20 +74,20 @@ def test_read_sensor_value_enforces_range():
     )
     # SoC capped at 100; negative energy/power rejected by minimum=0.
     assert (
-        coordinator._read_sensor_value(
+        coordinator._provider_manager._read_sensor_value(
             "sensor.soc", SOC_UNIT_TO_PCT, "battery SoC", minimum=0, maximum=100
         )
         is None
     )
     assert (
-        coordinator._read_sensor_value(
+        coordinator._provider_manager._read_sensor_value(
             "sensor.neg", SOC_UNIT_TO_PCT, "PV power", minimum=0
         )
         is None
     )
     # In-range value still passes.
     assert (
-        coordinator._read_sensor_value(
+        coordinator._provider_manager._read_sensor_value(
             "sensor.soc", SOC_UNIT_TO_PCT, "battery SoC", minimum=0, maximum=100
         )
         is None
@@ -89,10 +107,12 @@ async def test_pv_push_publishes_power_and_optional_fields(monkeypatch):
         "sensor.pv_power": _state("3.2", "kW"),
         "sensor.pv_yield": _state("18", "kWh"),
     }
-    coordinator = _make_coordinator(states)
-    coordinator.pv_power_entity = "sensor.pv_power"
-    coordinator.pv_yield_energy_entity = "sensor.pv_yield"
-    coordinator.pv_peak_power_entity = "sensor.missing"
+    coordinator = _make_coordinator(
+        states,
+        pv_power="sensor.pv_power",
+        pv_yield="sensor.pv_yield",
+        pv_peak="sensor.missing",
+    )
 
     captured = {}
 
@@ -129,10 +149,12 @@ async def test_battery_push_publishes_power_and_optional_fields(monkeypatch):
         "sensor.bat_power": _state("-1.5", "kW"),  # negative = charging
         "sensor.bat_soc": _state("64", "%"),
     }
-    coordinator = _make_coordinator(states)
-    coordinator.battery_power_entity = "sensor.bat_power"
-    coordinator.battery_soc_entity = "sensor.bat_soc"
-    coordinator.battery_charged_energy_entity = "sensor.missing"
+    coordinator = _make_coordinator(
+        states,
+        battery_power="sensor.bat_power",
+        battery_soc="sensor.bat_soc",
+        battery_charged="sensor.missing",
+    )
 
     captured = {}
 
