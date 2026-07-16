@@ -28,7 +28,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
-from .models import CoordinatorSnapshot
+from .models import CapabilityState, CoordinatorSnapshot
 
 _OHPCF_STATUS_OPTIONS = [
     "available",
@@ -67,7 +67,7 @@ def _key_is_present(key: str) -> Callable[[CoordinatorSnapshot], bool]:
 
 def _failsafe_available(data: CoordinatorSnapshot) -> bool:
     """Failsafe sensors stay available until support is known to be absent."""
-    return data.get("failsafe_supported") is not False
+    return data.get("failsafe_supported") != CapabilityState.UNSUPPORTED
 
 
 def _ohpcf_status(data: CoordinatorSnapshot) -> str | None:

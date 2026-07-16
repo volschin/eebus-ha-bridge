@@ -14,7 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
-from .models import SetpointState, SystemFunctionState
+from .models import CapabilityState, SetpointState, SystemFunctionState
 
 PARALLEL_UPDATES = 0
 _LOGGER = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ class EebusRoomHeatingClimate(EebusEntity, ClimateEntity):
         if not super().available:
             return False
         data = self.coordinator.data or {}
-        if data.get("room_heating_supported") is False:
+        if data.get("room_heating_supported") == CapabilityState.UNSUPPORTED:
             return False
         system = self._system_function()
         if system is not None:

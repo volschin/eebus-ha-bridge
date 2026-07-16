@@ -19,6 +19,7 @@ from .grpc_client import (
     rpc_error_text as _rpc_error_text,
 )
 from .models import (
+    CapabilityState,
     CompressorFlexibilityState,
     ConsumptionLimitState,
     CoordinatorSnapshot,
@@ -54,7 +55,7 @@ class _ReadResult(Generic[_ResponseT]):
     """One best-effort read plus its deferred support result."""
 
     value: _ResponseT | None
-    supported: bool | None
+    supported: CapabilityState
     saw_not_found: bool = False
 
 
@@ -62,13 +63,13 @@ class _ReadResult(Generic[_ResponseT]):
 class SnapshotSupport:
     """Support flags carried into and returned from one polling cycle."""
 
-    lpc: bool | None = None
-    failsafe: bool | None = None
-    heartbeat: bool | None = None
-    ohpcf: bool | None = None
-    dhw: bool | None = None
-    dhw_system_function: bool | None = None
-    room_heating: bool | None = None
+    lpc: CapabilityState = CapabilityState.UNKNOWN
+    failsafe: CapabilityState = CapabilityState.UNKNOWN
+    heartbeat: CapabilityState = CapabilityState.UNKNOWN
+    ohpcf: CapabilityState = CapabilityState.UNKNOWN
+    dhw: CapabilityState = CapabilityState.UNKNOWN
+    dhw_system_function: CapabilityState = CapabilityState.UNKNOWN
+    room_heating: CapabilityState = CapabilityState.UNKNOWN
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,14 +91,26 @@ class _RoomHeatingRead:
     current_temperature_celsius: float | None
 
 
+def _next_capability_state(
+    current: CapabilityState, status: grpc.StatusCode | None
+) -> CapabilityState:
+    """Return the capability state after a successful call or gRPC status."""
+    if status is None:
+        return CapabilityState.AVAILABLE
+    if status == grpc.StatusCode.UNIMPLEMENTED:
+        return CapabilityState.UNSUPPORTED
+    if status in (grpc.StatusCode.NOT_FOUND, grpc.StatusCode.UNAVAILABLE):
+        return CapabilityState.TEMPORARILY_UNAVAILABLE
+    return current
+
+
 async def _poll_read(
     label: str,
     call: _ReadCall[_ResponseT],
     request: proto_stubs.DeviceRequest,
     ski: str,
     *,
-    track_support: bool = False,
-    current_support: bool | None = None,
+    current_support: CapabilityState = CapabilityState.UNKNOWN,
 ) -> _ReadResult[_ResponseT]:
     """Call a device-scoped read RPC once and return deferred status metadata."""
     try:
@@ -109,13 +122,15 @@ async def _poll_read(
             ski,
             _rpc_error_text(err),
         )
-        supported = False if track_support and _is_unimplemented(err) else current_support
+        supported = _next_capability_state(current_support, err.code())
         return _ReadResult(None, supported, _is_not_found(err))
     except Exception:  # noqa: BLE001
         _LOGGER.exception("Failed to read %s", label)
-        return _ReadResult(None, current_support)
+        return _ReadResult(
+            None, _next_capability_state(current_support, grpc.StatusCode.UNKNOWN)
+        )
     _LOGGER.debug("EEBUS %s read for SKI %s succeeded", label, ski)
-    return _ReadResult(response, True if track_support else current_support)
+    return _ReadResult(response, _next_capability_state(current_support, None))
 
 
 async def _async_register_remote_ski(
@@ -192,7 +207,7 @@ async def _async_read_compressor_flexibility(
     channel: grpc.aio.Channel,
     request: proto_stubs.DeviceRequest,
     ski: str,
-    current_support: bool | None,
+    current_support: CapabilityState,
 ) -> _ReadResult[CompressorFlexibilityState]:
     """Read the OHPCF compressor flexibility offer/state, or None when off."""
     try:
@@ -201,10 +216,8 @@ async def _async_read_compressor_flexibility(
             request, timeout=RPC_TIMEOUT
         )
     except grpc.aio.AioRpcError as err:
-        supported = current_support
-        if _is_unimplemented(err) or err.code() == grpc.StatusCode.UNAVAILABLE:
-            supported = False
-        else:
+        supported = _next_capability_state(current_support, err.code())
+        if not _is_unimplemented(err):
             _LOGGER.debug(
                 "EEBUS OHPCF read failed for SKI %s: %s",
                 ski,
@@ -224,41 +237,38 @@ async def _async_read_compressor_flexibility(
         "minimal_run_seconds": flex.minimal_run_seconds,
         "minimal_pause_seconds": flex.minimal_pause_seconds,
     }
-    return _ReadResult(value, True)
+    return _ReadResult(value, _next_capability_state(current_support, None))
 
 
 async def _async_read_dhw_setpoint(
     channel: grpc.aio.Channel,
     request: proto_stubs.DeviceRequest,
     ski: str,
-    current_support: bool | None,
+    current_support: CapabilityState,
 ) -> _ReadResult[SetpointState]:
     """Read the DHW target and device-provided constraints."""
     try:
         stub = proto_stubs.dhw_service_stub(channel)
         setpoint: proto_stubs.DHWSetpoint = await stub.GetDHWSetpoint(request, timeout=RPC_TIMEOUT)
     except grpc.aio.AioRpcError as err:
-        supported = current_support
-        if _is_unimplemented(err) or err.code() in (
-            grpc.StatusCode.NOT_FOUND,
-            grpc.StatusCode.UNAVAILABLE,
-        ):
-            supported = False
-        else:
+        supported = _next_capability_state(current_support, err.code())
+        if not _is_unimplemented(err):
             _LOGGER.debug(
                 "EEBUS DHW setpoint read failed for SKI %s: %s",
                 ski,
                 _rpc_error_text(err),
             )
         return _ReadResult(None, supported)
-    return _ReadResult(_setpoint_to_dict(setpoint), True)
+    return _ReadResult(
+        _setpoint_to_dict(setpoint), _next_capability_state(current_support, None)
+    )
 
 
 async def _async_read_dhw_system_function(
     channel: grpc.aio.Channel,
     request: proto_stubs.DeviceRequest,
     ski: str,
-    current_support: bool | None,
+    current_support: CapabilityState,
 ) -> _ReadResult[DHWSystemFunctionState]:
     """Read DHW boost and operation mode state."""
     try:
@@ -267,26 +277,24 @@ async def _async_read_dhw_system_function(
             request, timeout=RPC_TIMEOUT
         )
     except grpc.aio.AioRpcError as err:
-        supported = current_support
-        if _is_unimplemented(err) or err.code() in (
-            grpc.StatusCode.NOT_FOUND,
-            grpc.StatusCode.UNAVAILABLE,
-        ):
-            supported = False
-        else:
+        supported = _next_capability_state(current_support, err.code())
+        if not _is_unimplemented(err):
             _LOGGER.debug(
                 "EEBUS DHW system function read failed for SKI %s: %s",
                 ski,
                 _rpc_error_text(err),
             )
         return _ReadResult(None, supported)
-    return _ReadResult(_dhw_system_function_to_dict(state), True)
+    return _ReadResult(
+        _dhw_system_function_to_dict(state),
+        _next_capability_state(current_support, None),
+    )
 
 
 async def _async_read_room_heating(
     channel: grpc.aio.Channel,
     request: proto_stubs.DeviceRequest,
-    current_support: bool | None,
+    current_support: CapabilityState,
 ) -> _ReadResult[_RoomHeatingRead]:
     """Read all room-heating fields without publishing a partial update."""
     try:
@@ -294,13 +302,7 @@ async def _async_read_room_heating(
             request, timeout=RPC_TIMEOUT
         )
     except grpc.aio.AioRpcError as err:
-        supported = current_support
-        if _is_unimplemented(err) or err.code() in (
-            grpc.StatusCode.NOT_FOUND,
-            grpc.StatusCode.UNAVAILABLE,
-        ):
-            supported = False
-        return _ReadResult(None, supported)
+        return _ReadResult(None, _next_capability_state(current_support, err.code()))
 
     setpoint = _setpoint_to_dict(state.setpoint) if state.HasField("setpoint") else None
     system_function = (
@@ -309,7 +311,10 @@ async def _async_read_room_heating(
     current_temperature = (
         state.current_temperature_celsius if state.HasField("current_temperature_celsius") else None
     )
-    return _ReadResult(_RoomHeatingRead(setpoint, system_function, current_temperature), True)
+    return _ReadResult(
+        _RoomHeatingRead(setpoint, system_function, current_temperature),
+        _next_capability_state(current_support, None),
+    )
 
 
 async def _async_read_device_diagnostics(
@@ -389,7 +394,6 @@ async def async_build_snapshot(
             cast(_ReadCall[proto_stubs.LoadLimit], lpc_stub.GetConsumptionLimit),
             request,
             ski,
-            track_support=True,
             current_support=support.lpc,
         ),
         _poll_read(
@@ -397,7 +401,6 @@ async def async_build_snapshot(
             cast(_ReadCall[proto_stubs.FailsafeLimit], lpc_stub.GetFailsafeLimit),
             request,
             ski,
-            track_support=True,
             current_support=support.failsafe,
         ),
         _poll_read(
@@ -405,7 +408,6 @@ async def async_build_snapshot(
             cast(_ReadCall[proto_stubs.HeartbeatStatus], lpc_stub.GetHeartbeatStatus),
             request,
             ski,
-            track_support=True,
             current_support=support.heartbeat,
         ),
     )

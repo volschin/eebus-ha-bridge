@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
-from .models import DHWSystemFunctionState
+from .models import CapabilityState, DHWSystemFunctionState
 
 PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling
 
@@ -85,7 +85,7 @@ class EebusDHWBoostSwitch(EebusEntity, SwitchEntity):
         data = self.coordinator.data or {}
         state = self._state()
         return bool(
-            data.get("dhw_sysfn_supported") is not False
+            data.get("dhw_sysfn_supported") != CapabilityState.UNSUPPORTED
             and state is not None
             and state.get("boost_writable")
         )
