@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/volschin/eebus-bridge/internal/config"
 	"google.golang.org/grpc"
@@ -11,6 +12,15 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 )
+
+// gracefulStopTimeout bounds how long Stop waits for in-flight RPCs (notably
+// HA's long-lived SubscribeMeasurements/SubscribeLPCEvents/SubscribeDeviceEvents
+// streams) to drain before forcing the connection closed. Without a bound,
+// GracefulStop blocks until every open stream's context is canceled by its
+// client, which HA's local_push streams never do on their own — a controlled
+// shutdown (SIGTERM or the RF-06 watchdog) would then hang indefinitely
+// instead of restarting.
+const gracefulStopTimeout = 5 * time.Second
 
 type Server struct {
 	grpcServer *grpc.Server
@@ -92,5 +102,15 @@ func (s *Server) Addr() string {
 }
 
 func (s *Server) Stop() {
-	s.grpcServer.GracefulStop()
+	done := make(chan struct{})
+	go func() {
+		s.grpcServer.GracefulStop()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(gracefulStopTimeout):
+		s.grpcServer.Stop()
+		<-done
+	}
 }

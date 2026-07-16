@@ -357,7 +357,17 @@ func (s *MonitoringService) resolveEntity(ski string) (spineapi.EntityRemoteInte
 		}
 		if resolution.Entity != nil {
 			if s.registry != nil {
-				s.registry.RecordMonitoringSuccess()
+				// ski can be empty, or normalize to empty (whitespace/display
+				// separators only), on the single-device convenience path
+				// (EntityResolution resolves it via CompatibleEntity); fall
+				// back to the resolved entity's own device SKI so the
+				// per-device watchdog state lands on the real device instead
+				// of an empty-string key.
+				recordSKI := eebus.NormalizeSKI(ski)
+				if recordSKI == "" && resolution.Entity.Device() != nil {
+					recordSKI = resolution.Entity.Device().Ski()
+				}
+				s.registry.RecordMonitoringSuccess(recordSKI)
 			}
 			return resolution.Entity, nil
 		}

@@ -44,6 +44,7 @@ func (c *Callbacks) RemoteServiceConnected(_ api.ServiceInterface, identity ship
 
 	if c.registry != nil {
 		c.registry.AddDevice(ski, DeviceInfo{SKI: ski})
+		c.registry.MarkConnected(ski)
 	}
 
 	c.bus.Publish(Event{
@@ -62,6 +63,7 @@ func (c *Callbacks) RemoteServiceDisconnected(_ api.ServiceInterface, identity s
 	// Drop cached entity references so a later re-pair re-populates them from
 	// fresh observations instead of writing to an orphaned entity.
 	if c.registry != nil {
+		c.registry.MarkDisconnected(ski)
 		c.registry.ClearEntities(ski)
 	}
 
@@ -134,6 +136,7 @@ func (c *Callbacks) ServiceAutoTrustRemoved(_ api.ServiceInterface, identity shi
 	}
 
 	if c.registry != nil {
+		c.registry.MarkDisconnected(ski)
 		c.registry.ClearEntities(ski)
 	}
 

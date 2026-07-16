@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	spineapi "github.com/enbility/spine-go/api"
@@ -44,37 +43,130 @@ func (r EntityResolution) Ambiguous() bool {
 }
 
 type DeviceRegistry struct {
-	mu                    sync.RWMutex
-	devices               map[string]DeviceInfo
-	lastMonitoringSuccess atomic.Int64 // unix nano; set at construction so a stuck startup also counts as stale
+	mu         sync.RWMutex
+	devices    map[string]DeviceInfo
+	monitoring map[string]deviceMonitoringState
+	clock      Clock
+}
+
+type deviceMonitoringState struct {
+	connected                  bool
+	connectedAt                time.Time
+	lastMonitoringSuccess      time.Time
+	monitoringSuccessOnConnect bool
+}
+
+// Clock provides the current time for monitoring-health tracking. Tests can
+// inject a deterministic implementation through NewDeviceRegistryWithClock.
+type Clock interface {
+	Now() time.Time
+}
+
+type realClock struct{}
+
+func (realClock) Now() time.Time {
+	return time.Now()
 }
 
 func NewDeviceRegistry() *DeviceRegistry {
-	r := &DeviceRegistry{
-		devices: make(map[string]DeviceInfo),
+	return NewDeviceRegistryWithClock(realClock{})
+}
+
+func NewDeviceRegistryWithClock(clock Clock) *DeviceRegistry {
+	if clock == nil {
+		clock = realClock{}
 	}
-	r.lastMonitoringSuccess.Store(time.Now().UnixNano())
-	return r
+	return &DeviceRegistry{
+		devices:    make(map[string]DeviceInfo),
+		monitoring: make(map[string]deviceMonitoringState),
+		clock:      clock,
+	}
+}
+
+// MarkConnected starts a fresh monitoring grace period for a device. The last
+// success timestamp is retained for diagnostics, but cannot satisfy the new
+// connection until RecordMonitoringSuccess is called again.
+func (r *DeviceRegistry) MarkConnected(ski string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	ski = NormalizeSKI(ski)
+	state := r.monitoring[ski]
+	if state.connected {
+		return
+	}
+	state.connected = true
+	state.connectedAt = r.clock.Now()
+	state.monitoringSuccessOnConnect = false
+	r.monitoring[ski] = state
+}
+
+// MarkDisconnected excludes a device from monitoring-health checks. Unknown
+// devices are ignored so a stray disconnect callback does not create state.
+func (r *DeviceRegistry) MarkDisconnected(ski string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	ski = NormalizeSKI(ski)
+	state, ok := r.monitoring[ski]
+	if !ok {
+		return
+	}
+	state.connected = false
+	r.monitoring[ski] = state
 }
 
 // RecordMonitoringSuccess marks that a remote entity was just successfully
 // resolved for a live monitoring read. Call only on a real eebus-go scenario
 // match (not a registry cache hit), so a stuck SPINE entity binding after
 // reconnect is actually detected instead of masked by stale cached entities.
-func (r *DeviceRegistry) RecordMonitoringSuccess() {
-	r.lastMonitoringSuccess.Store(time.Now().UnixNano())
+func (r *DeviceRegistry) RecordMonitoringSuccess(ski string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	ski = NormalizeSKI(ski)
+	state := r.monitoring[ski]
+	state.lastMonitoringSuccess = r.clock.Now()
+	state.monitoringSuccessOnConnect = state.connected
+	r.monitoring[ski] = state
 }
 
-// MonitoringStale reports whether monitoring reads have produced no
-// successful entity resolution for longer than threshold, while at least one
-// device is trusted. Returns false with no trusted device, since a bridge
-// that has never been paired isn't a monitoring outage.
-func (r *DeviceRegistry) MonitoringStale(threshold time.Duration) bool {
-	if len(r.ListDevices()) == 0 {
-		return false
+// StaleDevices returns connected device SKIs whose grace period has elapsed
+// without a success on the current connection, or whose most recent success
+// on that connection is older than threshold.
+func (r *DeviceRegistry) StaleDevices(threshold, gracePeriod time.Duration) []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	now := r.clock.Now()
+	result := make([]string, 0)
+	for ski, state := range r.monitoring {
+		if !state.connected || now.Sub(state.connectedAt) <= gracePeriod {
+			continue
+		}
+		if !state.monitoringSuccessOnConnect || now.Sub(state.lastMonitoringSuccess) > threshold {
+			result = append(result, ski)
+		}
 	}
-	last := time.Unix(0, r.lastMonitoringSuccess.Load())
-	return time.Since(last) > threshold
+	sort.Strings(result)
+	return result
+}
+
+// MonitoringLastSuccessAge returns the age of a device's latest monitoring
+// success, including one from a previous connection for watchdog diagnostics.
+func (r *DeviceRegistry) MonitoringLastSuccessAge(ski string) (time.Duration, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	state, ok := r.monitoring[NormalizeSKI(ski)]
+	if !ok || state.lastMonitoringSuccess.IsZero() {
+		return 0, false
+	}
+	age := r.clock.Now().Sub(state.lastMonitoringSuccess)
+	if age < 0 {
+		age = 0
+	}
+	return age, true
 }
 
 // NormalizeSKI canonicalizes a SKI for use as a registry key: uppercase, with
@@ -84,6 +176,15 @@ func (r *DeviceRegistry) MonitoringStale(threshold time.Duration) bool {
 func NormalizeSKI(ski string) string {
 	replacer := strings.NewReplacer(" ", "", "\t", "", "\n", "", "\r", "", ":", "", "-", "")
 	return strings.ToUpper(replacer.Replace(strings.TrimSpace(ski)))
+}
+
+// ShortSKI returns a normalized, redacted SKI suitable for log messages.
+func ShortSKI(ski string) string {
+	ski = NormalizeSKI(ski)
+	if len(ski) <= 6 {
+		return "…" + ski
+	}
+	return "…" + ski[len(ski)-6:]
 }
 
 func (r *DeviceRegistry) AddDevice(ski string, info DeviceInfo) {
@@ -178,6 +279,7 @@ func (r *DeviceRegistry) RemoveDevice(ski string) {
 	r.mu.Lock()
 	ski = NormalizeSKI(ski)
 	delete(r.devices, ski)
+	delete(r.monitoring, ski)
 	r.mu.Unlock()
 }
 
