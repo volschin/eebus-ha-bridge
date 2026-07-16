@@ -8,6 +8,7 @@ import (
 	"github.com/volschin/eebus-bridge/internal/eebus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type TrustController interface {
@@ -39,6 +40,20 @@ func (s *DeviceService) GetStatus(_ context.Context, _ *pb.Empty) (*pb.ServiceSt
 		Running:  true,
 		LocalSki: s.localSKI,
 	}, nil
+}
+
+func (s *DeviceService) GetDeviceStatus(_ context.Context, req *pb.DeviceRequest) (*pb.DeviceStatus, error) {
+	ski := eebus.NormalizeSKI(req.Ski)
+	if !validSKI(ski) {
+		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
+	}
+
+	connected, lastTransition, known := s.registry.DeviceConnection(ski)
+	result := &pb.DeviceStatus{Connected: connected}
+	if known && !lastTransition.IsZero() {
+		result.LastTransition = timestamppb.New(lastTransition)
+	}
+	return result, nil
 }
 
 func (s *DeviceService) ListDiscoveredDevices(_ context.Context, _ *pb.Empty) (*pb.ListDevicesResponse, error) {

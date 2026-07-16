@@ -25,3 +25,10 @@ class EebusEntity(CoordinatorEntity[EebusCoordinator]):
             model=info.get("model"),
             serial_number=info.get("serial"),
         )
+
+    @property
+    def available(self) -> bool:
+        """Unavailable whenever the coordinator poll failed or the remote device is disconnected."""
+        if not super().available:
+            return False
+        return bool((self.coordinator.data or {}).get("connected"))

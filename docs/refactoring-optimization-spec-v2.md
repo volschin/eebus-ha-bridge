@@ -122,6 +122,10 @@ Prioritäten:
 - Eine weiterhin erreichbare Bridge darf den Remote-Zustand nicht wieder auf `connected` setzen.
 - Tests decken `bridge up/device down`, `bridge up/device up`, Trust-Removal und Reconnect ab.
 
+**Bekannte Lücke**
+
+`device_ready` ist noch nicht implementiert: `DeviceStatus` liefert aktuell nur `connected`/`last_transition`, kein aggregiertes Freshness-Signal über SPINE/Use-Case-Bindings. Umsetzung gehört inhaltlich zu SPEC2-12 (Diagnose/Degradation) und ist dort nachzuziehen, statt sie als Scope-Erweiterung in dieses P0-Ticket zu ziehen.
+
 ### SPEC2-02 – Heartbeat-Eigentümerschaft korrigieren (P0)
 
 **Ist-Befund**

@@ -410,13 +410,38 @@ async def async_build_snapshot(
         ),
     )
 
-    device_info, compressor, dhw_setpoint, dhw_system_function, room_heating, diagnostics = await asyncio.gather(
-        _async_fetch_device_info(device_stub, ski),
-        _async_read_compressor_flexibility(channel, request, ski, support.ohpcf),
-        _async_read_dhw_setpoint(channel, request, ski, support.dhw),
-        _async_read_dhw_system_function(channel, request, ski, support.dhw_system_function),
-        _async_read_room_heating(channel, request, support.room_heating),
-        _async_read_device_diagnostics(channel, request, ski),
+    (
+        device_status,
+        device_info,
+        compressor,
+        dhw_setpoint,
+        dhw_system_function,
+        room_heating,
+        diagnostics,
+    ) = cast(
+        tuple[
+            proto_stubs.DeviceStatus,
+            DeviceInfo | None,
+            _ReadResult[CompressorFlexibilityState],
+            _ReadResult[SetpointState],
+            _ReadResult[DHWSystemFunctionState],
+            _ReadResult[_RoomHeatingRead],
+            str | None,
+        ],
+        await asyncio.gather(
+            cast(
+                Awaitable[proto_stubs.DeviceStatus],
+                device_stub.GetDeviceStatus(request, timeout=RPC_TIMEOUT),
+            ),
+            _async_fetch_device_info(device_stub, ski),
+            _async_read_compressor_flexibility(channel, request, ski, support.ohpcf),
+            _async_read_dhw_setpoint(channel, request, ski, support.dhw),
+            _async_read_dhw_system_function(
+                channel, request, ski, support.dhw_system_function
+            ),
+            _async_read_room_heating(channel, request, support.room_heating),
+            _async_read_device_diagnostics(channel, request, ski),
+        ),
     )
 
     updated_support = SnapshotSupport(
@@ -463,7 +488,7 @@ async def async_build_snapshot(
         room_temperature_c = room_heating_value.current_temperature_celsius
 
     snapshot = CoordinatorSnapshot(
-        connected=status.running,
+        connected=device_status.connected,
         local_ski=status.local_ski,
         ski_registered=registered,
         power_l1_w=flat_measurements.get("power_l1_w"),

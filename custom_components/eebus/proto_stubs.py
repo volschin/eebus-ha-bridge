@@ -19,6 +19,7 @@ from .generated.eebus.v1.common_pb2 import (  # noqa: F401
 )
 from .generated.eebus.v1.device_service_pb2 import (  # noqa: F401
     DeviceEventType,
+    DeviceStatus,
     RegisterSKIRequest,
     ServiceStatus,
 )
@@ -124,6 +125,7 @@ __all__ = [
     "CompressorPowerConsumptionState",
     "ControlCompressorRequest",
     "DeviceEventType",
+    "DeviceStatus",
     "DeviceDiagnosticsData",
     "DeviceRequest",
     "DeviceServiceStub",
