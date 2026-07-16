@@ -46,6 +46,16 @@ class EebusConnectedSensor(EebusEntity, BinarySensorEntity):
         self._attr_unique_id = f"{coordinator.ski}_connected"
 
     @property
+    def available(self) -> bool:
+        """Stay available on a successful poll regardless of connected state.
+
+        EebusEntity.available gates on the device being connected, which would
+        make this exact sensor disappear as "unavailable" instead of showing
+        "off" the moment it has something to report.
+        """
+        return self.coordinator.last_update_success
+
+    @property
     def is_on(self) -> bool | None:
         """Return True if connected."""
         if self.coordinator.data is None:
