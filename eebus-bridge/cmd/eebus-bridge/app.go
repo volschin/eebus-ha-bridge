@@ -1,0 +1,574 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"strings"
+	"sync"
+	"time"
+
+	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
+	"github.com/volschin/eebus-bridge/internal/certs"
+	"github.com/volschin/eebus-bridge/internal/config"
+	"github.com/volschin/eebus-bridge/internal/eebus"
+	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
+	"github.com/volschin/eebus-bridge/internal/usecases"
+)
+
+// monitoringStaleThreshold bounds how long a connected device may go without a
+// successful Monitoring entity resolution before the watchdog restarts the
+// process. Reconnects (SHIP re-pair) can leave the SPINE entity binding stuck
+// with no error logged, silently starving Home Assistant of data; a restart
+// forces a clean re-handshake. The device normally pushes updates ~every 60s,
+// so 10min gives ample margin against brief legitimate gaps.
+const monitoringStaleThreshold = 10 * time.Minute
+
+// monitoringGracePeriod allows a newly connected device to establish its
+// first monitoring binding before watchdog staleness applies.
+const monitoringGracePeriod = 2 * time.Minute
+
+const watchdogInterval = 30 * time.Second
+
+type bridgeLifecycle interface {
+	Start() error
+	Shutdown()
+	RegisterRemoteSKI(string)
+}
+
+type grpcLifecycle interface {
+	Start() error
+	Stop()
+	SetHealthy(bool)
+}
+
+type heartbeatLifecycle interface {
+	StartHeartbeat(string) error
+	StopHeartbeat() error
+}
+
+type monitoringRegistry interface {
+	StaleDevices(time.Duration, time.Duration) []string
+	MonitoringLastSuccessAge(string) (time.Duration, bool)
+}
+
+type backgroundFailure struct {
+	reason string
+	err    error
+}
+
+// controlledShutdownError marks a runtime failure that Start already logged
+// before performing the controlled shutdown sequence.
+type controlledShutdownError struct {
+	err error
+}
+
+func (e *controlledShutdownError) Error() string { return e.err.Error() }
+func (e *controlledShutdownError) Unwrap() error { return e.err }
+
+type signalShutdown struct {
+	signal os.Signal
+}
+
+func (s *signalShutdown) Error() string { return "received signal " + s.signal.String() }
+
+// Application owns the daemon's EEBUS, use-case, gRPC, watchdog, and shutdown
+// lifecycle. The small lifecycle interfaces keep failure fan-out and teardown
+// directly testable without constructing a real EEBUS stack or TCP listener.
+type Application struct {
+	cfg *config.Config
+
+	bridgeSvc bridgeLifecycle
+	grpcSrv   grpcLifecycle
+	registry  monitoringRegistry
+
+	lpcWrapper                 heartbeatLifecycle
+	monitoringWrapper          *usecases.MonitoringWrapper
+	dhwMonitoringWrapper       *usecases.TemperatureMonitoringWrapper
+	roomMonitoringWrapper      *usecases.TemperatureMonitoringWrapper
+	outdoorMonitoringWrapper   *usecases.TemperatureMonitoringWrapper
+	dhwTemperature             *usecases.DHWTemperature
+	dhwSystemFunction          *usecases.DHWSystemFunction
+	roomHeatingTemperature     *usecases.RoomHeatingTemperature
+	roomHeatingSystemFunction  *usecases.RoomHeatingSystemFunction
+	hydraulicTemperatures      *usecases.HydraulicTemperatures
+	deviceOperatingState       *usecases.DeviceOperatingState
+	mgcpProvider               *usecases.MGCPProvider
+	vapdProvider               *usecases.VAPDProvider
+	vabdProvider               *usecases.VABDProvider
+	ohpcfWrapper               *usecases.OHPCFWrapper
+	registeredUseCases         []string
+	monitoringWatchdogInterval time.Duration
+	backgroundFailures         chan backgroundFailure
+	stopOnce                   sync.Once
+	runtimeMu                  sync.Mutex
+	cancelRuntime              context.CancelFunc
+}
+
+func run(ctx context.Context, cfg *config.Config) error {
+	log.Printf("EEBUS debug_events=%t", cfg.Logging.DebugEvents)
+	app, err := NewApplication(cfg)
+	if err != nil {
+		return err
+	}
+	return app.Start(ctx)
+}
+
+// NewApplication constructs and wires the complete daemon without starting its
+// EEBUS or gRPC serve loops.
+func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
+	if cfg == nil {
+		return nil, errors.New("config is nil")
+	}
+
+	cert, err := certs.EnsureCertificate(
+		cfg.Certificates.CertFile,
+		cfg.Certificates.KeyFile,
+		cfg.Certificates.StoragePath,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("certificate: %w", err)
+	}
+
+	ski, err := certs.SKIFromCertificate(cert)
+	if err != nil {
+		return nil, fmt.Errorf("extracting SKI: %w", err)
+	}
+	log.Printf("Local SKI: %s", ski)
+
+	bus := eebus.NewEventBus()
+	registry := eebus.NewDeviceRegistry()
+
+	bridgeSvc, err := eebus.NewBridgeService(cfg, cert, bus)
+	if err != nil {
+		return nil, fmt.Errorf("creating bridge service: %w", err)
+	}
+
+	// Let disconnect callbacks drop cached entity refs (set before service start,
+	// so no remote callback races the assignment).
+	bridgeSvc.Callbacks().SetRegistry(registry)
+
+	lpcWrapper := usecases.NewLPCWrapper(bus, registry, cfg.Logging.DebugEvents)
+	monitoringWrapper := usecases.NewMonitoringWrapper(bus, registry, cfg.Logging.DebugEvents)
+	dhwMonitoringWrapper := usecases.NewDHWMonitoringWrapper(bus, registry, cfg.Logging.DebugEvents)
+	roomMonitoringWrapper := usecases.NewRoomMonitoringWrapper(bus, registry, cfg.Logging.DebugEvents)
+	outdoorMonitoringWrapper := usecases.NewOutdoorMonitoringWrapper(bus, registry, cfg.Logging.DebugEvents)
+
+	if err := bridgeSvc.Setup(); err != nil {
+		return nil, fmt.Errorf("setting up EEBUS service: %w", err)
+	}
+
+	app := &Application{
+		cfg:                        cfg,
+		bridgeSvc:                  bridgeSvc,
+		registry:                   registry,
+		lpcWrapper:                 lpcWrapper,
+		monitoringWrapper:          monitoringWrapper,
+		dhwMonitoringWrapper:       dhwMonitoringWrapper,
+		roomMonitoringWrapper:      roomMonitoringWrapper,
+		outdoorMonitoringWrapper:   outdoorMonitoringWrapper,
+		monitoringWatchdogInterval: watchdogInterval,
+		backgroundFailures:         make(chan backgroundFailure, 1),
+	}
+	defer func() {
+		if retErr != nil {
+			app.Stop()
+		}
+	}()
+
+	localEntity := bridgeSvc.LocalEntity()
+	if localEntity == nil {
+		return nil, errors.New("local CEM entity is not available")
+	}
+	lpcWrapper.Setup(localEntity)
+	monitoringWrapper.Setup(localEntity)
+	dhwMonitoringWrapper.Setup(localEntity)
+	roomMonitoringWrapper.Setup(localEntity)
+	outdoorMonitoringWrapper.Setup(localEntity)
+	dhwTemperature := usecases.NewDHWTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
+	dhwSystemFunction := usecases.NewDHWSystemFunction(localEntity, bus, registry, cfg.Logging.DebugEvents)
+	roomHeatingTemperature := usecases.NewRoomHeatingTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
+	roomHeatingSystemFunction := usecases.NewRoomHeatingSystemFunction(localEntity, bus, registry, cfg.Logging.DebugEvents)
+	hydraulicTemperatures := usecases.NewHydraulicTemperatures(bus, registry, cfg.Logging.DebugEvents)
+	hydraulicTemperatures.Setup(localEntity)
+	deviceOperatingState := usecases.NewDeviceOperatingState(bus, registry, cfg.Logging.DebugEvents)
+	deviceOperatingState.Setup(localEntity)
+	app.dhwTemperature = dhwTemperature
+	app.dhwSystemFunction = dhwSystemFunction
+	app.roomHeatingTemperature = roomHeatingTemperature
+	app.roomHeatingSystemFunction = roomHeatingSystemFunction
+	app.hydraulicTemperatures = hydraulicTemperatures
+	app.deviceOperatingState = deviceOperatingState
+
+	if err := bridgeSvc.Service().AddUseCase(lpcWrapper.UseCase()); err != nil {
+		return nil, fmt.Errorf("adding LPC use case: %w", err)
+	}
+	if err := bridgeSvc.Service().AddUseCase(monitoringWrapper.UseCase()); err != nil {
+		return nil, fmt.Errorf("adding monitoring use case: %w", err)
+	}
+	if err := bridgeSvc.Service().AddUseCase(dhwMonitoringWrapper.UseCase()); err != nil {
+		return nil, fmt.Errorf("adding DHW monitoring use case: %w", err)
+	}
+	if err := bridgeSvc.Service().AddUseCase(roomMonitoringWrapper.UseCase()); err != nil {
+		return nil, fmt.Errorf("adding room monitoring use case: %w", err)
+	}
+	if err := bridgeSvc.Service().AddUseCase(outdoorMonitoringWrapper.UseCase()); err != nil {
+		return nil, fmt.Errorf("adding outdoor monitoring use case: %w", err)
+	}
+	if err := bridgeSvc.Service().AddUseCase(dhwTemperature.UseCase()); err != nil {
+		return nil, fmt.Errorf("adding DHW temperature use case: %w", err)
+	}
+	if err := bridgeSvc.Service().AddUseCase(dhwSystemFunction.UseCase()); err != nil {
+		return nil, fmt.Errorf("adding DHW system function use case: %w", err)
+	}
+	if err := bridgeSvc.Service().AddUseCase(roomHeatingTemperature.UseCase()); err != nil {
+		return nil, fmt.Errorf("adding room heating temperature use case: %w", err)
+	}
+	if err := bridgeSvc.Service().AddUseCase(roomHeatingSystemFunction.UseCase()); err != nil {
+		return nil, fmt.Errorf("adding room heating system function use case: %w", err)
+	}
+	registeredUseCases := []string{
+		"LPC", "Monitoring", "DHWMonitoring", "MRT", "MOT", "DHWTemperature", "DHWSystemFunction",
+		"RoomHeatingTemperature", "RoomHeatingSystemFunction",
+	}
+
+	mgcpProvider, err := setupMGCPProvider(cfg, bridgeSvc, bus)
+	if err != nil {
+		return nil, err
+	}
+	if mgcpProvider != nil {
+		registeredUseCases = append(registeredUseCases, "MGCP")
+	}
+	app.mgcpProvider = mgcpProvider
+
+	vapdProvider, err := setupVAPDProvider(cfg, bridgeSvc, bus)
+	if err != nil {
+		return nil, err
+	}
+	if vapdProvider != nil {
+		registeredUseCases = append(registeredUseCases, "VAPD")
+	}
+	app.vapdProvider = vapdProvider
+
+	vabdProvider, err := setupVABDProvider(cfg, bridgeSvc, bus)
+	if err != nil {
+		return nil, err
+	}
+	if vabdProvider != nil {
+		registeredUseCases = append(registeredUseCases, "VABD")
+	}
+	app.vabdProvider = vabdProvider
+
+	// OHPCF (heat-pump compressor flexibility) CEM client. On by default; reads
+	// the remote heat pump's optional-consumption offer and drives
+	// schedule/pause/resume/abort via OHPCFService.
+	var ohpcfWrapper *usecases.OHPCFWrapper
+	if *cfg.OHPCF.Enabled {
+		ohpcfWrapper = usecases.NewOHPCFWrapper(bus, registry, cfg.Logging.DebugEvents)
+		ohpcfWrapper.Setup(localEntity)
+		if err := bridgeSvc.Service().AddUseCase(ohpcfWrapper.UseCase()); err != nil {
+			return nil, fmt.Errorf("adding OHPCF use case: %w", err)
+		}
+		log.Println("[OHPCF] CEM client registered; awaiting remote compressor SmartEnergyManagementPs")
+		registeredUseCases = append(registeredUseCases, "OHPCF")
+	}
+	app.ohpcfWrapper = ohpcfWrapper
+
+	// Controllable systems revert an active LPC limit to its failsafe value when
+	// heartbeats stop arriving, so keep the local heartbeat running for the
+	// lifetime of the bridge.
+	if err := lpcWrapper.StartHeartbeat(""); err != nil {
+		log.Printf("starting LPC heartbeat failed: %v", err)
+	} else {
+		log.Println("Started LPC heartbeat")
+	}
+	log.Printf("Registered EEBUS use cases: %s", strings.Join(registeredUseCases, ", "))
+	app.registeredUseCases = registeredUseCases
+
+	grpcSrv, err := bridgegrpc.NewServerWithSecurity(
+		cfg.GRPC.Bind,
+		cfg.GRPC.Port,
+		cfg.GRPC.EnableReflection,
+		cfg.GRPC.Security,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("configuring gRPC server security: %w", err)
+	}
+	app.grpcSrv = grpcSrv
+
+	trustController := eebus.NewTrustController(bridgeSvc, registry, bus)
+	deviceSvc := bridgegrpc.NewDeviceService(bridgeSvc.Callbacks(), bus, ski, registry, trustController)
+	lpcSvc := bridgegrpc.NewLPCService(lpcWrapper, bus, registry)
+	monitoringSvc := bridgegrpc.NewMonitoringService(
+		monitoringWrapper,
+		bridgegrpc.MonitoringReaders{
+			DHW:         dhwMonitoringWrapper,
+			Room:        roomMonitoringWrapper,
+			Outdoor:     outdoorMonitoringWrapper,
+			Flow:        usecases.FlowTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
+			Return:      usecases.ReturnTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
+			Diagnostics: deviceOperatingState,
+		},
+		bus,
+		registry,
+	)
+	gridSvc := bridgegrpc.NewGridService(mgcpProvider)
+	visualizationSvc := bridgegrpc.NewVisualizationService(vapdProvider, vabdProvider)
+	ohpcfSvc := bridgegrpc.NewOHPCFService(ohpcfWrapper, bus, registry)
+	dhwSvc := bridgegrpc.NewDHWService(dhwTemperature, dhwSystemFunction, bus)
+	hvacSvc := bridgegrpc.NewHVACService(
+		roomHeatingTemperature,
+		roomHeatingSystemFunction,
+		roomMonitoringWrapper,
+		bus,
+	)
+
+	pb.RegisterDeviceServiceServer(grpcSrv.GRPCServer(), deviceSvc)
+	pb.RegisterLPCServiceServer(grpcSrv.GRPCServer(), lpcSvc)
+	pb.RegisterMonitoringServiceServer(grpcSrv.GRPCServer(), monitoringSvc)
+	// OHPCF control (schedule/pause/resume/abort) is a command surface like LPC
+	// write, not a reading-injection provider, so it is registered alongside the
+	// other control services rather than behind the loopback push gate below.
+	pb.RegisterOHPCFServiceServer(grpcSrv.GRPCServer(), ohpcfSvc)
+	pb.RegisterDHWServiceServer(grpcSrv.GRPCServer(), dhwSvc)
+	pb.RegisterHVACServiceServer(grpcSrv.GRPCServer(), hvacSvc)
+
+	// Provider push services are safe on loopback or behind tls_token auth.
+	if bridgegrpc.RegisterPushServices(grpcSrv, cfg.GRPC.Bind, cfg.GRPC.Security.Mode, gridSvc, visualizationSvc) {
+		log.Println("Registered provider push services (grid/PV/battery)")
+	} else {
+		log.Printf("Refusing to register provider push services: gRPC bind %q is not secured", cfg.GRPC.Bind)
+	}
+
+	return app, nil
+}
+
+func setupMGCPProvider(cfg *config.Config, bridgeSvc *eebus.BridgeService, bus *eebus.EventBus) (*usecases.MGCPProvider, error) {
+	if !cfg.Experimental.MGCPProvider {
+		return nil, nil
+	}
+	gridEntity := bridgeSvc.GridEntity()
+	if gridEntity == nil {
+		log.Println("[MGCP] experimental provider enabled but grid entity is unavailable; skipping")
+		return nil, nil
+	}
+	provider := usecases.NewMGCPProvider(gridEntity, bus, cfg.Logging.DebugEvents)
+	if err := bridgeSvc.Service().AddUseCase(provider.UseCase()); err != nil {
+		return nil, fmt.Errorf("adding MGCP use case: %w", err)
+	}
+	log.Println("[MGCP] experimental grid-connection-point provider registered; awaiting grid data via GridService")
+	return provider, nil
+}
+
+func setupVAPDProvider(cfg *config.Config, bridgeSvc *eebus.BridgeService, bus *eebus.EventBus) (*usecases.VAPDProvider, error) {
+	if !cfg.Experimental.VAPDProvider {
+		return nil, nil
+	}
+	pvEntity := bridgeSvc.PVEntity()
+	if pvEntity == nil {
+		log.Println("[VAPD] experimental provider enabled but PV entity is unavailable; skipping")
+		return nil, nil
+	}
+	provider := usecases.NewVAPDProvider(pvEntity, bus, cfg.Logging.DebugEvents)
+	if err := bridgeSvc.Service().AddUseCase(provider.UseCase()); err != nil {
+		return nil, fmt.Errorf("adding VAPD use case: %w", err)
+	}
+	log.Println("[VAPD] experimental PV-system provider registered; awaiting PV data via VisualizationService")
+	return provider, nil
+}
+
+func setupVABDProvider(cfg *config.Config, bridgeSvc *eebus.BridgeService, bus *eebus.EventBus) (*usecases.VABDProvider, error) {
+	if !cfg.Experimental.VABDProvider {
+		return nil, nil
+	}
+	batteryEntity := bridgeSvc.BatteryEntity()
+	if batteryEntity == nil {
+		log.Println("[VABD] experimental provider enabled but battery entity is unavailable; skipping")
+		return nil, nil
+	}
+	provider := usecases.NewVABDProvider(batteryEntity, bus, cfg.Logging.DebugEvents)
+	if err := bridgeSvc.Service().AddUseCase(provider.UseCase()); err != nil {
+		return nil, fmt.Errorf("adding VABD use case: %w", err)
+	}
+	log.Println("[VABD] experimental battery-system provider registered; awaiting battery data via VisualizationService")
+	return provider, nil
+}
+
+// Start launches the serve loop, starts EEBUS, and waits for the first signal
+// or fatal background component failure. Every exit path runs Stop.
+func (a *Application) Start(ctx context.Context) error {
+	if a.bridgeSvc == nil {
+		return errors.New("EEBUS bridge service is not configured")
+	}
+	if a.grpcSrv == nil {
+		return errors.New("gRPC server is not configured")
+	}
+	if a.backgroundFailures == nil {
+		a.backgroundFailures = make(chan backgroundFailure, 1)
+	}
+
+	runtimeCtx, cancel := context.WithCancel(ctx)
+	a.runtimeMu.Lock()
+	a.cancelRuntime = cancel
+	a.runtimeMu.Unlock()
+	defer a.Stop()
+
+	go func() {
+		log.Printf("gRPC server listening on %s:%d", a.cfg.GRPC.Bind, a.cfg.GRPC.Port)
+		if err := a.grpcSrv.Start(); err != nil {
+			// Stop makes Serve return an error as part of normal teardown. The
+			// context path already owns that shutdown and must not be reclassified
+			// as a competing runtime failure.
+			select {
+			case <-runtimeCtx.Done():
+				return
+			default:
+			}
+			wrapped := fmt.Errorf("gRPC server: %w", err)
+			a.reportBackgroundFailure(wrapped.Error(), wrapped)
+		}
+	}()
+
+	if err := a.bridgeSvc.Start(); err != nil {
+		return fmt.Errorf("EEBUS service start: %w", err)
+	}
+	log.Println("EEBUS bridge started")
+
+	// SPIKE: trust a known remote SKI at startup so a test container can complete
+	// the SHIP handshake without Home Assistant sending device.register_ski.
+	if a.cfg.Experimental.TrustSKI != "" {
+		a.bridgeSvc.RegisterRemoteSKI(a.cfg.Experimental.TrustSKI)
+		log.Printf("[EXP] auto-trusted remote SKI: %s", a.cfg.Experimental.TrustSKI)
+	}
+	if a.cfg.Logging.DebugEvents {
+		log.Println("[DEBUG] EEBUS event debug logging enabled; waiting for incoming callbacks")
+	}
+
+	a.startWatchdog(runtimeCtx)
+
+	select {
+	case <-runtimeCtx.Done():
+		var sig *signalShutdown
+		if errors.As(context.Cause(ctx), &sig) {
+			log.Printf("Received signal %s", sig.signal)
+		}
+		return nil
+	case failure := <-a.backgroundFailures:
+		log.Printf("Controlled shutdown requested: %s", failure.reason)
+		return &controlledShutdownError{err: failure.err}
+	}
+}
+
+func (a *Application) startWatchdog(ctx context.Context) {
+	if a.registry == nil {
+		return
+	}
+	interval := a.monitoringWatchdogInterval
+	if interval <= 0 {
+		interval = watchdogInterval
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				staleDevices := a.registry.StaleDevices(monitoringStaleThreshold, monitoringGracePeriod)
+				a.grpcSrv.SetHealthy(len(staleDevices) == 0)
+				if len(staleDevices) == 0 {
+					continue
+				}
+
+				details := make([]string, 0, len(staleDevices))
+				for _, ski := range staleDevices {
+					lastSuccessAge := "never"
+					if age, ok := a.registry.MonitoringLastSuccessAge(ski); ok {
+						lastSuccessAge = age.Round(time.Second).String()
+					}
+					details = append(details, eebus.ShortSKI(ski)+"(last_success_age="+lastSuccessAge+")")
+				}
+
+				reason := "monitoring watchdog detected stale connected devices"
+				log.Printf(
+					"%s: devices=[%s] threshold=%s grace_period=%s; requesting restart",
+					reason,
+					strings.Join(details, ", "),
+					monitoringStaleThreshold,
+					monitoringGracePeriod,
+				)
+				a.reportBackgroundFailure(reason, errors.New(reason))
+				return
+			}
+		}
+	}()
+}
+
+func (a *Application) reportBackgroundFailure(reason string, err error) {
+	select {
+	case a.backgroundFailures <- backgroundFailure{reason: reason, err: err}:
+	default:
+	}
+}
+
+// Stop is safe to call repeatedly. Its component shutdown order deliberately
+// remains heartbeat, gRPC, then EEBUS.
+func (a *Application) Stop() {
+	a.stopOnce.Do(func() {
+		a.runtimeMu.Lock()
+		cancel := a.cancelRuntime
+		a.runtimeMu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+
+		log.Println("Shutting down...")
+		if a.lpcWrapper != nil {
+			if err := a.lpcWrapper.StopHeartbeat(); err != nil {
+				log.Printf("stopping LPC heartbeat failed: %v", err)
+			}
+		}
+		if a.grpcSrv != nil {
+			a.grpcSrv.Stop()
+		}
+		if a.bridgeSvc != nil {
+			a.bridgeSvc.Shutdown()
+		}
+		log.Println("Shutdown complete")
+	})
+}
+
+func logRunError(err error) {
+	var controlled *controlledShutdownError
+	if !errors.As(err, &controlled) {
+		log.Print(err)
+	}
+}
+
+func notifySignalContext(parent context.Context, signals ...os.Signal) (context.Context, func()) {
+	ctx, cancel := context.WithCancelCause(parent)
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, signals...)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		select {
+		case sig := <-signalCh:
+			cancel(&signalShutdown{signal: sig})
+		case <-ctx.Done():
+		}
+	}()
+
+	var stopOnce sync.Once
+	return ctx, func() {
+		stopOnce.Do(func() {
+			signal.Stop(signalCh)
+			cancel(context.Canceled)
+		})
+		<-done
+	}
+}
