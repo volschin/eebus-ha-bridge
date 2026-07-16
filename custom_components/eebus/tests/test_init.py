@@ -81,6 +81,24 @@ async def test_unload_entry():
     coordinator.async_shutdown.assert_awaited_once()
 
 
+async def test_migrate_entry_rejects_malformed_legacy_ski():
+    """A pre-existing entry with a non-hex/wrong-length SKI fails migration."""
+    from custom_components.eebus import async_migrate_entry
+
+    hass = MagicMock()
+    entry = MagicMock(
+        version=1,
+        data={CONF_DEVICE_SKI: "not-an-ski"},
+        unique_id="not-an-ski",
+        entry_id="01",
+        title="Broken entry",
+    )
+    hass.config_entries.async_entries.return_value = [entry]
+
+    assert not await async_migrate_entry(hass, entry)
+    hass.config_entries.async_update_entry.assert_not_called()
+
+
 async def test_migrate_entry_only_bumps_version_when_ski_is_canonical():
     """A canonical v1 entry needs only a version update."""
     from custom_components.eebus import async_migrate_entry

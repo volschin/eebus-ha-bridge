@@ -31,7 +31,7 @@ from .const import (
     SECURITY_MODE_LOOPBACK,
 )
 from .coordinator import EebusCoordinator
-from .ski import normalize_ski
+from .ski import is_valid_ski, normalize_ski
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,6 +49,16 @@ async def async_migrate_entry(
         return True
 
     canonical_ski = normalize_ski(config_entry.data[CONF_DEVICE_SKI])
+    if not is_valid_ski(canonical_ski):
+        _LOGGER.warning(
+            "Cannot migrate EEBUS config entry %s (%s): stored SKI %r is not a "
+            "valid 40-character hexadecimal fingerprint",
+            config_entry.entry_id,
+            config_entry.title,
+            config_entry.data[CONF_DEVICE_SKI],
+        )
+        return False
+
     for other_entry in hass.config_entries.async_entries(DOMAIN):
         if other_entry.entry_id == config_entry.entry_id:
             continue

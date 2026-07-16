@@ -16,11 +16,24 @@ from custom_components.eebus.ski import is_valid_ski, normalize_ski
         ("\t ab:CD-ef \r\n", "ABCDEF"),
         (" aB:cD-ef\t12:34 ", "ABCDEF1234"),
         ("", ""),
+        ("\x1c", "\x1c"),
     ],
 )
 def test_normalize_ski(ski: str, expected: str) -> None:
     """Normalization matches the bridge's canonical test vectors."""
     assert normalize_ski(ski) == expected
+
+
+def test_normalize_ski_does_not_expand_unicode_ligatures() -> None:
+    """str.upper() would fold 'ﬀ' into 'FF', forging a fake valid SKI.
+
+    Go's rune-wise strings.ToUpper never does this; normalize_ski must not
+    diverge from that by using Python's full Unicode case folding.
+    """
+    ligature_ski = "ﬀ" * 20
+    normalized = normalize_ski(ligature_ski)
+    assert normalized != "F" * 40
+    assert not is_valid_ski(normalized)
 
 
 @pytest.mark.parametrize(
