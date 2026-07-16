@@ -17,6 +17,7 @@ from custom_components.eebus.snapshot import (
     _async_read_dhw_setpoint,
     _async_read_dhw_system_function,
 )
+from custom_components.eebus.state import DomainState
 from custom_components.eebus.switch import EebusDHWBoostSwitch
 from custom_components.eebus.water_heater import EebusDHWWaterHeater
 
@@ -25,8 +26,7 @@ def _coordinator(data=None):
     coordinator = EebusCoordinator.__new__(EebusCoordinator)
     coordinator.ski = "test-ski"
     coordinator.data = data
-    coordinator._dhw_supported = CapabilityState.UNKNOWN
-    coordinator._dhw_sysfn_supported = CapabilityState.UNKNOWN
+    coordinator._domain_state = DomainState()
     return coordinator
 
 
@@ -48,7 +48,7 @@ def test_read_dhw_setpoint_maps_value_and_constraints():
                 None,
                 proto_stubs.DeviceRequest(ski=coordinator.ski),
                 coordinator.ski,
-                coordinator._dhw_supported,
+                coordinator._domain_state.capabilities.dhw,
             )
         )
 
@@ -60,7 +60,7 @@ def test_read_dhw_setpoint_maps_value_and_constraints():
         "writable": True,
     }
     assert result.supported == CapabilityState.AVAILABLE
-    assert coordinator._dhw_supported == CapabilityState.UNKNOWN
+    assert coordinator._domain_state.capabilities.dhw == CapabilityState.UNKNOWN
 
 
 def test_read_dhw_setpoint_not_found_marks_temporarily_unavailable():
@@ -75,13 +75,13 @@ def test_read_dhw_setpoint_not_found_marks_temporarily_unavailable():
                 None,
                 proto_stubs.DeviceRequest(ski=coordinator.ski),
                 coordinator.ski,
-                coordinator._dhw_supported,
+                coordinator._domain_state.capabilities.dhw,
             )
         )
 
     assert result.value is None
     assert result.supported == CapabilityState.TEMPORARILY_UNAVAILABLE
-    assert coordinator._dhw_supported == CapabilityState.UNKNOWN
+    assert coordinator._domain_state.capabilities.dhw == CapabilityState.UNKNOWN
 
 
 def test_dhw_water_heater_combines_temperatures_modes_and_writes():
@@ -214,7 +214,7 @@ def test_read_dhw_system_function_maps_state():
                 None,
                 proto_stubs.DeviceRequest(ski=coordinator.ski),
                 coordinator.ski,
-                coordinator._dhw_sysfn_supported,
+                coordinator._domain_state.capabilities.dhw_system_function,
             )
         )
 
@@ -226,7 +226,10 @@ def test_read_dhw_system_function_maps_state():
         "mode_writable": True,
     }
     assert result.supported == CapabilityState.AVAILABLE
-    assert coordinator._dhw_sysfn_supported == CapabilityState.UNKNOWN
+    assert (
+        coordinator._domain_state.capabilities.dhw_system_function
+        == CapabilityState.UNKNOWN
+    )
 
 
 def test_read_dhw_system_function_not_found_marks_temporarily_unavailable():
@@ -241,13 +244,16 @@ def test_read_dhw_system_function_not_found_marks_temporarily_unavailable():
                 None,
                 proto_stubs.DeviceRequest(ski=coordinator.ski),
                 coordinator.ski,
-                coordinator._dhw_sysfn_supported,
+                coordinator._domain_state.capabilities.dhw_system_function,
             )
         )
 
     assert result.value is None
     assert result.supported == CapabilityState.TEMPORARILY_UNAVAILABLE
-    assert coordinator._dhw_sysfn_supported == CapabilityState.UNKNOWN
+    assert (
+        coordinator._domain_state.capabilities.dhw_system_function
+        == CapabilityState.UNKNOWN
+    )
 
 
 def test_dhw_system_function_writes_map_validation_errors():

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from datetime import timedelta
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
@@ -22,15 +23,15 @@ from .grpc_client import (
     is_unimplemented as _is_unimplemented,
 )
 from .models import (
-    CapabilityState,
     CoordinatorSnapshot,
     _dhw_system_function_to_dict,
     _setpoint_to_dict,
     _system_function_to_dict,
 )
 from .providers import ProviderManager
-from .snapshot import SnapshotSupport, _next_capability_state, async_build_snapshot
+from .snapshot import SnapshotSupport, async_build_snapshot
 from .ski import normalize_ski
+from .state import DomainState, apply_reading, flatten, next_capability_state
 from .streams import ConsumeFn, StreamManager
 
 if TYPE_CHECKING:
@@ -159,13 +160,7 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             battery_soc_entity=battery_soc_entity,
         )
         self._was_unavailable: bool = False
-        self._heartbeat_supported: CapabilityState = CapabilityState.UNKNOWN
-        self._lpc_supported: CapabilityState = CapabilityState.UNKNOWN
-        self._failsafe_supported: CapabilityState = CapabilityState.UNKNOWN
-        self._ohpcf_supported: CapabilityState = CapabilityState.UNKNOWN
-        self._dhw_supported: CapabilityState = CapabilityState.UNKNOWN
-        self._dhw_sysfn_supported: CapabilityState = CapabilityState.UNKNOWN
-        self._room_heating_supported: CapabilityState = CapabilityState.UNKNOWN
+        self._domain_state: DomainState = DomainState()
         self._ski_registered: bool = False
         self._not_found_streak: int = 0
 
@@ -177,28 +172,35 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
         """Fetch data via gRPC polling."""
         try:
             channel = await self._ensure_channel()
+            capabilities = self._domain_state.capabilities
             result = await async_build_snapshot(
                 channel,
                 self.ski,
                 SnapshotSupport(
-                    lpc=self._lpc_supported,
-                    failsafe=self._failsafe_supported,
-                    heartbeat=self._heartbeat_supported,
-                    ohpcf=self._ohpcf_supported,
-                    dhw=self._dhw_supported,
-                    dhw_system_function=self._dhw_sysfn_supported,
-                    room_heating=self._room_heating_supported,
+                    lpc=capabilities.lpc,
+                    failsafe=capabilities.failsafe,
+                    heartbeat=capabilities.heartbeat,
+                    ohpcf=capabilities.ohpcf,
+                    dhw=capabilities.dhw,
+                    dhw_system_function=capabilities.dhw_system_function,
+                    room_heating=capabilities.room_heating,
                 ),
                 ski_registered=self._ski_registered,
                 not_found_streak=self._not_found_streak,
             )
-            self._lpc_supported = result.support.lpc
-            self._failsafe_supported = result.support.failsafe
-            self._heartbeat_supported = result.support.heartbeat
-            self._ohpcf_supported = result.support.ohpcf
-            self._dhw_supported = result.support.dhw
-            self._dhw_sysfn_supported = result.support.dhw_system_function
-            self._room_heating_supported = result.support.room_heating
+            updated_capabilities = replace(
+                capabilities,
+                lpc=result.support.lpc,
+                failsafe=result.support.failsafe,
+                heartbeat=result.support.heartbeat,
+                ohpcf=result.support.ohpcf,
+                dhw=result.support.dhw,
+                dhw_system_function=result.support.dhw_system_function,
+                room_heating=result.support.room_heating,
+            )
+            self._domain_state = replace(
+                self._domain_state, capabilities=updated_capabilities
+            )
             self._ski_registered = result.ski_registered
             self._not_found_streak = result.not_found_streak
 
@@ -239,15 +241,31 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
         try:
             await call(request, timeout=RPC_TIMEOUT)
             if support_attr is not None:
-                current = cast(CapabilityState, getattr(self, support_attr))
-                setattr(self, support_attr, _next_capability_state(current, None))
+                capabilities = self._domain_state.capabilities
+                updated_capabilities = replace(
+                    capabilities,
+                    **{
+                        support_attr: next_capability_state(
+                            getattr(capabilities, support_attr), None
+                        )
+                    },
+                )
+                self._domain_state = replace(
+                    self._domain_state, capabilities=updated_capabilities
+                )
         except grpc.aio.AioRpcError as err:
             if support_attr is not None:
-                current = cast(CapabilityState, getattr(self, support_attr))
-                setattr(
-                    self,
-                    support_attr,
-                    _next_capability_state(current, err.code()),
+                capabilities = self._domain_state.capabilities
+                updated_capabilities = replace(
+                    capabilities,
+                    **{
+                        support_attr: next_capability_state(
+                            getattr(capabilities, support_attr), err.code()
+                        )
+                    },
+                )
+                self._domain_state = replace(
+                    self._domain_state, capabilities=updated_capabilities
                 )
             if _is_unimplemented(err):
                 _LOGGER.info(
@@ -269,7 +287,7 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             proto_stubs.WriteLoadLimitRequest(
                 ski=self.ski, value_watts=value_watts, is_active=True
             ),
-            support_attr="_lpc_supported",
+            support_attr="lpc",
         )
 
     async def async_write_failsafe_limit(self, value_watts: float) -> None:
@@ -281,7 +299,7 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             "Failsafe write",
             stub.WriteFailsafeLimit,
             proto_stubs.WriteFailsafeLimitRequest(ski=self.ski, value_watts=value_watts),
-            support_attr="_failsafe_supported",
+            support_attr="failsafe",
         )
 
     async def async_set_lpc_active(self, active: bool) -> None:
@@ -300,7 +318,7 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
                 value_watts=current.value_watts,
                 is_active=active,
             ),
-            support_attr="_lpc_supported",
+            support_attr="lpc",
         )
 
     async def async_control_compressor(self, action: proto_stubs.OHPCFAction) -> None:
@@ -313,7 +331,7 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
                 "OHPCF control",
                 stub.ControlCompressorFlexibility,
                 proto_stubs.ControlCompressorRequest(ski=self.ski, action=action),
-                support_attr="_ohpcf_supported",
+                support_attr="ohpcf",
             )
         except grpc.aio.AioRpcError as err:
             # Surface device-side rejections (e.g. "data not available" when the
@@ -334,7 +352,7 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             "Domestic hot water setpoint",
             stub.SetDHWSetpoint,
             proto_stubs.SetDHWSetpointRequest(ski=self.ski, value_celsius=value_celsius),
-            support_attr="_dhw_supported",
+            support_attr="dhw",
             validation=True,
         )
 
@@ -348,7 +366,7 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             "Domestic hot water boost",
             stub.SetDHWBoost,
             proto_stubs.SetDHWBoostRequest(ski=self.ski, active=active),
-            support_attr="_dhw_sysfn_supported",
+            support_attr="dhw_system_function",
             validation=True,
         )
 
@@ -362,7 +380,7 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             "Domestic hot water operation mode",
             stub.SetDHWOperationMode,
             proto_stubs.SetDHWOperationModeRequest(ski=self.ski, mode=mode),
-            support_attr="_dhw_sysfn_supported",
+            support_attr="dhw_system_function",
             validation=True,
         )
 
@@ -377,7 +395,7 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             proto_stubs.SetRoomHeatingTemperatureRequest(
                 ski=self.ski, value_celsius=value_celsius
             ),
-            support_attr="_room_heating_supported",
+            support_attr="room_heating",
             validation=True,
         )
 
@@ -390,7 +408,7 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             "Room heating mode",
             proto_stubs.hvac_service_stub(channel).SetRoomHeatingMode,
             proto_stubs.SetRoomHeatingModeRequest(ski=self.ski, mode=mode),
-            support_attr="_room_heating_supported",
+            support_attr="room_heating",
             validation=True,
         )
 
@@ -509,6 +527,11 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
         merged.update(updates)
         self.async_set_updated_data(cast(CoordinatorSnapshot, merged))
 
+    def _push_domain_fields(self, *field_names: str) -> None:
+        """Publish selected flattened fields from the grouped domain state."""
+        snapshot = dict(flatten(self._domain_state))
+        self._push_data({name: snapshot[name] for name in field_names})
+
     def _handle_device_event(self, event: Any) -> None:
         from . import proto_stubs
 
@@ -537,28 +560,42 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
                 self.hass.async_create_task(self.async_request_refresh())
                 return
             limit = event.limit_update
-            self._push_data(
+            lpc, capabilities = apply_reading(
+                self._domain_state.lpc,
+                "consumption_limit",
                 {
-                    "consumption_limit": {
-                        "value_watts": limit.value_watts,
-                        "is_active": limit.is_active,
-                        "is_changeable": limit.is_changeable,
-                    }
-                }
+                    "value_watts": limit.value_watts,
+                    "is_active": limit.is_active,
+                    "is_changeable": limit.is_changeable,
+                },
+                self._domain_state.capabilities,
+                "lpc",
+                None,
             )
+            self._domain_state = replace(
+                self._domain_state, lpc=lpc, capabilities=capabilities
+            )
+            self._push_domain_fields("consumption_limit", "lpc_supported")
         elif event_type == proto_stubs.LPCEventType.LPC_EVENT_FAILSAFE_UPDATED:
             if not event.HasField("failsafe_update"):
                 self.hass.async_create_task(self.async_request_refresh())
                 return
             failsafe = event.failsafe_update
-            self._push_data(
+            lpc, capabilities = apply_reading(
+                self._domain_state.lpc,
+                "failsafe_limit",
                 {
-                    "failsafe_limit": {
-                        "value_watts": failsafe.value_watts,
-                        "duration_minimum_seconds": failsafe.duration_minimum_seconds,
-                    }
-                }
+                    "value_watts": failsafe.value_watts,
+                    "duration_minimum_seconds": failsafe.duration_minimum_seconds,
+                },
+                self._domain_state.capabilities,
+                "failsafe",
+                None,
             )
+            self._domain_state = replace(
+                self._domain_state, lpc=lpc, capabilities=capabilities
+            )
+            self._push_domain_fields("failsafe_limit", "failsafe_supported")
         elif event_type == proto_stubs.LPCEventType.LPC_EVENT_HEARTBEAT_TIMEOUT:
             self.hass.async_create_task(self.async_request_refresh())
 
@@ -581,7 +618,17 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
         if isinstance(value, str):
             # Empty enum/state strings mean "no value" (device_operating_state).
             value = value or None
-        self._push_data({key: value})
+        if key == "device_operating_state":
+            connection = replace(
+                self._domain_state.connection, device_operating_state=value
+            )
+            self._domain_state = replace(self._domain_state, connection=connection)
+        else:
+            measurements = replace(self._domain_state.measurements, **{key: value})
+            self._domain_state = replace(
+                self._domain_state, measurements=measurements
+            )
+        self._push_domain_fields(key)
 
     def _handle_dhw_event(self, event: Any) -> None:
         from . import proto_stubs
@@ -592,14 +639,18 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             event.event_type == proto_stubs.DHWEventType.DHW_EVENT_SETPOINT_UPDATED
             and event.HasField("setpoint")
         ):
-            setpoint = event.setpoint
-            self._dhw_supported = CapabilityState.AVAILABLE
-            self._push_data(
-                {
-                    "dhw_setpoint": _setpoint_to_dict(setpoint),
-                    "dhw_supported": CapabilityState.AVAILABLE,
-                }
+            dhw, capabilities = apply_reading(
+                self._domain_state.dhw,
+                "setpoint",
+                _setpoint_to_dict(event.setpoint),
+                self._domain_state.capabilities,
+                "dhw",
+                None,
             )
+            self._domain_state = replace(
+                self._domain_state, dhw=dhw, capabilities=capabilities
+            )
+            self._push_domain_fields("dhw_setpoint", "dhw_supported")
         elif event.event_type == proto_stubs.DHWEventType.DHW_EVENT_SUPPORT_UPDATED:
             self.hass.async_create_task(self.async_request_refresh())
 
@@ -613,12 +664,19 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             == proto_stubs.DHWSystemFunctionEventType.DHW_SYSTEM_FUNCTION_EVENT_STATE_UPDATED
             and event.HasField("state")
         ):
-            self._dhw_sysfn_supported = CapabilityState.AVAILABLE
-            self._push_data(
-                {
-                    "dhw_system_function": _dhw_system_function_to_dict(event.state),
-                    "dhw_sysfn_supported": CapabilityState.AVAILABLE,
-                }
+            dhw, capabilities = apply_reading(
+                self._domain_state.dhw,
+                "system_function",
+                _dhw_system_function_to_dict(event.state),
+                self._domain_state.capabilities,
+                "dhw_system_function",
+                None,
+            )
+            self._domain_state = replace(
+                self._domain_state, dhw=dhw, capabilities=capabilities
+            )
+            self._push_domain_fields(
+                "dhw_system_function", "dhw_sysfn_supported"
             )
         elif (
             event.event_type
@@ -638,19 +696,45 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             self.hass.async_create_task(self.async_request_refresh())
             return
         state = event.state
-        updates: dict[str, Any] = {
-            "room_heating_supported": CapabilityState.AVAILABLE
-        }
-        self._room_heating_supported = CapabilityState.AVAILABLE
-        if state.HasField("current_temperature_celsius"):
-            updates["room_temperature_c"] = state.current_temperature_celsius
+        field_names = ["room_heating_supported"]
+        hvac, capabilities = apply_reading(
+            self._domain_state.hvac,
+            "setpoint",
+            _setpoint_to_dict(state.setpoint) if state.HasField("setpoint") else None,
+            self._domain_state.capabilities,
+            "room_heating",
+            None,
+        )
         if state.HasField("setpoint"):
-            updates["room_heating_setpoint"] = _setpoint_to_dict(state.setpoint)
+            field_names.append("room_heating_setpoint")
+        hvac, capabilities = apply_reading(
+            hvac,
+            "system_function",
+            (
+                _system_function_to_dict(state.system_function)
+                if state.HasField("system_function")
+                else None
+            ),
+            capabilities,
+            "room_heating",
+            None,
+        )
         if state.HasField("system_function"):
-            updates["room_heating_system_function"] = _system_function_to_dict(
-                state.system_function
+            field_names.append("room_heating_system_function")
+        measurements = self._domain_state.measurements
+        if state.HasField("current_temperature_celsius"):
+            measurements = replace(
+                measurements,
+                room_temperature_c=state.current_temperature_celsius,
             )
-        self._push_data(updates)
+            field_names.append("room_temperature_c")
+        self._domain_state = replace(
+            self._domain_state,
+            measurements=measurements,
+            hvac=hvac,
+            capabilities=capabilities,
+        )
+        self._push_domain_fields(*field_names)
 
     async def async_shutdown(self) -> None:
         """Close gRPC channel and cancel stream tasks."""

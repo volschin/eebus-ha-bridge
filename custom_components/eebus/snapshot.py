@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Generic, Protocol, TypeVar, cast
 
 import grpc
@@ -35,6 +35,19 @@ from .models import (
     _setpoint_to_dict,
     _system_function_to_dict,
 )
+from .state import (
+    CapabilitiesState,
+    ConnectionState,
+    DHWState,
+    DomainState,
+    HVACState,
+    LPCState,
+    MeasurementsState,
+    OHPCFState,
+    apply_reading,
+    flatten,
+    next_capability_state,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,6 +70,7 @@ class _ReadResult(Generic[_ResponseT]):
     value: _ResponseT | None
     supported: CapabilityState
     saw_not_found: bool = False
+    status: grpc.StatusCode | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,19 +105,6 @@ class _RoomHeatingRead:
     current_temperature_celsius: float | None
 
 
-def _next_capability_state(
-    current: CapabilityState, status: grpc.StatusCode | None
-) -> CapabilityState:
-    """Return the capability state after a successful call or gRPC status."""
-    if status is None:
-        return CapabilityState.AVAILABLE
-    if status == grpc.StatusCode.UNIMPLEMENTED:
-        return CapabilityState.UNSUPPORTED
-    if status in (grpc.StatusCode.NOT_FOUND, grpc.StatusCode.UNAVAILABLE):
-        return CapabilityState.TEMPORARILY_UNAVAILABLE
-    return current
-
-
 async def _poll_read(
     label: str,
     call: _ReadCall[_ResponseT],
@@ -122,15 +123,22 @@ async def _poll_read(
             ski,
             _rpc_error_text(err),
         )
-        supported = _next_capability_state(current_support, err.code())
-        return _ReadResult(None, supported, _is_not_found(err))
+        supported = next_capability_state(current_support, err.code())
+        return _ReadResult(
+            None,
+            supported,
+            _is_not_found(err),
+            status=err.code(),
+        )
     except Exception:  # noqa: BLE001
         _LOGGER.exception("Failed to read %s", label)
         return _ReadResult(
-            None, _next_capability_state(current_support, grpc.StatusCode.UNKNOWN)
+            None,
+            next_capability_state(current_support, grpc.StatusCode.UNKNOWN),
+            status=grpc.StatusCode.UNKNOWN,
         )
     _LOGGER.debug("EEBUS %s read for SKI %s succeeded", label, ski)
-    return _ReadResult(response, _next_capability_state(current_support, None))
+    return _ReadResult(response, next_capability_state(current_support, None))
 
 
 async def _async_register_remote_ski(
@@ -216,14 +224,14 @@ async def _async_read_compressor_flexibility(
             request, timeout=RPC_TIMEOUT
         )
     except grpc.aio.AioRpcError as err:
-        supported = _next_capability_state(current_support, err.code())
+        supported = next_capability_state(current_support, err.code())
         if not _is_unimplemented(err):
             _LOGGER.debug(
                 "EEBUS OHPCF read failed for SKI %s: %s",
                 ski,
                 _rpc_error_text(err),
             )
-        return _ReadResult(None, supported)
+        return _ReadResult(None, supported, status=err.code())
 
     value: CompressorFlexibilityState = {
         "available": flex.available,
@@ -237,7 +245,7 @@ async def _async_read_compressor_flexibility(
         "minimal_run_seconds": flex.minimal_run_seconds,
         "minimal_pause_seconds": flex.minimal_pause_seconds,
     }
-    return _ReadResult(value, _next_capability_state(current_support, None))
+    return _ReadResult(value, next_capability_state(current_support, None))
 
 
 async def _async_read_dhw_setpoint(
@@ -251,16 +259,16 @@ async def _async_read_dhw_setpoint(
         stub = proto_stubs.dhw_service_stub(channel)
         setpoint: proto_stubs.DHWSetpoint = await stub.GetDHWSetpoint(request, timeout=RPC_TIMEOUT)
     except grpc.aio.AioRpcError as err:
-        supported = _next_capability_state(current_support, err.code())
+        supported = next_capability_state(current_support, err.code())
         if not _is_unimplemented(err):
             _LOGGER.debug(
                 "EEBUS DHW setpoint read failed for SKI %s: %s",
                 ski,
                 _rpc_error_text(err),
             )
-        return _ReadResult(None, supported)
+        return _ReadResult(None, supported, status=err.code())
     return _ReadResult(
-        _setpoint_to_dict(setpoint), _next_capability_state(current_support, None)
+        _setpoint_to_dict(setpoint), next_capability_state(current_support, None)
     )
 
 
@@ -277,17 +285,17 @@ async def _async_read_dhw_system_function(
             request, timeout=RPC_TIMEOUT
         )
     except grpc.aio.AioRpcError as err:
-        supported = _next_capability_state(current_support, err.code())
+        supported = next_capability_state(current_support, err.code())
         if not _is_unimplemented(err):
             _LOGGER.debug(
                 "EEBUS DHW system function read failed for SKI %s: %s",
                 ski,
                 _rpc_error_text(err),
             )
-        return _ReadResult(None, supported)
+        return _ReadResult(None, supported, status=err.code())
     return _ReadResult(
         _dhw_system_function_to_dict(state),
-        _next_capability_state(current_support, None),
+        next_capability_state(current_support, None),
     )
 
 
@@ -302,7 +310,11 @@ async def _async_read_room_heating(
             request, timeout=RPC_TIMEOUT
         )
     except grpc.aio.AioRpcError as err:
-        return _ReadResult(None, _next_capability_state(current_support, err.code()))
+        return _ReadResult(
+            None,
+            next_capability_state(current_support, err.code()),
+            status=err.code(),
+        )
 
     setpoint = _setpoint_to_dict(state.setpoint) if state.HasField("setpoint") else None
     system_function = (
@@ -313,7 +325,7 @@ async def _async_read_room_heating(
     )
     return _ReadResult(
         _RoomHeatingRead(setpoint, system_function, current_temperature),
-        _next_capability_state(current_support, None),
+        next_capability_state(current_support, None),
     )
 
 
@@ -446,21 +458,45 @@ async def async_build_snapshot(
         ),
     )
 
-    updated_support = SnapshotSupport(
-        lpc=limit.supported,
-        failsafe=failsafe.supported,
-        heartbeat=heartbeat.supported,
-        ohpcf=compressor.supported,
-        dhw=dhw_setpoint.supported,
-        dhw_system_function=dhw_system_function.supported,
-        room_heating=room_heating.supported,
-    )
-
     flat_measurements: dict[str, float | None] = {}
     scoped_energy: dict[str, float | None] = {"heating": None, "dhw": None}
     if measurements.value is not None:
         scoped_energy = _extract_scoped_energy_kwh(measurements.value.measurements)
         flat_measurements = _extract_flat_measurements(measurements.value.measurements)
+
+    room_heating_value = room_heating.value
+    room_temperature_c = flat_measurements.get("room_temperature_c")
+    if room_heating_value is not None and room_heating_value.current_temperature_celsius is not None:
+        room_temperature_c = room_heating_value.current_temperature_celsius
+
+    connection = replace(
+        ConnectionState(),
+        connected=device_status.connected,
+        local_ski=status.local_ski,
+        ski_registered=registered,
+        device_info=device_info,
+        device_operating_state=diagnostics,
+    )
+    measurement_state = replace(MeasurementsState(), **flat_measurements)
+    measurement_state = replace(
+        measurement_state,
+        room_temperature_c=room_temperature_c,
+        power_watts=power.value.watts if power.value is not None else None,
+        energy_consumed_heating_kwh=scoped_energy["heating"],
+        energy_consumed_dhw_kwh=scoped_energy["dhw"],
+        energy_consumed_kwh=(
+            energy.value.kilowatt_hours if energy.value is not None else None
+        ),
+    )
+    capabilities = CapabilitiesState(
+        heartbeat=support.heartbeat,
+        lpc=support.lpc,
+        failsafe=support.failsafe,
+        ohpcf=support.ohpcf,
+        dhw=support.dhw,
+        dhw_system_function=support.dhw_system_function,
+        room_heating=support.room_heating,
+    )
 
     consumption_limit: ConsumptionLimitState | None = None
     if limit.value is not None:
@@ -484,56 +520,88 @@ async def async_build_snapshot(
             "within_duration": heartbeat.value.within_duration,
         }
 
-    room_heating_value = room_heating.value
-    room_temperature_c = flat_measurements.get("room_temperature_c")
-    if room_heating_value is not None and room_heating_value.current_temperature_celsius is not None:
-        room_temperature_c = room_heating_value.current_temperature_celsius
-
-    snapshot = CoordinatorSnapshot(
-        connected=device_status.connected,
-        local_ski=status.local_ski,
-        ski_registered=registered,
-        power_l1_w=flat_measurements.get("power_l1_w"),
-        power_l2_w=flat_measurements.get("power_l2_w"),
-        power_l3_w=flat_measurements.get("power_l3_w"),
-        current_l1_a=flat_measurements.get("current_l1_a"),
-        current_l2_a=flat_measurements.get("current_l2_a"),
-        current_l3_a=flat_measurements.get("current_l3_a"),
-        voltage_l1_v=flat_measurements.get("voltage_l1_v"),
-        voltage_l2_v=flat_measurements.get("voltage_l2_v"),
-        voltage_l3_v=flat_measurements.get("voltage_l3_v"),
-        frequency_hz=flat_measurements.get("frequency_hz"),
-        energy_produced_kwh=flat_measurements.get("energy_produced_kwh"),
-        dhw_temperature_c=flat_measurements.get("dhw_temperature_c"),
-        room_temperature_c=room_temperature_c,
-        outdoor_temperature_c=flat_measurements.get("outdoor_temperature_c"),
-        flow_temperature_c=flat_measurements.get("flow_temperature_c"),
-        return_temperature_c=flat_measurements.get("return_temperature_c"),
-        compressor_temperature_c=flat_measurements.get("compressor_temperature_c"),
-        compressor_power_w=flat_measurements.get("compressor_power_w"),
-        power_watts=power.value.watts if power.value is not None else None,
-        energy_consumed_heating_kwh=scoped_energy["heating"],
-        energy_consumed_dhw_kwh=scoped_energy["dhw"],
-        energy_consumed_kwh=energy.value.kilowatt_hours if energy.value is not None else None,
-        consumption_limit=consumption_limit,
-        failsafe_limit=failsafe_limit,
-        heartbeat_status=heartbeat_status,
-        heartbeat_supported=updated_support.heartbeat,
-        lpc_supported=updated_support.lpc,
-        failsafe_supported=updated_support.failsafe,
-        device_info=device_info,
-        compressor_flexibility=compressor.value,
-        dhw_setpoint=dhw_setpoint.value,
-        dhw_system_function=dhw_system_function.value,
-        room_heating_setpoint=room_heating_value.setpoint if room_heating_value is not None else None,
-        room_heating_system_function=(
-            room_heating_value.system_function if room_heating_value is not None else None
-        ),
-        device_operating_state=diagnostics,
-        ohpcf_supported=updated_support.ohpcf,
-        dhw_supported=updated_support.dhw,
-        dhw_sysfn_supported=updated_support.dhw_system_function,
-        room_heating_supported=updated_support.room_heating,
+    lpc_state, capabilities = apply_reading(
+        LPCState(),
+        "consumption_limit",
+        consumption_limit,
+        capabilities,
+        "lpc",
+        limit.status,
+    )
+    lpc_state, capabilities = apply_reading(
+        lpc_state,
+        "failsafe_limit",
+        failsafe_limit,
+        capabilities,
+        "failsafe",
+        failsafe.status,
+    )
+    lpc_state, capabilities = apply_reading(
+        lpc_state,
+        "heartbeat_status",
+        heartbeat_status,
+        capabilities,
+        "heartbeat",
+        heartbeat.status,
+    )
+    ohpcf_state, capabilities = apply_reading(
+        OHPCFState(),
+        "compressor_flexibility",
+        compressor.value,
+        capabilities,
+        "ohpcf",
+        compressor.status,
+    )
+    dhw_state, capabilities = apply_reading(
+        DHWState(),
+        "setpoint",
+        dhw_setpoint.value,
+        capabilities,
+        "dhw",
+        dhw_setpoint.status,
+    )
+    dhw_state, capabilities = apply_reading(
+        dhw_state,
+        "system_function",
+        dhw_system_function.value,
+        capabilities,
+        "dhw_system_function",
+        dhw_system_function.status,
+    )
+    hvac_state, capabilities = apply_reading(
+        HVACState(),
+        "setpoint",
+        room_heating_value.setpoint if room_heating_value is not None else None,
+        capabilities,
+        "room_heating",
+        room_heating.status,
+    )
+    hvac_state, capabilities = apply_reading(
+        hvac_state,
+        "system_function",
+        room_heating_value.system_function if room_heating_value is not None else None,
+        capabilities,
+        "room_heating",
+        room_heating.status,
+    )
+    domain = DomainState(
+        connection=connection,
+        measurements=measurement_state,
+        lpc=lpc_state,
+        dhw=dhw_state,
+        hvac=hvac_state,
+        ohpcf=ohpcf_state,
+        capabilities=capabilities,
+    )
+    snapshot = flatten(domain)
+    updated_support = SnapshotSupport(
+        lpc=capabilities.lpc,
+        failsafe=capabilities.failsafe,
+        heartbeat=capabilities.heartbeat,
+        ohpcf=capabilities.ohpcf,
+        dhw=capabilities.dhw,
+        dhw_system_function=capabilities.dhw_system_function,
+        room_heating=capabilities.room_heating,
     )
 
     saw_not_found = any(
