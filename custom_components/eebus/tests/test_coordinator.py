@@ -4,7 +4,7 @@ import asyncio
 import inspect
 from datetime import timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import grpc
 import pytest
@@ -53,13 +53,14 @@ def test_coordinator_init():
     coordinator.port = 50051
     coordinator.ski = "test-ski"
     coordinator._channel_manager = MagicMock()
-    coordinator._stream_tasks = []
+    coordinator._stream_manager = MagicMock()
     coordinator._was_unavailable = False
 
     assert coordinator.host == "192.168.1.100"
     assert coordinator.port == 50051
     assert coordinator.ski == "test-ski"
     assert coordinator._channel_manager is not None
+    assert coordinator._stream_manager is not None
     assert coordinator._was_unavailable is False
 
 
@@ -97,6 +98,47 @@ async def test_ensure_channel_delegates_to_channel_manager():
 
     assert await coordinator._ensure_channel() is channel
     coordinator._channel_manager.ensure_channel.assert_awaited_once_with()
+
+
+def test_start_streams_delegates_all_consumers_to_stream_manager():
+    """The coordinator supplies all six event consumers to StreamManager."""
+    coordinator = EebusCoordinator.__new__(EebusCoordinator)
+    coordinator.ski = "test-ski"
+    coordinator._stream_manager = MagicMock()
+
+    coordinator.async_start_streams()
+
+    coordinator._stream_manager.start.assert_called_once()
+    streams, task_name_prefix = coordinator._stream_manager.start.call_args.args
+    assert list(streams) == [
+        "device_events",
+        "lpc_events",
+        "measurements",
+        "dhw_events",
+        "dhw_sysfn_events",
+        "room_heating_events",
+    ]
+    assert task_name_prefix == "eebus_{name}_test-ski"
+
+
+async def test_shutdown_stops_streams_before_closing_channel():
+    """Shutdown fully stops stream tasks before closing the shared channel."""
+    coordinator = EebusCoordinator.__new__(EebusCoordinator)
+    coordinator._provider_pushers = []
+    lifecycle = MagicMock()
+    coordinator._stream_manager = MagicMock()
+    coordinator._stream_manager.stop = AsyncMock()
+    coordinator._channel_manager = MagicMock()
+    coordinator._channel_manager.close = AsyncMock()
+    lifecycle.attach_mock(coordinator._stream_manager.stop, "stop_streams")
+    lifecycle.attach_mock(coordinator._channel_manager.close, "close_channel")
+
+    await coordinator.async_shutdown()
+
+    assert lifecycle.mock_calls == [
+        call.stop_streams(),
+        call.close_channel(),
+    ]
 
 
 def _make_coordinator(ski="test-ski", data=None):

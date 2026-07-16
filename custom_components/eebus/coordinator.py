@@ -40,6 +40,7 @@ from .grpc_client import (
     is_unimplemented as _is_unimplemented,
     rpc_error_text as _rpc_error_text,
 )
+from .streams import ConsumeFn, StreamManager
 
 if TYPE_CHECKING:
     from . import proto_stubs
@@ -65,7 +66,6 @@ SOC_UNIT_TO_PCT: dict[str, float] = {PERCENTAGE: 1.0}
 # streams cannot carry (scoped energy, heartbeat, support flags).
 POLL_INTERVAL = timedelta(minutes=5)
 RE_REGISTER_NOT_FOUND_STREAK = 4
-STREAM_RETRY_SECONDS = 30
 
 
 def _normalize_ski(ski: str) -> str:
@@ -319,7 +319,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._channel_manager = GrpcChannelManager(
             host, port, security_mode, tls_ca_certificate, auth_token
         )
-        self._stream_tasks: list[asyncio.Task[None]] = []
+        self._stream_manager = StreamManager(self.hass, self._channel_manager)
         self._provider_pushers: list[_ProviderPusher] = []
         self._provider_push_failing: dict[str, bool] = {}
         self._was_unavailable: bool = False
@@ -1264,116 +1264,67 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def async_start_streams(self) -> None:
         """Start background tasks consuming bridge event streams."""
-        if self._stream_tasks:
-            return
-        for name, runner in (
-            ("device_events", self._run_device_event_stream),
-            ("lpc_events", self._run_lpc_event_stream),
-            ("measurements", self._run_measurement_stream),
-            ("dhw_events", self._run_dhw_event_stream),
-            ("dhw_sysfn_events", self._run_dhw_sysfn_event_stream),
-            ("room_heating_events", self._run_room_heating_event_stream),
-        ):
-            self._stream_tasks.append(
-                self.hass.async_create_background_task(
-                    runner(), name=f"eebus_{name}_{self.ski}"
-                )
-            )
-
-    async def _run_stream(self, name: str, consume: Any) -> None:
-        """Run a stream consumer with reconnect/backoff until cancelled."""
-        while True:
-            try:
-                channel = await self._ensure_channel()
-                await consume(channel)
-            except asyncio.CancelledError:
-                raise
-            except grpc.aio.AioRpcError as err:
-                if _is_unimplemented(err):
-                    _LOGGER.info(
-                        "EEBUS %s stream not supported by bridge; relying on polling",
-                        name,
-                    )
-                    return
-                _LOGGER.debug(
-                    "EEBUS %s stream ended (%s); retrying in %ss",
-                    name,
-                    _rpc_error_text(err),
-                    STREAM_RETRY_SECONDS,
-                )
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("EEBUS %s stream failed; retrying", name)
-            await asyncio.sleep(STREAM_RETRY_SECONDS)
-
-    async def _run_device_event_stream(self) -> None:
-        from . import proto_stubs
-
         async def consume(channel: grpc.aio.Channel) -> None:
+            from . import proto_stubs
+
             stub = proto_stubs.device_service_stub(channel)
             async for event in stub.SubscribeDeviceEvents(proto_stubs.Empty()):
                 self._handle_device_event(event)
 
-        await self._run_stream("device", consume)
+        async def consume_lpc(channel: grpc.aio.Channel) -> None:
+            from . import proto_stubs
 
-    async def _run_lpc_event_stream(self) -> None:
-        from . import proto_stubs
-
-        async def consume(channel: grpc.aio.Channel) -> None:
             stub = proto_stubs.lpc_service_stub(channel)
             async for event in stub.SubscribeLPCEvents(
                 proto_stubs.DeviceRequest(ski=self.ski)
             ):
                 self._handle_lpc_event(event)
 
-        await self._run_stream("LPC", consume)
+        async def consume_measurements(channel: grpc.aio.Channel) -> None:
+            from . import proto_stubs
 
-    async def _run_measurement_stream(self) -> None:
-        from . import proto_stubs
-
-        async def consume(channel: grpc.aio.Channel) -> None:
             stub = proto_stubs.monitoring_service_stub(channel)
             async for event in stub.SubscribeMeasurements(
                 proto_stubs.DeviceRequest(ski=self.ski)
             ):
                 self._handle_measurement_event(event)
 
-        await self._run_stream("measurement", consume)
+        async def consume_dhw(channel: grpc.aio.Channel) -> None:
+            from . import proto_stubs
 
-    async def _run_dhw_event_stream(self) -> None:
-        from . import proto_stubs
-
-        async def consume(channel: grpc.aio.Channel) -> None:
             stub = proto_stubs.dhw_service_stub(channel)
             async for event in stub.SubscribeDHWEvents(
                 proto_stubs.DeviceRequest(ski=self.ski)
             ):
                 self._handle_dhw_event(event)
 
-        await self._run_stream("DHW", consume)
+        async def consume_dhw_sysfn(channel: grpc.aio.Channel) -> None:
+            from . import proto_stubs
 
-    async def _run_dhw_sysfn_event_stream(self) -> None:
-        from . import proto_stubs
-
-        async def consume(channel: grpc.aio.Channel) -> None:
             stub = proto_stubs.dhw_service_stub(channel)
             async for event in stub.SubscribeDHWSystemFunctionEvents(
                 proto_stubs.DeviceRequest(ski=self.ski)
             ):
                 self._handle_dhw_sysfn_event(event)
 
-        await self._run_stream("DHW system function", consume)
+        async def consume_room_heating(channel: grpc.aio.Channel) -> None:
+            from . import proto_stubs
 
-    async def _run_room_heating_event_stream(self) -> None:
-        from . import proto_stubs
-
-        async def consume(channel: grpc.aio.Channel) -> None:
             stub = proto_stubs.hvac_service_stub(channel)
             async for event in stub.SubscribeRoomHeatingEvents(
                 proto_stubs.DeviceRequest(ski=self.ski)
             ):
                 self._handle_room_heating_event(event)
 
-        await self._run_stream("room heating", consume)
+        streams: dict[str, ConsumeFn] = {
+            "device_events": consume,
+            "lpc_events": consume_lpc,
+            "measurements": consume_measurements,
+            "dhw_events": consume_dhw,
+            "dhw_sysfn_events": consume_dhw_sysfn,
+            "room_heating_events": consume_room_heating,
+        }
+        self._stream_manager.start(streams, f"eebus_{{name}}_{self.ski}")
 
     def _event_matches(self, event_ski: str) -> bool:
         """Return True when an event applies to the configured device."""
@@ -1531,7 +1482,5 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for pusher in self._provider_pushers:
             await pusher.stop()
         self._provider_pushers.clear()
-        for task in self._stream_tasks:
-            task.cancel()
-        self._stream_tasks.clear()
+        await self._stream_manager.stop()
         await self._channel_manager.close()
