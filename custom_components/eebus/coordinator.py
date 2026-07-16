@@ -23,6 +23,7 @@ from .grpc_client import (
     is_unimplemented as _is_unimplemented,
 )
 from .models import (
+    CompressorFlexibilityState,
     CoordinatorSnapshot,
     _dhw_system_function_to_dict,
     _setpoint_to_dict,
@@ -478,6 +479,15 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             ):
                 self._handle_measurement_event(event)
 
+        async def consume_ohpcf(channel: grpc.aio.Channel) -> None:
+            from . import proto_stubs
+
+            stub = proto_stubs.ohpcf_service_stub(channel)
+            async for event in stub.SubscribeOHPCFEvents(
+                proto_stubs.DeviceRequest(ski=self.ski)
+            ):
+                self._handle_ohpcf_event(event)
+
         async def consume_dhw(channel: grpc.aio.Channel) -> None:
             from . import proto_stubs
 
@@ -509,6 +519,7 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             "device_events": consume,
             "lpc_events": consume_lpc,
             "measurements": consume_measurements,
+            "ohpcf_events": consume_ohpcf,
             "dhw_events": consume_dhw,
             "dhw_sysfn_events": consume_dhw_sysfn,
             "room_heating_events": consume_room_heating,
@@ -598,6 +609,58 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             self._push_domain_fields("failsafe_limit", "failsafe_supported")
         elif event_type == proto_stubs.LPCEventType.LPC_EVENT_HEARTBEAT_TIMEOUT:
             self.hass.async_create_task(self.async_request_refresh())
+
+    def _handle_ohpcf_event(self, event: Any) -> None:
+        from . import proto_stubs
+
+        if not self._event_matches(event.ski):
+            return
+        event_type = event.event_type
+        if event_type == proto_stubs.OHPCFEventType.OHPCF_EVENT_SUPPORT_UPDATED:
+            self.hass.async_create_task(self.async_request_refresh())
+            return
+        if event_type not in (
+            proto_stubs.OHPCFEventType.OHPCF_EVENT_STATE_UPDATED,
+            proto_stubs.OHPCFEventType.OHPCF_EVENT_DATA_UPDATED,
+        ):
+            return
+        if not event.HasField("flexibility"):
+            # Bridge signalled a change but sent no payload; reconcile via poll.
+            self.hass.async_create_task(self.async_request_refresh())
+            return
+        flexibility = event.flexibility
+        value: CompressorFlexibilityState = {
+            "available": flexibility.available,
+            "state": proto_stubs.CompressorPowerConsumptionState.Name(
+                flexibility.state
+            ),
+            "requested_power_estimate_w": (
+                flexibility.requested_power_estimate_w
+                if flexibility.HasField("requested_power_estimate_w")
+                else None
+            ),
+            "requested_power_max_w": (
+                flexibility.requested_power_max_w
+                if flexibility.HasField("requested_power_max_w")
+                else None
+            ),
+            "is_pausable": flexibility.is_pausable,
+            "is_stoppable": flexibility.is_stoppable,
+            "minimal_run_seconds": flexibility.minimal_run_seconds,
+            "minimal_pause_seconds": flexibility.minimal_pause_seconds,
+        }
+        ohpcf, capabilities = apply_reading(
+            self._domain_state.ohpcf,
+            "compressor_flexibility",
+            value,
+            self._domain_state.capabilities,
+            "ohpcf",
+            None,
+        )
+        self._domain_state = replace(
+            self._domain_state, ohpcf=ohpcf, capabilities=capabilities
+        )
+        self._push_domain_fields("compressor_flexibility", "ohpcf_supported")
 
     def _handle_measurement_event(self, event: Any) -> None:
         if not self._event_matches(event.ski):
