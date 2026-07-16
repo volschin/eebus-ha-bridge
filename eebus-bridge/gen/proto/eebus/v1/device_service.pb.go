@@ -9,6 +9,7 @@ package eebusv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -125,6 +126,58 @@ func (x *ServiceStatus) GetLocalSki() string {
 	return ""
 }
 
+type DeviceStatus struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Connected      bool                   `protobuf:"varint,1,opt,name=connected,proto3" json:"connected,omitempty"`
+	LastTransition *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=last_transition,json=lastTransition,proto3" json:"last_transition,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DeviceStatus) Reset() {
+	*x = DeviceStatus{}
+	mi := &file_eebus_v1_device_service_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceStatus) ProtoMessage() {}
+
+func (x *DeviceStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_eebus_v1_device_service_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceStatus.ProtoReflect.Descriptor instead.
+func (*DeviceStatus) Descriptor() ([]byte, []int) {
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *DeviceStatus) GetConnected() bool {
+	if x != nil {
+		return x.Connected
+	}
+	return false
+}
+
+func (x *DeviceStatus) GetLastTransition() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastTransition
+	}
+	return nil
+}
+
 type DiscoveredDevice struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ski           string                 `protobuf:"bytes,1,opt,name=ski,proto3" json:"ski,omitempty"`
@@ -139,7 +192,7 @@ type DiscoveredDevice struct {
 
 func (x *DiscoveredDevice) Reset() {
 	*x = DiscoveredDevice{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[1]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -151,7 +204,7 @@ func (x *DiscoveredDevice) String() string {
 func (*DiscoveredDevice) ProtoMessage() {}
 
 func (x *DiscoveredDevice) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[1]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -164,7 +217,7 @@ func (x *DiscoveredDevice) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoveredDevice.ProtoReflect.Descriptor instead.
 func (*DiscoveredDevice) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{1}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *DiscoveredDevice) GetSki() string {
@@ -218,7 +271,7 @@ type ListDevicesResponse struct {
 
 func (x *ListDevicesResponse) Reset() {
 	*x = ListDevicesResponse{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[2]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -230,7 +283,7 @@ func (x *ListDevicesResponse) String() string {
 func (*ListDevicesResponse) ProtoMessage() {}
 
 func (x *ListDevicesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[2]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -243,7 +296,7 @@ func (x *ListDevicesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDevicesResponse.ProtoReflect.Descriptor instead.
 func (*ListDevicesResponse) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{2}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ListDevicesResponse) GetDevices() []*DiscoveredDevice {
@@ -262,7 +315,7 @@ type RegisterSKIRequest struct {
 
 func (x *RegisterSKIRequest) Reset() {
 	*x = RegisterSKIRequest{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[3]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -274,7 +327,7 @@ func (x *RegisterSKIRequest) String() string {
 func (*RegisterSKIRequest) ProtoMessage() {}
 
 func (x *RegisterSKIRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[3]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -287,7 +340,7 @@ func (x *RegisterSKIRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterSKIRequest.ProtoReflect.Descriptor instead.
 func (*RegisterSKIRequest) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{3}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RegisterSKIRequest) GetSki() string {
@@ -311,7 +364,7 @@ type PairedDevice struct {
 
 func (x *PairedDevice) Reset() {
 	*x = PairedDevice{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[4]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -323,7 +376,7 @@ func (x *PairedDevice) String() string {
 func (*PairedDevice) ProtoMessage() {}
 
 func (x *PairedDevice) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[4]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -336,7 +389,7 @@ func (x *PairedDevice) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PairedDevice.ProtoReflect.Descriptor instead.
 func (*PairedDevice) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{4}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *PairedDevice) GetSki() string {
@@ -390,7 +443,7 @@ type ListPairedDevicesResponse struct {
 
 func (x *ListPairedDevicesResponse) Reset() {
 	*x = ListPairedDevicesResponse{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[5]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -402,7 +455,7 @@ func (x *ListPairedDevicesResponse) String() string {
 func (*ListPairedDevicesResponse) ProtoMessage() {}
 
 func (x *ListPairedDevicesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[5]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -415,7 +468,7 @@ func (x *ListPairedDevicesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPairedDevicesResponse.ProtoReflect.Descriptor instead.
 func (*ListPairedDevicesResponse) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{5}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListPairedDevicesResponse) GetDevices() []*PairedDevice {
@@ -435,7 +488,7 @@ type DeviceEvent struct {
 
 func (x *DeviceEvent) Reset() {
 	*x = DeviceEvent{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[6]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -447,7 +500,7 @@ func (x *DeviceEvent) String() string {
 func (*DeviceEvent) ProtoMessage() {}
 
 func (x *DeviceEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[6]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -460,7 +513,7 @@ func (x *DeviceEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceEvent.ProtoReflect.Descriptor instead.
 func (*DeviceEvent) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{6}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *DeviceEvent) GetSki() string {
@@ -481,10 +534,13 @@ var File_eebus_v1_device_service_proto protoreflect.FileDescriptor
 
 const file_eebus_v1_device_service_proto_rawDesc = "" +
 	"\n" +
-	"\x1deebus/v1/device_service.proto\x12\beebus.v1\x1a\x15eebus/v1/common.proto\"F\n" +
+	"\x1deebus/v1/device_service.proto\x12\beebus.v1\x1a\x15eebus/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"F\n" +
 	"\rServiceStatus\x12\x18\n" +
 	"\arunning\x18\x01 \x01(\bR\arunning\x12\x1b\n" +
-	"\tlocal_ski\x18\x02 \x01(\tR\blocalSki\"\x9d\x01\n" +
+	"\tlocal_ski\x18\x02 \x01(\tR\blocalSki\"q\n" +
+	"\fDeviceStatus\x12\x1c\n" +
+	"\tconnected\x18\x01 \x01(\bR\tconnected\x12C\n" +
+	"\x0flast_transition\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x0elastTransition\"\x9d\x01\n" +
 	"\x10DiscoveredDevice\x12\x10\n" +
 	"\x03ski\x18\x01 \x01(\tR\x03ski\x12\x14\n" +
 	"\x05brand\x18\x02 \x01(\tR\x05brand\x12\x14\n" +
@@ -515,9 +571,10 @@ const file_eebus_v1_device_service_proto_rawDesc = "" +
 	"\x18DEVICE_EVENT_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16DEVICE_EVENT_CONNECTED\x10\x01\x12\x1d\n" +
 	"\x19DEVICE_EVENT_DISCONNECTED\x10\x02\x12\x1e\n" +
-	"\x1aDEVICE_EVENT_TRUST_REMOVED\x10\x032\xa7\x03\n" +
+	"\x1aDEVICE_EVENT_TRUST_REMOVED\x10\x032\xeb\x03\n" +
 	"\rDeviceService\x125\n" +
-	"\tGetStatus\x12\x0f.eebus.v1.Empty\x1a\x17.eebus.v1.ServiceStatus\x12G\n" +
+	"\tGetStatus\x12\x0f.eebus.v1.Empty\x1a\x17.eebus.v1.ServiceStatus\x12B\n" +
+	"\x0fGetDeviceStatus\x12\x17.eebus.v1.DeviceRequest\x1a\x16.eebus.v1.DeviceStatus\x12G\n" +
 	"\x15ListDiscoveredDevices\x12\x0f.eebus.v1.Empty\x1a\x1d.eebus.v1.ListDevicesResponse\x12B\n" +
 	"\x11RegisterRemoteSKI\x12\x1c.eebus.v1.RegisterSKIRequest\x1a\x0f.eebus.v1.Empty\x12D\n" +
 	"\x13UnregisterRemoteSKI\x12\x1c.eebus.v1.RegisterSKIRequest\x1a\x0f.eebus.v1.Empty\x12I\n" +
@@ -537,39 +594,45 @@ func file_eebus_v1_device_service_proto_rawDescGZIP() []byte {
 }
 
 var file_eebus_v1_device_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_eebus_v1_device_service_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_eebus_v1_device_service_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_eebus_v1_device_service_proto_goTypes = []any{
 	(DeviceEventType)(0),              // 0: eebus.v1.DeviceEventType
 	(*ServiceStatus)(nil),             // 1: eebus.v1.ServiceStatus
-	(*DiscoveredDevice)(nil),          // 2: eebus.v1.DiscoveredDevice
-	(*ListDevicesResponse)(nil),       // 3: eebus.v1.ListDevicesResponse
-	(*RegisterSKIRequest)(nil),        // 4: eebus.v1.RegisterSKIRequest
-	(*PairedDevice)(nil),              // 5: eebus.v1.PairedDevice
-	(*ListPairedDevicesResponse)(nil), // 6: eebus.v1.ListPairedDevicesResponse
-	(*DeviceEvent)(nil),               // 7: eebus.v1.DeviceEvent
-	(*Empty)(nil),                     // 8: eebus.v1.Empty
+	(*DeviceStatus)(nil),              // 2: eebus.v1.DeviceStatus
+	(*DiscoveredDevice)(nil),          // 3: eebus.v1.DiscoveredDevice
+	(*ListDevicesResponse)(nil),       // 4: eebus.v1.ListDevicesResponse
+	(*RegisterSKIRequest)(nil),        // 5: eebus.v1.RegisterSKIRequest
+	(*PairedDevice)(nil),              // 6: eebus.v1.PairedDevice
+	(*ListPairedDevicesResponse)(nil), // 7: eebus.v1.ListPairedDevicesResponse
+	(*DeviceEvent)(nil),               // 8: eebus.v1.DeviceEvent
+	(*timestamppb.Timestamp)(nil),     // 9: google.protobuf.Timestamp
+	(*Empty)(nil),                     // 10: eebus.v1.Empty
+	(*DeviceRequest)(nil),             // 11: eebus.v1.DeviceRequest
 }
 var file_eebus_v1_device_service_proto_depIdxs = []int32{
-	2, // 0: eebus.v1.ListDevicesResponse.devices:type_name -> eebus.v1.DiscoveredDevice
-	5, // 1: eebus.v1.ListPairedDevicesResponse.devices:type_name -> eebus.v1.PairedDevice
-	0, // 2: eebus.v1.DeviceEvent.event_type:type_name -> eebus.v1.DeviceEventType
-	8, // 3: eebus.v1.DeviceService.GetStatus:input_type -> eebus.v1.Empty
-	8, // 4: eebus.v1.DeviceService.ListDiscoveredDevices:input_type -> eebus.v1.Empty
-	4, // 5: eebus.v1.DeviceService.RegisterRemoteSKI:input_type -> eebus.v1.RegisterSKIRequest
-	4, // 6: eebus.v1.DeviceService.UnregisterRemoteSKI:input_type -> eebus.v1.RegisterSKIRequest
-	8, // 7: eebus.v1.DeviceService.ListPairedDevices:input_type -> eebus.v1.Empty
-	8, // 8: eebus.v1.DeviceService.SubscribeDeviceEvents:input_type -> eebus.v1.Empty
-	1, // 9: eebus.v1.DeviceService.GetStatus:output_type -> eebus.v1.ServiceStatus
-	3, // 10: eebus.v1.DeviceService.ListDiscoveredDevices:output_type -> eebus.v1.ListDevicesResponse
-	8, // 11: eebus.v1.DeviceService.RegisterRemoteSKI:output_type -> eebus.v1.Empty
-	8, // 12: eebus.v1.DeviceService.UnregisterRemoteSKI:output_type -> eebus.v1.Empty
-	6, // 13: eebus.v1.DeviceService.ListPairedDevices:output_type -> eebus.v1.ListPairedDevicesResponse
-	7, // 14: eebus.v1.DeviceService.SubscribeDeviceEvents:output_type -> eebus.v1.DeviceEvent
-	9, // [9:15] is the sub-list for method output_type
-	3, // [3:9] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	9,  // 0: eebus.v1.DeviceStatus.last_transition:type_name -> google.protobuf.Timestamp
+	3,  // 1: eebus.v1.ListDevicesResponse.devices:type_name -> eebus.v1.DiscoveredDevice
+	6,  // 2: eebus.v1.ListPairedDevicesResponse.devices:type_name -> eebus.v1.PairedDevice
+	0,  // 3: eebus.v1.DeviceEvent.event_type:type_name -> eebus.v1.DeviceEventType
+	10, // 4: eebus.v1.DeviceService.GetStatus:input_type -> eebus.v1.Empty
+	11, // 5: eebus.v1.DeviceService.GetDeviceStatus:input_type -> eebus.v1.DeviceRequest
+	10, // 6: eebus.v1.DeviceService.ListDiscoveredDevices:input_type -> eebus.v1.Empty
+	5,  // 7: eebus.v1.DeviceService.RegisterRemoteSKI:input_type -> eebus.v1.RegisterSKIRequest
+	5,  // 8: eebus.v1.DeviceService.UnregisterRemoteSKI:input_type -> eebus.v1.RegisterSKIRequest
+	10, // 9: eebus.v1.DeviceService.ListPairedDevices:input_type -> eebus.v1.Empty
+	10, // 10: eebus.v1.DeviceService.SubscribeDeviceEvents:input_type -> eebus.v1.Empty
+	1,  // 11: eebus.v1.DeviceService.GetStatus:output_type -> eebus.v1.ServiceStatus
+	2,  // 12: eebus.v1.DeviceService.GetDeviceStatus:output_type -> eebus.v1.DeviceStatus
+	4,  // 13: eebus.v1.DeviceService.ListDiscoveredDevices:output_type -> eebus.v1.ListDevicesResponse
+	10, // 14: eebus.v1.DeviceService.RegisterRemoteSKI:output_type -> eebus.v1.Empty
+	10, // 15: eebus.v1.DeviceService.UnregisterRemoteSKI:output_type -> eebus.v1.Empty
+	7,  // 16: eebus.v1.DeviceService.ListPairedDevices:output_type -> eebus.v1.ListPairedDevicesResponse
+	8,  // 17: eebus.v1.DeviceService.SubscribeDeviceEvents:output_type -> eebus.v1.DeviceEvent
+	11, // [11:18] is the sub-list for method output_type
+	4,  // [4:11] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_eebus_v1_device_service_proto_init() }
@@ -584,7 +647,7 @@ func file_eebus_v1_device_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_eebus_v1_device_service_proto_rawDesc), len(file_eebus_v1_device_service_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   7,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

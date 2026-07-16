@@ -72,6 +72,64 @@ func TestGetStatus(t *testing.T) {
 	}
 }
 
+func TestGetDeviceStatus(t *testing.T) {
+	bus := eebus.NewEventBus()
+	registry := eebus.NewDeviceRegistry()
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false),
+		bus,
+		"test-local-ski",
+		registry,
+		&recordingTrustController{},
+	)
+
+	registry.MarkConnected(testValidSKI)
+	connected, err := svc.GetDeviceStatus(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil {
+		t.Fatalf("GetDeviceStatus(connected): %v", err)
+	}
+	if !connected.Connected || connected.LastTransition == nil {
+		t.Errorf("GetDeviceStatus(connected) = %+v, want connected with transition timestamp", connected)
+	}
+
+	registry.MarkDisconnected(testValidSKI)
+	disconnected, err := svc.GetDeviceStatus(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil {
+		t.Fatalf("GetDeviceStatus(disconnected): %v", err)
+	}
+	if disconnected.Connected || disconnected.LastTransition == nil {
+		t.Errorf("GetDeviceStatus(disconnected) = %+v, want disconnected with transition timestamp", disconnected)
+	}
+
+	unknownSKI := "782f708ceba5df9adcb9e6787ea911d9fc3ac490"
+	unknown, err := svc.GetDeviceStatus(context.Background(), &pb.DeviceRequest{Ski: unknownSKI})
+	if err != nil {
+		t.Fatalf("GetDeviceStatus(unknown): %v", err)
+	}
+	if unknown.Connected || unknown.LastTransition != nil {
+		t.Errorf("GetDeviceStatus(unknown) = %+v, want disconnected without transition timestamp", unknown)
+	}
+}
+
+func TestGetDeviceStatusRejectsMalformedSKI(t *testing.T) {
+	bus := eebus.NewEventBus()
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false),
+		bus,
+		"test-local-ski",
+		eebus.NewDeviceRegistry(),
+		&recordingTrustController{},
+	)
+
+	response, err := svc.GetDeviceStatus(context.Background(), &pb.DeviceRequest{Ski: "not-a-ski"})
+	if response != nil {
+		t.Errorf("GetDeviceStatus(malformed) response = %+v, want nil", response)
+	}
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("GetDeviceStatus(malformed) code = %v, want InvalidArgument", status.Code(err))
+	}
+}
+
 func TestListDevicesResponsesAreSortedByNormalizedSKI(t *testing.T) {
 	bus := eebus.NewEventBus()
 	callbacks := eebus.NewCallbacks(bus, false)

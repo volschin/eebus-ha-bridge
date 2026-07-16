@@ -29,7 +29,9 @@ rules:
   config-entry-unloading: done
   docs-configuration-parameters: done
   docs-installation-parameters: done
-  entity-unavailable: done
+  entity-unavailable:
+    status: done
+    comment: EebusEntity.available requires both a successful coordinator poll and the device-level connected state from GetDeviceStatus (registry-backed, not bridge liveness) — every platform's own available override chains through it via super().available.
   integration-owner: done
   log-when-unavailable: done
   parallel-updates: done

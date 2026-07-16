@@ -214,6 +214,59 @@ func TestRegistryEntityHelpersEmpty(t *testing.T) {
 	}
 }
 
+func TestDeviceConnectionTracksRealTransitionsOnly(t *testing.T) {
+	connectedAt := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	clock := &fakeClock{now: connectedAt}
+	reg := eebus.NewDeviceRegistryWithClock(clock)
+
+	if connected, transition, known := reg.DeviceConnection("unknown"); connected || !transition.IsZero() || known {
+		t.Fatalf("DeviceConnection(unknown) = (%t, %s, %t), want (false, zero, false)", connected, transition, known)
+	}
+	reg.MarkDisconnected("unknown")
+	if _, _, known := reg.DeviceConnection("unknown"); known {
+		t.Fatal("MarkDisconnected created monitoring state for an unknown SKI")
+	}
+
+	reg.MarkConnected("ab:cd-ef")
+	connected, transition, known := reg.DeviceConnection("AB-CD-EF")
+	if !connected || transition != connectedAt || !known {
+		t.Fatalf("DeviceConnection(connected) = (%t, %s, %t), want (true, %s, true)", connected, transition, known, connectedAt)
+	}
+
+	clock.Advance(time.Minute)
+	reg.MarkConnected("a b c d e f")
+	_, transition, _ = reg.DeviceConnection("ABCDEF")
+	if transition != connectedAt {
+		t.Errorf("redundant MarkConnected changed transition to %s, want %s", transition, connectedAt)
+	}
+
+	disconnectedAt := clock.now.Add(time.Minute)
+	clock.Advance(time.Minute)
+	reg.MarkDisconnected("ABCDEF")
+	connected, transition, known = reg.DeviceConnection("ab:cd:ef")
+	if connected || transition != disconnectedAt || !known {
+		t.Fatalf("DeviceConnection(disconnected) = (%t, %s, %t), want (false, %s, true)", connected, transition, known, disconnectedAt)
+	}
+
+	clock.Advance(time.Minute)
+	reg.MarkDisconnected("ABCDEF")
+	_, transition, _ = reg.DeviceConnection("ABCDEF")
+	if transition != disconnectedAt {
+		t.Errorf("redundant MarkDisconnected changed transition to %s, want %s", transition, disconnectedAt)
+	}
+}
+
+func TestDeviceConnectionUnknownAfterDeviceRemoval(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	reg.MarkConnected("ski-1")
+	reg.RemoveDevice("ski-1")
+
+	connected, transition, known := reg.DeviceConnection("ski-1")
+	if connected || !transition.IsZero() || known {
+		t.Errorf("DeviceConnection(removed) = (%t, %s, %t), want (false, zero, false)", connected, transition, known)
+	}
+}
+
 func TestStaleDevicesNoConnectedDevice(t *testing.T) {
 	clock := &fakeClock{now: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)}
 	reg := eebus.NewDeviceRegistryWithClock(clock)

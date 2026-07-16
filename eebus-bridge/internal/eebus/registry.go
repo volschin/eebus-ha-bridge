@@ -52,6 +52,7 @@ type DeviceRegistry struct {
 type deviceMonitoringState struct {
 	connected                  bool
 	connectedAt                time.Time
+	lastTransitionAt           time.Time
 	lastMonitoringSuccess      time.Time
 	monitoringSuccessOnConnect bool
 }
@@ -95,8 +96,10 @@ func (r *DeviceRegistry) MarkConnected(ski string) {
 	if state.connected {
 		return
 	}
+	now := r.clock.Now()
 	state.connected = true
-	state.connectedAt = r.clock.Now()
+	state.connectedAt = now
+	state.lastTransitionAt = now
 	state.monitoringSuccessOnConnect = false
 	r.monitoring[ski] = state
 }
@@ -109,11 +112,26 @@ func (r *DeviceRegistry) MarkDisconnected(ski string) {
 
 	ski = NormalizeSKI(ski)
 	state, ok := r.monitoring[ski]
-	if !ok {
+	if !ok || !state.connected {
 		return
 	}
 	state.connected = false
+	state.lastTransitionAt = r.clock.Now()
 	r.monitoring[ski] = state
+}
+
+// DeviceConnection returns the current connection state and the time it last
+// changed. A device with no monitoring state is unknown and reads as
+// disconnected.
+func (r *DeviceRegistry) DeviceConnection(ski string) (connected bool, lastTransition time.Time, known bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	state, ok := r.monitoring[NormalizeSKI(ski)]
+	if !ok {
+		return false, time.Time{}, false
+	}
+	return state.connected, state.lastTransitionAt, true
 }
 
 // RecordMonitoringSuccess marks that a remote entity was just successfully

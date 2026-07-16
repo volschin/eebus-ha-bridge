@@ -5,9 +5,11 @@ package eebus.v1;
 option go_package = "github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1";
 
 import "eebus/v1/common.proto";
+import "google/protobuf/timestamp.proto";
 
 service DeviceService {
   rpc GetStatus(Empty) returns (ServiceStatus);
+  rpc GetDeviceStatus(DeviceRequest) returns (DeviceStatus);
   rpc ListDiscoveredDevices(Empty) returns (ListDevicesResponse);
   rpc RegisterRemoteSKI(RegisterSKIRequest) returns (Empty);
   rpc UnregisterRemoteSKI(RegisterSKIRequest) returns (Empty);
@@ -18,6 +20,11 @@ service DeviceService {
 message ServiceStatus {
   bool running = 1;
   string local_ski = 2;
+}
+
+message DeviceStatus {
+  bool connected = 1;
+  google.protobuf.Timestamp last_transition = 2;
 }
 
 message DiscoveredDevice {

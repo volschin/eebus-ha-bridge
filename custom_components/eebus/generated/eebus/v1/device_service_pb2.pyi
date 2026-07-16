@@ -1,4 +1,7 @@
+import datetime
+
 from . import common_pb2 as _common_pb2
+from google.protobuf import timestamp_pb2 as _timestamp_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
@@ -26,6 +29,14 @@ class ServiceStatus(_message.Message):
     running: bool
     local_ski: str
     def __init__(self, running: bool = ..., local_ski: _Optional[str] = ...) -> None: ...
+
+class DeviceStatus(_message.Message):
+    __slots__ = ("connected", "last_transition")
+    CONNECTED_FIELD_NUMBER: _ClassVar[int]
+    LAST_TRANSITION_FIELD_NUMBER: _ClassVar[int]
+    connected: bool
+    last_transition: _timestamp_pb2.Timestamp
+    def __init__(self, connected: bool = ..., last_transition: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
 class DiscoveredDevice(_message.Message):
     __slots__ = ("ski", "brand", "model", "serial", "device_type", "host")

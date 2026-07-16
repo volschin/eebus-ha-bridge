@@ -23,9 +23,10 @@ _sym_db = _symbol_database.Default()
 
 
 from . import common_pb2 as eebus_dot_v1_dot_common__pb2
+from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1d\x65\x65\x62us/v1/device_service.proto\x12\x08\x65\x65\x62us.v1\x1a\x15\x65\x65\x62us/v1/common.proto\"3\n\rServiceStatus\x12\x0f\n\x07running\x18\x01 \x01(\x08\x12\x11\n\tlocal_ski\x18\x02 \x01(\t\"p\n\x10\x44iscoveredDevice\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12\r\n\x05\x62rand\x18\x02 \x01(\t\x12\r\n\x05model\x18\x03 \x01(\t\x12\x0e\n\x06serial\x18\x04 \x01(\t\x12\x13\n\x0b\x64\x65vice_type\x18\x05 \x01(\t\x12\x0c\n\x04host\x18\x06 \x01(\t\"B\n\x13ListDevicesResponse\x12+\n\x07\x64\x65vices\x18\x01 \x03(\x0b\x32\x1a.eebus.v1.DiscoveredDevice\"!\n\x12RegisterSKIRequest\x12\x0b\n\x03ski\x18\x01 \x01(\t\"{\n\x0cPairedDevice\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12\r\n\x05\x62rand\x18\x02 \x01(\t\x12\r\n\x05model\x18\x03 \x01(\t\x12\x0e\n\x06serial\x18\x04 \x01(\t\x12\x13\n\x0b\x64\x65vice_type\x18\x05 \x01(\t\x12\x1b\n\x13supported_use_cases\x18\x06 \x03(\t\"D\n\x19ListPairedDevicesResponse\x12\'\n\x07\x64\x65vices\x18\x01 \x03(\x0b\x32\x16.eebus.v1.PairedDevice\"I\n\x0b\x44\x65viceEvent\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12-\n\nevent_type\x18\x02 \x01(\x0e\x32\x19.eebus.v1.DeviceEventType*\x8a\x01\n\x0f\x44\x65viceEventType\x12\x1c\n\x18\x44\x45VICE_EVENT_UNSPECIFIED\x10\x00\x12\x1a\n\x16\x44\x45VICE_EVENT_CONNECTED\x10\x01\x12\x1d\n\x19\x44\x45VICE_EVENT_DISCONNECTED\x10\x02\x12\x1e\n\x1a\x44\x45VICE_EVENT_TRUST_REMOVED\x10\x03\x32\xa7\x03\n\rDeviceService\x12\x35\n\tGetStatus\x12\x0f.eebus.v1.Empty\x1a\x17.eebus.v1.ServiceStatus\x12G\n\x15ListDiscoveredDevices\x12\x0f.eebus.v1.Empty\x1a\x1d.eebus.v1.ListDevicesResponse\x12\x42\n\x11RegisterRemoteSKI\x12\x1c.eebus.v1.RegisterSKIRequest\x1a\x0f.eebus.v1.Empty\x12\x44\n\x13UnregisterRemoteSKI\x12\x1c.eebus.v1.RegisterSKIRequest\x1a\x0f.eebus.v1.Empty\x12I\n\x11ListPairedDevices\x12\x0f.eebus.v1.Empty\x1a#.eebus.v1.ListPairedDevicesResponse\x12\x41\n\x15SubscribeDeviceEvents\x12\x0f.eebus.v1.Empty\x1a\x15.eebus.v1.DeviceEvent0\x01\x42=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1d\x65\x65\x62us/v1/device_service.proto\x12\x08\x65\x65\x62us.v1\x1a\x15\x65\x65\x62us/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"3\n\rServiceStatus\x12\x0f\n\x07running\x18\x01 \x01(\x08\x12\x11\n\tlocal_ski\x18\x02 \x01(\t\"V\n\x0c\x44\x65viceStatus\x12\x11\n\tconnected\x18\x01 \x01(\x08\x12\x33\n\x0flast_transition\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"p\n\x10\x44iscoveredDevice\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12\r\n\x05\x62rand\x18\x02 \x01(\t\x12\r\n\x05model\x18\x03 \x01(\t\x12\x0e\n\x06serial\x18\x04 \x01(\t\x12\x13\n\x0b\x64\x65vice_type\x18\x05 \x01(\t\x12\x0c\n\x04host\x18\x06 \x01(\t\"B\n\x13ListDevicesResponse\x12+\n\x07\x64\x65vices\x18\x01 \x03(\x0b\x32\x1a.eebus.v1.DiscoveredDevice\"!\n\x12RegisterSKIRequest\x12\x0b\n\x03ski\x18\x01 \x01(\t\"{\n\x0cPairedDevice\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12\r\n\x05\x62rand\x18\x02 \x01(\t\x12\r\n\x05model\x18\x03 \x01(\t\x12\x0e\n\x06serial\x18\x04 \x01(\t\x12\x13\n\x0b\x64\x65vice_type\x18\x05 \x01(\t\x12\x1b\n\x13supported_use_cases\x18\x06 \x03(\t\"D\n\x19ListPairedDevicesResponse\x12\'\n\x07\x64\x65vices\x18\x01 \x03(\x0b\x32\x16.eebus.v1.PairedDevice\"I\n\x0b\x44\x65viceEvent\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12-\n\nevent_type\x18\x02 \x01(\x0e\x32\x19.eebus.v1.DeviceEventType*\x8a\x01\n\x0f\x44\x65viceEventType\x12\x1c\n\x18\x44\x45VICE_EVENT_UNSPECIFIED\x10\x00\x12\x1a\n\x16\x44\x45VICE_EVENT_CONNECTED\x10\x01\x12\x1d\n\x19\x44\x45VICE_EVENT_DISCONNECTED\x10\x02\x12\x1e\n\x1a\x44\x45VICE_EVENT_TRUST_REMOVED\x10\x03\x32\xeb\x03\n\rDeviceService\x12\x35\n\tGetStatus\x12\x0f.eebus.v1.Empty\x1a\x17.eebus.v1.ServiceStatus\x12\x42\n\x0fGetDeviceStatus\x12\x17.eebus.v1.DeviceRequest\x1a\x16.eebus.v1.DeviceStatus\x12G\n\x15ListDiscoveredDevices\x12\x0f.eebus.v1.Empty\x1a\x1d.eebus.v1.ListDevicesResponse\x12\x42\n\x11RegisterRemoteSKI\x12\x1c.eebus.v1.RegisterSKIRequest\x1a\x0f.eebus.v1.Empty\x12\x44\n\x13UnregisterRemoteSKI\x12\x1c.eebus.v1.RegisterSKIRequest\x1a\x0f.eebus.v1.Empty\x12I\n\x11ListPairedDevices\x12\x0f.eebus.v1.Empty\x1a#.eebus.v1.ListPairedDevicesResponse\x12\x41\n\x15SubscribeDeviceEvents\x12\x0f.eebus.v1.Empty\x1a\x15.eebus.v1.DeviceEvent0\x01\x42=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,22 +34,24 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'eebus.v1.device_service_pb2
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1'
-  _globals['_DEVICEEVENTTYPE']._serialized_start=607
-  _globals['_DEVICEEVENTTYPE']._serialized_end=745
-  _globals['_SERVICESTATUS']._serialized_start=66
-  _globals['_SERVICESTATUS']._serialized_end=117
-  _globals['_DISCOVEREDDEVICE']._serialized_start=119
-  _globals['_DISCOVEREDDEVICE']._serialized_end=231
-  _globals['_LISTDEVICESRESPONSE']._serialized_start=233
-  _globals['_LISTDEVICESRESPONSE']._serialized_end=299
-  _globals['_REGISTERSKIREQUEST']._serialized_start=301
-  _globals['_REGISTERSKIREQUEST']._serialized_end=334
-  _globals['_PAIREDDEVICE']._serialized_start=336
-  _globals['_PAIREDDEVICE']._serialized_end=459
-  _globals['_LISTPAIREDDEVICESRESPONSE']._serialized_start=461
-  _globals['_LISTPAIREDDEVICESRESPONSE']._serialized_end=529
-  _globals['_DEVICEEVENT']._serialized_start=531
-  _globals['_DEVICEEVENT']._serialized_end=604
-  _globals['_DEVICESERVICE']._serialized_start=748
-  _globals['_DEVICESERVICE']._serialized_end=1171
+  _globals['_DEVICEEVENTTYPE']._serialized_start=728
+  _globals['_DEVICEEVENTTYPE']._serialized_end=866
+  _globals['_SERVICESTATUS']._serialized_start=99
+  _globals['_SERVICESTATUS']._serialized_end=150
+  _globals['_DEVICESTATUS']._serialized_start=152
+  _globals['_DEVICESTATUS']._serialized_end=238
+  _globals['_DISCOVEREDDEVICE']._serialized_start=240
+  _globals['_DISCOVEREDDEVICE']._serialized_end=352
+  _globals['_LISTDEVICESRESPONSE']._serialized_start=354
+  _globals['_LISTDEVICESRESPONSE']._serialized_end=420
+  _globals['_REGISTERSKIREQUEST']._serialized_start=422
+  _globals['_REGISTERSKIREQUEST']._serialized_end=455
+  _globals['_PAIREDDEVICE']._serialized_start=457
+  _globals['_PAIREDDEVICE']._serialized_end=580
+  _globals['_LISTPAIREDDEVICESRESPONSE']._serialized_start=582
+  _globals['_LISTPAIREDDEVICESRESPONSE']._serialized_end=650
+  _globals['_DEVICEEVENT']._serialized_start=652
+  _globals['_DEVICEEVENT']._serialized_end=725
+  _globals['_DEVICESERVICE']._serialized_start=869
+  _globals['_DEVICESERVICE']._serialized_end=1360
 # @@protoc_insertion_point(module_scope)

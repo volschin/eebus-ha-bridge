@@ -54,6 +54,9 @@ def _poll_stubs(room_heating_read):
                 running=True, local_ski="bridge-ski"
             )
         ),
+        GetDeviceStatus=AsyncMock(
+            return_value=device_service_pb2.DeviceStatus(connected=True)
+        ),
         ListPairedDevices=AsyncMock(
             return_value=device_service_pb2.ListPairedDevicesResponse()
         ),
@@ -224,6 +227,24 @@ async def test_poll_returns_room_temperature_without_mid_poll_push():
     assert snapshot["room_temperature_c"] == room_temperature
     assert coordinator.data == {"room_temperature_c": 18.0}
     coordinator._push_data.assert_not_called()
+
+
+async def test_poll_connected_uses_device_status_independent_of_bridge_status():
+    """Snapshot connectivity comes from the remote device, not bridge liveness."""
+    stubs = _poll_stubs(AsyncMock(return_value=hvac_service_pb2.RoomHeatingState()))
+    stubs["device_service_stub"].GetStatus.return_value = device_service_pb2.ServiceStatus(
+        running=False, local_ski="bridge-ski"
+    )
+    stubs["device_service_stub"].GetDeviceStatus.return_value = (
+        device_service_pb2.DeviceStatus(connected=True)
+    )
+    coordinator = _poll_coordinator()
+
+    with _patch_poll_stubs(stubs):
+        snapshot = await coordinator._async_update_data()
+
+    assert snapshot["connected"] is True
+    stubs["device_service_stub"].GetDeviceStatus.assert_awaited_once()
 
 
 async def test_poll_applies_support_flags_only_after_all_reads_complete():
@@ -610,17 +631,36 @@ async def test_poll_read_not_found_does_not_retry_with_empty_ski():
     call.assert_awaited_once_with(request, timeout=10)
 
 
-def test_device_event_triggers_refresh():
-    """Connection state events trigger a reconciliation poll."""
-    coordinator, _ = _make_coordinator(data={"connected": True})
-    coordinator.hass = MagicMock()
-    coordinator.async_request_refresh = MagicMock(return_value=None)
+async def test_device_disconnect_event_refreshes_disconnected_state():
+    """A disconnect event reconciles to the registry-backed disconnected state."""
+    stubs = _poll_stubs(AsyncMock(return_value=hvac_service_pb2.RoomHeatingState()))
+    stubs["device_service_stub"].GetDeviceStatus.return_value = (
+        device_service_pb2.DeviceStatus(connected=False)
+    )
+    coordinator = _poll_coordinator()
+    coordinator.data = {"connected": True}
+    tasks: list[asyncio.Task] = []
+
+    async def request_refresh():
+        coordinator.data = await coordinator._async_update_data()
+
+    def create_task(coro):
+        task = asyncio.create_task(coro)
+        tasks.append(task)
+        return task
+
+    coordinator.async_request_refresh = request_refresh
+    coordinator.hass = SimpleNamespace(async_create_task=create_task)
     event = device_service_pb2.DeviceEvent(
-        ski="test-ski",
+        ski="device-ski",
         event_type=device_service_pb2.DEVICE_EVENT_DISCONNECTED,
     )
-    coordinator._handle_device_event(event)
-    coordinator.hass.async_create_task.assert_called_once()
+
+    with _patch_poll_stubs(stubs):
+        coordinator._handle_device_event(event)
+        await tasks[0]
+
+    assert coordinator.data["connected"] is False
 
 
 def _entry(measurement_type, value):

@@ -43,6 +43,7 @@ def test_failsafe_limit_sensor_value():
     """Test failsafe limit sensor returns correct value from coordinator data."""
     coordinator = MagicMock()
     coordinator.data = {
+        "connected": True,
         "failsafe_limit": {"value_watts": 4200.0, "duration_minimum_seconds": 7200},
         "failsafe_supported": True,
     }
