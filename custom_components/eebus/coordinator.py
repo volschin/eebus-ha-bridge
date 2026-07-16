@@ -9,8 +9,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import timedelta
 from functools import lru_cache
-from types import ModuleType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import grpc
 import grpc.aio
@@ -36,10 +35,16 @@ from .grpc_client import (
     RPC_TIMEOUT,
     WRITE_VALIDATION_CODES,
     GrpcChannelManager,
-    is_not_found as _is_not_found,
     is_unimplemented as _is_unimplemented,
     rpc_error_text as _rpc_error_text,
 )
+from .models import (
+    CoordinatorSnapshot,
+    _dhw_system_function_to_dict,
+    _setpoint_to_dict,
+    _system_function_to_dict,
+)
+from .snapshot import SnapshotSupport, async_build_snapshot
 from .streams import ConsumeFn, StreamManager
 
 if TYPE_CHECKING:
@@ -65,56 +70,11 @@ SOC_UNIT_TO_PCT: dict[str, float] = {PERCENTAGE: 1.0}
 # Event streams deliver push updates; polling only reconciles state the
 # streams cannot carry (scoped energy, heartbeat, support flags).
 POLL_INTERVAL = timedelta(minutes=5)
-RE_REGISTER_NOT_FOUND_STREAK = 4
 
 
 def _normalize_ski(ski: str) -> str:
     """Normalize an SKI for comparisons without changing its stored form."""
     return ski.replace(":", "").replace("-", "").replace(" ", "").casefold()
-
-# Maps a GetMeasurements entry type (as emitted by the Go bridge) to the
-# coordinator data key consumed by the per-phase / grid / produced-energy
-# sensors. Types not present here (e.g. power_consumption, energy_consumed) are
-# handled by their own dedicated reads.
-FLAT_MEASUREMENT_TYPE_TO_KEY: dict[str, str] = {
-    "power_l1": "power_l1_w",
-    "power_l2": "power_l2_w",
-    "power_l3": "power_l3_w",
-    "current_l1": "current_l1_a",
-    "current_l2": "current_l2_a",
-    "current_l3": "current_l3_a",
-    "voltage_l1": "voltage_l1_v",
-    "voltage_l2": "voltage_l2_v",
-    "voltage_l3": "voltage_l3_v",
-    "frequency": "frequency_hz",
-    "energy_produced": "energy_produced_kwh",
-    "dhw_temperature": "dhw_temperature_c",
-    "room_temperature": "room_temperature_c",
-    "outdoor_temperature": "outdoor_temperature_c",
-    "flow_temperature": "flow_temperature_c",
-    "return_temperature": "return_temperature_c",
-    "compressor_temperature": "compressor_temperature_c",
-    "compressor_power": "compressor_power_w",
-}
-FLAT_MEASUREMENT_KEYS: tuple[str, ...] = tuple(FLAT_MEASUREMENT_TYPE_TO_KEY.values())
-
-
-def _dhw_system_function_to_dict(state: Any) -> dict[str, Any]:
-    """Convert a DHW system-function protobuf state into coordinator data."""
-    from . import proto_stubs
-
-    status = proto_stubs.DHWBoostStatus.Name(state.boost_status)
-    prefix = "DHW_BOOST_STATUS_"
-    if status.startswith(prefix):
-        status = status[len(prefix) :]
-    return {
-        "boost_status": status.lower(),
-        "boost_writable": state.boost_writable,
-        "operation_mode": state.operation_mode,
-        "available_modes": list(state.available_modes),
-        "mode_writable": state.mode_writable,
-    }
-
 
 @lru_cache(maxsize=1)
 def _measurement_event_map() -> tuple[dict[int, tuple[str, str, str]], frozenset[int]]:
@@ -174,28 +134,6 @@ def _measurement_event_map() -> tuple[dict[int, tuple[str, str, str]], frozenset
         }
     )
     return value_events, support_events
-
-
-def _setpoint_to_dict(setpoint: Any) -> dict[str, Any]:
-    """Convert a protobuf setpoint (value/min/max/step/writable) to coordinator data."""
-    return {
-        "value_celsius": setpoint.value_celsius,
-        "min_celsius": setpoint.min_celsius,
-        "max_celsius": setpoint.max_celsius,
-        "step_celsius": setpoint.step_celsius,
-        "writable": setpoint.writable,
-    }
-
-
-def _system_function_to_dict(system_function: Any) -> dict[str, Any]:
-    """Convert a protobuf system-function state to coordinator data."""
-    return {
-        "operation_mode": system_function.operation_mode,
-        "available_modes": list(system_function.available_modes),
-        "mode_writable": system_function.mode_writable,
-    }
-
-
 class _ProviderPusher:
     """Serialize and coalesce state-triggered pushes for one provider."""
 
@@ -267,7 +205,7 @@ class _ProviderPusher:
                 _LOGGER.exception("Unexpected failure pushing %s provider data", self._label)
 
 
-class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
     """Coordinator that manages gRPC connection and data updates."""
 
     def __init__(
@@ -337,176 +275,40 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Create or return existing gRPC channel."""
         return await self._channel_manager.ensure_channel()
 
-    async def _async_update_data(self) -> dict[str, Any]:
+    async def _async_update_data(self) -> CoordinatorSnapshot:
         """Fetch data via gRPC polling."""
         try:
             channel = await self._ensure_channel()
-            from . import proto_stubs
-
-            device_stub = proto_stubs.device_service_stub(channel)
-            status = await device_stub.GetStatus(proto_stubs.Empty())
-
-            if not self._ski_registered:
-                await self._async_register_remote_ski(device_stub, proto_stubs, force=False)
-
-            data: dict[str, Any] = {
-                "connected": status.running,
-                "local_ski": status.local_ski,
-                "ski_registered": self._ski_registered,
-            }
-            # Per-phase / grid / produced-energy measurements default to None and
-            # are populated from GetMeasurements when the device advertises them.
-            for _key in FLAT_MEASUREMENT_KEYS:
-                data[_key] = None
-            if self.ski == status.local_ski:
-                _LOGGER.warning(
-                    "Configured remote SKI %s matches bridge local SKI; monitoring reads will stay empty",
-                    self.ski,
-                )
-
-            monitoring_stub = proto_stubs.monitoring_service_stub(channel)
-            lpc_stub = proto_stubs.lpc_service_stub(channel)
-            request = proto_stubs.DeviceRequest(ski=self.ski)
-            flags = {"saw_not_found": False}
-
-            # The reads are independent; run them concurrently so poll latency
-            # is the slowest single read instead of the sum of all round-trips.
-            power, measurements, energy, limit, failsafe, hb = await asyncio.gather(
-                self._poll_read(
-                    "power", monitoring_stub.GetPowerConsumption, request, flags
-                ),
-                self._poll_read(
-                    "scoped energy", monitoring_stub.GetMeasurements, request, flags
-                ),
-                self._poll_read(
-                    "total energy", monitoring_stub.GetEnergyConsumed, request, flags
-                ),
-                self._poll_read(
-                    "consumption limit",
-                    lpc_stub.GetConsumptionLimit,
-                    request,
-                    flags,
-                    unsupported_attr="_lpc_supported",
-                ),
-                self._poll_read(
-                    "failsafe",
-                    lpc_stub.GetFailsafeLimit,
-                    request,
-                    flags,
-                    unsupported_attr="_failsafe_supported",
-                ),
-                self._poll_read(
-                    "heartbeat",
-                    lpc_stub.GetHeartbeatStatus,
-                    request,
-                    flags,
-                    unsupported_attr="_heartbeat_supported",
-                ),
-            )
-
-            data["power_watts"] = power.watts if power is not None else None
-
-            if measurements is not None:
-                scoped_energy = self._extract_scoped_energy_kwh(measurements.measurements)
-                data["energy_consumed_heating_kwh"] = scoped_energy["heating"]
-                data["energy_consumed_dhw_kwh"] = scoped_energy["dhw"]
-                data.update(self._extract_flat_measurements(measurements.measurements))
-            else:
-                data["energy_consumed_heating_kwh"] = None
-                data["energy_consumed_dhw_kwh"] = None
-
-            data["energy_consumed_kwh"] = (
-                energy.kilowatt_hours if energy is not None else None
-            )
-
-            if limit is not None:
-                self._lpc_supported = True
-                data["consumption_limit"] = {
-                    "value_watts": limit.value_watts,
-                    "is_active": limit.is_active,
-                    "is_changeable": limit.is_changeable,
-                }
-            else:
-                data["consumption_limit"] = None
-
-            if failsafe is not None:
-                self._failsafe_supported = True
-                data["failsafe_limit"] = {
-                    "value_watts": failsafe.value_watts,
-                    "duration_minimum_seconds": failsafe.duration_minimum_seconds,
-                }
-            else:
-                data["failsafe_limit"] = None
-
-            if hb is not None:
-                self._heartbeat_supported = True
-                data["heartbeat_status"] = {
-                    "running": hb.running,
-                    "within_duration": hb.within_duration,
-                }
-            else:
-                data["heartbeat_status"] = None
-
-            saw_not_found = flags["saw_not_found"]
-            data["heartbeat_supported"] = self._heartbeat_supported
-            data["lpc_supported"] = self._lpc_supported
-            data["failsafe_supported"] = self._failsafe_supported
-
-            # Remaining reads are independent too. OHPCF/DHW/room-heating stay
-            # unavailable when the bridge side is off; device diagnostics is
-            # best-effort.
-            (
-                data["device_info"],
-                data["compressor_flexibility"],
-                data["dhw_setpoint"],
-                data["dhw_system_function"],
-                room_heating,
-                data["device_operating_state"],
-            ) = await asyncio.gather(
-                self._async_fetch_device_info(device_stub, proto_stubs),
-                self._async_read_compressor_flexibility(channel, proto_stubs, request),
-                self._async_read_dhw_setpoint(channel, proto_stubs, request),
-                self._async_read_dhw_system_function(channel, proto_stubs, request),
-                self._async_read_room_heating(channel, proto_stubs, request),
-                self._async_read_device_diagnostics(channel, proto_stubs, request),
-            )
-            data["ohpcf_supported"] = self._ohpcf_supported
-            data["dhw_supported"] = self._dhw_supported
-            data["dhw_sysfn_supported"] = self._dhw_sysfn_supported
-            (
-                data["room_heating_setpoint"],
-                data["room_heating_system_function"],
-            ) = room_heating
-            data["room_heating_supported"] = self._room_heating_supported
-
-            if saw_not_found:
-                self._not_found_streak += 1
-            else:
-                self._not_found_streak = 0
-
-            if self._not_found_streak >= RE_REGISTER_NOT_FOUND_STREAK:
-                _LOGGER.warning(
-                    "EEBUS reads returned NOT_FOUND for %s consecutive polls; forcing remote SKI re-registration for %s",
-                    self._not_found_streak,
-                    self.ski,
-                )
-                await self._async_register_remote_ski(device_stub, proto_stubs, force=True)
-                self._not_found_streak = 0
-
-            _LOGGER.debug(
-                "EEBUS poll summary for SKI %s: power=%s energy_total=%s energy_heating=%s energy_dhw=%s",
+            result = await async_build_snapshot(
+                channel,
                 self.ski,
-                data["power_watts"],
-                data["energy_consumed_kwh"],
-                data["energy_consumed_heating_kwh"],
-                data["energy_consumed_dhw_kwh"],
+                SnapshotSupport(
+                    lpc=self._lpc_supported,
+                    failsafe=self._failsafe_supported,
+                    heartbeat=self._heartbeat_supported,
+                    ohpcf=self._ohpcf_supported,
+                    dhw=self._dhw_supported,
+                    dhw_system_function=self._dhw_sysfn_supported,
+                    room_heating=self._room_heating_supported,
+                ),
+                ski_registered=self._ski_registered,
+                not_found_streak=self._not_found_streak,
             )
+            self._lpc_supported = result.support.lpc
+            self._failsafe_supported = result.support.failsafe
+            self._heartbeat_supported = result.support.heartbeat
+            self._ohpcf_supported = result.support.ohpcf
+            self._dhw_supported = result.support.dhw
+            self._dhw_sysfn_supported = result.support.dhw_system_function
+            self._room_heating_supported = result.support.room_heating
+            self._ski_registered = result.ski_registered
+            self._not_found_streak = result.not_found_streak
 
             if self._was_unavailable:
                 _LOGGER.info("EEBUS bridge connection restored at %s:%s", self.host, self.port)
                 self._was_unavailable = False
 
-            return data
+            return result.snapshot
         except grpc.aio.AioRpcError as err:
             await self._channel_manager.invalidate()
             self._not_found_streak = 0
@@ -521,157 +323,6 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._was_unavailable = True
 
             raise UpdateFailed(f"gRPC error: {err}") from err
-
-    async def _poll_read(
-        self,
-        label: str,
-        call: Any,
-        request: Any,
-        flags: dict[str, bool],
-        unsupported_attr: str | None = None,
-    ) -> Any:
-        """Call a device-scoped read RPC once.
-
-        Returns the response, or None on failure. Records NOT_FOUND in
-        ``flags``; when ``unsupported_attr`` is given, clears that support flag
-        on UNIMPLEMENTED.
-        """
-        try:
-            response = await call(request, timeout=RPC_TIMEOUT)
-        except grpc.aio.AioRpcError as err:
-            if _is_not_found(err):
-                flags["saw_not_found"] = True
-            _LOGGER.debug(
-                "EEBUS %s read failed for SKI %s: %s",
-                label,
-                self.ski,
-                _rpc_error_text(err),
-            )
-            if unsupported_attr is not None and _is_unimplemented(err):
-                setattr(self, unsupported_attr, False)
-            return None
-        except Exception:  # noqa: BLE001
-            _LOGGER.exception("Failed to read %s", label)
-            return None
-        _LOGGER.debug("EEBUS %s read for SKI %s succeeded", label, self.ski)
-        return response
-
-    async def _async_fetch_device_info(
-        self, device_stub: Any, proto_stubs: Any
-    ) -> dict[str, str] | None:
-        """Read manufacturer/model metadata for the configured device.
-
-        Returns the brand, model, serial and EEBUS device type reported by the
-        bridge so Home Assistant can label the device with real values instead of
-        a hardcoded manufacturer. Best-effort: returns None on any error.
-        """
-        try:
-            response = await device_stub.ListPairedDevices(
-                proto_stubs.Empty(), timeout=RPC_TIMEOUT
-            )
-        except grpc.aio.AioRpcError as err:
-            if not _is_unimplemented(err):
-                _LOGGER.debug(
-                    "ListPairedDevices failed for SKI %s: %s",
-                    self.ski,
-                    _rpc_error_text(err),
-                )
-            return None
-        except Exception:  # noqa: BLE001
-            _LOGGER.exception("Failed to list paired devices")
-            return None
-
-        devices = list(response.devices)
-        if not devices:
-            return None
-
-        match = next((d for d in devices if d.ski == self.ski), None)
-        if match is None:
-            return None
-
-        info: dict[str, str] = {}
-        if match.brand:
-            info["manufacturer"] = match.brand
-        if match.model:
-            info["model"] = match.model
-        if match.serial:
-            info["serial"] = match.serial
-        if match.device_type:
-            info["device_type"] = match.device_type
-        return info or None
-
-    async def _async_register_remote_ski(
-        self, device_stub: Any, proto_stubs_module: ModuleType, force: bool
-    ) -> None:
-        """Register remote SKI with bridge, optionally forcing re-registration."""
-        try:
-            await device_stub.RegisterRemoteSKI(
-                proto_stubs_module.RegisterSKIRequest(ski=self.ski), timeout=RPC_TIMEOUT
-            )
-            self._ski_registered = True
-            if force:
-                _LOGGER.info("Forced re-registration of remote SKI %s with bridge", self.ski)
-            else:
-                _LOGGER.info("Registered remote SKI %s with bridge", self.ski)
-        except grpc.aio.AioRpcError as err:
-            if force:
-                _LOGGER.warning(
-                    "Forced remote SKI re-registration failed for %s: %s",
-                    self.ski,
-                    _rpc_error_text(err),
-                )
-            else:
-                # Retry in next polling cycle until the bridge accepts registration.
-                _LOGGER.debug(
-                    "Remote SKI registration pending for %s: %s",
-                    self.ski,
-                    _rpc_error_text(err),
-                )
-
-    @staticmethod
-    def _extract_scoped_energy_kwh(measurements: list[Any]) -> dict[str, float | None]:
-        """Extract Vaillant/EEBUS scoped counters for heating and domestic hot water."""
-        result: dict[str, float | None] = {"heating": None, "dhw": None}
-        for measurement in measurements:
-            measurement_type = str(getattr(measurement, "type", "")).lower().strip()
-            if not measurement_type:
-                continue
-            normalized = measurement_type.replace("-", "_").replace(" ", "_")
-            value = getattr(measurement, "value", None)
-            if value is None:
-                continue
-
-            # Vaillant uses separate thermal storage contexts for heating and DHW.
-            if (
-                "energy" in normalized
-                and ("domestic_hot_water" in normalized or "hot_water" in normalized or "dhw" in normalized)
-            ):
-                result["dhw"] = value
-                continue
-
-            if "energy" in normalized and ("heating" in normalized or "space_heating" in normalized):
-                result["heating"] = value
-
-        return result
-
-    @staticmethod
-    def _extract_flat_measurements(measurements: list[Any]) -> dict[str, float | None]:
-        """Map per-phase / grid / produced-energy entries to coordinator keys."""
-        result: dict[str, float | None] = {}
-        for measurement in measurements:
-            measurement_type = str(getattr(measurement, "type", "")).lower().strip()
-            if not measurement_type:
-                continue
-            normalized = measurement_type.replace("-", "_").replace(" ", "_")
-            key = FLAT_MEASUREMENT_TYPE_TO_KEY.get(normalized)
-            if key is None:
-                continue
-            value = getattr(measurement, "value", None)
-            if value is None:
-                continue
-            result[key] = value
-        return result
-
     async def _async_write_rpc(
         self,
         label: str,
@@ -747,46 +398,6 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             support_attr="_lpc_supported",
         )
 
-    async def _async_read_compressor_flexibility(
-        self, channel: grpc.aio.Channel, proto_stubs: Any, request: Any
-    ) -> dict[str, Any] | None:
-        """Read the OHPCF compressor flexibility offer/state, or None when off."""
-        from .generated.eebus.v1 import ohpcf_service_pb2 as ohpcf_pb2
-
-        try:
-            stub = proto_stubs.ohpcf_service_stub(channel)
-            flex = await stub.GetCompressorFlexibility(request, timeout=RPC_TIMEOUT)
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err) or err.code() == grpc.StatusCode.UNAVAILABLE:
-                self._ohpcf_supported = False
-            else:
-                _LOGGER.debug(
-                    "EEBUS OHPCF read failed for SKI %s: %s",
-                    self.ski,
-                    _rpc_error_text(err),
-                )
-            return None
-
-        self._ohpcf_supported = True
-        return {
-            "available": flex.available,
-            "state": ohpcf_pb2.CompressorPowerConsumptionState.Name(flex.state),
-            "requested_power_estimate_w": (
-                flex.requested_power_estimate_w
-                if flex.HasField("requested_power_estimate_w")
-                else None
-            ),
-            "requested_power_max_w": (
-                flex.requested_power_max_w
-                if flex.HasField("requested_power_max_w")
-                else None
-            ),
-            "is_pausable": flex.is_pausable,
-            "is_stoppable": flex.is_stoppable,
-            "minimal_run_seconds": flex.minimal_run_seconds,
-            "minimal_pause_seconds": flex.minimal_pause_seconds,
-        }
-
     async def async_control_compressor(self, action: proto_stubs.OHPCFAction) -> None:
         """Schedule/pause/resume/abort the compressor's optional consumption."""
         channel = await self._ensure_channel()
@@ -812,30 +423,6 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 f"Compressor flexibility control failed: {err.details()}"
             ) from err
 
-    async def _async_read_dhw_setpoint(
-        self, channel: grpc.aio.Channel, proto_stubs: Any, request: Any
-    ) -> dict[str, Any] | None:
-        """Read the DHW target and device-provided constraints."""
-        try:
-            stub = proto_stubs.dhw_service_stub(channel)
-            setpoint = await stub.GetDHWSetpoint(request, timeout=RPC_TIMEOUT)
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err) or err.code() in (
-                grpc.StatusCode.NOT_FOUND,
-                grpc.StatusCode.UNAVAILABLE,
-            ):
-                self._dhw_supported = False
-            else:
-                _LOGGER.debug(
-                    "EEBUS DHW setpoint read failed for SKI %s: %s",
-                    self.ski,
-                    _rpc_error_text(err),
-                )
-            return None
-
-        self._dhw_supported = True
-        return _setpoint_to_dict(setpoint)
-
     async def async_write_dhw_setpoint(self, value_celsius: float) -> None:
         """Write the domestic-hot-water target via the bridge."""
         channel = await self._ensure_channel()
@@ -849,30 +436,6 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             support_attr="_dhw_supported",
             validation=True,
         )
-
-    async def _async_read_dhw_system_function(
-        self, channel: grpc.aio.Channel, proto_stubs: Any, request: Any
-    ) -> dict[str, Any] | None:
-        """Read DHW boost and operation mode state."""
-        try:
-            stub = proto_stubs.dhw_service_stub(channel)
-            state = await stub.GetDHWSystemFunction(request, timeout=RPC_TIMEOUT)
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err) or err.code() in (
-                grpc.StatusCode.NOT_FOUND,
-                grpc.StatusCode.UNAVAILABLE,
-            ):
-                self._dhw_sysfn_supported = False
-            else:
-                _LOGGER.debug(
-                    "EEBUS DHW system function read failed for SKI %s: %s",
-                    self.ski,
-                    _rpc_error_text(err),
-                )
-            return None
-
-        self._dhw_sysfn_supported = True
-        return _dhw_system_function_to_dict(state)
 
     async def async_set_dhw_boost(self, active: bool) -> None:
         """Activate or cancel DHW one-time boost."""
@@ -901,54 +464,6 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             support_attr="_dhw_sysfn_supported",
             validation=True,
         )
-
-    async def _async_read_room_heating(
-        self, channel: grpc.aio.Channel, proto_stubs: Any, request: Any
-    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-        """Read room-heating setpoint and system-function state."""
-        try:
-            state = await proto_stubs.hvac_service_stub(channel).GetRoomHeating(
-                request, timeout=RPC_TIMEOUT
-            )
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err) or err.code() in (
-                grpc.StatusCode.NOT_FOUND,
-                grpc.StatusCode.UNAVAILABLE,
-            ):
-                self._room_heating_supported = False
-            return None, None
-        self._room_heating_supported = True
-        setpoint = None
-        if state.HasField("setpoint"):
-            setpoint = _setpoint_to_dict(state.setpoint)
-        system_function = None
-        if state.HasField("system_function"):
-            system_function = _system_function_to_dict(state.system_function)
-        if state.HasField("current_temperature_celsius"):
-            self._push_data({"room_temperature_c": state.current_temperature_celsius})
-        return setpoint, system_function
-
-    async def _async_read_device_diagnostics(
-        self, channel: grpc.aio.Channel, proto_stubs: Any, request: Any
-    ) -> str | None:
-        """Read the device operating state without mutating coordinator data."""
-        try:
-            diagnostics = await proto_stubs.monitoring_service_stub(
-                channel
-            ).GetDeviceDiagnostics(request, timeout=RPC_TIMEOUT)
-        except grpc.aio.AioRpcError as err:
-            if not (
-                _is_unimplemented(err)
-                or err.code()
-                in (grpc.StatusCode.NOT_FOUND, grpc.StatusCode.UNAVAILABLE)
-            ):
-                _LOGGER.debug(
-                    "EEBUS device diagnosis read failed for SKI %s: %s",
-                    self.ski,
-                    _rpc_error_text(err),
-                )
-            return None
-        return diagnostics.operating_state or None
 
     async def async_set_room_heating_temperature(self, value_celsius: float) -> None:
         """Set the room-heating target temperature."""
@@ -1334,7 +849,9 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Merge stream updates into coordinator data and notify listeners."""
         if self.data is None:
             return
-        self.async_set_updated_data({**self.data, **updates})
+        merged = dict(self.data)
+        merged.update(updates)
+        self.async_set_updated_data(cast(CoordinatorSnapshot, merged))
 
     def _handle_device_event(self, event: Any) -> None:
         from . import proto_stubs

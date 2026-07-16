@@ -14,6 +14,7 @@ from custom_components.eebus.coordinator import EebusCoordinator
 from custom_components.eebus.generated.eebus.v1 import ohpcf_service_pb2 as ohpcf_pb2
 from custom_components.eebus.select import EebusCompressorFlexibilitySelect
 from custom_components.eebus.sensor import EebusMeasurementSensor, STATE_SENSORS
+from custom_components.eebus.snapshot import _async_read_compressor_flexibility
 
 
 def _coordinator(ski="test-ski"):
@@ -21,10 +22,6 @@ def _coordinator(ski="test-ski"):
     c.ski = ski
     c._ohpcf_supported = None
     return c
-
-
-def _fake_proto(stub):
-    return SimpleNamespace(ohpcf_service_stub=lambda _channel: stub)
 
 
 def test_read_compressor_flexibility_maps_fields():
@@ -40,11 +37,20 @@ def test_read_compressor_flexibility_maps_fields():
     )
     stub = SimpleNamespace(GetCompressorFlexibility=AsyncMock(return_value=flex))
 
-    out = asyncio.run(
-        c._async_read_compressor_flexibility(None, _fake_proto(stub), proto_stubs.DeviceRequest(ski=c.ski))
-    )
+    with patch.object(proto_stubs, "ohpcf_service_stub", return_value=stub):
+        result = asyncio.run(
+            _async_read_compressor_flexibility(
+                None,
+                proto_stubs.DeviceRequest(ski=c.ski),
+                c.ski,
+                c._ohpcf_supported,
+            )
+        )
+    out = result.value
 
-    assert c._ohpcf_supported is True
+    assert result.supported is True
+    assert c._ohpcf_supported is None
+    assert out is not None
     assert out["available"] is True
     assert out["state"] == "COMPRESSOR_STATE_RUNNING"
     assert out["requested_power_estimate_w"] == 1500.0
@@ -59,12 +65,19 @@ def test_read_compressor_flexibility_unavailable_marks_unsupported():
     err = AioRpcError(grpc.StatusCode.UNAVAILABLE, Metadata(), Metadata(), details="off")
     stub = SimpleNamespace(GetCompressorFlexibility=AsyncMock(side_effect=err))
 
-    out = asyncio.run(
-        c._async_read_compressor_flexibility(None, _fake_proto(stub), proto_stubs.DeviceRequest(ski=c.ski))
-    )
+    with patch.object(proto_stubs, "ohpcf_service_stub", return_value=stub):
+        result = asyncio.run(
+            _async_read_compressor_flexibility(
+                None,
+                proto_stubs.DeviceRequest(ski=c.ski),
+                c.ski,
+                c._ohpcf_supported,
+            )
+        )
 
-    assert out is None
-    assert c._ohpcf_supported is False
+    assert result.value is None
+    assert result.supported is False
+    assert c._ohpcf_supported is None
 
 
 def _select_with(flex):

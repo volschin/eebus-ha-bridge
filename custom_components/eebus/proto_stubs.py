@@ -20,11 +20,13 @@ from .generated.eebus.v1.common_pb2 import (  # noqa: F401
 from .generated.eebus.v1.device_service_pb2 import (  # noqa: F401
     DeviceEventType,
     RegisterSKIRequest,
+    ServiceStatus,
 )
 from .generated.eebus.v1.device_service_pb2_grpc import DeviceServiceStub  # noqa: F401
 from .generated.eebus.v1.dhw_service_pb2 import (  # noqa: F401
     DHWBoostStatus,
     DHWEventType,
+    DHWSetpoint,
     DHWSystemFunctionEvent,
     DHWSystemFunctionEventType,
     DHWSystemFunctionState,
@@ -46,12 +48,16 @@ from .generated.eebus.v1.hvac_service_pb2 import (  # noqa: F401
 from .generated.eebus.v1.hvac_service_pb2_grpc import HVACServiceStub  # noqa: F401
 from .generated.eebus.v1.grid_service_pb2_grpc import GridServiceStub  # noqa: F401
 from .generated.eebus.v1.lpc_service_pb2 import (  # noqa: F401
+    FailsafeLimit,
+    HeartbeatStatus,
     LPCEventType,
     WriteFailsafeLimitRequest,
     WriteLoadLimitRequest,
 )
 from .generated.eebus.v1.monitoring_service_pb2 import (  # noqa: F401
     DeviceDiagnosticsData,
+    EnergyMeasurement,
+    MeasurementList,
     MeasurementEventType,
 )
 from .generated.eebus.v1.lpc_service_pb2_grpc import LPCServiceStub  # noqa: F401
@@ -64,6 +70,7 @@ from .generated.eebus.v1.visualization_service_pb2_grpc import (  # noqa: F401
     VisualizationServiceStub,
 )
 from .generated.eebus.v1.ohpcf_service_pb2 import (  # noqa: F401
+    CompressorFlexibility,
     CompressorPowerConsumptionState,
     ControlCompressorRequest,
     OHPCFAction,
@@ -113,6 +120,7 @@ def visualization_service_stub(channel: grpc.aio.Channel) -> VisualizationServic
 
 __all__ = [
     "BatteryData",
+    "CompressorFlexibility",
     "CompressorPowerConsumptionState",
     "ControlCompressorRequest",
     "DeviceEventType",
@@ -121,19 +129,24 @@ __all__ = [
     "DeviceServiceStub",
     "DHWBoostStatus",
     "DHWEventType",
+    "DHWSetpoint",
     "DHWServiceStub",
     "DHWSystemFunctionEvent",
     "DHWSystemFunctionEventType",
     "DHWSystemFunctionState",
     "Empty",
+    "EnergyMeasurement",
+    "FailsafeLimit",
     "GridData",
     "GridServiceStub",
     "HVACServiceStub",
+    "HeartbeatStatus",
     "LPCEventType",
     "LPCServiceStub",
     "LoadLimit",
     "MeasurementEntry",
     "MeasurementEventType",
+    "MeasurementList",
     "MonitoringServiceStub",
     "OHPCFAction",
     "OHPCFEventType",
@@ -151,6 +164,7 @@ __all__ = [
     "SetDHWSetpointRequest",
     "SetRoomHeatingModeRequest",
     "SetRoomHeatingTemperatureRequest",
+    "ServiceStatus",
     "VisualizationServiceStub",
     "WriteFailsafeLimitRequest",
     "WriteLoadLimitRequest",

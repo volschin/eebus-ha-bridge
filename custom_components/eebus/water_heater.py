@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
+from .models import DHWSystemFunctionState, SetpointState
 
 PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling
 
@@ -37,13 +38,13 @@ class EebusDHWWaterHeater(EebusEntity, WaterHeaterEntity):
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.ski}_domestic_hot_water"
 
-    def _setpoint(self) -> dict[str, Any] | None:
+    def _setpoint(self) -> SetpointState | None:
         data = self.coordinator.data or {}
         if data.get("dhw_supported") is False:
             return None
         return data.get("dhw_setpoint")
 
-    def _system_function(self) -> dict[str, Any] | None:
+    def _system_function(self) -> DHWSystemFunctionState | None:
         data = self.coordinator.data or {}
         if data.get("dhw_sysfn_supported") is False:
             return None

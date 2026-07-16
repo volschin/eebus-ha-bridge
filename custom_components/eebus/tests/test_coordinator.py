@@ -2,6 +2,7 @@
 
 import asyncio
 import inspect
+from contextlib import ExitStack, contextmanager
 from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
@@ -13,8 +14,15 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 
 from custom_components.eebus import proto_stubs
 from custom_components.eebus.coordinator import EebusCoordinator, POLL_INTERVAL
+from custom_components.eebus.models import _extract_flat_measurements
+from custom_components.eebus.snapshot import (
+    _async_fetch_device_info,
+    _async_read_device_diagnostics,
+    _poll_read,
+)
 from custom_components.eebus.generated.eebus.v1 import (
     device_service_pb2,
+    hvac_service_pb2,
     lpc_service_pb2,
     monitoring_service_pb2,
 )
@@ -30,6 +38,107 @@ def _device_stub_returning(*devices):
     stub = MagicMock()
     stub.ListPairedDevices = _list
     return stub
+
+
+def _poll_stubs(room_heating_read):
+    """Build complete service stubs for one polling snapshot."""
+    unsupported = AioRpcError(
+        grpc.StatusCode.UNIMPLEMENTED,
+        Metadata(),
+        Metadata(),
+        details="use case disabled",
+    )
+    device_stub = SimpleNamespace(
+        GetStatus=AsyncMock(
+            return_value=device_service_pb2.ServiceStatus(
+                running=True, local_ski="bridge-ski"
+            )
+        ),
+        ListPairedDevices=AsyncMock(
+            return_value=device_service_pb2.ListPairedDevicesResponse()
+        ),
+        RegisterRemoteSKI=AsyncMock(return_value=proto_stubs.Empty()),
+    )
+    monitoring_stub = SimpleNamespace(
+        GetPowerConsumption=AsyncMock(
+            return_value=proto_stubs.PowerMeasurement(watts=1234.0)
+        ),
+        GetMeasurements=AsyncMock(
+            return_value=monitoring_service_pb2.MeasurementList()
+        ),
+        GetEnergyConsumed=AsyncMock(
+            return_value=monitoring_service_pb2.EnergyMeasurement(
+                kilowatt_hours=42.0
+            )
+        ),
+        GetDeviceDiagnostics=AsyncMock(
+            return_value=proto_stubs.DeviceDiagnosticsData(
+                operating_state="normalOperation"
+            )
+        ),
+    )
+    lpc_stub = SimpleNamespace(
+        GetConsumptionLimit=AsyncMock(
+            return_value=proto_stubs.LoadLimit(
+                value_watts=4200.0, is_active=True, is_changeable=True
+            )
+        ),
+        GetFailsafeLimit=AsyncMock(
+            return_value=lpc_service_pb2.FailsafeLimit(
+                value_watts=3000.0, duration_minimum_seconds=7200
+            )
+        ),
+        GetHeartbeatStatus=AsyncMock(
+            return_value=lpc_service_pb2.HeartbeatStatus(
+                running=True, within_duration=True
+            )
+        ),
+    )
+    return {
+        "device_service_stub": device_stub,
+        "monitoring_service_stub": monitoring_stub,
+        "lpc_service_stub": lpc_stub,
+        "ohpcf_service_stub": SimpleNamespace(
+            GetCompressorFlexibility=AsyncMock(side_effect=unsupported)
+        ),
+        "dhw_service_stub": SimpleNamespace(
+            GetDHWSetpoint=AsyncMock(side_effect=unsupported),
+            GetDHWSystemFunction=AsyncMock(side_effect=unsupported),
+        ),
+        "hvac_service_stub": SimpleNamespace(GetRoomHeating=room_heating_read),
+    }
+
+
+def _poll_coordinator():
+    """Build a coordinator skeleton with all snapshot-owned state initialized."""
+    coordinator = EebusCoordinator.__new__(EebusCoordinator)
+    coordinator.host = "bridge.local"
+    coordinator.port = 50051
+    coordinator.ski = "device-ski"
+    coordinator.data = {"room_temperature_c": 18.0}
+    coordinator._channel_manager = MagicMock()
+    coordinator._channel_manager.invalidate = AsyncMock()
+    coordinator._ensure_channel = AsyncMock(return_value=MagicMock())
+    coordinator._was_unavailable = False
+    coordinator._lpc_supported = None
+    coordinator._failsafe_supported = None
+    coordinator._heartbeat_supported = None
+    coordinator._ohpcf_supported = None
+    coordinator._dhw_supported = None
+    coordinator._dhw_sysfn_supported = None
+    coordinator._room_heating_supported = None
+    coordinator._ski_registered = True
+    coordinator._not_found_streak = 0
+    return coordinator
+
+
+@contextmanager
+def _patch_poll_stubs(stubs):
+    """Patch every snapshot stub factory with the supplied fake service."""
+    with ExitStack() as stack:
+        for factory, stub in stubs.items():
+            stack.enter_context(patch.object(proto_stubs, factory, return_value=stub))
+        yield
 
 
 def test_coordinator_poll_interval():
@@ -69,8 +178,17 @@ async def test_unauthenticated_poll_starts_reauthentication():
     coordinator = EebusCoordinator.__new__(EebusCoordinator)
     coordinator._channel_manager = MagicMock()
     coordinator._channel_manager.invalidate = AsyncMock()
+    coordinator.ski = "test-ski"
     coordinator._not_found_streak = 0
     coordinator._was_unavailable = False
+    coordinator._lpc_supported = None
+    coordinator._failsafe_supported = None
+    coordinator._heartbeat_supported = None
+    coordinator._ohpcf_supported = None
+    coordinator._dhw_supported = None
+    coordinator._dhw_sysfn_supported = None
+    coordinator._room_heating_supported = None
+    coordinator._ski_registered = False
     coordinator._ensure_channel = AsyncMock(return_value=MagicMock())
     stub = MagicMock()
     stub.GetStatus = AsyncMock(
@@ -87,6 +205,62 @@ async def test_unauthenticated_poll_starts_reauthentication():
             await coordinator._async_update_data()
 
     coordinator._channel_manager.invalidate.assert_awaited_once_with()
+
+
+async def test_poll_returns_room_temperature_without_mid_poll_push():
+    """Room-heating temperature is part of the atomic poll snapshot."""
+    room_temperature = 21.5
+    room_read = AsyncMock(
+        return_value=hvac_service_pb2.RoomHeatingState(
+            current_temperature_celsius=room_temperature
+        )
+    )
+    coordinator = _poll_coordinator()
+    coordinator._push_data = MagicMock()
+
+    with _patch_poll_stubs(_poll_stubs(room_read)):
+        snapshot = await coordinator._async_update_data()
+
+    assert snapshot["room_temperature_c"] == room_temperature
+    assert coordinator.data == {"room_temperature_c": 18.0}
+    coordinator._push_data.assert_not_called()
+
+
+async def test_poll_applies_support_flags_only_after_all_reads_complete():
+    """Completed reads cannot mutate coordinator support flags while a peer read is pending."""
+    room_read_started = asyncio.Event()
+    finish_room_read = asyncio.Event()
+
+    async def room_read(_request, timeout=None):
+        room_read_started.set()
+        await finish_room_read.wait()
+        return hvac_service_pb2.RoomHeatingState(current_temperature_celsius=20.0)
+
+    coordinator = _poll_coordinator()
+    with _patch_poll_stubs(_poll_stubs(room_read)):
+        poll_task = asyncio.create_task(coordinator._async_update_data())
+        await room_read_started.wait()
+        await asyncio.sleep(0)
+
+        assert poll_task.done() is False
+        assert coordinator._lpc_supported is None
+        assert coordinator._failsafe_supported is None
+        assert coordinator._heartbeat_supported is None
+        assert coordinator._ohpcf_supported is None
+        assert coordinator._dhw_supported is None
+        assert coordinator._dhw_sysfn_supported is None
+        assert coordinator._room_heating_supported is None
+
+        finish_room_read.set()
+        await poll_task
+
+    assert coordinator._lpc_supported is True
+    assert coordinator._failsafe_supported is True
+    assert coordinator._heartbeat_supported is True
+    assert coordinator._ohpcf_supported is False
+    assert coordinator._dhw_supported is False
+    assert coordinator._dhw_sysfn_supported is False
+    assert coordinator._room_heating_supported is True
 
 
 async def test_ensure_channel_delegates_to_channel_manager():
@@ -202,12 +376,10 @@ async def test_read_device_diagnostics_returns_operating_state():
         async def GetDeviceDiagnostics(self, _request, timeout=None):
             return proto_stubs.DeviceDiagnosticsData(operating_state="normalOperation")
 
-    coordinator, _ = _make_coordinator()
-    module = SimpleNamespace(monitoring_service_stub=lambda _channel: MonitoringStub())
-
-    result = await coordinator._async_read_device_diagnostics(
-        MagicMock(), module, proto_stubs.DeviceRequest(ski="test-ski")
-    )
+    with patch.object(proto_stubs, "monitoring_service_stub", return_value=MonitoringStub()):
+        result = await _async_read_device_diagnostics(
+            MagicMock(), proto_stubs.DeviceRequest(ski="test-ski"), "test-ski"
+        )
 
     assert result == "normalOperation"
 
@@ -224,12 +396,10 @@ async def test_read_device_diagnostics_unavailable_returns_none():
                 details="device operating state unavailable",
             )
 
-    coordinator, _ = _make_coordinator()
-    module = SimpleNamespace(monitoring_service_stub=lambda _channel: MonitoringStub())
-
-    result = await coordinator._async_read_device_diagnostics(
-        MagicMock(), module, proto_stubs.DeviceRequest(ski="test-ski")
-    )
+    with patch.object(proto_stubs, "monitoring_service_stub", return_value=MonitoringStub()):
+        result = await _async_read_device_diagnostics(
+            MagicMock(), proto_stubs.DeviceRequest(ski="test-ski"), "test-ski"
+        )
 
     assert result is None
 
@@ -349,7 +519,6 @@ def test_measurement_power_event_without_payload_refreshes():
 
 def test_fetch_device_info_uses_matching_ski():
     """Real brand/model/serial for the configured SKI is surfaced (issue #28)."""
-    coordinator, _ = _make_coordinator(ski="bosch-ski")
     stub = _device_stub_returning(
         device_service_pb2.PairedDevice(ski="other", brand="Vaillant", model="VR940f"),
         device_service_pb2.PairedDevice(
@@ -360,7 +529,7 @@ def test_fetch_device_info_uses_matching_ski():
             device_type="HeatPumpAppliance",
         ),
     )
-    info = asyncio.run(coordinator._async_fetch_device_info(stub, proto_stubs))
+    info = asyncio.run(_async_fetch_device_info(stub, "bosch-ski"))
     assert info == {
         "manufacturer": "Bosch",
         "model": "Compress 5800i",
@@ -371,22 +540,20 @@ def test_fetch_device_info_uses_matching_ski():
 
 def test_fetch_device_info_single_mismatched_device_returns_none():
     """A sole mismatched device is not used as metadata fallback."""
-    coordinator, _ = _make_coordinator(ski="configured-ski")
     stub = _device_stub_returning(
         device_service_pb2.PairedDevice(ski="actual-ski", brand="Bosch")
     )
-    info = asyncio.run(coordinator._async_fetch_device_info(stub, proto_stubs))
+    info = asyncio.run(_async_fetch_device_info(stub, "configured-ski"))
     assert info is None
 
 
 def test_fetch_device_info_no_match_returns_none():
     """No SKI match yields None (no cross-device mislabeling)."""
-    coordinator, _ = _make_coordinator(ski="configured-ski")
     stub = _device_stub_returning(
         device_service_pb2.PairedDevice(ski="a", brand="Bosch"),
         device_service_pb2.PairedDevice(ski="b", brand="Vaillant"),
     )
-    info = asyncio.run(coordinator._async_fetch_device_info(stub, proto_stubs))
+    info = asyncio.run(_async_fetch_device_info(stub, "configured-ski"))
     assert info is None
 
 
@@ -404,8 +571,8 @@ async def test_two_coordinators_isolate_device_info_and_events():
     )
 
     info_a, info_b = await asyncio.gather(
-        coordinator_a._async_fetch_device_info(stub, proto_stubs),
-        coordinator_b._async_fetch_device_info(stub, proto_stubs),
+        _async_fetch_device_info(stub, coordinator_a.ski),
+        _async_fetch_device_info(stub, coordinator_b.ski),
     )
     assert info_a == {"manufacturer": "Brand A"}
     assert info_b == {"manufacturer": "Brand B"}
@@ -424,7 +591,6 @@ async def test_two_coordinators_isolate_device_info_and_events():
 
 async def test_poll_read_not_found_does_not_retry_with_empty_ski():
     """A failed device-scoped read is attempted exactly once."""
-    coordinator, _ = _make_coordinator(ski="ski-a")
     call = AsyncMock(
         side_effect=AioRpcError(
             grpc.StatusCode.NOT_FOUND,
@@ -434,12 +600,10 @@ async def test_poll_read_not_found_does_not_retry_with_empty_ski():
         )
     )
     request = proto_stubs.DeviceRequest(ski="ski-a")
-    flags = {"saw_not_found": False}
+    result = await _poll_read("power", call, request, "ski-a")
 
-    result = await coordinator._poll_read("power", call, request, flags)
-
-    assert result is None
-    assert flags["saw_not_found"] is True
+    assert result.value is None
+    assert result.saw_not_found is True
     call.assert_awaited_once_with(request, timeout=10)
 
 
@@ -475,7 +639,7 @@ def test_extract_flat_measurements_maps_types():
         # Unrelated / scoped types are ignored by the flat extractor.
         _entry("energy_consumed", 99.0),
     ]
-    result = EebusCoordinator._extract_flat_measurements(entries)
+    result = _extract_flat_measurements(entries)
     assert result == {
         "power_l1_w": 230.0,
         "current_l2_a": 4.5,
@@ -495,7 +659,7 @@ def test_extract_flat_measurements_ignores_blank_and_missing():
         _entry("voltage_l1", None),
         _entry("power_l1", 0.0),
     ]
-    result = EebusCoordinator._extract_flat_measurements(entries)
+    result = _extract_flat_measurements(entries)
     assert result == {"power_l1_w": 0.0}
 
 

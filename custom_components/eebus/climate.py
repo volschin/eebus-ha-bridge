@@ -14,6 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
+from .models import SetpointState, SystemFunctionState
 
 PARALLEL_UPDATES = 0
 _LOGGER = logging.getLogger(__name__)
@@ -44,10 +45,10 @@ class EebusRoomHeatingClimate(EebusEntity, ClimateEntity):
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.ski}_room_heating"
 
-    def _setpoint(self) -> dict[str, Any] | None:
+    def _setpoint(self) -> SetpointState | None:
         return (self.coordinator.data or {}).get("room_heating_setpoint")
 
-    def _system_function(self) -> dict[str, Any] | None:
+    def _system_function(self) -> SystemFunctionState | None:
         return (self.coordinator.data or {}).get("room_heating_system_function")
 
     @property

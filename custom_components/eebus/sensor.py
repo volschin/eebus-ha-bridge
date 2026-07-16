@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import cast
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -28,6 +28,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
+from .models import CoordinatorSnapshot
 
 _OHPCF_STATUS_OPTIONS = [
     "available",
@@ -42,34 +43,34 @@ _OHPCF_STATE_PREFIX = "COMPRESSOR_STATE_"
 
 def _nested_float(
     container_key: str, value_key: str
-) -> Callable[[dict[str, Any]], float | None]:
+) -> Callable[[CoordinatorSnapshot], float | None]:
     """Build a value_fn reading ``data[container_key][value_key]`` as float."""
 
-    def _get(data: dict[str, Any]) -> float | None:
-        container = data.get(container_key)
+    def _get(data: CoordinatorSnapshot) -> float | None:
+        container = cast(Mapping[str, object] | None, data.get(container_key))
         if container is None:
             return None
         value = container.get(value_key)
-        return None if value is None else float(value)
+        return None if value is None else float(cast(float, value))
 
     return _get
 
 
-def _key_is_present(key: str) -> Callable[[dict[str, Any]], bool]:
+def _key_is_present(key: str) -> Callable[[CoordinatorSnapshot], bool]:
     """Build an available_fn requiring ``data[key]`` to be non-None."""
 
-    def _check(data: dict[str, Any]) -> bool:
+    def _check(data: CoordinatorSnapshot) -> bool:
         return data.get(key) is not None
 
     return _check
 
 
-def _failsafe_available(data: dict[str, Any]) -> bool:
+def _failsafe_available(data: CoordinatorSnapshot) -> bool:
     """Failsafe sensors stay available until support is known to be absent."""
     return data.get("failsafe_supported") is not False
 
 
-def _ohpcf_status(data: dict[str, Any]) -> str | None:
+def _ohpcf_status(data: CoordinatorSnapshot) -> str | None:
     """Return the raw OHPCF process state, lower-cased and without the enum prefix.
 
     The compressor_flexibility select folds five of the six process states into
@@ -94,8 +95,8 @@ class EebusMeasurementDescription(SensorEntityDescription):
     """
 
     data_key: str = ""
-    value_fn: Callable[[dict[str, Any]], float | str | None] | None = None
-    available_fn: Callable[[dict[str, Any]], bool] | None = None
+    value_fn: Callable[[CoordinatorSnapshot], float | str | None] | None = None
+    available_fn: Callable[[CoordinatorSnapshot], bool] | None = None
     unique_id_suffix: str | None = None
 
 
@@ -378,4 +379,4 @@ class EebusMeasurementSensor(EebusEntity, SensorEntity):
         description = self.entity_description
         if description.value_fn is not None:
             return description.value_fn(data)
-        return data.get(description.data_key)
+        return cast(float | str | None, data.get(description.data_key))

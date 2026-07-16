@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
+from .models import CompressorFlexibilityState
 
 PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling
 
@@ -60,7 +61,7 @@ class EebusCompressorFlexibilitySelect(EebusEntity, SelectEntity):
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.ski}_compressor_flexibility"
 
-    def _flex(self) -> dict[str, Any] | None:
+    def _flex(self) -> CompressorFlexibilityState | None:
         if self.coordinator.data is None:
             return None
         return self.coordinator.data.get("compressor_flexibility")
@@ -99,11 +100,11 @@ class EebusCompressorFlexibilitySelect(EebusEntity, SelectEntity):
         """Schedule/resume, pause, or abort the optional power consumption."""
         from . import proto_stubs
 
-        flex = self._flex() or {}
+        flex = self._flex()
         if option == OPTION_ON:
             action = (
                 proto_stubs.OHPCFAction.OHPCF_ACTION_RESUME
-                if flex.get("state") == _OHPCF_PAUSED_STATE
+                if flex is not None and flex.get("state") == _OHPCF_PAUSED_STATE
                 else proto_stubs.OHPCFAction.OHPCF_ACTION_SCHEDULE
             )
         elif option == OPTION_PAUSED:
