@@ -137,7 +137,7 @@ func TestRegisterRemoteSKINormalizesColonSeparatedSKI(t *testing.T) {
 		t.Fatalf("RegisterRemoteSKI(colon-separated): %v", err)
 	}
 
-	want := testValidSKI
+	want := "682F708CEBA5DF9ADCB9E6787EA911D9FC3AC490"
 	if len(trust.registerCalls) != 1 || trust.registerCalls[0] != want {
 		t.Fatalf("RegisterSKI calls = %v, want [%s]", trust.registerCalls, want)
 	}
@@ -174,7 +174,7 @@ func TestPairingCommandsBypassCongestedEventBus(t *testing.T) {
 		t.Fatalf("UnregisterRemoteSKI: %v", err)
 	}
 
-	want := testValidSKI
+	want := "682F708CEBA5DF9ADCB9E6787EA911D9FC3AC490"
 	if len(trust.registerCalls) != 1 || trust.registerCalls[0] != want {
 		t.Errorf("RegisterSKI calls = %v, want [%s]", trust.registerCalls, want)
 	}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
@@ -30,11 +31,57 @@ from .const import (
     SECURITY_MODE_LOOPBACK,
 )
 from .coordinator import EebusCoordinator
+from .ski import normalize_ski
+
+_LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     EebusConfigEntry = ConfigEntry[EebusCoordinator]
 else:
     EebusConfigEntry = ConfigEntry
+
+
+async def async_migrate_entry(
+    hass: HomeAssistant, config_entry: ConfigEntry
+) -> bool:
+    """Migrate an EEBUS config entry to canonical SKI storage."""
+    if config_entry.version >= 2:
+        return True
+
+    canonical_ski = normalize_ski(config_entry.data[CONF_DEVICE_SKI])
+    for other_entry in hass.config_entries.async_entries(DOMAIN):
+        if other_entry.entry_id == config_entry.entry_id:
+            continue
+        other_ski = other_entry.unique_id
+        if other_ski is None or normalize_ski(other_ski) != canonical_ski:
+            continue
+        if other_entry.entry_id < config_entry.entry_id:
+            _LOGGER.warning(
+                "Cannot migrate duplicate EEBUS config entry %s (%s): canonical "
+                "SKI %s conflicts with older entry %s (%s)",
+                config_entry.entry_id,
+                config_entry.title,
+                canonical_ski,
+                other_entry.entry_id,
+                other_entry.title,
+            )
+            return False
+
+    if (
+        config_entry.data[CONF_DEVICE_SKI] == canonical_ski
+        and config_entry.unique_id == canonical_ski
+    ):
+        hass.config_entries.async_update_entry(config_entry, version=2)
+        return True
+
+    data = {**config_entry.data, CONF_DEVICE_SKI: canonical_ski}
+    hass.config_entries.async_update_entry(
+        config_entry,
+        data=data,
+        unique_id=canonical_ski,
+        version=2,
+    )
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> bool:

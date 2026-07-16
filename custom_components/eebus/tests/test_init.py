@@ -1,8 +1,11 @@
 """Tests for EEBUS integration setup and unload."""
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
+
+from custom_components.eebus.const import CONF_DEVICE_SKI
 
 
 @pytest.mark.asyncio
@@ -76,3 +79,77 @@ async def test_unload_entry():
 
     assert result is True
     coordinator.async_shutdown.assert_awaited_once()
+
+
+async def test_migrate_entry_only_bumps_version_when_ski_is_canonical():
+    """A canonical v1 entry needs only a version update."""
+    from custom_components.eebus import async_migrate_entry
+
+    canonical = "682F708CEBA5DF9ADCB9E6787EA911D9FC3AC490"
+    hass = MagicMock()
+    entry = MagicMock(
+        version=1,
+        data={CONF_DEVICE_SKI: canonical},
+        unique_id=canonical,
+        entry_id="01",
+        title="Older entry",
+    )
+    hass.config_entries.async_entries.return_value = [entry]
+
+    assert await async_migrate_entry(hass, entry)
+    hass.config_entries.async_update_entry.assert_called_once_with(entry, version=2)
+
+
+async def test_migrate_entry_canonicalizes_data_and_unique_id():
+    """A formatted mixed-case v1 SKI migrates to canonical storage."""
+    from custom_components.eebus import async_migrate_entry
+
+    raw = "68:2f:70:8C:EB:A5:DF:9A:DC:B9:E6:78:7E:A9:11:D9:FC:3A:C4:90"
+    canonical = "682F708CEBA5DF9ADCB9E6787EA911D9FC3AC490"
+    hass = MagicMock()
+    entry = MagicMock(
+        version=1,
+        data={CONF_DEVICE_SKI: raw, "grpc_host": "bridge"},
+        unique_id=raw,
+        entry_id="01",
+        title="Heat pump",
+    )
+    hass.config_entries.async_entries.return_value = [entry]
+
+    assert await async_migrate_entry(hass, entry)
+    hass.config_entries.async_update_entry.assert_called_once_with(
+        entry,
+        data={CONF_DEVICE_SKI: canonical, "grpc_host": "bridge"},
+        unique_id=canonical,
+        version=2,
+    )
+
+
+async def test_migrate_entry_rejects_newer_duplicate(caplog: pytest.LogCaptureFixture):
+    """The newer of two entries for one canonical SKI fails with a warning."""
+    from custom_components.eebus import async_migrate_entry
+
+    canonical = "682F708CEBA5DF9ADCB9E6787EA911D9FC3AC490"
+    older = MagicMock(
+        version=2,
+        data={CONF_DEVICE_SKI: canonical},
+        unique_id=canonical,
+        entry_id="01",
+        title="Older entry",
+    )
+    newer = MagicMock(
+        version=1,
+        data={CONF_DEVICE_SKI: canonical.lower()},
+        unique_id=canonical.lower(),
+        entry_id="02",
+        title="Newer entry",
+    )
+    hass = MagicMock()
+    hass.config_entries.async_entries.return_value = [older, newer]
+
+    with caplog.at_level(logging.WARNING, logger="custom_components.eebus"):
+        assert not await async_migrate_entry(hass, newer)
+
+    hass.config_entries.async_update_entry.assert_not_called()
+    assert "02 (Newer entry)" in caplog.text
+    assert "01 (Older entry)" in caplog.text

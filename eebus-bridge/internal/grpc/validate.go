@@ -2,25 +2,14 @@ package grpc
 
 import (
 	"math"
-	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-// normalizeSKIInput strips separators a user may have typed or pasted a SKI
-// with (colons, dashes, spaces) and lower-cases it, mirroring the HA config
-// flow's own _normalize_ski. Without this, a colon-separated or spaced SKI
-// that HA's config flow already accepts would be rejected here before
-// BridgeService.RegisterRemoteSKI gets a chance to canonicalize it.
-func normalizeSKIInput(ski string) string {
-	replacer := strings.NewReplacer(":", "", "-", "", " ", "")
-	return strings.ToLower(replacer.Replace(strings.TrimSpace(ski)))
-}
-
 // validSKI reports whether ski is a well-formed EEBUS SKI: the SHA-1
 // fingerprint of a device certificate, 40 hex characters. Callers must
-// normalize with normalizeSKIInput first. Accepting malformed input here
+// normalize with eebus.NormalizeSKI first. Accepting malformed input here
 // would forward it straight to eebus-go's SHIP trust registration, which
 // fails silently downstream instead of with a clear rejection at the RPC
 // boundary.

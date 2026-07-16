@@ -51,19 +51,12 @@ from .const import (
     SECURITY_MODE_TLS_TOKEN,
 )
 from .security import create_grpc_channel
+from .ski import is_valid_ski, normalize_ski
 
 _LOGGER = logging.getLogger(__name__)
 
 CONFIG_RPC_TIMEOUT = 8
 
-
-def _normalize_ski(ski: str) -> str:
-    """Normalize a SKI for comparison (strip colons/whitespace, lowercase).
-
-    Mirrors the bridge's SKI normalization so a hand-typed value with colons or
-    different casing still matches the bridge's reported local SKI.
-    """
-    return ski.replace(":", "").replace(" ", "").strip().lower()
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
@@ -116,7 +109,7 @@ def _reauth_schema(tls_ca_certificate: str) -> vol.Schema:
 class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for EEBUS."""
 
-    VERSION = 1
+    VERSION = 2
     DOMAIN = DOMAIN
 
     @staticmethod
@@ -305,13 +298,15 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            ski = user_input[CONF_DEVICE_SKI].strip()
+            ski = normalize_ski(user_input[CONF_DEVICE_SKI])
 
             # The picker hides the bridge's own SKI, but custom_value=True lets a
             # user paste it by hand (e.g. the "Local SKI" line from the bridge
             # log). That SKI never resolves to a remote entity, so reject it
             # rather than create a permanently broken entry.
-            if _normalize_ski(ski) == _normalize_ski(self._local_ski):
+            if not is_valid_ski(ski):
+                errors[CONF_DEVICE_SKI] = "invalid_ski"
+            elif ski == normalize_ski(self._local_ski):
                 errors[CONF_DEVICE_SKI] = "ski_is_local"
             else:
                 await self.async_set_unique_id(ski)
