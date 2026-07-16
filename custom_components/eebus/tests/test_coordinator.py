@@ -19,9 +19,9 @@ from custom_components.eebus.snapshot import (
     SnapshotSupport,
     _async_fetch_device_info,
     _async_read_device_diagnostics,
-    _next_capability_state,
     _poll_read,
 )
+from custom_components.eebus.state import DomainState, next_capability_state
 from custom_components.eebus.generated.eebus.v1 import (
     device_service_pb2,
     hvac_service_pb2,
@@ -125,13 +125,7 @@ def _poll_coordinator():
     coordinator._channel_manager.invalidate = AsyncMock()
     coordinator._ensure_channel = AsyncMock(return_value=MagicMock())
     coordinator._was_unavailable = False
-    coordinator._lpc_supported = CapabilityState.UNKNOWN
-    coordinator._failsafe_supported = CapabilityState.UNKNOWN
-    coordinator._heartbeat_supported = CapabilityState.UNKNOWN
-    coordinator._ohpcf_supported = CapabilityState.UNKNOWN
-    coordinator._dhw_supported = CapabilityState.UNKNOWN
-    coordinator._dhw_sysfn_supported = CapabilityState.UNKNOWN
-    coordinator._room_heating_supported = CapabilityState.UNKNOWN
+    coordinator._domain_state = DomainState()
     coordinator._ski_registered = True
     coordinator._not_found_streak = 0
     return coordinator
@@ -186,13 +180,7 @@ async def test_unauthenticated_poll_starts_reauthentication():
     coordinator.ski = "test-ski"
     coordinator._not_found_streak = 0
     coordinator._was_unavailable = False
-    coordinator._lpc_supported = CapabilityState.UNKNOWN
-    coordinator._failsafe_supported = CapabilityState.UNKNOWN
-    coordinator._heartbeat_supported = CapabilityState.UNKNOWN
-    coordinator._ohpcf_supported = CapabilityState.UNKNOWN
-    coordinator._dhw_supported = CapabilityState.UNKNOWN
-    coordinator._dhw_sysfn_supported = CapabilityState.UNKNOWN
-    coordinator._room_heating_supported = CapabilityState.UNKNOWN
+    coordinator._domain_state = DomainState()
     coordinator._ski_registered = False
     coordinator._ensure_channel = AsyncMock(return_value=MagicMock())
     stub = MagicMock()
@@ -266,24 +254,26 @@ async def test_poll_applies_support_flags_only_after_all_reads_complete():
         await asyncio.sleep(0)
 
         assert poll_task.done() is False
-        assert coordinator._lpc_supported == CapabilityState.UNKNOWN
-        assert coordinator._failsafe_supported == CapabilityState.UNKNOWN
-        assert coordinator._heartbeat_supported == CapabilityState.UNKNOWN
-        assert coordinator._ohpcf_supported == CapabilityState.UNKNOWN
-        assert coordinator._dhw_supported == CapabilityState.UNKNOWN
-        assert coordinator._dhw_sysfn_supported == CapabilityState.UNKNOWN
-        assert coordinator._room_heating_supported == CapabilityState.UNKNOWN
+        capabilities = coordinator._domain_state.capabilities
+        assert capabilities.lpc == CapabilityState.UNKNOWN
+        assert capabilities.failsafe == CapabilityState.UNKNOWN
+        assert capabilities.heartbeat == CapabilityState.UNKNOWN
+        assert capabilities.ohpcf == CapabilityState.UNKNOWN
+        assert capabilities.dhw == CapabilityState.UNKNOWN
+        assert capabilities.dhw_system_function == CapabilityState.UNKNOWN
+        assert capabilities.room_heating == CapabilityState.UNKNOWN
 
         finish_room_read.set()
         await poll_task
 
-    assert coordinator._lpc_supported == CapabilityState.AVAILABLE
-    assert coordinator._failsafe_supported == CapabilityState.AVAILABLE
-    assert coordinator._heartbeat_supported == CapabilityState.AVAILABLE
-    assert coordinator._ohpcf_supported == CapabilityState.UNSUPPORTED
-    assert coordinator._dhw_supported == CapabilityState.UNSUPPORTED
-    assert coordinator._dhw_sysfn_supported == CapabilityState.UNSUPPORTED
-    assert coordinator._room_heating_supported == CapabilityState.AVAILABLE
+    capabilities = coordinator._domain_state.capabilities
+    assert capabilities.lpc == CapabilityState.AVAILABLE
+    assert capabilities.failsafe == CapabilityState.AVAILABLE
+    assert capabilities.heartbeat == CapabilityState.AVAILABLE
+    assert capabilities.ohpcf == CapabilityState.UNSUPPORTED
+    assert capabilities.dhw == CapabilityState.UNSUPPORTED
+    assert capabilities.dhw_system_function == CapabilityState.UNSUPPORTED
+    assert capabilities.room_heating == CapabilityState.AVAILABLE
 
 
 def test_capability_state_defaults_to_unknown() -> None:
@@ -306,13 +296,13 @@ def test_capability_state_defaults_to_unknown() -> None:
 )
 def test_capability_state_transitions_for_rpc_outcomes(status, expected) -> None:
     """Success and classified gRPC failures have one shared transition rule."""
-    assert _next_capability_state(CapabilityState.UNKNOWN, status) == expected
+    assert next_capability_state(CapabilityState.UNKNOWN, status) == expected
 
 
 def test_unrelated_capability_error_keeps_current_state() -> None:
     """Unexpected failures do not invent a new capability classification."""
     assert (
-        _next_capability_state(CapabilityState.AVAILABLE, grpc.StatusCode.INTERNAL)
+        next_capability_state(CapabilityState.AVAILABLE, grpc.StatusCode.INTERNAL)
         == CapabilityState.AVAILABLE
     )
 
@@ -377,6 +367,7 @@ def _make_coordinator(ski="test-ski", data=None):
     coordinator = EebusCoordinator.__new__(EebusCoordinator)
     coordinator.ski = ski
     coordinator.data = data
+    coordinator._domain_state = DomainState()
     pushed = {}
     coordinator.async_set_updated_data = pushed.update
     return coordinator, pushed

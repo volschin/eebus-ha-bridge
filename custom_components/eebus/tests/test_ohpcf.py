@@ -19,12 +19,13 @@ from custom_components.eebus.select import (
 )
 from custom_components.eebus.sensor import EebusMeasurementSensor, STATE_SENSORS
 from custom_components.eebus.snapshot import _async_read_compressor_flexibility
+from custom_components.eebus.state import DomainState
 
 
 def _coordinator(ski="test-ski"):
     c = EebusCoordinator.__new__(EebusCoordinator)
     c.ski = ski
-    c._ohpcf_supported = CapabilityState.UNKNOWN
+    c._domain_state = DomainState()
     return c
 
 
@@ -47,13 +48,13 @@ def test_read_compressor_flexibility_maps_fields():
                 None,
                 proto_stubs.DeviceRequest(ski=c.ski),
                 c.ski,
-                c._ohpcf_supported,
+                c._domain_state.capabilities.ohpcf,
             )
         )
     out = result.value
 
     assert result.supported == CapabilityState.AVAILABLE
-    assert c._ohpcf_supported == CapabilityState.UNKNOWN
+    assert c._domain_state.capabilities.ohpcf == CapabilityState.UNKNOWN
     assert out is not None
     assert out["available"] is True
     assert out["state"] == "COMPRESSOR_STATE_RUNNING"
@@ -75,13 +76,13 @@ def test_read_compressor_flexibility_unavailable_is_temporary():
                 None,
                 proto_stubs.DeviceRequest(ski=c.ski),
                 c.ski,
-                c._ohpcf_supported,
+                c._domain_state.capabilities.ohpcf,
             )
         )
 
     assert result.value is None
     assert result.supported == CapabilityState.TEMPORARILY_UNAVAILABLE
-    assert c._ohpcf_supported == CapabilityState.UNKNOWN
+    assert c._domain_state.capabilities.ohpcf == CapabilityState.UNKNOWN
 
 
 async def test_select_is_created_before_ohpcf_binding_and_becomes_available() -> None:
@@ -217,7 +218,7 @@ def test_control_compressor_wraps_rpc_error_as_validation_error():
     # ServiceValidationError is a HomeAssistantError subclass; message carries the detail.
     assert isinstance(exc.value, HomeAssistantError)
     assert "data not available" in str(exc.value)
-    assert c._ohpcf_supported == CapabilityState.UNKNOWN
+    assert c._domain_state.capabilities.ohpcf == CapabilityState.UNKNOWN
 
 
 def test_control_compressor_success_marks_available():
@@ -230,7 +231,7 @@ def test_control_compressor_success_marks_available():
             c.async_control_compressor(proto_stubs.OHPCFAction.OHPCF_ACTION_SCHEDULE)
         )
 
-    assert c._ohpcf_supported == CapabilityState.AVAILABLE
+    assert c._domain_state.capabilities.ohpcf == CapabilityState.AVAILABLE
 
 
 def test_control_compressor_unavailable_is_temporary():
@@ -249,7 +250,10 @@ def test_control_compressor_unavailable_is_temporary():
                 )
             )
 
-    assert c._ohpcf_supported == CapabilityState.TEMPORARILY_UNAVAILABLE
+    assert (
+        c._domain_state.capabilities.ohpcf
+        == CapabilityState.TEMPORARILY_UNAVAILABLE
+    )
 
 
 def test_control_compressor_unimplemented_is_swallowed():
@@ -264,4 +268,4 @@ def test_control_compressor_unimplemented_is_swallowed():
         asyncio.run(
             c.async_control_compressor(proto_stubs.OHPCFAction.OHPCF_ACTION_PAUSE)
         )
-    assert c._ohpcf_supported == CapabilityState.UNSUPPORTED
+    assert c._domain_state.capabilities.ohpcf == CapabilityState.UNSUPPORTED
