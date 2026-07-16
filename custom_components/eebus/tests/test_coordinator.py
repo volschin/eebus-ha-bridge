@@ -52,21 +52,22 @@ def test_coordinator_init():
     coordinator.host = "192.168.1.100"
     coordinator.port = 50051
     coordinator.ski = "test-ski"
-    coordinator._channel = None
+    coordinator._channel_manager = MagicMock()
     coordinator._stream_tasks = []
     coordinator._was_unavailable = False
 
     assert coordinator.host == "192.168.1.100"
     assert coordinator.port == 50051
     assert coordinator.ski == "test-ski"
-    assert coordinator._channel is None
+    assert coordinator._channel_manager is not None
     assert coordinator._was_unavailable is False
 
 
 async def test_unauthenticated_poll_starts_reauthentication():
     """An invalid bridge token is surfaced as a config-entry auth failure."""
     coordinator = EebusCoordinator.__new__(EebusCoordinator)
-    coordinator._channel = None
+    coordinator._channel_manager = MagicMock()
+    coordinator._channel_manager.invalidate = AsyncMock()
     coordinator._not_found_streak = 0
     coordinator._was_unavailable = False
     coordinator._ensure_channel = AsyncMock(return_value=MagicMock())
@@ -83,6 +84,19 @@ async def test_unauthenticated_poll_starts_reauthentication():
     with patch.object(proto_stubs, "device_service_stub", return_value=stub):
         with pytest.raises(ConfigEntryAuthFailed):
             await coordinator._async_update_data()
+
+    coordinator._channel_manager.invalidate.assert_awaited_once_with()
+
+
+async def test_ensure_channel_delegates_to_channel_manager():
+    """The coordinator keeps its patchable channel-acquisition seam."""
+    coordinator = EebusCoordinator.__new__(EebusCoordinator)
+    channel = MagicMock()
+    coordinator._channel_manager = MagicMock()
+    coordinator._channel_manager.ensure_channel = AsyncMock(return_value=channel)
+
+    assert await coordinator._ensure_channel() is channel
+    coordinator._channel_manager.ensure_channel.assert_awaited_once_with()
 
 
 def _make_coordinator(ski="test-ski", data=None):

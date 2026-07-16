@@ -1,7 +1,7 @@
 """Tests for the coordinator's MGCP grid-data push path."""
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.eebus import proto_stubs
 from custom_components.eebus.coordinator import (
@@ -26,7 +26,7 @@ def _make_grid_coordinator(states, power=None, feed_in=None, consumed=None):
     hass = MagicMock()
     hass.states.get = lambda entity_id: states.get(entity_id)
     coordinator.hass = hass
-    coordinator._channel = object()  # _ensure_channel returns it without dialing
+    coordinator._ensure_channel = AsyncMock(return_value=object())
     return coordinator
 
 
@@ -61,7 +61,7 @@ def test_read_sensor_value_unavailable_returns_none():
 async def test_push_skips_without_power_entity():
     """No grid power mapped: push is a no-op and never builds a stub."""
     coordinator = _make_grid_coordinator({}, power=None)
-    coordinator._channel = None  # would fail if a channel were dialed
+    coordinator._ensure_channel = AsyncMock(side_effect=AssertionError("unexpected dial"))
     await coordinator.async_push_grid_data()  # must not raise
 
 

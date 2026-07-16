@@ -32,7 +32,14 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import SECURITY_MODE_LOOPBACK
-from .security import create_grpc_channel
+from .grpc_client import (
+    RPC_TIMEOUT,
+    WRITE_VALIDATION_CODES,
+    GrpcChannelManager,
+    is_not_found as _is_not_found,
+    is_unimplemented as _is_unimplemented,
+    rpc_error_text as _rpc_error_text,
+)
 
 if TYPE_CHECKING:
     from . import proto_stubs
@@ -57,16 +64,8 @@ SOC_UNIT_TO_PCT: dict[str, float] = {PERCENTAGE: 1.0}
 # Event streams deliver push updates; polling only reconciles state the
 # streams cannot carry (scoped energy, heartbeat, support flags).
 POLL_INTERVAL = timedelta(minutes=5)
-RPC_TIMEOUT = 10
 RE_REGISTER_NOT_FOUND_STREAK = 4
 STREAM_RETRY_SECONDS = 30
-# Write-RPC status codes surfaced to the user as a validation error instead of
-# a raw AioRpcError traceback (device-side rejections).
-WRITE_VALIDATION_CODES = (
-    grpc.StatusCode.INVALID_ARGUMENT,
-    grpc.StatusCode.FAILED_PRECONDITION,
-    grpc.StatusCode.NOT_FOUND,
-)
 
 
 def _normalize_ski(ski: str) -> str:
@@ -98,21 +97,6 @@ FLAT_MEASUREMENT_TYPE_TO_KEY: dict[str, str] = {
     "compressor_power": "compressor_power_w",
 }
 FLAT_MEASUREMENT_KEYS: tuple[str, ...] = tuple(FLAT_MEASUREMENT_TYPE_TO_KEY.values())
-
-
-def _is_unimplemented(err: grpc.aio.AioRpcError) -> bool:
-    """Return True when gRPC reports method/use case is not implemented."""
-    return err.code() == grpc.StatusCode.UNIMPLEMENTED
-
-
-def _is_not_found(err: grpc.aio.AioRpcError) -> bool:
-    """Return True when gRPC reports missing entity/data for requested SKI."""
-    return err.code() == grpc.StatusCode.NOT_FOUND
-
-
-def _rpc_error_text(err: grpc.aio.AioRpcError) -> str:
-    """Build compact debug output for gRPC errors."""
-    return f"code={err.code().name} details={err.details()}"
 
 
 def _dhw_system_function_to_dict(state: Any) -> dict[str, Any]:
@@ -332,7 +316,9 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.battery_charged_energy_entity = battery_charged_energy_entity
         self.battery_discharged_energy_entity = battery_discharged_energy_entity
         self.battery_soc_entity = battery_soc_entity
-        self._channel: grpc.aio.Channel | None = None
+        self._channel_manager = GrpcChannelManager(
+            host, port, security_mode, tls_ca_certificate, auth_token
+        )
         self._stream_tasks: list[asyncio.Task[None]] = []
         self._provider_pushers: list[_ProviderPusher] = []
         self._provider_push_failing: dict[str, bool] = {}
@@ -349,15 +335,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _ensure_channel(self) -> grpc.aio.Channel:
         """Create or return existing gRPC channel."""
-        if self._channel is None:
-            self._channel = create_grpc_channel(
-                self.host,
-                self.port,
-                self.security_mode,
-                self.tls_ca_certificate,
-                self.auth_token,
-            )
-        return self._channel
+        return await self._channel_manager.ensure_channel()
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data via gRPC polling."""
@@ -530,9 +508,7 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             return data
         except grpc.aio.AioRpcError as err:
-            if self._channel is not None:
-                await self._channel.close(None)
-                self._channel = None
+            await self._channel_manager.invalidate()
             self._not_found_streak = 0
 
             if err.code() == grpc.StatusCode.UNAUTHENTICATED:
@@ -1558,6 +1534,4 @@ class EebusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for task in self._stream_tasks:
             task.cancel()
         self._stream_tasks.clear()
-        if self._channel is not None:
-            await self._channel.close(None)
-            self._channel = None
+        await self._channel_manager.close()
