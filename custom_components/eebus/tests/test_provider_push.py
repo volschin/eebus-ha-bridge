@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, MagicMock
 import grpc
 from grpc.aio import AioRpcError, Metadata
 
-from custom_components.eebus import coordinator as coordinator_module
+from custom_components.eebus import providers as providers_module
 from custom_components.eebus import proto_stubs
-from custom_components.eebus.coordinator import EebusCoordinator, _ProviderPusher
+from custom_components.eebus.providers import ProviderManager, _ProviderPusher
 
 
 def _fake_hass():
@@ -33,7 +33,7 @@ async def test_provider_pusher_coalesces_burst_and_publishes_latest(monkeypatch)
         return unsub
 
     monkeypatch.setattr(
-        coordinator_module, "async_track_state_change_event", _track_state_changes
+        providers_module, "async_track_state_change_event", _track_state_changes
     )
 
     current_value = 0
@@ -86,7 +86,7 @@ async def test_provider_pusher_stop_cancels_in_flight_push(monkeypatch):
     """Stopping during a blocked RPC awaits cancellation and leaks no task."""
     unsub = MagicMock()
     monkeypatch.setattr(
-        coordinator_module,
+        providers_module,
         "async_track_state_change_event",
         lambda *_args: unsub,
     )
@@ -130,25 +130,25 @@ async def test_provider_push_failure_warning_is_rate_limited(monkeypatch, caplog
             if outcome is not None:
                 raise outcome
 
-    coordinator = EebusCoordinator.__new__(EebusCoordinator)
-    coordinator._ensure_channel = AsyncMock(return_value=object())
-    coordinator._provider_push_failing = {}
+    manager = ProviderManager(
+        _fake_hass(), "test-ski", AsyncMock(return_value=object())
+    )
     monkeypatch.setattr(
         proto_stubs,
         "test_provider_stub",
         lambda _channel: _FakeStub(),
         raising=False,
     )
-    caplog.set_level(logging.DEBUG, logger=coordinator_module.__name__)
+    caplog.set_level(logging.DEBUG, logger=providers_module.__name__)
 
     for _ in range(3):
-        await coordinator._async_publish_provider(
+        await manager._async_publish_provider(
             "test", "test_provider_stub", "Publish", object()
         )
-    await coordinator._async_publish_provider(
+    await manager._async_publish_provider(
         "test", "test_provider_stub", "Publish", object()
     )
-    await coordinator._async_publish_provider(
+    await manager._async_publish_provider(
         "test", "test_provider_stub", "Publish", object()
     )
 
