@@ -12,6 +12,7 @@ from homeassistant.const import ATTR_TEMPERATURE
 from custom_components.eebus import proto_stubs
 from custom_components.eebus.coordinator import EebusCoordinator
 from custom_components.eebus.generated.eebus.v1 import dhw_service_pb2
+from custom_components.eebus.models import CapabilityState
 from custom_components.eebus.snapshot import (
     _async_read_dhw_setpoint,
     _async_read_dhw_system_function,
@@ -24,8 +25,8 @@ def _coordinator(data=None):
     coordinator = EebusCoordinator.__new__(EebusCoordinator)
     coordinator.ski = "test-ski"
     coordinator.data = data
-    coordinator._dhw_supported = None
-    coordinator._dhw_sysfn_supported = None
+    coordinator._dhw_supported = CapabilityState.UNKNOWN
+    coordinator._dhw_sysfn_supported = CapabilityState.UNKNOWN
     return coordinator
 
 
@@ -58,12 +59,12 @@ def test_read_dhw_setpoint_maps_value_and_constraints():
         "step_celsius": 1,
         "writable": True,
     }
-    assert result.supported is True
-    assert coordinator._dhw_supported is None
+    assert result.supported == CapabilityState.AVAILABLE
+    assert coordinator._dhw_supported == CapabilityState.UNKNOWN
 
 
-def test_read_dhw_setpoint_not_found_marks_unsupported():
-    """A device without configurationOfDhwTemperature stays unavailable."""
+def test_read_dhw_setpoint_not_found_marks_temporarily_unavailable():
+    """A missing DHW binding remains eligible to become available later."""
     error = AioRpcError(grpc.StatusCode.NOT_FOUND, Metadata(), Metadata(), details="no DHW")
     stub = SimpleNamespace(GetDHWSetpoint=AsyncMock(side_effect=error))
     coordinator = _coordinator()
@@ -79,8 +80,8 @@ def test_read_dhw_setpoint_not_found_marks_unsupported():
         )
 
     assert result.value is None
-    assert result.supported is False
-    assert coordinator._dhw_supported is None
+    assert result.supported == CapabilityState.TEMPORARILY_UNAVAILABLE
+    assert coordinator._dhw_supported == CapabilityState.UNKNOWN
 
 
 def test_dhw_water_heater_combines_temperatures_modes_and_writes():
@@ -90,7 +91,7 @@ def test_dhw_water_heater_combines_temperatures_modes_and_writes():
     coordinator.data = {
         "connected": True,
         "dhw_temperature_c": 44.5,
-        "dhw_supported": True,
+        "dhw_supported": CapabilityState.AVAILABLE,
         "dhw_setpoint": {
             "value_celsius": 46,
             "min_celsius": 35,
@@ -98,7 +99,7 @@ def test_dhw_water_heater_combines_temperatures_modes_and_writes():
             "step_celsius": 1,
             "writable": True,
         },
-        "dhw_sysfn_supported": True,
+        "dhw_sysfn_supported": CapabilityState.AVAILABLE,
         "dhw_system_function": {
             "boost_status": "inactive",
             "boost_writable": True,
@@ -153,9 +154,9 @@ def test_dhw_water_heater_ignores_stale_unsupported_controls():
     coordinator.data = {
         "connected": True,
         "dhw_temperature_c": 44.5,
-        "dhw_supported": False,
+        "dhw_supported": CapabilityState.UNSUPPORTED,
         "dhw_setpoint": {"value_celsius": 46, "writable": True},
-        "dhw_sysfn_supported": False,
+        "dhw_sysfn_supported": CapabilityState.UNSUPPORTED,
         "dhw_system_function": {
             "operation_mode": "auto",
             "available_modes": ["auto", "off"],
@@ -192,7 +193,7 @@ def test_dhw_event_pushes_setpoint():
     coordinator._handle_dhw_event(event)
 
     assert pushed["dhw_setpoint"]["value_celsius"] == 47
-    assert pushed["dhw_supported"] is True
+    assert pushed["dhw_supported"] == CapabilityState.AVAILABLE
 
 
 def test_read_dhw_system_function_maps_state():
@@ -224,12 +225,12 @@ def test_read_dhw_system_function_maps_state():
         "available_modes": ["auto", "on", "off"],
         "mode_writable": True,
     }
-    assert result.supported is True
-    assert coordinator._dhw_sysfn_supported is None
+    assert result.supported == CapabilityState.AVAILABLE
+    assert coordinator._dhw_sysfn_supported == CapabilityState.UNKNOWN
 
 
-def test_read_dhw_system_function_not_found_marks_unsupported():
-    """A device without configurationOfDhwSystemFunction stays unavailable."""
+def test_read_dhw_system_function_not_found_marks_temporarily_unavailable():
+    """A missing DHW system-function binding may become available later."""
     error = AioRpcError(grpc.StatusCode.NOT_FOUND, Metadata(), Metadata(), details="no sysfn")
     stub = SimpleNamespace(GetDHWSystemFunction=AsyncMock(side_effect=error))
     coordinator = _coordinator()
@@ -245,8 +246,8 @@ def test_read_dhw_system_function_not_found_marks_unsupported():
         )
 
     assert result.value is None
-    assert result.supported is False
-    assert coordinator._dhw_sysfn_supported is None
+    assert result.supported == CapabilityState.TEMPORARILY_UNAVAILABLE
+    assert coordinator._dhw_sysfn_supported == CapabilityState.UNKNOWN
 
 
 def test_dhw_system_function_writes_map_validation_errors():
@@ -288,7 +289,7 @@ def test_dhw_system_function_event_pushes_state():
 
     assert pushed["dhw_system_function"]["boost_status"] == "active"
     assert pushed["dhw_system_function"]["operation_mode"] == "on"
-    assert pushed["dhw_sysfn_supported"] is True
+    assert pushed["dhw_sysfn_supported"] == CapabilityState.AVAILABLE
 
 
 def test_dhw_boost_switch():
@@ -297,7 +298,7 @@ def test_dhw_boost_switch():
     coordinator.ski = "test-ski"
     coordinator.data = {
         "connected": True,
-        "dhw_sysfn_supported": True,
+        "dhw_sysfn_supported": CapabilityState.AVAILABLE,
         "dhw_system_function": {
             "boost_status": "running",
             "boost_writable": True,

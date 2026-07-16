@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import TYPE_CHECKING, TypedDict, cast
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from . import proto_stubs
+
+
+class CapabilityState(StrEnum):
+    """Availability state for an EEBUS use-case capability."""
+
+    UNKNOWN = "unknown"
+    AVAILABLE = "available"
+    TEMPORARILY_UNAVAILABLE = "temporarily_unavailable"
+    UNSUPPORTED = "unsupported"
 
 
 class SetpointState(TypedDict):
@@ -113,9 +123,9 @@ class CoordinatorSnapshot(TypedDict):
     consumption_limit: ConsumptionLimitState | None
     failsafe_limit: FailsafeState | None
     heartbeat_status: HeartbeatState | None
-    heartbeat_supported: bool | None
-    lpc_supported: bool | None
-    failsafe_supported: bool | None
+    heartbeat_supported: CapabilityState
+    lpc_supported: CapabilityState
+    failsafe_supported: CapabilityState
     device_info: DeviceInfo | None
     compressor_flexibility: CompressorFlexibilityState | None
     dhw_setpoint: SetpointState | None
@@ -123,10 +133,10 @@ class CoordinatorSnapshot(TypedDict):
     room_heating_setpoint: SetpointState | None
     room_heating_system_function: SystemFunctionState | None
     device_operating_state: str | None
-    ohpcf_supported: bool | None
-    dhw_supported: bool | None
-    dhw_sysfn_supported: bool | None
-    room_heating_supported: bool | None
+    ohpcf_supported: CapabilityState
+    dhw_supported: CapabilityState
+    dhw_sysfn_supported: CapabilityState
+    room_heating_supported: CapabilityState
 
 
 # Maps a GetMeasurements entry type (as emitted by the Go bridge) to the

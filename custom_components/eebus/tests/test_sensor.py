@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 from homeassistant.const import EntityCategory
 
+from custom_components.eebus.models import CapabilityState
 from custom_components.eebus.sensor import (
     EebusMeasurementDescription,
     EebusMeasurementSensor,
@@ -45,7 +46,7 @@ def test_failsafe_limit_sensor_value():
     coordinator.data = {
         "connected": True,
         "failsafe_limit": {"value_watts": 4200.0, "duration_minimum_seconds": 7200},
-        "failsafe_supported": True,
+        "failsafe_supported": CapabilityState.AVAILABLE,
     }
     coordinator.ski = "test-ski-123"
 
@@ -58,7 +59,10 @@ def test_failsafe_limit_sensor_value():
 def test_failsafe_limit_sensor_unavailable_when_unsupported():
     """Test failsafe limit sensor reports unavailable when device lacks support."""
     coordinator = MagicMock()
-    coordinator.data = {"failsafe_limit": None, "failsafe_supported": False}
+    coordinator.data = {
+        "failsafe_limit": None,
+        "failsafe_supported": CapabilityState.UNSUPPORTED,
+    }
     coordinator.ski = "test-ski-123"
 
     sensor = _state_sensor(coordinator, "failsafe_limit")
@@ -71,7 +75,7 @@ def test_failsafe_duration_sensor_value():
     coordinator = MagicMock()
     coordinator.data = {
         "failsafe_limit": {"value_watts": 4200.0, "duration_minimum_seconds": 7200},
-        "failsafe_supported": True,
+        "failsafe_supported": CapabilityState.AVAILABLE,
     }
     coordinator.ski = "test-ski-123"
 

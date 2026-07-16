@@ -31,11 +31,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up EEBUS select entities."""
     coordinator: EebusCoordinator = entry.runtime_data
-    entities: list[SelectEntity] = []
-    # OHPCF compressor-flexibility control is only offered when the bridge's OHPCF
-    # client is active and a compatible heat pump was found.
-    if coordinator.data and coordinator.data.get("ohpcf_supported"):
-        entities.append(EebusCompressorFlexibilitySelect(coordinator))
+    entities: list[SelectEntity] = [EebusCompressorFlexibilitySelect(coordinator)]
     async_add_entities(entities)
 
 

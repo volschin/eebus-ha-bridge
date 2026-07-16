@@ -10,6 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
+from .models import CapabilityState
 
 PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling
 
@@ -65,7 +66,7 @@ class EebusLPCLimitNumber(EebusEntity, NumberEntity):
             return False
         if self.coordinator.data is None:
             return False
-        return self.coordinator.data.get("lpc_supported") is not False
+        return self.coordinator.data.get("lpc_supported") != CapabilityState.UNSUPPORTED
 
     async def async_set_native_value(self, value: float) -> None:
         """Set new LPC limit via gRPC."""
@@ -112,7 +113,10 @@ class EebusFailsafeLimitNumber(EebusEntity, NumberEntity):
             return False
         if self.coordinator.data is None:
             return False
-        return self.coordinator.data.get("failsafe_supported") is not False
+        return (
+            self.coordinator.data.get("failsafe_supported")
+            != CapabilityState.UNSUPPORTED
+        )
 
     async def async_set_native_value(self, value: float) -> None:
         """Set new failsafe limit via gRPC."""

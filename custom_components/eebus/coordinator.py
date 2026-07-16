@@ -22,13 +22,14 @@ from .grpc_client import (
     is_unimplemented as _is_unimplemented,
 )
 from .models import (
+    CapabilityState,
     CoordinatorSnapshot,
     _dhw_system_function_to_dict,
     _setpoint_to_dict,
     _system_function_to_dict,
 )
 from .providers import ProviderManager
-from .snapshot import SnapshotSupport, async_build_snapshot
+from .snapshot import SnapshotSupport, _next_capability_state, async_build_snapshot
 from .ski import normalize_ski
 from .streams import ConsumeFn, StreamManager
 
@@ -158,13 +159,13 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             battery_soc_entity=battery_soc_entity,
         )
         self._was_unavailable: bool = False
-        self._heartbeat_supported: bool | None = None
-        self._lpc_supported: bool | None = None
-        self._failsafe_supported: bool | None = None
-        self._ohpcf_supported: bool | None = None
-        self._dhw_supported: bool | None = None
-        self._dhw_sysfn_supported: bool | None = None
-        self._room_heating_supported: bool | None = None
+        self._heartbeat_supported: CapabilityState = CapabilityState.UNKNOWN
+        self._lpc_supported: CapabilityState = CapabilityState.UNKNOWN
+        self._failsafe_supported: CapabilityState = CapabilityState.UNKNOWN
+        self._ohpcf_supported: CapabilityState = CapabilityState.UNKNOWN
+        self._dhw_supported: CapabilityState = CapabilityState.UNKNOWN
+        self._dhw_sysfn_supported: CapabilityState = CapabilityState.UNKNOWN
+        self._room_heating_supported: CapabilityState = CapabilityState.UNKNOWN
         self._ski_registered: bool = False
         self._not_found_streak: int = 0
 
@@ -230,18 +231,25 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
     ) -> None:
         """Run a write RPC with shared UNIMPLEMENTED / validation-error mapping.
 
-        On success the support flag is set; on UNIMPLEMENTED it is cleared and
-        the call returns quietly. With ``validation=True``, device-side
-        rejections (WRITE_VALIDATION_CODES) surface as ServiceValidationError.
+        On success the capability becomes available; classified failures use
+        the shared capability transition rule. UNIMPLEMENTED returns quietly.
+        With ``validation=True``, device-side rejections
+        (WRITE_VALIDATION_CODES) surface as ServiceValidationError.
         """
         try:
             await call(request, timeout=RPC_TIMEOUT)
             if support_attr is not None:
-                setattr(self, support_attr, True)
+                current = cast(CapabilityState, getattr(self, support_attr))
+                setattr(self, support_attr, _next_capability_state(current, None))
         except grpc.aio.AioRpcError as err:
+            if support_attr is not None:
+                current = cast(CapabilityState, getattr(self, support_attr))
+                setattr(
+                    self,
+                    support_attr,
+                    _next_capability_state(current, err.code()),
+                )
             if _is_unimplemented(err):
-                if support_attr is not None:
-                    setattr(self, support_attr, False)
                 _LOGGER.info(
                     "%s unsupported for SKI %s: %s", label, self.ski, err.details()
                 )
@@ -301,17 +309,13 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
         from . import proto_stubs
         stub = proto_stubs.ohpcf_service_stub(channel)
         try:
-            await stub.ControlCompressorFlexibility(
+            await self._async_write_rpc(
+                "OHPCF control",
+                stub.ControlCompressorFlexibility,
                 proto_stubs.ControlCompressorRequest(ski=self.ski, action=action),
-                timeout=RPC_TIMEOUT,
+                support_attr="_ohpcf_supported",
             )
         except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err):
-                self._ohpcf_supported = False
-                _LOGGER.info(
-                    "OHPCF control unsupported for SKI %s: %s", self.ski, err.details()
-                )
-                return
             # Surface device-side rejections (e.g. "data not available" when the
             # compressor advertises no writable offer — heating-side OHPCF not yet
             # commissioned) as a clean validation error (HTTP 400 + message) instead
@@ -589,11 +593,11 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             and event.HasField("setpoint")
         ):
             setpoint = event.setpoint
-            self._dhw_supported = True
+            self._dhw_supported = CapabilityState.AVAILABLE
             self._push_data(
                 {
                     "dhw_setpoint": _setpoint_to_dict(setpoint),
-                    "dhw_supported": True,
+                    "dhw_supported": CapabilityState.AVAILABLE,
                 }
             )
         elif event.event_type == proto_stubs.DHWEventType.DHW_EVENT_SUPPORT_UPDATED:
@@ -609,11 +613,11 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             == proto_stubs.DHWSystemFunctionEventType.DHW_SYSTEM_FUNCTION_EVENT_STATE_UPDATED
             and event.HasField("state")
         ):
-            self._dhw_sysfn_supported = True
+            self._dhw_sysfn_supported = CapabilityState.AVAILABLE
             self._push_data(
                 {
                     "dhw_system_function": _dhw_system_function_to_dict(event.state),
-                    "dhw_sysfn_supported": True,
+                    "dhw_sysfn_supported": CapabilityState.AVAILABLE,
                 }
             )
         elif (
@@ -634,8 +638,10 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
             self.hass.async_create_task(self.async_request_refresh())
             return
         state = event.state
-        updates: dict[str, Any] = {"room_heating_supported": True}
-        self._room_heating_supported = True
+        updates: dict[str, Any] = {
+            "room_heating_supported": CapabilityState.AVAILABLE
+        }
+        self._room_heating_supported = CapabilityState.AVAILABLE
         if state.HasField("current_temperature_celsius"):
             updates["room_temperature_c"] = state.current_temperature_celsius
         if state.HasField("setpoint"):

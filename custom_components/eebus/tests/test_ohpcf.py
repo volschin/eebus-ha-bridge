@@ -2,7 +2,7 @@
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import grpc
 import pytest
@@ -12,7 +12,11 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from custom_components.eebus import proto_stubs
 from custom_components.eebus.coordinator import EebusCoordinator
 from custom_components.eebus.generated.eebus.v1 import ohpcf_service_pb2 as ohpcf_pb2
-from custom_components.eebus.select import EebusCompressorFlexibilitySelect
+from custom_components.eebus.models import CapabilityState
+from custom_components.eebus.select import (
+    EebusCompressorFlexibilitySelect,
+    async_setup_entry,
+)
 from custom_components.eebus.sensor import EebusMeasurementSensor, STATE_SENSORS
 from custom_components.eebus.snapshot import _async_read_compressor_flexibility
 
@@ -20,7 +24,7 @@ from custom_components.eebus.snapshot import _async_read_compressor_flexibility
 def _coordinator(ski="test-ski"):
     c = EebusCoordinator.__new__(EebusCoordinator)
     c.ski = ski
-    c._ohpcf_supported = None
+    c._ohpcf_supported = CapabilityState.UNKNOWN
     return c
 
 
@@ -48,8 +52,8 @@ def test_read_compressor_flexibility_maps_fields():
         )
     out = result.value
 
-    assert result.supported is True
-    assert c._ohpcf_supported is None
+    assert result.supported == CapabilityState.AVAILABLE
+    assert c._ohpcf_supported == CapabilityState.UNKNOWN
     assert out is not None
     assert out["available"] is True
     assert out["state"] == "COMPRESSOR_STATE_RUNNING"
@@ -59,8 +63,8 @@ def test_read_compressor_flexibility_maps_fields():
     assert out["minimal_run_seconds"] == 600
 
 
-def test_read_compressor_flexibility_unavailable_marks_unsupported():
-    """UNAVAILABLE (bridge OHPCF client off) yields None and supported=False."""
+def test_read_compressor_flexibility_unavailable_is_temporary():
+    """An unavailable OHPCF client remains eligible to recover after binding."""
     c = _coordinator()
     err = AioRpcError(grpc.StatusCode.UNAVAILABLE, Metadata(), Metadata(), details="off")
     stub = SimpleNamespace(GetCompressorFlexibility=AsyncMock(side_effect=err))
@@ -76,8 +80,33 @@ def test_read_compressor_flexibility_unavailable_marks_unsupported():
         )
 
     assert result.value is None
-    assert result.supported is False
-    assert c._ohpcf_supported is None
+    assert result.supported == CapabilityState.TEMPORARILY_UNAVAILABLE
+    assert c._ohpcf_supported == CapabilityState.UNKNOWN
+
+
+async def test_select_is_created_before_ohpcf_binding_and_becomes_available() -> None:
+    """The OHPCF entity exists at setup and activates when offer data arrives."""
+    coordinator = MagicMock()
+    coordinator.ski = "test-ski"
+    coordinator.data = None
+    coordinator.last_update_success = True
+    entry = SimpleNamespace(runtime_data=coordinator)
+    async_add_entities = MagicMock()
+
+    await async_setup_entry(MagicMock(), entry, async_add_entities)
+
+    entities = async_add_entities.call_args.args[0]
+    assert len(entities) == 1
+    select = entities[0]
+    assert isinstance(select, EebusCompressorFlexibilitySelect)
+    assert select.available is False
+
+    coordinator.data = {
+        "connected": True,
+        "ohpcf_supported": CapabilityState.AVAILABLE,
+        "compressor_flexibility": {"state": "COMPRESSOR_STATE_AVAILABLE"},
+    }
+    assert select.available is True
 
 
 def _select_with(flex):
@@ -188,6 +217,39 @@ def test_control_compressor_wraps_rpc_error_as_validation_error():
     # ServiceValidationError is a HomeAssistantError subclass; message carries the detail.
     assert isinstance(exc.value, HomeAssistantError)
     assert "data not available" in str(exc.value)
+    assert c._ohpcf_supported == CapabilityState.UNKNOWN
+
+
+def test_control_compressor_success_marks_available():
+    """A successful OHPCF write confirms that the capability is available."""
+    c = _coordinator()
+    c._ensure_channel = AsyncMock(return_value=None)
+    stub = SimpleNamespace(ControlCompressorFlexibility=AsyncMock())
+    with patch.object(proto_stubs, "OHPCFServiceStub", lambda _channel: stub):
+        asyncio.run(
+            c.async_control_compressor(proto_stubs.OHPCFAction.OHPCF_ACTION_SCHEDULE)
+        )
+
+    assert c._ohpcf_supported == CapabilityState.AVAILABLE
+
+
+def test_control_compressor_unavailable_is_temporary():
+    """A transient OHPCF write failure uses the same state as transient reads."""
+    c = _coordinator()
+    c._ensure_channel = AsyncMock(return_value=None)
+    err = AioRpcError(
+        grpc.StatusCode.UNAVAILABLE, Metadata(), Metadata(), details="not ready"
+    )
+    stub = SimpleNamespace(ControlCompressorFlexibility=AsyncMock(side_effect=err))
+    with patch.object(proto_stubs, "OHPCFServiceStub", lambda _channel: stub):
+        with pytest.raises(ServiceValidationError):
+            asyncio.run(
+                c.async_control_compressor(
+                    proto_stubs.OHPCFAction.OHPCF_ACTION_SCHEDULE
+                )
+            )
+
+    assert c._ohpcf_supported == CapabilityState.TEMPORARILY_UNAVAILABLE
 
 
 def test_control_compressor_unimplemented_is_swallowed():
@@ -202,4 +264,4 @@ def test_control_compressor_unimplemented_is_swallowed():
         asyncio.run(
             c.async_control_compressor(proto_stubs.OHPCFAction.OHPCF_ACTION_PAUSE)
         )
-    assert c._ohpcf_supported is False
+    assert c._ohpcf_supported == CapabilityState.UNSUPPORTED
