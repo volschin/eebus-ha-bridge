@@ -27,6 +27,7 @@ from custom_components.eebus.generated.eebus.v1 import (
     hvac_service_pb2,
     lpc_service_pb2,
     monitoring_service_pb2,
+    ohpcf_service_pb2,
 )
 
 
@@ -319,7 +320,7 @@ async def test_ensure_channel_delegates_to_channel_manager():
 
 
 def test_start_streams_delegates_all_consumers_to_stream_manager():
-    """The coordinator supplies all six event consumers to StreamManager."""
+    """The coordinator supplies all seven event consumers to StreamManager."""
     coordinator = EebusCoordinator.__new__(EebusCoordinator)
     coordinator.ski = "test-ski"
     coordinator._stream_manager = MagicMock()
@@ -332,6 +333,7 @@ def test_start_streams_delegates_all_consumers_to_stream_manager():
         "device_events",
         "lpc_events",
         "measurements",
+        "ohpcf_events",
         "dhw_events",
         "dhw_sysfn_events",
         "room_heating_events",
@@ -548,6 +550,62 @@ def test_lpc_limit_event_without_payload_refreshes():
     )
     coordinator._handle_lpc_event(event)
     assert not pushed  # no zeroing push
+    coordinator.hass.async_create_task.assert_called_once()
+
+
+def test_ohpcf_state_event_pushes_compressor_flexibility():
+    """OHPCF state events update compressor flexibility without polling."""
+    coordinator, pushed = _make_coordinator(data={"compressor_flexibility": None})
+    coordinator.hass = MagicMock()
+    coordinator.async_request_refresh = MagicMock(return_value=None)
+    event = ohpcf_service_pb2.OHPCFEvent(
+        ski="test-ski",
+        event_type=ohpcf_service_pb2.OHPCF_EVENT_STATE_UPDATED,
+        flexibility=ohpcf_service_pb2.CompressorFlexibility(
+            available=True,
+            requested_power_estimate_w=1500.0,
+            is_pausable=True,
+            is_stoppable=False,
+            state=ohpcf_service_pb2.COMPRESSOR_STATE_RUNNING,
+            minimal_run_seconds=600,
+            minimal_pause_seconds=120,
+        ),
+    )
+
+    coordinator._handle_ohpcf_event(event)
+
+    assert pushed["compressor_flexibility"] == {
+        "available": True,
+        "state": "COMPRESSOR_STATE_RUNNING",
+        "requested_power_estimate_w": 1500.0,
+        "requested_power_max_w": None,
+        "is_pausable": True,
+        "is_stoppable": False,
+        "minimal_run_seconds": 600,
+        "minimal_pause_seconds": 120,
+    }
+    assert pushed["ohpcf_supported"] == CapabilityState.AVAILABLE
+    coordinator.hass.async_create_task.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "event_type",
+    [
+        ohpcf_service_pb2.OHPCF_EVENT_SUPPORT_UPDATED,
+        ohpcf_service_pb2.OHPCF_EVENT_STATE_UPDATED,
+        ohpcf_service_pb2.OHPCF_EVENT_DATA_UPDATED,
+    ],
+)
+def test_ohpcf_event_without_payload_refreshes(event_type):
+    """OHPCF support or payload-free data changes reconcile through polling."""
+    coordinator, pushed = _make_coordinator(data={"compressor_flexibility": None})
+    coordinator.hass = MagicMock()
+    coordinator.async_request_refresh = MagicMock(return_value=None)
+    event = ohpcf_service_pb2.OHPCFEvent(ski="test-ski", event_type=event_type)
+
+    coordinator._handle_ohpcf_event(event)
+
+    assert not pushed
     coordinator.hass.async_create_task.assert_called_once()
 
 
