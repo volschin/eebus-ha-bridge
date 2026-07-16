@@ -49,11 +49,11 @@ func (s *LPCService) WriteConsumptionLimit(_ context.Context, req *pb.WriteLoadL
 	if req.Ski == "" {
 		return nil, status.Error(codes.InvalidArgument, "ski is required for write operations")
 	}
-	if req.ValueWatts < 0 {
-		return nil, status.Error(codes.InvalidArgument, "value_watts must be non-negative")
+	if err := nonNegative("value_watts", req.ValueWatts); err != nil {
+		return nil, err
 	}
-	if req.DurationSeconds < 0 {
-		return nil, status.Error(codes.InvalidArgument, "duration_seconds must be non-negative")
+	if err := nonNegative("duration_seconds", float64(req.DurationSeconds)); err != nil {
+		return nil, err
 	}
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
@@ -106,11 +106,11 @@ func (s *LPCService) WriteFailsafeLimit(_ context.Context, req *pb.WriteFailsafe
 	if req.Ski == "" {
 		return nil, status.Error(codes.InvalidArgument, "ski is required for write operations")
 	}
-	if req.ValueWatts < 0 {
-		return nil, status.Error(codes.InvalidArgument, "value_watts must be non-negative")
+	if err := nonNegative("value_watts", req.ValueWatts); err != nil {
+		return nil, err
 	}
-	if req.DurationMinimumSeconds < 0 {
-		return nil, status.Error(codes.InvalidArgument, "duration_minimum_seconds must be non-negative")
+	if err := nonNegative("duration_minimum_seconds", float64(req.DurationMinimumSeconds)); err != nil {
+		return nil, err
 	}
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
