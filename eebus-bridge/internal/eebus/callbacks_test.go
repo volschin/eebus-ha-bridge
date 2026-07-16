@@ -33,7 +33,8 @@ func TestCallbacksDispatchConnect(t *testing.T) {
 
 func TestCallbacksConnectAddsDeviceToRegistry(t *testing.T) {
 	bus := eebus.NewEventBus()
-	reg := eebus.NewDeviceRegistry()
+	clock := &fakeClock{now: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)}
+	reg := eebus.NewDeviceRegistryWithClock(clock)
 	cb := eebus.NewCallbacks(bus, false)
 	cb.SetRegistry(reg)
 
@@ -41,6 +42,10 @@ func TestCallbacksConnectAddsDeviceToRegistry(t *testing.T) {
 
 	if _, ok := reg.GetDevice("test-ski-123"); !ok {
 		t.Fatal("connected remote service was not added to registry")
+	}
+	clock.Advance(3 * time.Minute)
+	if got := reg.StaleDevices(10*time.Minute, 2*time.Minute); len(got) != 1 || got[0] != "TESTSKI123" {
+		t.Errorf("connect callback did not mark device connected: StaleDevices() = %v", got)
 	}
 }
 
@@ -64,11 +69,13 @@ func TestCallbacksDispatchDisconnect(t *testing.T) {
 
 func TestCallbacksDisconnectClearsCachedEntities(t *testing.T) {
 	bus := eebus.NewEventBus()
-	reg := eebus.NewDeviceRegistry()
+	clock := &fakeClock{now: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)}
+	reg := eebus.NewDeviceRegistryWithClock(clock)
 	reg.AddDevice("test-ski-456", eebus.DeviceInfo{
 		Brand:          "Vaillant",
 		RemoteEntities: []spineapi.EntityRemoteInterface{nil},
 	})
+	reg.MarkConnected("test-ski-456")
 
 	cb := eebus.NewCallbacks(bus, false)
 	cb.SetRegistry(reg)
@@ -84,6 +91,10 @@ func TestCallbacksDisconnectClearsCachedEntities(t *testing.T) {
 	if info.Brand != "Vaillant" {
 		t.Error("classification metadata must survive disconnect")
 	}
+	clock.Advance(24 * time.Hour)
+	if got := reg.StaleDevices(10*time.Minute, 2*time.Minute); len(got) != 0 {
+		t.Errorf("disconnect callback left device monitored: StaleDevices() = %v", got)
+	}
 }
 
 func TestCallbacksTrustRemovedClearsCachedEntitiesAndPublishes(t *testing.T) {
@@ -91,11 +102,13 @@ func TestCallbacksTrustRemovedClearsCachedEntitiesAndPublishes(t *testing.T) {
 	ch := bus.Subscribe()
 	defer bus.Unsubscribe(ch)
 
-	reg := eebus.NewDeviceRegistry()
+	clock := &fakeClock{now: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)}
+	reg := eebus.NewDeviceRegistryWithClock(clock)
 	reg.AddDevice("test-ski-789", eebus.DeviceInfo{
 		Brand:          "Vaillant",
 		RemoteEntities: []spineapi.EntityRemoteInterface{nil},
 	})
+	reg.MarkConnected("test-ski-789")
 
 	cb := eebus.NewCallbacks(bus, false)
 	cb.SetRegistry(reg)
@@ -107,6 +120,10 @@ func TestCallbacksTrustRemovedClearsCachedEntitiesAndPublishes(t *testing.T) {
 	}
 	if len(info.RemoteEntities) != 0 {
 		t.Errorf("cached entities not cleared on trust removal: got %d", len(info.RemoteEntities))
+	}
+	clock.Advance(24 * time.Hour)
+	if got := reg.StaleDevices(10*time.Minute, 2*time.Minute); len(got) != 0 {
+		t.Errorf("trust-removal callback left device monitored: StaleDevices() = %v", got)
 	}
 
 	select {

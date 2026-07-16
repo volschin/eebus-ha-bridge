@@ -1,6 +1,7 @@
 package eebus_test
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -8,6 +9,18 @@ import (
 	"github.com/enbility/spine-go/mocks"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
+
+type fakeClock struct {
+	now time.Time
+}
+
+func (c *fakeClock) Now() time.Time {
+	return c.now
+}
+
+func (c *fakeClock) Advance(duration time.Duration) {
+	c.now = c.now.Add(duration)
+}
 
 func TestRegistryAddAndLookup(t *testing.T) {
 	reg := eebus.NewDeviceRegistry()
@@ -116,6 +129,12 @@ func TestNormalizeSKI(t *testing.T) {
 	}
 }
 
+func TestShortSKI(t *testing.T) {
+	if got, want := eebus.ShortSKI("ab:cd:ef:12:34"), "…EF1234"; got != want {
+		t.Errorf("ShortSKI() = %q, want %q", got, want)
+	}
+}
+
 func TestRegistrySKINormalizationConsistency(t *testing.T) {
 	reg := eebus.NewDeviceRegistry()
 
@@ -193,29 +212,104 @@ func TestRegistryEntityHelpersEmpty(t *testing.T) {
 	}
 }
 
-func TestMonitoringStaleNoTrustedDevice(t *testing.T) {
-	reg := eebus.NewDeviceRegistry()
-	if reg.MonitoringStale(0) {
-		t.Error("MonitoringStale should be false with no trusted device, regardless of threshold")
+func TestStaleDevicesNoConnectedDevice(t *testing.T) {
+	clock := &fakeClock{now: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)}
+	reg := eebus.NewDeviceRegistryWithClock(clock)
+
+	clock.Advance(24 * time.Hour)
+	if got := reg.StaleDevices(time.Minute, time.Minute); len(got) != 0 {
+		t.Errorf("StaleDevices() = %v, want none with no connected device", got)
 	}
 }
 
-func TestMonitoringStaleWithinThreshold(t *testing.T) {
-	reg := eebus.NewDeviceRegistry()
-	reg.AddDevice("ski-1", eebus.DeviceInfo{Brand: "Vaillant"})
-	reg.RecordMonitoringSuccess()
+func TestStaleDevicesWithinThreshold(t *testing.T) {
+	clock := &fakeClock{now: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)}
+	reg := eebus.NewDeviceRegistryWithClock(clock)
+	reg.MarkConnected("ski-1")
+	reg.RecordMonitoringSuccess("ski-1")
 
-	if reg.MonitoringStale(time.Minute) {
-		t.Error("MonitoringStale should be false right after a recorded success")
+	clock.Advance(3 * time.Minute)
+	if got := reg.StaleDevices(10*time.Minute, 2*time.Minute); len(got) != 0 {
+		t.Errorf("StaleDevices() = %v, want none within the success threshold", got)
 	}
 }
 
-func TestMonitoringStaleExceedsThreshold(t *testing.T) {
-	reg := eebus.NewDeviceRegistry()
-	reg.AddDevice("ski-1", eebus.DeviceInfo{Brand: "Vaillant"})
-	reg.RecordMonitoringSuccess()
+func TestStaleDevicesExceedsThreshold(t *testing.T) {
+	clock := &fakeClock{now: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)}
+	reg := eebus.NewDeviceRegistryWithClock(clock)
+	reg.MarkConnected("ski-1")
+	reg.RecordMonitoringSuccess("ski-1")
 
-	if !reg.MonitoringStale(0) {
-		t.Error("MonitoringStale should be true once elapsed time exceeds a zero threshold")
+	clock.Advance(11 * time.Minute)
+	if got, want := reg.StaleDevices(10*time.Minute, 2*time.Minute), []string{"SKI1"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("StaleDevices() = %v, want %v once the success threshold is exceeded", got, want)
+	}
+}
+
+func TestStaleDevicesSuccessForOneDeviceDoesNotMaskAnother(t *testing.T) {
+	clock := &fakeClock{now: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)}
+	reg := eebus.NewDeviceRegistryWithClock(clock)
+	reg.MarkConnected("aa:aa:aa")
+	reg.MarkConnected("bb:bb:bb")
+	reg.RecordMonitoringSuccess("aa-aa-aa")
+
+	clock.Advance(3 * time.Minute)
+	if got, want := reg.StaleDevices(10*time.Minute, 2*time.Minute), []string{"BBBBBB"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("StaleDevices() = %v, want only device B (%v)", got, want)
+	}
+}
+
+func TestStaleDevicesIgnoresDisconnectedDevice(t *testing.T) {
+	clock := &fakeClock{now: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)}
+	reg := eebus.NewDeviceRegistryWithClock(clock)
+	reg.MarkConnected("ski-1")
+
+	clock.Advance(11 * time.Minute)
+	reg.MarkDisconnected("ski-1")
+	if got := reg.StaleDevices(10*time.Minute, 2*time.Minute); len(got) != 0 {
+		t.Errorf("StaleDevices() = %v, want none after a clean disconnect", got)
+	}
+}
+
+func TestStaleDevicesReconnectStartsFreshGracePeriod(t *testing.T) {
+	clock := &fakeClock{now: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)}
+	reg := eebus.NewDeviceRegistryWithClock(clock)
+	reg.MarkConnected("ski-1")
+
+	clock.Advance(3 * time.Minute)
+	if got, want := reg.StaleDevices(10*time.Minute, 2*time.Minute), []string{"SKI1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("StaleDevices() before reconnect = %v, want %v", got, want)
+	}
+
+	reg.MarkDisconnected("ski-1")
+	reg.MarkConnected("ski-1")
+	if got := reg.StaleDevices(10*time.Minute, 2*time.Minute); len(got) != 0 {
+		t.Fatalf("StaleDevices() immediately after reconnect = %v, want fresh grace period", got)
+	}
+
+	clock.Advance(3 * time.Minute)
+	if got, want := reg.StaleDevices(10*time.Minute, 2*time.Minute), []string{"SKI1"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("StaleDevices() after reconnect grace = %v, want stale again (%v)", got, want)
+	}
+}
+
+func TestStaleDevicesReconnectRetainsLastSuccessOnlyForDiagnostics(t *testing.T) {
+	clock := &fakeClock{now: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)}
+	reg := eebus.NewDeviceRegistryWithClock(clock)
+	reg.MarkConnected("ski-1")
+	reg.RecordMonitoringSuccess("ski-1")
+
+	clock.Advance(time.Minute)
+	reg.MarkDisconnected("ski-1")
+	reg.MarkConnected("ski-1")
+	clock.Advance(3 * time.Minute)
+
+	// The old success is younger than the steady-state threshold but must not
+	// satisfy the new connection once its fresh grace period has elapsed.
+	if got, want := reg.StaleDevices(10*time.Minute, 2*time.Minute), []string{"SKI1"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("StaleDevices() = %v, want %v without a success after reconnect", got, want)
+	}
+	if age, ok := reg.MonitoringLastSuccessAge("s:k-i 1"); !ok || age != 4*time.Minute {
+		t.Errorf("MonitoringLastSuccessAge() = (%s, %t), want (4m, true)", age, ok)
 	}
 }

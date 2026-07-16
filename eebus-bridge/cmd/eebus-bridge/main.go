@@ -17,13 +17,17 @@ import (
 	"github.com/volschin/eebus-bridge/internal/usecases"
 )
 
-// monitoringStaleThreshold bounds how long a trusted device may go without a
+// monitoringStaleThreshold bounds how long a connected device may go without a
 // successful Monitoring entity resolution before the watchdog restarts the
 // process. Reconnects (SHIP re-pair) can leave the SPINE entity binding stuck
 // with no error logged, silently starving Home Assistant of data; a restart
 // forces a clean re-handshake. The device normally pushes updates ~every 60s,
 // so 10min gives ample margin against brief legitimate gaps.
 const monitoringStaleThreshold = 10 * time.Minute
+
+// monitoringGracePeriod allows a newly connected device to establish its
+// first monitoring binding before watchdog staleness applies.
+const monitoringGracePeriod = 2 * time.Minute
 
 const watchdogInterval = 30 * time.Second
 
@@ -278,24 +282,47 @@ func main() {
 		log.Println("[DEBUG] EEBUS event debug logging enabled; waiting for incoming callbacks")
 	}
 
+	shutdownCh := make(chan string, 1)
 	go func() {
 		ticker := time.NewTicker(watchdogInterval)
 		defer ticker.Stop()
 		for range ticker.C {
-			stale := registry.MonitoringStale(monitoringStaleThreshold)
-			grpcSrv.SetHealthy(!stale)
-			if stale {
-				log.Fatalf(
-					"monitoring watchdog: no successful entity resolution for a trusted device in over %s; exiting for restart",
+			staleDevices := registry.StaleDevices(monitoringStaleThreshold, monitoringGracePeriod)
+			grpcSrv.SetHealthy(len(staleDevices) == 0)
+			if len(staleDevices) > 0 {
+				details := make([]string, 0, len(staleDevices))
+				for _, ski := range staleDevices {
+					lastSuccessAge := "never"
+					if age, ok := registry.MonitoringLastSuccessAge(ski); ok {
+						lastSuccessAge = age.Round(time.Second).String()
+					}
+					details = append(details, eebus.ShortSKI(ski)+"(last_success_age="+lastSuccessAge+")")
+				}
+
+				reason := "monitoring watchdog detected stale connected devices"
+				log.Printf(
+					"%s: devices=[%s] threshold=%s grace_period=%s; requesting restart",
+					reason,
+					strings.Join(details, ", "),
 					monitoringStaleThreshold,
+					monitoringGracePeriod,
 				)
+				shutdownCh <- reason
+				return
 			}
 		}
 	}()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	<-sigCh
+	exitCode := 0
+	select {
+	case sig := <-sigCh:
+		log.Printf("Received signal %s", sig)
+	case reason := <-shutdownCh:
+		exitCode = 1
+		log.Printf("Controlled shutdown requested: %s", reason)
+	}
 
 	log.Println("Shutting down...")
 	if err := lpcWrapper.StopHeartbeat(); err != nil {
@@ -304,4 +331,7 @@ func main() {
 	grpcSrv.Stop()
 	bridgeSvc.Shutdown()
 	log.Println("Shutdown complete")
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
 }
