@@ -56,7 +56,7 @@ func (s *DeviceService) ListDiscoveredDevices(_ context.Context, _ *pb.Empty) (*
 }
 
 func (s *DeviceService) RegisterRemoteSKI(_ context.Context, req *pb.RegisterSKIRequest) (*pb.Empty, error) {
-	ski := normalizeSKIInput(req.Ski)
+	ski := eebus.NormalizeSKI(req.Ski)
 	if !validSKI(ski) {
 		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
 	}
@@ -71,7 +71,7 @@ func (s *DeviceService) RegisterRemoteSKI(_ context.Context, req *pb.RegisterSKI
 // be dropped without deleting internal/certs/ (which would rotate the local
 // SKI and force every other paired device to re-pair too).
 func (s *DeviceService) UnregisterRemoteSKI(_ context.Context, req *pb.RegisterSKIRequest) (*pb.Empty, error) {
-	ski := normalizeSKIInput(req.Ski)
+	ski := eebus.NormalizeSKI(req.Ski)
 	if !validSKI(ski) {
 		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
 	}

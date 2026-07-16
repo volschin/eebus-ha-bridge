@@ -9,7 +9,6 @@ from homeassistant.data_entry_flow import FlowResultType
 from custom_components.eebus.config_flow import (
     EebusConfigFlow,
     EebusOptionsFlow,
-    _normalize_ski,
 )
 from custom_components.eebus.const import (
     CONF_AUTH_TOKEN,
@@ -35,12 +34,6 @@ def test_config_flow_supports_zeroconf():
     assert hasattr(EebusConfigFlow, "async_step_zeroconf")
 
 
-def test_normalize_ski_strips_colons_and_case():
-    """SKI normalization ignores colons, spaces, and casing."""
-    assert _normalize_ski("96:81:87:DB ") == "968187db"
-    assert _normalize_ski("ABCD") == "abcd"
-
-
 async def test_device_step_rejects_local_ski():
     """Entering the bridge's own SKI is rejected, even with colons/casing."""
     flow = EebusConfigFlow()
@@ -56,6 +49,41 @@ async def test_device_step_rejects_local_ski():
 
     assert result["type"] == FlowResultType.FORM
     assert result["errors"][CONF_DEVICE_SKI] == "ski_is_local"
+
+
+async def test_device_step_rejects_invalid_ski():
+    """Malformed SKIs are rejected before a config entry is created."""
+    flow = EebusConfigFlow()
+    flow._local_ski = "968187db034cad41dab545c32a174ed7cc2fd8a5"
+    flow._host = "localhost"
+    flow._port = 50051
+
+    with patch.object(
+        flow, "_async_list_discovered_skis", AsyncMock(return_value=[])
+    ):
+        result = await flow.async_step_device({CONF_DEVICE_SKI: "not-a-ski"})
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"][CONF_DEVICE_SKI] == "invalid_ski"
+
+
+async def test_device_step_stores_canonical_ski():
+    """New entries use the canonical SKI for data and unique ID."""
+    flow = EebusConfigFlow()
+    flow._host = "localhost"
+    flow._port = 50051
+    typed = "68:2f:70:8C:EB:A5:DF:9A:DC:B9:E6:78:7E:A9:11:D9:FC:3A:C4:90"
+    canonical = "682F708CEBA5DF9ADCB9E6787EA911D9FC3AC490"
+
+    with (
+        patch.object(flow, "async_set_unique_id", AsyncMock()) as set_unique_id,
+        patch.object(flow, "_abort_if_unique_id_configured"),
+    ):
+        result = await flow.async_step_device({CONF_DEVICE_SKI: typed})
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_DEVICE_SKI] == canonical
+    set_unique_id.assert_awaited_once_with(canonical)
 
 
 def test_config_flow_exposes_options_flow():

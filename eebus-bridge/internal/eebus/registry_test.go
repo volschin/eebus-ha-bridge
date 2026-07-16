@@ -115,12 +115,14 @@ func TestRegistryUpsertDeviceClassification(t *testing.T) {
 
 func TestNormalizeSKI(t *testing.T) {
 	cases := map[string]string{
-		"abcdef":       "ABCDEF",
-		"  ab cd ef  ": "ABCDEF",
-		"ab:cd-ef":     "ABCDEF",
-		"ab\tcd\nef":   "ABCDEF",
-		"AbCdEf":       "ABCDEF",
-		"":             "",
+		"abcdef":            "ABCDEF",
+		"  ab cd ef  ":      "ABCDEF",
+		"ab:cd-ef":          "ABCDEF",
+		"ab\tcd\nef":        "ABCDEF",
+		"AbCdEf":            "ABCDEF",
+		"\t ab:CD-ef \r\n":  "ABCDEF",
+		" aB:cD-ef\t12:34 ": "ABCDEF1234",
+		"":                  "",
 	}
 	for in, want := range cases {
 		if got := eebus.NormalizeSKI(in); got != want {

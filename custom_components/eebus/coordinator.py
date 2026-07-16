@@ -29,6 +29,7 @@ from .models import (
 )
 from .providers import ProviderManager
 from .snapshot import SnapshotSupport, async_build_snapshot
+from .ski import normalize_ski
 from .streams import ConsumeFn, StreamManager
 
 if TYPE_CHECKING:
@@ -40,10 +41,6 @@ _LOGGER = logging.getLogger(__name__)
 # streams cannot carry (scoped energy, heartbeat, support flags).
 POLL_INTERVAL = timedelta(minutes=5)
 
-
-def _normalize_ski(ski: str) -> str:
-    """Normalize an SKI for comparisons without changing its stored form."""
-    return ski.replace(":", "").replace("-", "").replace(" ", "").casefold()
 
 @lru_cache(maxsize=1)
 def _measurement_event_map() -> tuple[dict[int, tuple[str, str, str]], frozenset[int]]:
@@ -522,7 +519,7 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
 
     def _event_matches(self, event_ski: str) -> bool:
         """Return True when an event applies to the configured device."""
-        return _normalize_ski(event_ski) == _normalize_ski(self.ski)
+        return normalize_ski(event_ski) == normalize_ski(self.ski)
 
     def _push_data(self, updates: dict[str, Any]) -> None:
         """Merge stream updates into coordinator data and notify listeners."""

@@ -54,6 +54,7 @@
     },
     "error": {
       "cannot_connect": "Cannot connect to EEBUS bridge. Check the address, certificate, and token.",
+      "invalid_ski": "Enter a valid 40-character hexadecimal SKI.",
       "required": "This field is required for TLS + token mode.",
       "ski_is_local": "That is the bridge's own SKI. Enter the heat pump's SKI instead."
     },
