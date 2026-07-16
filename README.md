@@ -186,7 +186,7 @@ Bridge-Adresse, Sicherheitsmodus, CA-Zertifikat oder Token aendern:
 
 ## Daten-Aktualisierung
 
-Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Updates. Bei Stream-Abbruch wechselt sie automatisch auf **Polling** (30s Intervall) und verbindet den Stream im Hintergrund neu.
+Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Updates. Bei Stream-Abbruch wechselt sie automatisch auf **Polling** (5-Minuten-Intervall) und verbindet den Stream im Hintergrund neu.
 
 - **Leistungsmessung:** Event-basiert (ca. alle 60s vom Inverter)
 - **LPC-Limits:** Event-basiert (bei Aenderung)
@@ -243,7 +243,6 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 
 ### Nicht unterstuetzt
 
-- Raumheizungs-Sollwerte und Raumheizungs-Betriebsmodi -- noch nicht produktiv verdrahtet
 - Geraete ohne EEBUS-Schnittstelle
 
 ## Energiemanagement mit EEBUS verstehen
