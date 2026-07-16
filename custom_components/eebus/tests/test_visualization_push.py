@@ -1,7 +1,7 @@
 """Tests for the coordinator's VAPD/VABD display-data push paths."""
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.eebus import proto_stubs
 from custom_components.eebus.coordinator import (
@@ -30,7 +30,7 @@ def _make_coordinator(states):
     hass = MagicMock()
     hass.states.get = lambda entity_id: states.get(entity_id)
     coordinator.hass = hass
-    coordinator._channel = object()  # _ensure_channel returns it without dialing
+    coordinator._ensure_channel = AsyncMock(return_value=object())
     return coordinator
 
 
@@ -79,7 +79,7 @@ def test_read_sensor_value_enforces_range():
 async def test_pv_push_skips_without_power_entity():
     """No PV power mapped: push is a no-op and never builds a stub."""
     coordinator = _make_coordinator({})
-    coordinator._channel = None  # would fail if a channel were dialed
+    coordinator._ensure_channel = AsyncMock(side_effect=AssertionError("unexpected dial"))
     await coordinator.async_push_pv_data()  # must not raise
 
 
@@ -119,7 +119,7 @@ async def test_pv_push_publishes_power_and_optional_fields(monkeypatch):
 async def test_battery_push_skips_without_power_entity():
     """No battery power mapped: push is a no-op and never builds a stub."""
     coordinator = _make_coordinator({})
-    coordinator._channel = None  # would fail if a channel were dialed
+    coordinator._ensure_channel = AsyncMock(side_effect=AssertionError("unexpected dial"))
     await coordinator.async_push_battery_data()  # must not raise
 
 

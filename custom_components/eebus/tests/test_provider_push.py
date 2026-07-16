@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import grpc
 from grpc.aio import AioRpcError, Metadata
@@ -131,7 +131,7 @@ async def test_provider_push_failure_warning_is_rate_limited(monkeypatch, caplog
                 raise outcome
 
     coordinator = EebusCoordinator.__new__(EebusCoordinator)
-    coordinator._channel = object()
+    coordinator._ensure_channel = AsyncMock(return_value=object())
     coordinator._provider_push_failing = {}
     monkeypatch.setattr(
         proto_stubs,
