@@ -2,6 +2,7 @@ package grpc_test
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -9,8 +10,126 @@ import (
 	"github.com/volschin/eebus-bridge/internal/eebus"
 	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
+
+func TestLPCNumericWriteValidation(t *testing.T) {
+	svc := bridgegrpc.NewLPCService(nil, eebus.NewEventBus(), eebus.NewDeviceRegistry())
+	ctx := context.Background()
+
+	tests := []struct {
+		name     string
+		write    func() error
+		wantCode codes.Code
+	}{
+		{
+			name: "consumption limit NaN watts",
+			write: func() error {
+				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: "test-ski", ValueWatts: math.NaN()})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "consumption limit positive infinity watts",
+			write: func() error {
+				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: "test-ski", ValueWatts: math.Inf(1)})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "consumption limit negative infinity watts",
+			write: func() error {
+				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: "test-ski", ValueWatts: math.Inf(-1)})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "consumption limit negative watts",
+			write: func() error {
+				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: "test-ski", ValueWatts: -1})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "consumption limit negative duration",
+			write: func() error {
+				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: "test-ski", DurationSeconds: -1})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "consumption limit non-negative values",
+			write: func() error {
+				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: "test-ski", ValueWatts: 1, DurationSeconds: 1})
+				return err
+			},
+			wantCode: codes.Unavailable,
+		},
+		{
+			name: "failsafe limit NaN watts",
+			write: func() error {
+				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: "test-ski", ValueWatts: math.NaN()})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "failsafe limit positive infinity watts",
+			write: func() error {
+				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: "test-ski", ValueWatts: math.Inf(1)})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "failsafe limit negative infinity watts",
+			write: func() error {
+				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: "test-ski", ValueWatts: math.Inf(-1)})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "failsafe limit negative watts",
+			write: func() error {
+				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: "test-ski", ValueWatts: -1})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "failsafe limit negative duration",
+			write: func() error {
+				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: "test-ski", DurationMinimumSeconds: -1})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "failsafe limit non-negative values",
+			write: func() error {
+				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: "test-ski", ValueWatts: 1, DurationMinimumSeconds: 1})
+				return err
+			},
+			wantCode: codes.Unavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.write(); status.Code(err) != tt.wantCode {
+				t.Fatalf("status code = %v, want %v (error: %v)", status.Code(err), tt.wantCode, err)
+			}
+		})
+	}
+}
 
 func TestSubscribeLPCEvents(t *testing.T) {
 	bus := eebus.NewEventBus()
