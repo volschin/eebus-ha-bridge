@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/volschin/eebus-bridge/internal/config"
 	"github.com/volschin/eebus-bridge/internal/eebus"
+	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
 )
 
 type fakeBridgeLifecycle struct {
@@ -117,6 +118,19 @@ func (f *fakeGRPCLifecycle) healthValues() []bool {
 	f.healthMu.Lock()
 	defer f.healthMu.Unlock()
 	return append([]bool(nil), f.health...)
+}
+
+func TestOHPCFModuleRegistersGRPCServiceWhenDisabled(t *testing.T) {
+	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
+	module := newOHPCFModule(nil, nil, nil, eebus.NewEventBus(), eebus.NewDeviceRegistry())
+
+	require.NoError(t, module.setup())
+	names, err := module.registerUseCases()
+	require.NoError(t, err)
+	assert.Empty(t, names)
+
+	module.registerGRPC(srv)
+	assert.Contains(t, srv.GRPCServer().GetServiceInfo(), "eebus.v1.OHPCFService")
 }
 
 type fakeHeartbeatLifecycle struct {
@@ -238,11 +252,14 @@ func newTestApplication(
 	registry monitoringRegistry,
 ) *Application {
 	return &Application{
-		cfg:                        &config.Config{},
-		bridgeSvc:                  bridge,
-		grpcSrv:                    grpcServer,
-		lpcWrapper:                 heartbeat,
-		registry:                   registry,
+		cfg:       &config.Config{},
+		bridgeSvc: bridge,
+		grpcSrv:   grpcServer,
+		registry:  registry,
+		modules: []applicationModule{{
+			name: "heartbeat",
+			stop: heartbeat.StopHeartbeat,
+		}},
 		monitoringWatchdogInterval: time.Millisecond,
 		backgroundFailures:         make(chan backgroundFailure, 1),
 	}

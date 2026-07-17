@@ -1,9 +1,13 @@
 package usecases
 
 import (
+	"fmt"
+	"sync"
 	"time"
 
 	eebusapi "github.com/enbility/eebus-go/api"
+	"github.com/enbility/eebus-go/features/server"
+	spineapi "github.com/enbility/spine-go/api"
 	"github.com/enbility/spine-go/model"
 	"github.com/enbility/spine-go/util"
 )
@@ -23,6 +27,69 @@ func (v ProviderValidity) Current(now time.Time) bool {
 type measurementServer interface {
 	AddDescription(model.MeasurementDescriptionDataType) *model.MeasurementIdType
 	UpdateDataForIds([]eebusapi.MeasurementDataForID) error
+}
+
+type serializedMeasurementPublisher struct {
+	mu sync.Mutex
+}
+
+type providerMeasurementValue struct {
+	id    *model.MeasurementIdType
+	value *float64
+}
+
+func (p *serializedMeasurementPublisher) publishValue(
+	server measurementServer,
+	notInitialized error,
+	id *model.MeasurementIdType,
+	value float64,
+) error {
+	return p.publishValues(server, notInitialized, providerMeasurementValue{id: id, value: &value})
+}
+
+func (p *serializedMeasurementPublisher) publishValues(
+	server measurementServer,
+	notInitialized error,
+	values ...providerMeasurementValue,
+) error {
+	if server == nil {
+		return notInitialized
+	}
+	data := make([]eebusapi.MeasurementDataForID, 0, len(values))
+	for _, value := range values {
+		if value.id == nil {
+			return notInitialized
+		}
+		data = append(data, measurementDataForID(*value.id, value.value))
+	}
+	return p.publishData(server, data)
+}
+
+func (p *serializedMeasurementPublisher) invalidate(
+	server measurementServer,
+	notInitialized error,
+	ids ...*model.MeasurementIdType,
+) error {
+	if server == nil {
+		return notInitialized
+	}
+	data := make([]eebusapi.MeasurementDataForID, 0, len(ids))
+	for _, id := range ids {
+		if id == nil {
+			return notInitialized
+		}
+		data = append(data, invalidMeasurementDataForID(*id))
+	}
+	return p.publishData(server, data)
+}
+
+func (p *serializedMeasurementPublisher) publishData(
+	server measurementServer,
+	data []eebusapi.MeasurementDataForID,
+) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return server.UpdateDataForIds(data)
 }
 
 type deviceConfigurationServer interface {
@@ -49,6 +116,15 @@ func scheduleProviderExpiryTimer(timer **time.Timer, validUntil time.Time, expir
 		delay = 0
 	}
 	*timer = time.AfterFunc(delay, expire)
+}
+
+func setupProviderMeasurementServer(entity spineapi.EntityLocalInterface, label string) (measurementServer, error) {
+	entity.GetOrAddFeature(model.FeatureTypeTypeMeasurement, model.RoleTypeServer)
+	meas, err := server.NewMeasurement(entity)
+	if err != nil {
+		return nil, fmt.Errorf("[%s] creating Measurement server feature failed: %w", label, err)
+	}
+	return meas, nil
 }
 
 type GridSnapshot struct {

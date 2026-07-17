@@ -47,14 +47,15 @@ var errVAPDNotInitialized = errors.New("vapd provider not initialized")
 // behind config.Experimental.VAPDProvider. See docs/eebus-vaillant-improvements.md.
 type VAPDProvider struct {
 	*usecase.UseCaseBase
-	bus      *eebus.EventBus
-	pvEntity spineapi.EntityLocalInterface
-	meas     measurementServer
-	devConf  deviceConfigurationServer
-	powerID  *model.MeasurementIdType            // scenario 2: AC total power (W)
-	yieldID  *model.MeasurementIdType            // scenario 3: total AC yield energy (Wh)
-	peakID   *model.DeviceConfigurationKeyIdType // scenario 1: nominal peak power (W)
-	debug    bool
+	bus       *eebus.EventBus
+	pvEntity  spineapi.EntityLocalInterface
+	meas      measurementServer
+	publisher serializedMeasurementPublisher
+	devConf   deviceConfigurationServer
+	powerID   *model.MeasurementIdType            // scenario 2: AC total power (W)
+	yieldID   *model.MeasurementIdType            // scenario 3: total AC yield energy (Wh)
+	peakID    *model.DeviceConfigurationKeyIdType // scenario 1: nominal peak power (W)
+	debug     bool
 
 	snapshotMu      sync.Mutex
 	snapshot        *PVSnapshot
@@ -109,13 +110,12 @@ func (p *VAPDProvider) UseCase() eebusapi.UseCaseInterface { return p }
 func (p *VAPDProvider) AddFeatures() error {
 	// server.New* only look up an existing server feature on the entity; they do
 	// not create it. Add them first.
-	p.pvEntity.GetOrAddFeature(model.FeatureTypeTypeMeasurement, model.RoleTypeServer)
 	p.pvEntity.GetOrAddFeature(model.FeatureTypeTypeElectricalConnection, model.RoleTypeServer)
 	p.pvEntity.GetOrAddFeature(model.FeatureTypeTypeDeviceConfiguration, model.RoleTypeServer)
 
-	meas, err := server.NewMeasurement(p.pvEntity)
+	meas, err := setupProviderMeasurementServer(p.pvEntity, "VAPD")
 	if err != nil {
-		return fmt.Errorf("[VAPD] creating Measurement server feature failed: %w", err)
+		return err
 	}
 	p.meas = meas
 
@@ -194,36 +194,20 @@ func keyIDVal(id *model.DeviceConfigurationKeyIdType) int {
 
 // publishMeasurement is the shared path for pushing one measurement value.
 func (p *VAPDProvider) publishMeasurement(id *model.MeasurementIdType, value float64) error {
-	if p.meas == nil || id == nil {
-		return errVAPDNotInitialized
-	}
-	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{{
-		Data: model.MeasurementDataType{
-			ValueType: util.Ptr(model.MeasurementValueTypeTypeValue),
-			Value:     model.NewScaledNumberType(value),
-		},
-		Id: *id,
-	}})
+	return p.publisher.publishValue(p.meas, errVAPDNotInitialized, id, value)
 }
 
 func (p *VAPDProvider) publishPVMeasurements(snapshot PVSnapshot) error {
-	if p.meas == nil || p.powerID == nil || p.yieldID == nil {
-		return errVAPDNotInitialized
-	}
-	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{
-		measurementDataForID(*p.powerID, &snapshot.PowerW),
-		measurementDataForID(*p.yieldID, snapshot.YieldWh),
-	})
+	return p.publisher.publishValues(
+		p.meas,
+		errVAPDNotInitialized,
+		providerMeasurementValue{id: p.powerID, value: &snapshot.PowerW},
+		providerMeasurementValue{id: p.yieldID, value: snapshot.YieldWh},
+	)
 }
 
 func (p *VAPDProvider) invalidatePVMeasurements() error {
-	if p.meas == nil || p.powerID == nil || p.yieldID == nil {
-		return errVAPDNotInitialized
-	}
-	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{
-		invalidMeasurementDataForID(*p.powerID),
-		invalidMeasurementDataForID(*p.yieldID),
-	})
+	return p.publisher.invalidate(p.meas, errVAPDNotInitialized, p.powerID, p.yieldID)
 }
 
 func (p *VAPDProvider) PublishPVSnapshot(snapshot PVSnapshot) error {

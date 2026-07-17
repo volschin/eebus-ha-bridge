@@ -51,6 +51,7 @@ type MGCPProvider struct {
 	bus        *eebus.EventBus
 	gridEntity spineapi.EntityLocalInterface
 	meas       measurementServer
+	publisher  serializedMeasurementPublisher
 	powerID    *model.MeasurementIdType // scenario 2: AC total power (W)
 	feedInID   *model.MeasurementIdType // scenario 3: total grid feed-in energy (Wh)
 	consumedID *model.MeasurementIdType // scenario 4: total grid consumed energy (Wh)
@@ -109,12 +110,11 @@ func (p *MGCPProvider) UseCase() eebusapi.UseCaseInterface { return p }
 func (p *MGCPProvider) AddFeatures() error {
 	// server.NewMeasurement/NewElectricalConnection only look up an existing
 	// server feature on the entity; they do not create it. Add them first.
-	p.gridEntity.GetOrAddFeature(model.FeatureTypeTypeMeasurement, model.RoleTypeServer)
 	p.gridEntity.GetOrAddFeature(model.FeatureTypeTypeElectricalConnection, model.RoleTypeServer)
 
-	meas, err := server.NewMeasurement(p.gridEntity)
+	meas, err := setupProviderMeasurementServer(p.gridEntity, "MGCP")
 	if err != nil {
-		return fmt.Errorf("[MGCP] creating Measurement server feature failed: %w", err)
+		return err
 	}
 	p.meas = meas
 
@@ -191,38 +191,21 @@ func idVal(id *model.MeasurementIdType) int {
 
 // publishMeasurement is the shared path for pushing one measurement value.
 func (p *MGCPProvider) publishMeasurement(id *model.MeasurementIdType, value float64) error {
-	if p.meas == nil || id == nil {
-		return errMGCPNotInitialized
-	}
-	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{{
-		Data: model.MeasurementDataType{
-			ValueType: util.Ptr(model.MeasurementValueTypeTypeValue),
-			Value:     model.NewScaledNumberType(value),
-		},
-		Id: *id,
-	}})
+	return p.publisher.publishValue(p.meas, errMGCPNotInitialized, id, value)
 }
 
 func (p *MGCPProvider) publishGridMeasurements(snapshot GridSnapshot) error {
-	if p.meas == nil || p.powerID == nil || p.feedInID == nil || p.consumedID == nil {
-		return errMGCPNotInitialized
-	}
-	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{
-		measurementDataForID(*p.powerID, &snapshot.PowerW),
-		measurementDataForID(*p.feedInID, snapshot.FeedInWh),
-		measurementDataForID(*p.consumedID, snapshot.ConsumedWh),
-	})
+	return p.publisher.publishValues(
+		p.meas,
+		errMGCPNotInitialized,
+		providerMeasurementValue{id: p.powerID, value: &snapshot.PowerW},
+		providerMeasurementValue{id: p.feedInID, value: snapshot.FeedInWh},
+		providerMeasurementValue{id: p.consumedID, value: snapshot.ConsumedWh},
+	)
 }
 
 func (p *MGCPProvider) invalidateGridMeasurements() error {
-	if p.meas == nil || p.powerID == nil || p.feedInID == nil || p.consumedID == nil {
-		return errMGCPNotInitialized
-	}
-	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{
-		invalidMeasurementDataForID(*p.powerID),
-		invalidMeasurementDataForID(*p.feedInID),
-		invalidMeasurementDataForID(*p.consumedID),
-	})
+	return p.publisher.invalidate(p.meas, errMGCPNotInitialized, p.powerID, p.feedInID, p.consumedID)
 }
 
 func (p *MGCPProvider) PublishGridSnapshot(snapshot GridSnapshot) error {

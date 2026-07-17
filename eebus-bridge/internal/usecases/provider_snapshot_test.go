@@ -62,6 +62,60 @@ func (s *recordingDeviceConfigurationServer) UpdateKeyValueDataForKeyId(
 	return s.fail
 }
 
+type overlappingMeasurementServer struct {
+	mu        sync.Mutex
+	active    int
+	maxActive int
+}
+
+func (s *overlappingMeasurementServer) AddDescription(model.MeasurementDescriptionDataType) *model.MeasurementIdType {
+	return nil
+}
+
+func (s *overlappingMeasurementServer) UpdateDataForIds([]eebusapi.MeasurementDataForID) error {
+	s.mu.Lock()
+	s.active++
+	if s.active > s.maxActive {
+		s.maxActive = s.active
+	}
+	s.mu.Unlock()
+
+	time.Sleep(10 * time.Millisecond)
+
+	s.mu.Lock()
+	s.active--
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *overlappingMeasurementServer) maxConcurrency() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.maxActive
+}
+
+func TestSerializedMeasurementPublisherSerializesConcurrentUpdates(t *testing.T) {
+	publisher := &serializedMeasurementPublisher{}
+	server := &overlappingMeasurementServer{}
+	id := model.MeasurementIdType(1)
+
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := publisher.publishValue(server, errMGCPNotInitialized, &id, 1); err != nil {
+				t.Errorf("publishValue() error = %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := server.maxConcurrency(); got != 1 {
+		t.Fatalf("UpdateDataForIds max concurrency = %d, want 1", got)
+	}
+}
+
 func assertSingleBatchIDs(t *testing.T, updates [][]eebusapi.MeasurementDataForID, ids ...model.MeasurementIdType) {
 	t.Helper()
 
