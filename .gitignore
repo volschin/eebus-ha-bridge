@@ -6,3 +6,4 @@ eebus-bridge/bin/
 eebus-bridge/eebus-bridge
 .pytest_cache/
 .gstack/
+.cache/

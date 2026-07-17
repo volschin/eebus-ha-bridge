@@ -31,7 +31,18 @@ jobs:
               - '.github/workflows/ci.yml'
             proto:
               - 'eebus-bridge/proto/**'
+              - 'eebus-bridge/gen/proto/**'
+              - 'custom_components/eebus/generated/**'
               - 'generate_proto.sh'
+              - 'buf.yaml'
+              - 'buf.gen.yaml'
+              - 'proto-tools.env'
+              - 'scripts/proto_*.py'
+              - 'scripts/check_proto_*.py'
+              - 'scripts/check_generated_drift.sh'
+              - 'custom_components/eebus/proto_stubs.py'
+              - 'custom_components/eebus/tests/test_proto_postprocess.py'
+              - 'docs/proto-contract-matrix.md'
 
   go:
     needs: changes
@@ -105,18 +116,42 @@ jobs:
       - name: Run tests with coverage
         run: PYTHONPATH=. pytest --cov --cov-report=term-missing -v
 
-  proto-drift:
+  proto-governance:
     needs: changes
     if: needs.changes.outputs.proto == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26"
+          check-latest: true
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.14"
+      - name: Install pinned buf
+        run: |
+          set -euo pipefail
+          source proto-tools.env
+          mkdir -p .cache/proto-tools/bin
+          GOBIN="$PWD/.cache/proto-tools/bin" go install "github.com/bufbuild/buf/cmd/buf@v${BUF_VERSION}"
+      - name: Buf lint
+        run: .cache/proto-tools/bin/buf lint
+      - name: Buf breaking check
+        if: github.event_name == 'pull_request'
+        run: .cache/proto-tools/bin/buf breaking --against ".git#branch=origin/${{ github.base_ref }},subdir=eebus-bridge/proto"
+      - name: Check scoped cardinality waivers
+        if: github.event_name == 'pull_request'
+        run: python scripts/check_proto_cardinality.py "origin/${{ github.base_ref }}"
       - name: Regenerate proto stubs
-        run: bash generate_proto.sh
+        run: PYTHON_BIN=python bash generate_proto.sh
       - name: Check for stub drift
-        run: git diff --exit-code custom_components/eebus/generated/
+        run: bash scripts/check_generated_drift.sh
+      - name: Check proto_stubs exports
+        run: PYTHONPATH=. python scripts/check_proto_stubs_exports.py
+      - name: Check v1 governance rules
+        run: python scripts/check_proto_governance.py
 
   

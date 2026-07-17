@@ -1,41 +1,52 @@
-#!/bin/bash
-# Generate Python gRPC stubs from protobuf definitions
+#!/usr/bin/env bash
+# Regenerate Go and Python gRPC stubs from protobuf definitions.
 set -euo pipefail
 
-# Home Assistant Core pins grpcio==1.78.0 in package_constraints.txt.
-# Stubs must be generated with a matching grpcio-tools so the embedded
-# GRPC_GENERATED_VERSION does not exceed HA's runtime grpcio (see issue #22).
-GRPCIO_TOOLS_VERSION="${GRPCIO_TOOLS_VERSION:-1.78.0}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${ROOT_DIR}/proto-tools.env"
 
-PROTO_DIR="eebus-bridge/proto"
-OUT_DIR="custom_components/eebus/generated"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+PROTO_DIR="${ROOT_DIR}/eebus-bridge/proto"
+PY_OUT_DIR="${ROOT_DIR}/custom_components/eebus/generated"
+PY_PKG_DIR="${PY_OUT_DIR}/eebus/v1"
+GO_OUT_DIR="${ROOT_DIR}/eebus-bridge/gen/proto/eebus/v1"
+TOOL_BIN="${ROOT_DIR}/.cache/proto-tools/bin"
 
-mkdir -p "$OUT_DIR"
+mkdir -p "${TOOL_BIN}" "${PY_PKG_DIR}" "${GO_OUT_DIR}"
 
-pip install --quiet "grpcio-tools==${GRPCIO_TOOLS_VERSION}"
+echo "Installing pinned proto tools into ${TOOL_BIN}"
+GOBIN="${TOOL_BIN}" go install "github.com/bufbuild/buf/cmd/buf@v${BUF_VERSION}"
+GOBIN="${TOOL_BIN}" go install "google.golang.org/protobuf/cmd/protoc-gen-go@v${PROTOC_GEN_GO_VERSION}"
+GOBIN="${TOOL_BIN}" go install "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v${PROTOC_GEN_GO_GRPC_VERSION}"
 
-python -m grpc_tools.protoc \
-  -I "$PROTO_DIR" \
-  --python_out="$OUT_DIR" \
-  --grpc_python_out="$OUT_DIR" \
-  --pyi_out="$OUT_DIR" \
-  eebus/v1/common.proto \
-  eebus/v1/device_service.proto \
-  eebus/v1/lpc_service.proto \
-  eebus/v1/monitoring_service.proto \
-  eebus/v1/grid_service.proto \
-  eebus/v1/visualization_service.proto \
-  eebus/v1/ohpcf_service.proto \
-  eebus/v1/dhw_service.proto \
-  eebus/v1/hvac_service.proto
+export PATH="${TOOL_BIN}:${PATH}"
 
-touch "$OUT_DIR/__init__.py"
-touch "$OUT_DIR/eebus/__init__.py"
-touch "$OUT_DIR/eebus/v1/__init__.py"
+echo "Installing pinned grpcio-tools ${GRPCIO_TOOLS_VERSION}"
+"${PYTHON_BIN}" -m pip install --quiet "grpcio-tools==${GRPCIO_TOOLS_VERSION}"
 
-# Rewrite absolute "from eebus.v1 import" to relative imports so the stubs
-# work when loaded as part of custom_components.eebus (not as a top-level package).
-find "$OUT_DIR/eebus/v1" \( -name "*.py" -o -name "*.pyi" \) -exec sed -i \
-  's/^from eebus\.v1 import \(.*\) as \(.*\)$/from . import \1 as \2/' {} \;
+echo "Regenerating Go protobuf stubs"
+find "${GO_OUT_DIR}" -maxdepth 1 -type f -name "*.pb.go" -delete
+"${TOOL_BIN}/buf" generate --template "${ROOT_DIR}/buf.gen.yaml"
 
-echo "Proto stubs generated in $OUT_DIR"
+echo "Regenerating Python protobuf stubs"
+find "${PY_PKG_DIR}" -maxdepth 1 -type f \( -name "*.py" -o -name "*.pyi" \) -delete
+
+mapfile -t PROTO_FILES < <(
+  cd "${PROTO_DIR}"
+  find eebus/v1 -maxdepth 1 -type f -name "*.proto" | sort
+)
+
+"${PYTHON_BIN}" -m grpc_tools.protoc \
+  -I "${PROTO_DIR}" \
+  --python_out="${PY_OUT_DIR}" \
+  --grpc_python_out="${PY_OUT_DIR}" \
+  --pyi_out="${PY_OUT_DIR}" \
+  "${PROTO_FILES[@]}"
+
+touch "${PY_OUT_DIR}/__init__.py"
+touch "${PY_OUT_DIR}/eebus/__init__.py"
+touch "${PY_PKG_DIR}/__init__.py"
+
+"${PYTHON_BIN}" -m scripts.proto_postprocess "${PY_PKG_DIR}"
+
+echo "Proto stubs generated in ${GO_OUT_DIR} and ${PY_OUT_DIR}"

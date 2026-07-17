@@ -1,0 +1,23 @@
+version: v2
+modules:
+  - path: eebus-bridge/proto
+lint:
+  use:
+    - STANDARD
+  except:
+    # Existing v1 names are part of the published client contract. Buf still
+    # lints syntax/package/import rules, while breaking checks protect existing
+    # fields/RPCs from incompatible changes.
+    - ENUM_VALUE_PREFIX
+    - ENUM_ZERO_VALUE_SUFFIX
+    - RPC_REQUEST_RESPONSE_UNIQUE
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+breaking:
+  use:
+    - FILE
+  except:
+    # SPEC3 introduced explicit presence for provider power fields before this
+    # governance gate existed. Keep deletion, field-number reuse and type checks
+    # active, but do not block this known v1-compatible presence annotation.
+    - FIELD_SAME_CARDINALITY
