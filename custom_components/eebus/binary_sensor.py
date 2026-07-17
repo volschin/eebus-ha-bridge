@@ -80,6 +80,16 @@ class EebusHeartbeatOkSensor(EebusEntity, BinarySensorEntity):
         self._attr_unique_id = f"{coordinator.ski}_heartbeat_ok"
 
     @property
+    def available(self) -> bool:
+        """Stay available on a successful poll regardless of connected state.
+
+        EebusEntity.available gates on device connection, which would flip
+        this sensor to "unavailable" (grey, no history) on every transient
+        per-device disconnect instead of a stable on/off a dashboard can plot.
+        """
+        return self.coordinator.last_update_success
+
+    @property
     def is_on(self) -> bool | None:
         """Return True if heartbeat has a problem (inverted for PROBLEM class)."""
         if self.coordinator.data is None:
