@@ -196,6 +196,7 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 		cfg.Certificates.CertFile,
 		cfg.Certificates.KeyFile,
 		cfg.Certificates.StoragePath,
+		cfg.Certificates.AutoGenerate != nil && *cfg.Certificates.AutoGenerate,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("certificate: %w", err)

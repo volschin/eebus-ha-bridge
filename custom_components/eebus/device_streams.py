@@ -191,6 +191,19 @@ class DeviceStreams:
         await self._manager.stop()
         await self._legacy_manager.stop()
 
+    def diagnostics(self) -> dict[str, object]:
+        """Return redacted stream state for config-entry diagnostics."""
+        running_refresh = (
+            self._refresh_task is not None and not self._refresh_task.done()
+        )
+        return {
+            "last_device_state_revision": self._last_revision,
+            "refresh_pending": self._refresh_pending,
+            "refresh_running": running_refresh,
+            "primary": self._manager.diagnostics(),
+            "legacy": self._legacy_manager.diagnostics(),
+        }
+
     def _matches(self, event_ski: str) -> bool:
         return normalize_ski(event_ski) == normalize_ski(self._ski)
 

@@ -4,11 +4,15 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import grpc
 from homeassistant.data_entry_flow import FlowResultType
+from grpc.aio import AioRpcError, Metadata
 
 from custom_components.eebus.config_flow import (
+    BridgeProbeResult,
     EebusConfigFlow,
     EebusOptionsFlow,
+    _classify_probe_error,
 )
 from custom_components.eebus.const import (
     CONF_AUTH_TOKEN,
@@ -91,6 +95,35 @@ def test_config_flow_exposes_options_flow():
     assert hasattr(EebusConfigFlow, "async_get_options_flow")
 
 
+def test_probe_error_classifier_distinguishes_required_failures():
+    """Config flow maps gRPC probe failures to operator-actionable causes."""
+    cases = (
+        (
+            grpc.StatusCode.UNAVAILABLE,
+            "connect failed",
+            "cannot_connect",
+        ),
+        (
+            grpc.StatusCode.UNAVAILABLE,
+            "TLS handshake failed: certificate verify failed",
+            "tls_trust",
+        ),
+        (
+            grpc.StatusCode.UNAUTHENTICATED,
+            "bad token",
+            "invalid_auth",
+        ),
+        (
+            grpc.StatusCode.UNIMPLEMENTED,
+            "unknown service",
+            "incompatible_grpc_endpoint",
+        ),
+    )
+    for code, details, expected in cases:
+        err = AioRpcError(code, Metadata(), Metadata(), details=details)
+        assert _classify_probe_error(err) == expected
+
+
 async def test_user_step_continues_to_security_step():
     """Host/port selection is followed by explicit transport security."""
     flow = EebusConfigFlow()
@@ -122,7 +155,11 @@ async def test_tls_security_step_probes_with_credentials():
     flow._host = "bridge.example.test"
     flow._port = 50051
     with (
-        patch.object(flow, "_async_probe_bridge", AsyncMock(return_value="local-ski")) as probe,
+        patch.object(
+            flow,
+            "_async_probe_bridge",
+            AsyncMock(return_value=BridgeProbeResult(local_ski="local-ski")),
+        ) as probe,
         patch.object(flow, "_async_list_discovered_skis", AsyncMock(return_value=[])),
     ):
         result = await flow.async_step_security(
@@ -153,7 +190,11 @@ async def test_reconfigure_security_preserves_blank_existing_token():
     update_result = {"type": FlowResultType.ABORT}
     with (
         patch.object(flow, "_get_reconfigure_entry", return_value=entry),
-        patch.object(flow, "_async_probe_bridge", AsyncMock(return_value="local-ski")),
+        patch.object(
+            flow,
+            "_async_probe_bridge",
+            AsyncMock(return_value=BridgeProbeResult(local_ski="local-ski")),
+        ),
         patch.object(
             flow, "async_update_reload_and_abort", return_value=update_result
         ) as update,
@@ -188,7 +229,11 @@ async def test_reauth_replaces_and_verifies_credentials():
     update_result = {"type": FlowResultType.ABORT}
     with (
         patch.object(flow, "_get_reauth_entry", return_value=entry),
-        patch.object(flow, "_async_probe_bridge", AsyncMock(return_value="local-ski")),
+        patch.object(
+            flow,
+            "_async_probe_bridge",
+            AsyncMock(return_value=BridgeProbeResult(local_ski="local-ski")),
+        ),
         patch.object(
             flow, "async_update_reload_and_abort", return_value=update_result
         ) as update,
@@ -206,6 +251,75 @@ async def test_reauth_replaces_and_verifies_credentials():
         CONF_AUTH_TOKEN: "replacement-token",
     }
     assert update.call_args.kwargs["reason"] == "reauth_successful"
+
+
+async def test_security_step_surfaces_classified_probe_error():
+    """The bridge probe reports authentication separately from transport failures."""
+    flow = EebusConfigFlow()
+    flow._host = "bridge.example.test"
+    flow._port = 50051
+    with patch.object(
+        flow,
+        "_async_probe_bridge",
+        AsyncMock(return_value=BridgeProbeResult(error="invalid_auth")),
+    ):
+        result = await flow.async_step_security({CONF_SECURITY_MODE: "loopback"})
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"]["base"] == "invalid_auth"
+
+
+async def test_reauth_confirm_surfaces_tls_trust_without_success():
+    """Reauth only succeeds on a working probe; TLS trust remains a config error."""
+    flow = EebusConfigFlow()
+    flow._host = "bridge.example.test"
+    flow._port = 50051
+    flow._tls_ca_certificate = "old-ca"
+    with patch.object(
+        flow,
+        "_async_probe_bridge",
+        AsyncMock(return_value=BridgeProbeResult(error="tls_trust")),
+    ):
+        result = await flow.async_step_reauth_confirm(
+            {
+                CONF_TLS_CA_CERTIFICATE: "bad-ca",
+                CONF_AUTH_TOKEN: "replacement-token",
+            }
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"]["base"] == "tls_trust"
+
+
+async def test_probe_classifies_grpc_errors():
+    """Network, TLS, auth and incompatible gRPC endpoints remain distinct."""
+    flow = EebusConfigFlow()
+    flow._security_mode = "loopback"
+
+    class FakeChannel:
+        async def close(self, grace):  # noqa: ANN001
+            return None
+
+    async def get_status(_request, timeout):  # noqa: ANN001
+        raise AioRpcError(
+            grpc.StatusCode.UNIMPLEMENTED,
+            Metadata(),
+            Metadata(),
+            details="unknown service eebus.v1.DeviceService",
+        )
+
+    stub = MagicMock()
+    stub.GetStatus = get_status
+    with (
+        patch(
+            "custom_components.eebus.config_flow.create_grpc_channel",
+            return_value=FakeChannel(),
+        ),
+        patch("custom_components.eebus.proto_stubs.device_service_stub", return_value=stub),
+    ):
+        result = await flow._async_probe_bridge("localhost", 50051)
+
+    assert result.error == "incompatible_grpc_endpoint"
 
 
 async def test_options_flow_strips_empty_selections():

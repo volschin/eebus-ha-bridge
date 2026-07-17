@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from typing import Any
 
+import grpc
 import voluptuous as vol
 
 from homeassistant.config_entries import (
@@ -56,6 +58,34 @@ from .ski import is_valid_ski, normalize_ski
 _LOGGER = logging.getLogger(__name__)
 
 CONFIG_RPC_TIMEOUT = 8
+ERROR_CANNOT_CONNECT = "cannot_connect"
+ERROR_TLS_TRUST = "tls_trust"
+ERROR_INVALID_AUTH = "invalid_auth"
+ERROR_INCOMPATIBLE_GRPC = "incompatible_grpc_endpoint"
+
+
+@dataclass(frozen=True, slots=True)
+class BridgeProbeResult:
+    """Classified result of probing the bridge's DeviceService."""
+
+    local_ski: str | None = None
+    error: str | None = None
+
+
+def _classify_probe_error(err: grpc.aio.AioRpcError) -> str:
+    """Map a failed GetStatus probe to the config-flow error bucket."""
+    code = err.code()
+    if code == grpc.StatusCode.UNAUTHENTICATED:
+        return ERROR_INVALID_AUTH
+    if code == grpc.StatusCode.UNIMPLEMENTED:
+        return ERROR_INCOMPATIBLE_GRPC
+    details = (err.details() or "").casefold()
+    if code == grpc.StatusCode.UNAVAILABLE and any(
+        marker in details
+        for marker in ("certificate", "tls", "ssl", "handshake", "x509")
+    ):
+        return ERROR_TLS_TRUST
+    return ERROR_CANNOT_CONNECT
 
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
@@ -152,8 +182,8 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
             pass
         return True
 
-    async def _async_probe_bridge(self, host: str, port: int) -> str | None:
-        """Check bridge reachability; return its local SKI or None."""
+    async def _async_probe_bridge(self, host: str, port: int) -> BridgeProbeResult:
+        """Check bridge reachability and classify operator-actionable failures."""
         try:
             channel = create_grpc_channel(
                 host,
@@ -162,8 +192,9 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._tls_ca_certificate,
                 self._auth_token,
             )
-        except ValueError:
-            return None
+        except ValueError as err:
+            _LOGGER.debug("Invalid EEBUS bridge security settings: %s", err)
+            return BridgeProbeResult(error=ERROR_CANNOT_CONNECT)
         try:
             from . import proto_stubs
 
@@ -171,12 +202,22 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
             status = await stub.GetStatus(
                 proto_stubs.Empty(), timeout=CONFIG_RPC_TIMEOUT
             )
-            return str(status.local_ski)
+            return BridgeProbeResult(local_ski=str(status.local_ski))
+        except grpc.aio.AioRpcError as err:
+            error = _classify_probe_error(err)
+            _LOGGER.debug(
+                "EEBUS bridge probe at %s:%s failed with %s",
+                host,
+                port,
+                error,
+                exc_info=True,
+            )
+            return BridgeProbeResult(error=error)
         except Exception:  # noqa: BLE001
             _LOGGER.debug(
                 "No EEBUS bridge reachable at %s:%s", host, port, exc_info=True
             )
-            return None
+            return BridgeProbeResult(error=ERROR_CANNOT_CONNECT)
         finally:
             await channel.close(None)
 
@@ -272,16 +313,16 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
                 if not self._auth_token:
                     errors[CONF_AUTH_TOKEN] = "required"
             if not errors:
-                local_ski = await self._async_probe_bridge(self._host, self._port)
-                if local_ski is not None:
-                    self._local_ski = local_ski
+                probe = await self._async_probe_bridge(self._host, self._port)
+                if probe.local_ski is not None:
+                    self._local_ski = probe.local_ski
                     return await self.async_step_device()
                 _LOGGER.warning(
                     "Failed to connect to EEBUS bridge during config flow at %s:%s",
                     self._host,
                     self._port,
                 )
-                errors["base"] = "cannot_connect"
+                errors["base"] = probe.error or ERROR_CANNOT_CONNECT
 
         return self.async_show_form(
             step_id="security",
@@ -388,8 +429,8 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._auth_token = None
 
             if not errors:
-                local_ski = await self._async_probe_bridge(self._host, self._port)
-                if local_ski is not None:
+                probe = await self._async_probe_bridge(self._host, self._port)
+                if probe.local_ski is not None:
                     return self.async_update_reload_and_abort(
                         entry,
                         data_updates={
@@ -405,7 +446,7 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
                     self._host,
                     self._port,
                 )
-                errors["base"] = "cannot_connect"
+                errors["base"] = probe.error or ERROR_CANNOT_CONNECT
 
         form_mode = self._security_mode if user_input is not None else current_mode
         form_ca = (
@@ -439,8 +480,8 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
                 user_input[CONF_TLS_CA_CERTIFICATE]
             ).strip()
             self._auth_token = str(user_input[CONF_AUTH_TOKEN]).strip()
-            local_ski = await self._async_probe_bridge(self._host, self._port)
-            if local_ski is not None:
+            probe = await self._async_probe_bridge(self._host, self._port)
+            if probe.local_ski is not None:
                 return self.async_update_reload_and_abort(
                     self._get_reauth_entry(),
                     data_updates={
@@ -449,7 +490,7 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
                     },
                     reason="reauth_successful",
                 )
-            errors["base"] = "cannot_connect"
+            errors["base"] = probe.error or ERROR_CANNOT_CONNECT
 
         return self.async_show_form(
             step_id="reauth_confirm",

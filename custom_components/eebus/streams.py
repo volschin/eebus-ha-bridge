@@ -64,6 +64,14 @@ class StreamManager:
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
 
+    def diagnostics(self) -> dict[str, int]:
+        """Return non-secret stream lifecycle counters for diagnostics."""
+        return {
+            "configured": len(self._tasks),
+            "running": sum(1 for task in self._tasks if not task.done()),
+            "done": sum(1 for task in self._tasks if task.done()),
+        }
+
     async def _run_stream(
         self,
         name: str,

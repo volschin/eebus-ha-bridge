@@ -1,10 +1,12 @@
 package config
 
 import (
+	"bytes"
 	"crypto/tls"
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -91,7 +93,7 @@ type EEBUSConfig struct {
 }
 
 type CertificatesConfig struct {
-	AutoGenerate bool   `yaml:"auto_generate"`
+	AutoGenerate *bool  `yaml:"auto_generate"`
 	CertFile     string `yaml:"cert_file"`
 	KeyFile      string `yaml:"key_file"`
 	StoragePath  string `yaml:"storage_path"`
@@ -112,144 +114,282 @@ func LoadFromFile(path string) (*Config, error) {
 		return nil, fmt.Errorf("reading config file: %w", err)
 	}
 
-	cfg := &Config{}
-	if err := yaml.Unmarshal(data, cfg); err != nil {
+	cfg := defaultConfig()
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(cfg); err != nil {
 		return nil, fmt.Errorf("parsing config file: %w", err)
 	}
 
-	applyDefaults(cfg)
-	applyEnvOverrides(cfg)
-	if err := validateGRPCSecurity(cfg.GRPC); err != nil {
-		return nil, fmt.Errorf("validating gRPC security: %w", err)
+	envOverrides, err := applyEnvOverrides(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("applying environment overrides: %w", err)
+	}
+	if err := Validate(cfg); err != nil {
+		if len(envOverrides) > 0 {
+			return nil, fmt.Errorf("validating config after environment overrides (%s): %w", strings.Join(envOverrides, ", "), err)
+		}
+		return nil, err
 	}
 
 	return cfg, nil
 }
 
-func applyDefaults(cfg *Config) {
-	if cfg.GRPC.Port == 0 {
-		cfg.GRPC.Port = 50051
-	}
-	if cfg.GRPC.Bind == "" {
-		cfg.GRPC.Bind = "127.0.0.1"
-	}
-	if cfg.GRPC.Security.Mode == "" {
-		cfg.GRPC.Security.Mode = GRPCSecurityModeLoopback
-	}
-	if cfg.EEBUS.Port == 0 {
-		cfg.EEBUS.Port = 4712
-	}
-	if cfg.EEBUS.Vendor == "" {
-		cfg.EEBUS.Vendor = "HomeAssistant"
-	}
-	if cfg.EEBUS.Brand == "" {
-		cfg.EEBUS.Brand = "Home Assistant"
-	}
-	if cfg.EEBUS.Model == "" {
-		cfg.EEBUS.Model = "eebus-bridge"
-	}
-	if cfg.Certificates.StoragePath == "" {
-		cfg.Certificates.StoragePath = "/data/certs"
-	}
-	if !cfg.Certificates.AutoGenerate && cfg.Certificates.CertFile == "" {
-		cfg.Certificates.AutoGenerate = true
-	}
-	if cfg.OHPCF.Enabled == nil {
-		enabled := true
-		cfg.OHPCF.Enabled = &enabled
+func defaultConfig() *Config {
+	certAutoGenerate := true
+	ohpcfEnabled := true
+	return &Config{
+		GRPC: GRPCConfig{
+			Port: 50051,
+			Bind: "127.0.0.1",
+			Security: GRPCSecurityConfig{
+				Mode: GRPCSecurityModeLoopback,
+			},
+		},
+		EEBUS: EEBUSConfig{
+			Port:   4712,
+			Vendor: "HomeAssistant",
+			Brand:  "Home Assistant",
+			Model:  "eebus-bridge",
+		},
+		Certificates: CertificatesConfig{
+			AutoGenerate: &certAutoGenerate,
+			StoragePath:  "/data/certs",
+		},
+		OHPCF: OHPCFConfig{
+			Enabled: &ohpcfEnabled,
+		},
 	}
 }
 
-func applyEnvOverrides(cfg *Config) {
-	if v := os.Getenv("EEBUS_GRPC_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			cfg.GRPC.Port = port
+func applyEnvOverrides(cfg *Config) ([]string, error) {
+	applied := make([]string, 0)
+	if v, ok := os.LookupEnv("EEBUS_GRPC_PORT"); ok {
+		applied = append(applied, "EEBUS_GRPC_PORT")
+		port, err := parseEnvPort("EEBUS_GRPC_PORT", v)
+		if err != nil {
+			return applied, err
 		}
+		cfg.GRPC.Port = port
 	}
-	if v := os.Getenv("EEBUS_GRPC_BIND"); v != "" {
+	if v, ok := os.LookupEnv("EEBUS_GRPC_BIND"); ok {
+		applied = append(applied, "EEBUS_GRPC_BIND")
+		if v == "" {
+			return applied, fmt.Errorf("EEBUS_GRPC_BIND must not be empty")
+		}
 		cfg.GRPC.Bind = v
 	}
-	if v := os.Getenv("EEBUS_GRPC_REFLECTION"); v != "" {
-		if enabled, err := strconv.ParseBool(v); err == nil {
-			cfg.GRPC.EnableReflection = enabled
+	if v, ok := os.LookupEnv("EEBUS_GRPC_REFLECTION"); ok {
+		applied = append(applied, "EEBUS_GRPC_REFLECTION")
+		enabled, err := parseEnvBool("EEBUS_GRPC_REFLECTION", v)
+		if err != nil {
+			return applied, err
 		}
+		cfg.GRPC.EnableReflection = enabled
 	}
-	if v := os.Getenv("EEBUS_GRPC_SECURITY_MODE"); v != "" {
+	if v, ok := os.LookupEnv("EEBUS_GRPC_SECURITY_MODE"); ok {
+		applied = append(applied, "EEBUS_GRPC_SECURITY_MODE")
+		mode := GRPCSecurityMode(v)
+		if mode != GRPCSecurityModeLoopback && mode != GRPCSecurityModeTLSToken {
+			return applied, fmt.Errorf("EEBUS_GRPC_SECURITY_MODE must be loopback or tls_token, got %q", v)
+		}
 		cfg.GRPC.Security.Mode = GRPCSecurityMode(v)
 	}
-	if v := os.Getenv("EEBUS_GRPC_TLS_CERT_FILE"); v != "" {
+	if v, ok := os.LookupEnv("EEBUS_GRPC_TLS_CERT_FILE"); ok {
+		applied = append(applied, "EEBUS_GRPC_TLS_CERT_FILE")
 		cfg.GRPC.Security.TLSCertFile = v
 	}
-	if v := os.Getenv("EEBUS_GRPC_TLS_KEY_FILE"); v != "" {
+	if v, ok := os.LookupEnv("EEBUS_GRPC_TLS_KEY_FILE"); ok {
+		applied = append(applied, "EEBUS_GRPC_TLS_KEY_FILE")
 		cfg.GRPC.Security.TLSKeyFile = v
 	}
-	if v := os.Getenv("EEBUS_GRPC_TOKEN_FILE"); v != "" {
+	if v, ok := os.LookupEnv("EEBUS_GRPC_TOKEN_FILE"); ok {
+		applied = append(applied, "EEBUS_GRPC_TOKEN_FILE")
 		cfg.GRPC.Security.TokenFile = v
 	}
-	if v := os.Getenv("EEBUS_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			cfg.EEBUS.Port = port
+	if v, ok := os.LookupEnv("EEBUS_PORT"); ok {
+		applied = append(applied, "EEBUS_PORT")
+		port, err := parseEnvPort("EEBUS_PORT", v)
+		if err != nil {
+			return applied, err
 		}
+		cfg.EEBUS.Port = port
 	}
-	if v := os.Getenv("EEBUS_VENDOR"); v != "" {
+	if v, ok := os.LookupEnv("EEBUS_VENDOR"); ok {
+		applied = append(applied, "EEBUS_VENDOR")
 		cfg.EEBUS.Vendor = v
 	}
-	if v := os.Getenv("EEBUS_BRAND"); v != "" {
+	if v, ok := os.LookupEnv("EEBUS_BRAND"); ok {
+		applied = append(applied, "EEBUS_BRAND")
 		cfg.EEBUS.Brand = v
 	}
-	if v := os.Getenv("EEBUS_MODEL"); v != "" {
+	if v, ok := os.LookupEnv("EEBUS_MODEL"); ok {
+		applied = append(applied, "EEBUS_MODEL")
 		cfg.EEBUS.Model = v
 	}
-	if v := os.Getenv("EEBUS_SERIAL"); v != "" {
+	if v, ok := os.LookupEnv("EEBUS_SERIAL"); ok {
+		applied = append(applied, "EEBUS_SERIAL")
 		cfg.EEBUS.Serial = v
 	}
-	if v := os.Getenv("EEBUS_CERT_FILE"); v != "" {
+	if v, ok := os.LookupEnv("EEBUS_CERT_FILE"); ok {
+		applied = append(applied, "EEBUS_CERT_FILE")
 		cfg.Certificates.CertFile = v
 	}
-	if v := os.Getenv("EEBUS_KEY_FILE"); v != "" {
+	if v, ok := os.LookupEnv("EEBUS_KEY_FILE"); ok {
+		applied = append(applied, "EEBUS_KEY_FILE")
 		cfg.Certificates.KeyFile = v
 	}
-	if v := os.Getenv("EEBUS_CERT_STORAGE"); v != "" {
+	if v, ok := os.LookupEnv("EEBUS_CERT_STORAGE"); ok {
+		applied = append(applied, "EEBUS_CERT_STORAGE")
 		cfg.Certificates.StoragePath = v
 	}
-	if v := os.Getenv("EEBUS_DEBUG_EVENTS"); v != "" {
-		if enabled, err := strconv.ParseBool(v); err == nil {
-			cfg.Logging.DebugEvents = enabled
+	if v, ok := os.LookupEnv("EEBUS_DEBUG_EVENTS"); ok {
+		applied = append(applied, "EEBUS_DEBUG_EVENTS")
+		enabled, err := parseEnvBool("EEBUS_DEBUG_EVENTS", v)
+		if err != nil {
+			return applied, err
 		}
+		cfg.Logging.DebugEvents = enabled
 	}
-	if v := os.Getenv("EEBUS_SHIP_LOG"); v != "" {
-		if enabled, err := strconv.ParseBool(v); err == nil {
-			cfg.Logging.ShipLog = enabled
+	if v, ok := os.LookupEnv("EEBUS_SHIP_LOG"); ok {
+		applied = append(applied, "EEBUS_SHIP_LOG")
+		enabled, err := parseEnvBool("EEBUS_SHIP_LOG", v)
+		if err != nil {
+			return applied, err
 		}
+		cfg.Logging.ShipLog = enabled
 	}
-	if v := os.Getenv("EEBUS_SHIP_TRACE"); v != "" {
-		if enabled, err := strconv.ParseBool(v); err == nil {
-			cfg.Logging.ShipTrace = enabled
+	if v, ok := os.LookupEnv("EEBUS_SHIP_TRACE"); ok {
+		applied = append(applied, "EEBUS_SHIP_TRACE")
+		enabled, err := parseEnvBool("EEBUS_SHIP_TRACE", v)
+		if err != nil {
+			return applied, err
 		}
+		cfg.Logging.ShipTrace = enabled
 	}
-	if v := os.Getenv("EEBUS_EXP_MGCP_PROVIDER"); v != "" {
-		if enabled, err := strconv.ParseBool(v); err == nil {
-			cfg.Experimental.MGCPProvider = enabled
+	if v, ok := os.LookupEnv("EEBUS_EXP_MGCP_PROVIDER"); ok {
+		applied = append(applied, "EEBUS_EXP_MGCP_PROVIDER")
+		enabled, err := parseEnvBool("EEBUS_EXP_MGCP_PROVIDER", v)
+		if err != nil {
+			return applied, err
 		}
+		cfg.Experimental.MGCPProvider = enabled
 	}
-	if v := os.Getenv("EEBUS_EXP_VAPD_PROVIDER"); v != "" {
-		if enabled, err := strconv.ParseBool(v); err == nil {
-			cfg.Experimental.VAPDProvider = enabled
+	if v, ok := os.LookupEnv("EEBUS_EXP_VAPD_PROVIDER"); ok {
+		applied = append(applied, "EEBUS_EXP_VAPD_PROVIDER")
+		enabled, err := parseEnvBool("EEBUS_EXP_VAPD_PROVIDER", v)
+		if err != nil {
+			return applied, err
 		}
+		cfg.Experimental.VAPDProvider = enabled
 	}
-	if v := os.Getenv("EEBUS_EXP_VABD_PROVIDER"); v != "" {
-		if enabled, err := strconv.ParseBool(v); err == nil {
-			cfg.Experimental.VABDProvider = enabled
+	if v, ok := os.LookupEnv("EEBUS_EXP_VABD_PROVIDER"); ok {
+		applied = append(applied, "EEBUS_EXP_VABD_PROVIDER")
+		enabled, err := parseEnvBool("EEBUS_EXP_VABD_PROVIDER", v)
+		if err != nil {
+			return applied, err
 		}
+		cfg.Experimental.VABDProvider = enabled
 	}
-	if v := os.Getenv("EEBUS_OHPCF_ENABLED"); v != "" {
-		if enabled, err := strconv.ParseBool(v); err == nil {
-			cfg.OHPCF.Enabled = &enabled
+	if v, ok := os.LookupEnv("EEBUS_OHPCF_ENABLED"); ok {
+		applied = append(applied, "EEBUS_OHPCF_ENABLED")
+		enabled, err := parseEnvBool("EEBUS_OHPCF_ENABLED", v)
+		if err != nil {
+			return applied, err
 		}
+		cfg.OHPCF.Enabled = &enabled
 	}
-	if v := os.Getenv("EEBUS_EXP_TRUST_SKI"); v != "" {
+	if v, ok := os.LookupEnv("EEBUS_EXP_TRUST_SKI"); ok {
+		applied = append(applied, "EEBUS_EXP_TRUST_SKI")
+		if !isCanonicalSKI(v) {
+			return applied, fmt.Errorf("EEBUS_EXP_TRUST_SKI must be a 40-character hexadecimal SKI")
+		}
 		cfg.Experimental.TrustSKI = v
 	}
+	return applied, nil
+}
+
+func Validate(cfg *Config) error {
+	if err := validatePorts(cfg.GRPC.Port, cfg.EEBUS.Port); err != nil {
+		return err
+	}
+	if err := validateCertificates(cfg.Certificates); err != nil {
+		return fmt.Errorf("validating certificates: %w", err)
+	}
+	if err := validateGRPCSecurity(cfg.GRPC); err != nil {
+		return fmt.Errorf("validating gRPC security: %w", err)
+	}
+	if err := validateProviderConfig(cfg.Experimental, cfg.GRPC); err != nil {
+		return fmt.Errorf("validating experimental providers: %w", err)
+	}
+	if err := validateExperimentalConfig(cfg.Experimental); err != nil {
+		return fmt.Errorf("validating experimental config: %w", err)
+	}
+	return nil
+}
+
+func parseEnvPort(name string, value string) (int, error) {
+	port, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer port: %w", name, err)
+	}
+	if err := validatePort(name, port); err != nil {
+		return 0, err
+	}
+	return port, nil
+}
+
+func parseEnvBool(name string, value string) (bool, error) {
+	enabled, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean: %w", name, err)
+	}
+	return enabled, nil
+}
+
+func validatePorts(grpcPort int, eebusPort int) error {
+	if err := validatePort("grpc.port", grpcPort); err != nil {
+		return err
+	}
+	if err := validatePort("eebus.port", eebusPort); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validatePort(name string, port int) error {
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("%s must be in range 1..65535, got %d", name, port)
+	}
+	return nil
+}
+
+func validateCertificates(cfg CertificatesConfig) error {
+	autoGenerate := cfg.AutoGenerate != nil && *cfg.AutoGenerate
+	hasCert := cfg.CertFile != ""
+	hasKey := cfg.KeyFile != ""
+	if hasCert != hasKey {
+		return fmt.Errorf("cert_file and key_file must be configured together")
+	}
+	if autoGenerate {
+		if hasCert || hasKey {
+			return fmt.Errorf("auto_generate cannot be combined with explicit cert_file/key_file")
+		}
+		if cfg.StoragePath == "" {
+			return fmt.Errorf("auto_generate requires storage_path")
+		}
+		return nil
+	}
+	if hasCert {
+		return nil
+	}
+	if cfg.StoragePath == "" {
+		return fmt.Errorf("auto_generate=false requires cert_file/key_file or storage_path with existing cert.pem/key.pem")
+	}
+	if !fileExists(filepath.Join(cfg.StoragePath, "cert.pem")) || !fileExists(filepath.Join(cfg.StoragePath, "key.pem")) {
+		return fmt.Errorf("auto_generate=false requires existing cert.pem and key.pem in storage_path %q", cfg.StoragePath)
+	}
+	return nil
 }
 
 func validateGRPCSecurity(cfg GRPCConfig) error {
@@ -279,10 +419,47 @@ func validateGRPCSecurity(cfg GRPCConfig) error {
 	}
 }
 
+func validateProviderConfig(experimental ExperimentalConfig, grpc GRPCConfig) error {
+	if !experimental.MGCPProvider && !experimental.VAPDProvider && !experimental.VABDProvider {
+		return nil
+	}
+	if grpc.Security.Mode == GRPCSecurityModeLoopback && !isLoopbackBind(grpc.Bind) {
+		return fmt.Errorf("experimental provider push services on non-loopback bind require tls_token security")
+	}
+	return nil
+}
+
+func validateExperimentalConfig(cfg ExperimentalConfig) error {
+	if cfg.TrustSKI == "" {
+		return nil
+	}
+	if !isCanonicalSKI(cfg.TrustSKI) {
+		return fmt.Errorf("trust_ski must be a 40-character hexadecimal SKI")
+	}
+	return nil
+}
+
+func isCanonicalSKI(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	for _, c := range value {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+			return false
+		}
+	}
+	return true
+}
+
 func isLoopbackBind(bind string) bool {
 	if strings.EqualFold(bind, "localhost") {
 		return true
 	}
 	ip := net.ParseIP(bind)
 	return ip != nil && ip.IsLoopback()
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
