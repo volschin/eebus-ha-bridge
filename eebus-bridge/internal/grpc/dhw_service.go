@@ -140,11 +140,7 @@ func (s *DHWService) SubscribeDHWEvents(req *pb.DeviceRequest, stream pb.DHWServ
 			return nil, false
 		}
 		event := &pb.DHWEvent{Ski: evt.SKI, EventType: eventType}
-		if entity, err := s.resolveEntity(evt.SKI); err == nil {
-			if state, err := s.dhw.State(entity); err == nil {
-				event.Setpoint = convertDHWSetpoint(state)
-			}
-		}
+		s.attachDHWPayload(event, evt.SKI)
 		return event, true
 	})
 }
@@ -164,13 +160,25 @@ func (s *DHWService) SubscribeDHWSystemFunctionEvents(
 			return nil, false
 		}
 		event := &pb.DHWSystemFunctionEvent{Ski: evt.SKI, EventType: eventType}
-		if entity, err := s.resolveSysFnEntity(evt.SKI); err == nil {
-			if state, err := s.dhwSysFn.State(entity); err == nil {
-				event.State = convertDHWSystemFunctionState(state)
-			}
-		}
+		s.attachDHWSystemFunctionPayload(event, evt.SKI)
 		return event, true
 	})
+}
+
+func (s *DHWService) attachDHWPayload(event *pb.DHWEvent, ski string) {
+	if entity, err := s.resolveEntity(ski); err == nil {
+		if state, err := s.dhw.State(entity); err == nil {
+			event.Setpoint = convertDHWSetpoint(state)
+		}
+	}
+}
+
+func (s *DHWService) attachDHWSystemFunctionPayload(event *pb.DHWSystemFunctionEvent, ski string) {
+	if entity, err := s.resolveSysFnEntity(ski); err == nil {
+		if state, err := s.dhwSysFn.State(entity); err == nil {
+			event.State = convertDHWSystemFunctionState(state)
+		}
+	}
 }
 
 func (s *DHWService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, error) {

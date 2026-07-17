@@ -125,6 +125,7 @@ func LoadFromFile(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("applying environment overrides: %w", err)
 	}
+	applyPostLoadDefaults(cfg)
 	if err := Validate(cfg); err != nil {
 		if len(envOverrides) > 0 {
 			return nil, fmt.Errorf("validating config after environment overrides (%s): %w", strings.Join(envOverrides, ", "), err)
@@ -136,7 +137,6 @@ func LoadFromFile(path string) (*Config, error) {
 }
 
 func defaultConfig() *Config {
-	certAutoGenerate := true
 	ohpcfEnabled := true
 	return &Config{
 		GRPC: GRPCConfig{
@@ -153,12 +153,18 @@ func defaultConfig() *Config {
 			Model:  "eebus-bridge",
 		},
 		Certificates: CertificatesConfig{
-			AutoGenerate: &certAutoGenerate,
-			StoragePath:  "/data/certs",
+			StoragePath: "/data/certs",
 		},
 		OHPCF: OHPCFConfig{
 			Enabled: &ohpcfEnabled,
 		},
+	}
+}
+
+func applyPostLoadDefaults(cfg *Config) {
+	if cfg.Certificates.AutoGenerate == nil {
+		autoGenerate := cfg.Certificates.CertFile == "" && cfg.Certificates.KeyFile == ""
+		cfg.Certificates.AutoGenerate = &autoGenerate
 	}
 }
 

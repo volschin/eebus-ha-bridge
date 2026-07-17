@@ -202,11 +202,15 @@ func (s *HVACService) SubscribeRoomHeatingEvents(
 			return nil, false
 		}
 		event := &pb.RoomHeatingEvent{Ski: evt.SKI, EventType: eventType}
-		if state, err := s.GetRoomHeating(stream.Context(), &pb.DeviceRequest{Ski: evt.SKI}); err == nil {
-			event.State = state
-		}
+		s.attachRoomHeatingPayload(event, evt.SKI)
 		return event, true
 	})
+}
+
+func (s *HVACService) attachRoomHeatingPayload(event *pb.RoomHeatingEvent, ski string) {
+	if state, err := s.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: ski}); err == nil {
+		event.State = state
+	}
 }
 
 func convertRoomHeatingSetpoint(state usecases.RoomHeatingSetpoint) *pb.RoomHeatingSetpoint {

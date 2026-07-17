@@ -279,13 +279,49 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 	}
 	trustController := eebus.NewTrustController(bridgeSvc, registry, bus)
 
+	lpcService := bridgegrpc.NewLPCService(lpcWrapper, bus, registry)
+	monitoringService := bridgegrpc.NewMonitoringService(
+		monitoringWrapper,
+		bridgegrpc.MonitoringReaders{
+			DHW:         dhwMonitoringWrapper,
+			Room:        roomMonitoringWrapper,
+			Outdoor:     outdoorMonitoringWrapper,
+			Flow:        usecases.FlowTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
+			Return:      usecases.ReturnTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
+			Diagnostics: deviceOperatingState,
+		},
+		bus,
+		registry,
+		cfg.Logging.DebugEvents,
+	)
+	dhwService := bridgegrpc.NewDHWService(dhwTemperature, dhwSystemFunction, bus, registry)
+	hvacService := bridgegrpc.NewHVACService(
+		roomHeatingTemperature,
+		roomHeatingSystemFunction,
+		roomMonitoringWrapper,
+		bus,
+		registry,
+	)
+
 	modules := []applicationModule{
 		{
 			name: "Device",
 			registerGRPC: func(srv *bridgegrpc.Server) {
 				pb.RegisterDeviceServiceServer(
 					srv.GRPCServer(),
-					bridgegrpc.NewDeviceService(bridgeSvc.Callbacks(), bus, ski, registry, trustController),
+					bridgegrpc.NewDeviceService(
+						bridgeSvc.Callbacks(),
+						bus,
+						ski,
+						registry,
+						trustController,
+						bridgegrpc.WithDeviceStatePayloads(bridgegrpc.DeviceStatePayloadSources{
+							Monitoring: monitoringService,
+							LPC:        lpcService,
+							DHW:        dhwService,
+							HVAC:       hvacService,
+						}),
+					),
 				)
 			},
 		},
@@ -297,7 +333,7 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 			},
 			registerUseCases: useCaseRegistrar(bridgeSvc, eebusUseCaseRegistration{name: "LPC", useCase: lpcWrapper.UseCase()}),
 			registerGRPC: func(srv *bridgegrpc.Server) {
-				pb.RegisterLPCServiceServer(srv.GRPCServer(), bridgegrpc.NewLPCService(lpcWrapper, bus, registry))
+				pb.RegisterLPCServiceServer(srv.GRPCServer(), lpcService)
 			},
 			start: func() error {
 				// Controllable systems revert an active LPC limit to its failsafe value when
@@ -331,23 +367,7 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 				eebusUseCaseRegistration{name: "MOT", useCase: outdoorMonitoringWrapper.UseCase()},
 			),
 			registerGRPC: func(srv *bridgegrpc.Server) {
-				pb.RegisterMonitoringServiceServer(
-					srv.GRPCServer(),
-					bridgegrpc.NewMonitoringService(
-						monitoringWrapper,
-						bridgegrpc.MonitoringReaders{
-							DHW:         dhwMonitoringWrapper,
-							Room:        roomMonitoringWrapper,
-							Outdoor:     outdoorMonitoringWrapper,
-							Flow:        usecases.FlowTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
-							Return:      usecases.ReturnTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
-							Diagnostics: deviceOperatingState,
-						},
-						bus,
-						registry,
-						cfg.Logging.DebugEvents,
-					),
-				)
+				pb.RegisterMonitoringServiceServer(srv.GRPCServer(), monitoringService)
 			},
 		},
 		{
@@ -358,10 +378,7 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 				eebusUseCaseRegistration{name: "DHWSystemFunction", useCase: dhwSystemFunction.UseCase()},
 			),
 			registerGRPC: func(srv *bridgegrpc.Server) {
-				pb.RegisterDHWServiceServer(
-					srv.GRPCServer(),
-					bridgegrpc.NewDHWService(dhwTemperature, dhwSystemFunction, bus, registry),
-				)
+				pb.RegisterDHWServiceServer(srv.GRPCServer(), dhwService)
 			},
 		},
 		{
@@ -372,16 +389,7 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 				eebusUseCaseRegistration{name: "RoomHeatingSystemFunction", useCase: roomHeatingSystemFunction.UseCase()},
 			),
 			registerGRPC: func(srv *bridgegrpc.Server) {
-				pb.RegisterHVACServiceServer(
-					srv.GRPCServer(),
-					bridgegrpc.NewHVACService(
-						roomHeatingTemperature,
-						roomHeatingSystemFunction,
-						roomMonitoringWrapper,
-						bus,
-						registry,
-					),
-				)
+				pb.RegisterHVACServiceServer(srv.GRPCServer(), hvacService)
 			},
 		},
 	}
@@ -614,7 +622,7 @@ func (a *Application) handleMonitoringWatchdogTick(now time.Time) bool {
 	a.recoveryMu.Lock()
 	defer a.recoveryMu.Unlock()
 
-	a.grpcSrv.SetHealthy(true)
+	unhealthy := len(staleDevices) > 0
 	for _, ski := range staleDevices {
 		if a.recoverStaleDeviceLocked(now, ski) {
 			a.grpcSrv.SetHealthy(false)
@@ -629,7 +637,11 @@ func (a *Application) handleMonitoringWatchdogTick(now time.Time) bool {
 			a.grpcSrv.SetHealthy(false)
 			return true
 		}
+		if current := a.deviceRecoveries[ski]; current != nil && current.status == deviceRecoveryRecovering {
+			unhealthy = true
+		}
 	}
+	a.grpcSrv.SetHealthy(!unhealthy)
 	return false
 }
 

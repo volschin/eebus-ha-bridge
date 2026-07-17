@@ -82,9 +82,7 @@ class _ProviderPusher:
         def _on_change(_event: Event[EventStateChangedData]) -> None:
             self.signal()
 
-        self._unsub = async_track_state_change_event(
-            self._hass, self._entity_ids, _on_change
-        )
+        self._unsub = async_track_state_change_event(self._hass, self._entity_ids, _on_change)
         self.signal()
         self._task = self._hass.async_create_background_task(
             self._run(), name=f"eebus_{self._label}_provider_push_{self._ski}"
@@ -122,9 +120,7 @@ class _ProviderPusher:
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001
-                _LOGGER.exception(
-                    "Unexpected failure pushing %s provider data", self._label
-                )
+                _LOGGER.exception("Unexpected failure pushing %s provider data", self._label)
 
 
 class ProviderManager:
@@ -163,6 +159,7 @@ class ProviderManager:
         self._battery_soc_entity = battery_soc_entity
         self._provider_pushers: list[_ProviderPusher] = []
         self._provider_push_failing: dict[str, bool] = {}
+        self._provider_invalidation_supported: bool | None = None
 
     @property
     def grid_push_enabled(self) -> bool:
@@ -228,13 +225,9 @@ class ProviderManager:
             factor = 1.0
         result = value * factor
         if not math.isfinite(result):
-            _LOGGER.debug(
-                "%s sensor %s produced non-finite value %r", kind, entity_id, result
-            )
+            _LOGGER.debug("%s sensor %s produced non-finite value %r", kind, entity_id, result)
             return None
-        if (minimum is not None and result < minimum) or (
-            maximum is not None and result > maximum
-        ):
+        if (minimum is not None and result < minimum) or (maximum is not None and result > maximum):
             _LOGGER.debug(
                 "%s sensor %s value %r out of range [%s, %s]; omitting",
                 kind,
@@ -246,9 +239,7 @@ class ProviderManager:
             return None
         return result
 
-    async def _async_publish_provider(
-        self, label: str, stub_factory: str, publish_method: str, request: Any
-    ) -> None:
+    async def _async_publish_provider(self, label: str, stub_factory: str, publish_method: str, request: Any) -> None:
         """Publish a provider reading to the bridge, quiet when the provider is off.
 
         UNIMPLEMENTED/UNAVAILABLE mean the provider is disabled or the bridge is
@@ -272,13 +263,9 @@ class ProviderManager:
                 )
                 return
             if self._provider_push_failing.get(label, False):
-                _LOGGER.debug(
-                    "Failed to push %s data: %s", label, _rpc_error_text(err)
-                )
+                _LOGGER.debug("Failed to push %s data: %s", label, _rpc_error_text(err))
             else:
-                _LOGGER.warning(
-                    "Failed to push %s data: %s", label, _rpc_error_text(err)
-                )
+                _LOGGER.warning("Failed to push %s data: %s", label, _rpc_error_text(err))
                 self._provider_push_failing[label] = True
 
     def _sample_meta(self, *, invalid: bool = False) -> Any:
@@ -291,6 +278,37 @@ class ProviderManager:
             valid_until=observed_at + PROVIDER_SAMPLE_TTL,
             invalid=invalid,
         )
+
+    async def _async_provider_invalidation_supported(self) -> bool:
+        """Return whether the bridge understands sample.invalid provider pushes."""
+        if self._provider_invalidation_supported is not None:
+            return self._provider_invalidation_supported
+
+        channel = await self._channel_getter()
+        from . import proto_stubs
+
+        try:
+            await proto_stubs.device_service_stub(channel).GetDeviceCapabilities(
+                proto_stubs.DeviceRequest(ski=self._ski),
+                timeout=RPC_TIMEOUT,
+            )
+        except grpc.aio.AioRpcError as err:
+            if _is_unimplemented(err):
+                self._provider_invalidation_supported = False
+                _LOGGER.debug("Bridge lacks capability contract; skipping provider invalidation pushes for old bridge")
+                return False
+            if err.code() in (
+                grpc.StatusCode.UNAVAILABLE,
+                grpc.StatusCode.DEADLINE_EXCEEDED,
+                grpc.StatusCode.CANCELLED,
+            ):
+                _LOGGER.debug(
+                    "Could not confirm provider invalidation support; skipping invalidation: %s",
+                    _rpc_error_text(err),
+                )
+                return False
+        self._provider_invalidation_supported = True
+        return True
 
     def _start_provider_push(
         self,
@@ -318,9 +336,7 @@ class ProviderManager:
         """
         if not self._grid_power_entity:
             return
-        power_w = self._read_sensor_value(
-            self._grid_power_entity, POWER_UNIT_TO_W, "grid power"
-        )
+        power_w = self._read_sensor_value(self._grid_power_entity, POWER_UNIT_TO_W, "grid power")
         if power_w is None:
             await self._async_invalidate_grid_data()
             return
@@ -344,9 +360,7 @@ class ProviderManager:
             request.feed_in_wh = feed_in_wh
         if consumed_wh is not None:
             request.consumed_wh = consumed_wh
-        await self._async_publish_provider(
-            "grid", "grid_service_stub", "PublishGridData", request
-        )
+        await self._async_publish_provider("grid", "grid_service_stub", "PublishGridData", request)
 
     async def async_push_pv_data(self) -> None:
         """Push the mapped PV sensors to the bridge VAPD (display) provider.
@@ -356,9 +370,7 @@ class ProviderManager:
         """
         if not self._pv_power_entity:
             return
-        power_w = self._read_sensor_value(
-            self._pv_power_entity, POWER_UNIT_TO_W, "PV power", minimum=0
-        )
+        power_w = self._read_sensor_value(self._pv_power_entity, POWER_UNIT_TO_W, "PV power", minimum=0)
         if power_w is None:
             await self._async_invalidate_pv_data()
             return
@@ -380,9 +392,7 @@ class ProviderManager:
         request = proto_stubs.PVData(power_w=power_w, sample=self._sample_meta())
         if yield_wh is not None:
             request.yield_wh = yield_wh
-        await self._async_publish_provider(
-            "PV", "visualization_service_stub", "PublishPVData", request
-        )
+        await self._async_publish_provider("PV", "visualization_service_stub", "PublishPVData", request)
         if peak_power_w is not None:
             await self._async_publish_provider(
                 "PV peak",
@@ -400,9 +410,7 @@ class ProviderManager:
         """
         if not self._battery_power_entity:
             return
-        power_w = self._read_sensor_value(
-            self._battery_power_entity, POWER_UNIT_TO_W, "battery power"
-        )
+        power_w = self._read_sensor_value(self._battery_power_entity, POWER_UNIT_TO_W, "battery power")
         if power_w is None:
             await self._async_invalidate_battery_data()
             return
@@ -435,13 +443,13 @@ class ProviderManager:
             request.discharged_wh = discharged_wh
         if soc_pct is not None:
             request.state_of_charge_pct = soc_pct
-        await self._async_publish_provider(
-            "battery", "visualization_service_stub", "PublishBatteryData", request
-        )
+        await self._async_publish_provider("battery", "visualization_service_stub", "PublishBatteryData", request)
 
     async def _async_invalidate_grid_data(self) -> None:
         from . import proto_stubs
 
+        if not await self._async_provider_invalidation_supported():
+            return
         await self._async_publish_provider(
             "grid",
             "grid_service_stub",
@@ -452,6 +460,8 @@ class ProviderManager:
     async def _async_invalidate_pv_data(self) -> None:
         from . import proto_stubs
 
+        if not await self._async_provider_invalidation_supported():
+            return
         await self._async_publish_provider(
             "PV",
             "visualization_service_stub",
@@ -462,6 +472,8 @@ class ProviderManager:
     async def _async_invalidate_battery_data(self) -> None:
         from . import proto_stubs
 
+        if not await self._async_provider_invalidation_supported():
+            return
         await self._async_publish_provider(
             "battery",
             "visualization_service_stub",

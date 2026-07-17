@@ -77,22 +77,39 @@ func (s *DeviceService) deviceStateEnvelope(event eebus.Event) *pb.DeviceStateEv
 		eebus.EventTypeLPCFailsafePowerUpdated,
 		eebus.EventTypeLPCFailsafeDurationUpdated,
 		eebus.EventTypeLPCHeartbeatUpdated:
-		envelope.Payload = &pb.DeviceStateEvent_Lpc{Lpc: lpcEvent(event)}
+		lpc := lpcEvent(event)
+		if s.payloads.LPC != nil {
+			s.payloads.LPC.attachLPCPayload(lpc, event.SKI, lpc.EventType)
+		}
+		envelope.Payload = &pb.DeviceStateEvent_Lpc{Lpc: lpc}
 	case eebus.EventTypeDHWSetpointUpdated:
+		dhwEvent := &pb.DHWEvent{
+			Ski: event.SKI, EventType: pb.DHWEventType_DHW_EVENT_SETPOINT_UPDATED,
+		}
+		if s.payloads.DHW != nil {
+			s.payloads.DHW.attachDHWPayload(dhwEvent, event.SKI)
+		}
 		envelope.Payload = &pb.DeviceStateEvent_Dhw{Dhw: &pb.DeviceStateDHWEvent{
-			Payload: &pb.DeviceStateDHWEvent_Temperature{Temperature: &pb.DHWEvent{
-				Ski: event.SKI, EventType: pb.DHWEventType_DHW_EVENT_SETPOINT_UPDATED,
-			}},
+			Payload: &pb.DeviceStateDHWEvent_Temperature{Temperature: dhwEvent},
 		}}
 	case eebus.EventTypeDHWSystemFunctionUpdated:
+		dhwEvent := &pb.DHWSystemFunctionEvent{
+			Ski: event.SKI, EventType: pb.DHWSystemFunctionEventType_DHW_SYSTEM_FUNCTION_EVENT_STATE_UPDATED,
+		}
+		if s.payloads.DHW != nil {
+			s.payloads.DHW.attachDHWSystemFunctionPayload(dhwEvent, event.SKI)
+		}
 		envelope.Payload = &pb.DeviceStateEvent_Dhw{Dhw: &pb.DeviceStateDHWEvent{
-			Payload: &pb.DeviceStateDHWEvent_SystemFunction{SystemFunction: &pb.DHWSystemFunctionEvent{
-				Ski: event.SKI, EventType: pb.DHWSystemFunctionEventType_DHW_SYSTEM_FUNCTION_EVENT_STATE_UPDATED,
-			}},
+			Payload: &pb.DeviceStateDHWEvent_SystemFunction{SystemFunction: dhwEvent},
 		}}
 	case eebus.EventTypeRoomHeatingSetpointUpdated,
+		eebus.EventTypeRoomTemperatureUpdated,
 		eebus.EventTypeRoomHeatingSystemFunctionUpdated:
-		envelope.Payload = &pb.DeviceStateEvent_Hvac{Hvac: roomHeatingEvent(event)}
+		hvac := roomHeatingEvent(event)
+		if s.payloads.HVAC != nil {
+			s.payloads.HVAC.attachRoomHeatingPayload(hvac, event.SKI)
+		}
+		envelope.Payload = &pb.DeviceStateEvent_Hvac{Hvac: hvac}
 	case eebus.EventTypeOHPCFConsumptionStateUpdated,
 		eebus.EventTypeOHPCFConsumptionStoppableUpdated,
 		eebus.EventTypeOHPCFConsumptionPausableUpdated,
@@ -113,9 +130,12 @@ func (s *DeviceService) deviceStateEnvelope(event eebus.Event) *pb.DeviceStateEv
 		eebus.EventTypeMonitoringReturnTemperatureUpdated,
 		eebus.EventTypeMonitoringDeviceOperatingStateUpdated,
 		eebus.EventTypeDHWTemperatureUpdated,
-		eebus.EventTypeRoomTemperatureUpdated,
 		eebus.EventTypeOutdoorTemperatureUpdated:
-		envelope.Payload = &pb.DeviceStateEvent_Measurement{Measurement: measurementEvent(event)}
+		measurement := measurementEvent(event)
+		if s.payloads.Monitoring != nil {
+			s.payloads.Monitoring.attachMeasurementPayload(measurement, event.SKI, measurement.EventType)
+		}
+		envelope.Payload = &pb.DeviceStateEvent_Measurement{Measurement: measurement}
 	default:
 		// Provider-side events are still revision-bearing device events. HA's
 		// provider manager owns their values, so the device session only needs
@@ -173,7 +193,9 @@ func lpcEvent(event eebus.Event) *pb.LPCEvent {
 
 func roomHeatingEvent(event eebus.Event) *pb.RoomHeatingEvent {
 	eventType := pb.RoomHeatingEventType_ROOM_HEATING_EVENT_UNSPECIFIED
-	if event.Type == eebus.EventTypeRoomHeatingSetpointUpdated {
+	if event.Type == eebus.EventTypeRoomTemperatureUpdated {
+		eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_CURRENT_TEMPERATURE_UPDATED
+	} else if event.Type == eebus.EventTypeRoomHeatingSetpointUpdated {
 		eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SETPOINT_UPDATED
 	} else if event.Type == eebus.EventTypeRoomHeatingSystemFunctionUpdated {
 		eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SYSTEM_FUNCTION_UPDATED

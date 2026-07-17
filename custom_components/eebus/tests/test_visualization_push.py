@@ -46,22 +46,26 @@ def _make_coordinator(
     return coordinator
 
 
+def _patch_new_bridge_probe(monkeypatch):
+    class _DeviceStub:
+        def __init__(self, _channel):
+            pass
+
+        async def GetDeviceCapabilities(self, request, timeout=None):  # noqa: N802
+            return proto_stubs.DeviceCapabilities(ski=request.ski)
+
+    monkeypatch.setattr(proto_stubs, "DeviceServiceStub", _DeviceStub)
+
+
 def test_read_sensor_value_normalizes_soc_percentage():
     """State of charge passes through as a plain percentage."""
     coordinator = _make_coordinator({"sensor.soc": _state("73", "%")})
-    assert (
-        coordinator._provider_manager._read_sensor_value(
-            "sensor.soc", SOC_UNIT_TO_PCT, "battery SoC"
-        )
-        == 73.0
-    )
+    assert coordinator._provider_manager._read_sensor_value("sensor.soc", SOC_UNIT_TO_PCT, "battery SoC") == 73.0
 
 
 def test_read_sensor_value_rejects_non_finite():
     """NaN/Inf states are dropped rather than advertised downstream."""
-    coordinator = _make_coordinator(
-        {"sensor.bad": _state("nan", "%"), "sensor.inf": _state("inf", "%")}
-    )
+    coordinator = _make_coordinator({"sensor.bad": _state("nan", "%"), "sensor.inf": _state("inf", "%")})
     manager = coordinator._provider_manager
     assert manager._read_sensor_value("sensor.bad", SOC_UNIT_TO_PCT, "battery SoC") is None
     assert manager._read_sensor_value("sensor.inf", SOC_UNIT_TO_PCT, "battery SoC") is None
@@ -69,9 +73,7 @@ def test_read_sensor_value_rejects_non_finite():
 
 def test_read_sensor_value_enforces_range():
     """Values outside [minimum, maximum] are omitted."""
-    coordinator = _make_coordinator(
-        {"sensor.soc": _state("250", "%"), "sensor.neg": _state("-5", "%")}
-    )
+    coordinator = _make_coordinator({"sensor.soc": _state("250", "%"), "sensor.neg": _state("-5", "%")})
     # SoC capped at 100; negative energy/power rejected by minimum=0.
     assert (
         coordinator._provider_manager._read_sensor_value(
@@ -80,10 +82,7 @@ def test_read_sensor_value_enforces_range():
         is None
     )
     assert (
-        coordinator._provider_manager._read_sensor_value(
-            "sensor.neg", SOC_UNIT_TO_PCT, "PV power", minimum=0
-        )
-        is None
+        coordinator._provider_manager._read_sensor_value("sensor.neg", SOC_UNIT_TO_PCT, "PV power", minimum=0) is None
     )
     # In-range value still passes.
     assert (
@@ -125,6 +124,7 @@ async def test_pv_push_publishes_power_and_optional_fields(monkeypatch):
             return proto_stubs.Empty()
 
     monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _FakeStub)
+    _patch_new_bridge_probe(monkeypatch)
 
     await coordinator.async_push_pv_data()
 
@@ -187,6 +187,7 @@ async def test_pv_push_invalidates_when_power_unavailable(monkeypatch):
             return proto_stubs.Empty()
 
     monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _FakeStub)
+    _patch_new_bridge_probe(monkeypatch)
 
     await coordinator.async_push_pv_data()
 
@@ -226,6 +227,7 @@ async def test_battery_push_publishes_power_and_optional_fields(monkeypatch):
             return proto_stubs.Empty()
 
     monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _FakeStub)
+    _patch_new_bridge_probe(monkeypatch)
 
     await coordinator.async_push_battery_data()
 
@@ -256,6 +258,7 @@ async def test_battery_push_invalidates_when_power_unavailable(monkeypatch):
             return proto_stubs.Empty()
 
     monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _FakeStub)
+    _patch_new_bridge_probe(monkeypatch)
 
     await coordinator.async_push_battery_data()
 

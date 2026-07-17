@@ -71,6 +71,9 @@ Bestehende Installationen, die gRPC auf `127.0.0.1` oder `::1` binden,
 benoetigen keine Migration: Ohne weitere Konfiguration bleibt der Modus
 `loopback` aktiv und verwendet lokal weiterhin Plaintext. Ein Bind auf
 `0.0.0.0`, `::` oder eine LAN-Adresse wird dagegen ohne `tls_token` abgelehnt.
+Die Bridge liest `config.yaml` strikt: unbekannte YAML-Schluessel oder falsch
+geschriebene Feldnamen stoppen den Start mit einem Parse-Fehler, statt
+stillschweigend ignoriert zu werden.
 
 ### Migration: Bridge auf einem entfernten Host
 
@@ -408,6 +411,8 @@ automation:
 1. Bridge-Container laeuft? `docker ps | grep eebus-bridge`
 2. Port 50051 erreichbar? `grpcurl -plaintext localhost:50051 list`
 3. Bridge-Log pruefen: `docker logs eebus-bridge`
+4. Bei Startfehlern nach `parsing config file` suchen. `config.yaml` akzeptiert
+   nur bekannte Schluessel; Tippfehler muessen korrigiert oder entfernt werden.
 
 </details>
 

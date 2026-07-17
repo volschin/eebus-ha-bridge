@@ -36,6 +36,7 @@ from custom_components.eebus.snapshot import (
     _async_fetch_device_info,
     _async_read_room_heating,
     _poll_read,
+    async_build_snapshot,
 )
 from custom_components.eebus.state import (
     DeviceState,
@@ -147,11 +148,66 @@ async def test_partial_room_heating_poll_and_stream_clear_the_same_fields() -> N
             state=payload,
         )
     )
-    assert store.state.hvac.setpoint is poll_result.value.setpoint
-    assert store.state.hvac.system_function is poll_result.value.system_function
+    assert store.state.hvac.setpoint == initial.hvac.setpoint
+    assert store.state.hvac.system_function == initial.hvac.system_function
     assert store.state.measurements.room_temperature_c == 22.0
     assert StateField.ROOM_HEATING_SETPOINT in store.state.fresh_fields
     assert StateField.ROOM_HEATING_SYSTEM_FUNCTION in store.state.fresh_fields
+
+
+async def test_lpc_only_not_found_does_not_force_reregistration(monkeypatch) -> None:
+    not_found = AioRpcError(grpc.StatusCode.NOT_FOUND, Metadata(), Metadata(), details="no lpc")
+    unimplemented = AioRpcError(grpc.StatusCode.UNIMPLEMENTED, Metadata(), Metadata(), details="not supported")
+
+    device_stub = SimpleNamespace(
+        GetStatus=AsyncMock(return_value=proto_stubs.ServiceStatus(running=True, local_ski="local")),
+        RegisterRemoteSKI=AsyncMock(return_value=proto_stubs.Empty()),
+        GetDeviceStatus=AsyncMock(return_value=proto_stubs.DeviceStatus(connected=True)),
+        ListPairedDevices=AsyncMock(return_value=device_service_pb2.ListPairedDevicesResponse()),
+        GetDeviceCapabilities=AsyncMock(return_value=proto_stubs.DeviceCapabilities(ski="device-ski")),
+    )
+    monitoring_stub = SimpleNamespace(
+        GetPowerConsumption=AsyncMock(return_value=proto_stubs.PowerMeasurement(watts=1000)),
+        GetMeasurements=AsyncMock(return_value=proto_stubs.MeasurementList()),
+        GetEnergyConsumed=AsyncMock(return_value=proto_stubs.EnergyMeasurement(kilowatt_hours=12)),
+        GetDeviceDiagnostics=AsyncMock(return_value=monitoring_service_pb2.DeviceDiagnosticsData()),
+    )
+    lpc_stub = SimpleNamespace(
+        GetConsumptionLimit=AsyncMock(side_effect=not_found),
+        GetFailsafeLimit=AsyncMock(side_effect=not_found),
+        GetHeartbeatStatus=AsyncMock(side_effect=not_found),
+    )
+    monkeypatch.setattr(proto_stubs, "device_service_stub", lambda _channel: device_stub)
+    monkeypatch.setattr(proto_stubs, "monitoring_service_stub", lambda _channel: monitoring_stub)
+    monkeypatch.setattr(proto_stubs, "lpc_service_stub", lambda _channel: lpc_stub)
+    monkeypatch.setattr(
+        proto_stubs,
+        "ohpcf_service_stub",
+        lambda _channel: SimpleNamespace(GetCompressorFlexibility=AsyncMock(side_effect=unimplemented)),
+    )
+    monkeypatch.setattr(
+        proto_stubs,
+        "dhw_service_stub",
+        lambda _channel: SimpleNamespace(
+            GetDHWSetpoint=AsyncMock(side_effect=unimplemented),
+            GetDHWSystemFunction=AsyncMock(side_effect=unimplemented),
+        ),
+    )
+    monkeypatch.setattr(
+        proto_stubs,
+        "hvac_service_stub",
+        lambda _channel: SimpleNamespace(GetRoomHeating=AsyncMock(side_effect=unimplemented)),
+    )
+
+    result = await async_build_snapshot(
+        MagicMock(),
+        "device-ski",
+        ski_registered=True,
+        not_found_streak=3,
+    )
+
+    assert result.not_found_streak == 0
+    device_stub.RegisterRemoteSKI.assert_not_awaited()
 
 
 def test_start_streams_delegates_to_device_stream_component() -> None:
@@ -222,9 +278,7 @@ def test_consolidated_stream_ignores_duplicates_and_detects_revision_gap() -> No
 
 
 def test_consolidated_capability_payload_is_explicit_truth() -> None:
-    store, streams, _hass = _streams_with(
-        DeviceState(capabilities=CapabilitiesState(dhw=CapabilityState.AVAILABLE))
-    )
+    store, streams, _hass = _streams_with(DeviceState(capabilities=CapabilitiesState(dhw=CapabilityState.AVAILABLE)))
     streams.handle_device_state_event(
         device_service_pb2.DeviceStateEvent(
             ski="device-ski",
@@ -303,9 +357,7 @@ async def test_refresh_signal_during_poll_runs_one_trailing_refresh() -> None:
 
 
 async def test_resync_reconciles_state_with_fresh_poll() -> None:
-    store = DeviceStateStore(
-        initial=DeviceState(measurements=MeasurementsState(power_watts=1.0))
-    )
+    store = DeviceStateStore(initial=DeviceState(measurements=MeasurementsState(power_watts=1.0)))
 
     async def refresh() -> None:
         store.dispatch(

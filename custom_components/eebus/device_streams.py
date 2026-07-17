@@ -193,9 +193,7 @@ class DeviceStreams:
 
     def diagnostics(self) -> dict[str, object]:
         """Return redacted stream state for config-entry diagnostics."""
-        running_refresh = (
-            self._refresh_task is not None and not self._refresh_task.done()
-        )
+        running_refresh = self._refresh_task is not None and not self._refresh_task.done()
         return {
             "last_device_state_revision": self._last_revision,
             "refresh_pending": self._refresh_pending,
@@ -510,10 +508,11 @@ class DeviceStreams:
             ),
             measurements=MeasurementsState(room_temperature_c=values.current_temperature_celsius),
         )
-        fields = {
-            StateField.ROOM_HEATING_SETPOINT,
-            StateField.ROOM_HEATING_SYSTEM_FUNCTION,
-        }
+        fields = set()
+        if event.state.HasField("setpoint"):
+            fields.add(StateField.ROOM_HEATING_SETPOINT)
+        if event.state.HasField("system_function"):
+            fields.add(StateField.ROOM_HEATING_SYSTEM_FUNCTION)
         if values.current_temperature_celsius is not None:
             fields.add(StateField.ROOM_TEMPERATURE_C)
         self._store.dispatch(

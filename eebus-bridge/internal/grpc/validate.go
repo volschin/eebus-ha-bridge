@@ -10,7 +10,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const legacyProviderSampleTTL = 2 * time.Minute
+const (
+	legacyProviderSampleTTL      = 2 * time.Minute
+	providerObservedFutureLeeway = 30 * time.Second
+)
 
 // validSKI reports whether ski is a well-formed EEBUS SKI: the SHA-1
 // fingerprint of a device certificate, 40 hex characters. Callers must
@@ -92,7 +95,7 @@ func providerValidity(meta *pb.ProviderSampleMeta) (usecases.ProviderValidity, e
 	observedAt := meta.ObservedAt.AsTime()
 	validUntil := meta.ValidUntil.AsTime()
 	now := time.Now()
-	if !meta.Invalid && observedAt.After(now) {
+	if !meta.Invalid && observedAt.After(now.Add(providerObservedFutureLeeway)) {
 		return usecases.ProviderValidity{}, status.Error(codes.InvalidArgument, "sample observed_at must not be in the future")
 	}
 	if !meta.Invalid && !validUntil.After(observedAt) {

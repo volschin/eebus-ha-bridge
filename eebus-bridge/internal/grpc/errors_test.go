@@ -103,6 +103,18 @@ func TestClassifiedUsecaseErrorsAreSanitized(t *testing.T) {
 	}
 }
 
+func TestClassifiedUsecaseErrorPreservesActionableDetail(t *testing.T) {
+	err := mapUsecaseError(
+		"writing OHPCF",
+		fmt.Errorf("SPINE result 7: value rejected: %w", usecases.ErrOHPCFRejected),
+		standardUsecaseErrorClasses,
+	)
+	message := status.Convert(err).Message()
+	if !strings.Contains(message, "SPINE result 7") || !strings.Contains(message, "value rejected") {
+		t.Fatalf("classified error detail = %q, want actionable device detail", message)
+	}
+}
+
 func TestRedactedErrorForLogDoesNotExposeWrappedMessage(t *testing.T) {
 	leakyErr := fmt.Errorf("token=super-secret ski=%s: %w", testValidSKI, usecases.ErrOHPCFRejected)
 	got := redactedErrorForLog(leakyErr)

@@ -28,6 +28,19 @@ func TestPublishPVDataValidation(t *testing.T) {
 	if _, err := svc.PublishPVData(ctx, &pb.PVData{PowerW: ptrFloat64Viz(1500), YieldWh: &yield}); status.Code(err) != codes.Unavailable {
 		t.Errorf("PublishPVData with nil provider code = %v, want Unavailable", status.Code(err))
 	}
+
+	peak := 5000.0
+	if _, err := svc.PublishPVData(ctx, &pb.PVData{PowerW: ptrFloat64Viz(1500), PeakPowerW: &peak}); status.Code(err) != codes.Unavailable {
+		t.Errorf("legacy PublishPVData with peak_power_w code = %v, want Unavailable", status.Code(err))
+	}
+
+	if _, err := svc.PublishPVData(ctx, &pb.PVData{}); status.Code(err) != codes.Unavailable {
+		t.Errorf("legacy PublishPVData without power code = %v, want Unavailable", status.Code(err))
+	}
+
+	if _, err := svc.PublishPVData(ctx, &pb.PVData{Sample: &pb.ProviderSampleMeta{}}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("new-style PublishPVData without power code = %v, want InvalidArgument", status.Code(err))
+	}
 }
 
 func TestPublishBatteryDataValidation(t *testing.T) {
@@ -41,5 +54,13 @@ func TestPublishBatteryDataValidation(t *testing.T) {
 	soc := 55.0
 	if _, err := svc.PublishBatteryData(ctx, &pb.BatteryData{PowerW: ptrFloat64Viz(-800), StateOfChargePct: &soc}); status.Code(err) != codes.Unavailable {
 		t.Errorf("PublishBatteryData with nil provider code = %v, want Unavailable", status.Code(err))
+	}
+
+	if _, err := svc.PublishBatteryData(ctx, &pb.BatteryData{}); status.Code(err) != codes.Unavailable {
+		t.Errorf("legacy PublishBatteryData without power code = %v, want Unavailable", status.Code(err))
+	}
+
+	if _, err := svc.PublishBatteryData(ctx, &pb.BatteryData{Sample: &pb.ProviderSampleMeta{}}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("new-style PublishBatteryData without power code = %v, want InvalidArgument", status.Code(err))
 	}
 }

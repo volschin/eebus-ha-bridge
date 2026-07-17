@@ -23,16 +23,36 @@ type DeviceService struct {
 	localSKI  string
 	registry  *eebus.DeviceRegistry
 	trust     TrustController
+	payloads  DeviceStatePayloadSources
 }
 
-func NewDeviceService(callbacks *eebus.Callbacks, bus *eebus.EventBus, localSKI string, registry *eebus.DeviceRegistry, trust TrustController) *DeviceService {
-	return &DeviceService{
+type DeviceServiceOption func(*DeviceService)
+
+type DeviceStatePayloadSources struct {
+	Monitoring *MonitoringService
+	LPC        *LPCService
+	DHW        *DHWService
+	HVAC       *HVACService
+}
+
+func WithDeviceStatePayloads(sources DeviceStatePayloadSources) DeviceServiceOption {
+	return func(service *DeviceService) {
+		service.payloads = sources
+	}
+}
+
+func NewDeviceService(callbacks *eebus.Callbacks, bus *eebus.EventBus, localSKI string, registry *eebus.DeviceRegistry, trust TrustController, opts ...DeviceServiceOption) *DeviceService {
+	service := &DeviceService{
 		callbacks: callbacks,
 		bus:       bus,
 		localSKI:  localSKI,
 		registry:  registry,
 		trust:     trust,
 	}
+	for _, opt := range opts {
+		opt(service)
+	}
+	return service
 }
 
 func (s *DeviceService) GetStatus(_ context.Context, _ *pb.Empty) (*pb.ServiceStatus, error) {

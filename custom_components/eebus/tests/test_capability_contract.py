@@ -48,9 +48,17 @@ async def test_only_unimplemented_enables_legacy_inference() -> None:
     assert result is None
 
 
-async def test_transient_capability_rpc_failure_does_not_enable_inference() -> None:
+async def test_transient_capability_rpc_failure_falls_back_to_inference() -> None:
     error = AioRpcError(grpc.StatusCode.UNAVAILABLE, Metadata(), Metadata(), details="temporary")
     stub = SimpleNamespace(GetDeviceCapabilities=AsyncMock(side_effect=error))
+
+    result = await _async_read_capabilities(stub, proto_stubs.DeviceRequest(ski="A" * 40), "A" * 40)  # type: ignore[arg-type]
+
+    assert result is None
+
+
+async def test_authoritative_empty_capability_contract_returns_empty_tuple() -> None:
+    stub = SimpleNamespace(GetDeviceCapabilities=AsyncMock(return_value=proto_stubs.DeviceCapabilities(ski="A" * 40)))
 
     result = await _async_read_capabilities(stub, proto_stubs.DeviceRequest(ski="A" * 40), "A" * 40)  # type: ignore[arg-type]
 

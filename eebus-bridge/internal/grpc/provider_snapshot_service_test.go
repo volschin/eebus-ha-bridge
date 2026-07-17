@@ -237,7 +237,7 @@ func TestPublishGridDataRejectsMissingPowerBeforeProviderCall(t *testing.T) {
 	}
 }
 
-func TestPublishPVDataRejectsDeprecatedPeakPowerBeforeProviderCall(t *testing.T) {
+func TestPublishPVDataAcceptsLegacyPeakPower(t *testing.T) {
 	provider := &recordingPVSnapshotProvider{}
 	service := &VisualizationService{vapd: provider}
 	peak := 5000.0
@@ -247,11 +247,11 @@ func TestPublishPVDataRejectsDeprecatedPeakPowerBeforeProviderCall(t *testing.T)
 		PeakPowerW: &peak,
 		Sample:     sampleMeta(time.Now(), false),
 	})
-	if status.Code(err) != codes.InvalidArgument {
-		t.Fatalf("PublishPVData() code = %v, want InvalidArgument", status.Code(err))
+	if err != nil {
+		t.Fatalf("PublishPVData() error = %v", err)
 	}
-	if provider.snapshotCalls != 0 || provider.peakCalls != 0 {
-		t.Fatalf("provider calls snapshot=%d peak=%d, want none", provider.snapshotCalls, provider.peakCalls)
+	if provider.snapshotCalls != 1 || provider.peakCalls != 1 || provider.peakPower != peak {
+		t.Fatalf("provider calls snapshot=%d peak=%d peakPower=%g", provider.snapshotCalls, provider.peakCalls, provider.peakPower)
 	}
 }
 

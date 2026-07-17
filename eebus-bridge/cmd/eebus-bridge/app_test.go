@@ -330,7 +330,7 @@ func TestApplicationStartWatchdogStartsDeviceScopedRecovery(t *testing.T) {
 	threshold, gracePeriod := registry.watchdogDurations()
 	assert.Equal(t, monitoringStaleThreshold, threshold)
 	assert.Equal(t, monitoringGracePeriod, gracePeriod)
-	assert.Contains(t, grpcServer.healthValues(), true)
+	assert.Contains(t, grpcServer.healthValues(), false)
 	assert.Equal(t, []string{"AABBCCDDEEFF"}, registry.clearValues())
 	assert.Equal(t, []string{"AABBCCDDEEFF"}, bridge.unregisterValues())
 	assert.Equal(t, []string{"AABBCCDDEEFF"}, bridge.registerValues())
@@ -374,7 +374,7 @@ func TestMonitoringRecoveryDoesNotTouchOtherDevicesOrRunInParallel(t *testing.T)
 	require.True(t, ok)
 	assert.Len(t, other.RemoteEntities, 1)
 	assert.Same(t, otherEntity, other.RemoteEntities[0])
-	assert.Equal(t, []bool{true, true}, grpcServer.healthValues())
+	assert.Equal(t, []bool{false, false}, grpcServer.healthValues())
 }
 
 func TestMonitoringRecoverySuccessfulRebindPreventsRestart(t *testing.T) {
@@ -394,7 +394,7 @@ func TestMonitoringRecoverySuccessfulRebindPreventsRestart(t *testing.T) {
 	assert.Equal(t, []string{"AA11"}, registry.clearValues())
 	assert.Equal(t, []string{"AA11"}, bridge.unregisterValues())
 	assert.Equal(t, []string{"AA11"}, bridge.registerValues())
-	assert.Equal(t, []bool{true, true}, grpcServer.healthValues())
+	assert.Equal(t, []bool{false, true}, grpcServer.healthValues())
 }
 
 func TestMonitoringRecoveryDisconnectedOrGraceDoesNotResetRecovery(t *testing.T) {
@@ -438,7 +438,7 @@ func TestMonitoringRecoveryPersistentFailureEscalatesOnce(t *testing.T) {
 	assert.Len(t, registry.clearValues(), monitoringRecoveryMaxAttempts)
 	assert.Len(t, bridge.unregisterValues(), monitoringRecoveryMaxAttempts)
 	assert.Len(t, bridge.registerValues(), monitoringRecoveryMaxAttempts)
-	assert.Equal(t, []bool{true, true, true, true, false, true}, grpcServer.healthValues())
+	assert.Equal(t, []bool{false, false, false, false, false}, grpcServer.healthValues())
 }
 
 func TestApplicationStartSignalTriggersShutdown(t *testing.T) {

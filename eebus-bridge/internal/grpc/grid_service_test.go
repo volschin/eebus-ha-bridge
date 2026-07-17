@@ -29,4 +29,14 @@ func TestPublishGridDataValidation(t *testing.T) {
 	if status.Code(err) != codes.Unavailable {
 		t.Errorf("PublishGridData with nil provider code = %v, want Unavailable", status.Code(err))
 	}
+
+	_, err = svc.PublishGridData(ctx, &pb.GridData{})
+	if status.Code(err) != codes.Unavailable {
+		t.Errorf("legacy PublishGridData without power code = %v, want Unavailable", status.Code(err))
+	}
+
+	_, err = svc.PublishGridData(ctx, &pb.GridData{Sample: &pb.ProviderSampleMeta{}})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("new-style PublishGridData without power code = %v, want InvalidArgument", status.Code(err))
+	}
 }

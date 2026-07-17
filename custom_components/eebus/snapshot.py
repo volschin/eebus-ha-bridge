@@ -116,9 +116,7 @@ async def _async_read_capabilities(
 ) -> tuple[CapabilityResult, ...] | None:
     """Read the explicit bridge contract; ``None`` means legacy fallback only."""
     try:
-        response: proto_stubs.DeviceCapabilities = await device_stub.GetDeviceCapabilities(
-            request, timeout=RPC_TIMEOUT
-        )
+        response: proto_stubs.DeviceCapabilities = await device_stub.GetDeviceCapabilities(request, timeout=RPC_TIMEOUT)
     except grpc.aio.AioRpcError as err:
         if _is_unimplemented(err):
             if ski not in _LEGACY_CAPABILITY_WARNED:
@@ -129,7 +127,7 @@ async def _async_read_capabilities(
                 )
             return None
         _LOGGER.debug("Capability contract read failed for SKI %s: %s", ski, _rpc_error_text(err))
-        return ()
+        return None
 
     return _capability_results_from_proto(response)
 
@@ -601,7 +599,7 @@ async def async_build_snapshot(
         tuple(compatibility_capability_results) if explicit_capabilities is None else explicit_capabilities
     )
 
-    saw_not_found = any(result.saw_not_found for result in (power, measurements, energy, limit, failsafe, heartbeat))
+    saw_not_found = any(result.saw_not_found for result in (power, measurements, energy))
     updated_not_found_streak = not_found_streak + 1 if saw_not_found else 0
     if updated_not_found_streak >= RE_REGISTER_NOT_FOUND_STREAK:
         _LOGGER.warning(

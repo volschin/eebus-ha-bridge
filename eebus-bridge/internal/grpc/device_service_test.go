@@ -137,6 +137,58 @@ func TestSubscribeDeviceStatePublishesCapabilityTruth(t *testing.T) {
 	t.Fatal("DHW capability missing")
 }
 
+func TestSubscribeDeviceStateAttachesBestEffortPayload(t *testing.T) {
+	bus := eebus.NewEventBus()
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	hvacService := bridgegrpc.NewHVACService(
+		nil,
+		nil,
+		fakeDHWTemperatureReader{value: 20.5},
+		bus,
+		registry,
+	)
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false),
+		bus,
+		"test-local-ski",
+		registry,
+		&recordingTrustController{},
+		bridgegrpc.WithDeviceStatePayloads(bridgegrpc.DeviceStatePayloadSources{HVAC: hvacService}),
+	)
+	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
+	pb.RegisterDeviceServiceServer(srv.GRPCServer(), svc)
+	go srv.Start()
+	t.Cleanup(srv.Stop)
+	time.Sleep(100 * time.Millisecond)
+	conn, err := grpc.NewClient(srv.Addr(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	stream, err := pb.NewDeviceServiceClient(conn).SubscribeDeviceState(ctx, &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil {
+		t.Fatalf("SubscribeDeviceState: %v", err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatalf("initial Recv: %v", err)
+	}
+	bus.Publish(eebus.Event{SKI: testValidSKI, Type: eebus.EventTypeRoomTemperatureUpdated})
+
+	event, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("event Recv: %v", err)
+	}
+	state := event.GetHvac().GetState()
+	if event.GetHvac().GetEventType() != pb.RoomHeatingEventType_ROOM_HEATING_EVENT_CURRENT_TEMPERATURE_UPDATED ||
+		state == nil || state.GetCurrentTemperatureCelsius() != 20.5 {
+		t.Fatalf("device state HVAC payload = %+v", event)
+	}
+}
+
 func TestGetStatus(t *testing.T) {
 	client := setupDeviceTest(t)
 

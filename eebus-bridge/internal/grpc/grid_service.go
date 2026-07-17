@@ -52,10 +52,14 @@ func (s *GridService) PublishGridData(_ context.Context, req *pb.GridData) (*pb.
 	// PowerW is the signed grid surplus signal (negative = export), so any finite
 	// value is valid; the energy totals are cumulative counters and cannot be
 	// negative. Reject bad input before touching the provider.
-	if req.PowerW == nil {
+	powerW := 0.0
+	if req.PowerW == nil && req.Sample != nil {
 		return nil, status.Error(codes.InvalidArgument, "grid power is required")
 	}
-	if err := finite("grid power", *req.PowerW); err != nil {
+	if req.PowerW != nil {
+		powerW = *req.PowerW
+	}
+	if err := finite("grid power", powerW); err != nil {
 		return nil, err
 	}
 	if req.FeedInWh != nil {
@@ -72,7 +76,7 @@ func (s *GridService) PublishGridData(_ context.Context, req *pb.GridData) (*pb.
 		return nil, status.Error(codes.Unavailable, "MGCP grid provider not enabled")
 	}
 	if err := s.mgcp.PublishGridSnapshot(usecases.GridSnapshot{
-		PowerW:     *req.PowerW,
+		PowerW:     powerW,
 		FeedInWh:   req.FeedInWh,
 		ConsumedWh: req.ConsumedWh,
 		Validity:   validity,
