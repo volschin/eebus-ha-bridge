@@ -23,8 +23,11 @@ from .generated.eebus.v1.device_service_pb2 import (  # noqa: F401
     CapabilityState,
     DeviceCapabilities,
     DeviceEventType,
+    DeviceStateDHWEvent,
+    DeviceStateEvent,
     DeviceStatus,
     RegisterSKIRequest,
+    ResyncReason,
     ServiceStatus,
 )
 from .generated.eebus.v1.device_service_pb2_grpc import DeviceServiceStub  # noqa: F401
@@ -132,6 +135,8 @@ __all__ = [
     "CompressorPowerConsumptionState",
     "ControlCompressorRequest",
     "DeviceEventType",
+    "DeviceStateDHWEvent",
+    "DeviceStateEvent",
     "DeviceCapabilities",
     "DeviceStatus",
     "DeviceDiagnosticsData",
@@ -164,6 +169,7 @@ __all__ = [
     "PVData",
     "PowerMeasurement",
     "RegisterSKIRequest",
+    "ResyncReason",
     "RoomHeatingEvent",
     "RoomHeatingEventType",
     "RoomHeatingSetpoint",

@@ -1,6 +1,11 @@
 import datetime
 
 from . import common_pb2 as _common_pb2
+from . import dhw_service_pb2 as _dhw_service_pb2
+from . import hvac_service_pb2 as _hvac_service_pb2
+from . import lpc_service_pb2 as _lpc_service_pb2
+from . import monitoring_service_pb2 as _monitoring_service_pb2
+from . import ohpcf_service_pb2 as _ohpcf_service_pb2
 from google.protobuf import timestamp_pb2 as _timestamp_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
@@ -39,12 +44,19 @@ class CapabilityReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     CAPABILITY_REASON_READ_FAILED: _ClassVar[CapabilityReason]
     CAPABILITY_REASON_DEVICE_DISCONNECTED: _ClassVar[CapabilityReason]
 
+class ResyncReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    RESYNC_REASON_UNSPECIFIED: _ClassVar[ResyncReason]
+    RESYNC_REASON_INITIAL_STATE_REQUIRED: _ClassVar[ResyncReason]
+    RESYNC_REASON_EVENT_DROPPED: _ClassVar[ResyncReason]
+
 class DeviceEventType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     DEVICE_EVENT_UNSPECIFIED: _ClassVar[DeviceEventType]
     DEVICE_EVENT_CONNECTED: _ClassVar[DeviceEventType]
     DEVICE_EVENT_DISCONNECTED: _ClassVar[DeviceEventType]
     DEVICE_EVENT_TRUST_REMOVED: _ClassVar[DeviceEventType]
+    DEVICE_EVENT_PROVIDER_UPDATED: _ClassVar[DeviceEventType]
 CAPABILITY_UNSPECIFIED: CapabilityId
 CAPABILITY_MONITORING: CapabilityId
 CAPABILITY_LPC: CapabilityId
@@ -64,10 +76,14 @@ CAPABILITY_REASON_REMOTE_NOT_ADVERTISED: CapabilityReason
 CAPABILITY_REASON_ENTITY_NOT_BOUND: CapabilityReason
 CAPABILITY_REASON_READ_FAILED: CapabilityReason
 CAPABILITY_REASON_DEVICE_DISCONNECTED: CapabilityReason
+RESYNC_REASON_UNSPECIFIED: ResyncReason
+RESYNC_REASON_INITIAL_STATE_REQUIRED: ResyncReason
+RESYNC_REASON_EVENT_DROPPED: ResyncReason
 DEVICE_EVENT_UNSPECIFIED: DeviceEventType
 DEVICE_EVENT_CONNECTED: DeviceEventType
 DEVICE_EVENT_DISCONNECTED: DeviceEventType
 DEVICE_EVENT_TRUST_REMOVED: DeviceEventType
+DEVICE_EVENT_PROVIDER_UPDATED: DeviceEventType
 
 class DeviceCapability(_message.Message):
     __slots__ = ("id", "state", "reason", "last_changed")
@@ -162,3 +178,45 @@ class DeviceEvent(_message.Message):
     ski: str
     event_type: DeviceEventType
     def __init__(self, ski: _Optional[str] = ..., event_type: _Optional[_Union[DeviceEventType, str]] = ...) -> None: ...
+
+class DeviceStateEvent(_message.Message):
+    __slots__ = ("ski", "revision", "event_time", "device", "measurement", "lpc", "dhw", "hvac", "ohpcf", "capability", "resync_required")
+    SKI_FIELD_NUMBER: _ClassVar[int]
+    REVISION_FIELD_NUMBER: _ClassVar[int]
+    EVENT_TIME_FIELD_NUMBER: _ClassVar[int]
+    DEVICE_FIELD_NUMBER: _ClassVar[int]
+    MEASUREMENT_FIELD_NUMBER: _ClassVar[int]
+    LPC_FIELD_NUMBER: _ClassVar[int]
+    DHW_FIELD_NUMBER: _ClassVar[int]
+    HVAC_FIELD_NUMBER: _ClassVar[int]
+    OHPCF_FIELD_NUMBER: _ClassVar[int]
+    CAPABILITY_FIELD_NUMBER: _ClassVar[int]
+    RESYNC_REQUIRED_FIELD_NUMBER: _ClassVar[int]
+    ski: str
+    revision: int
+    event_time: _timestamp_pb2.Timestamp
+    device: DeviceEvent
+    measurement: _monitoring_service_pb2.MeasurementEvent
+    lpc: _lpc_service_pb2.LPCEvent
+    dhw: DeviceStateDHWEvent
+    hvac: _hvac_service_pb2.RoomHeatingEvent
+    ohpcf: _ohpcf_service_pb2.OHPCFEvent
+    capability: DeviceCapabilities
+    resync_required: ResyncRequired
+    def __init__(self, ski: _Optional[str] = ..., revision: _Optional[int] = ..., event_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., device: _Optional[_Union[DeviceEvent, _Mapping]] = ..., measurement: _Optional[_Union[_monitoring_service_pb2.MeasurementEvent, _Mapping]] = ..., lpc: _Optional[_Union[_lpc_service_pb2.LPCEvent, _Mapping]] = ..., dhw: _Optional[_Union[DeviceStateDHWEvent, _Mapping]] = ..., hvac: _Optional[_Union[_hvac_service_pb2.RoomHeatingEvent, _Mapping]] = ..., ohpcf: _Optional[_Union[_ohpcf_service_pb2.OHPCFEvent, _Mapping]] = ..., capability: _Optional[_Union[DeviceCapabilities, _Mapping]] = ..., resync_required: _Optional[_Union[ResyncRequired, _Mapping]] = ...) -> None: ...
+
+class DeviceStateDHWEvent(_message.Message):
+    __slots__ = ("temperature", "system_function")
+    TEMPERATURE_FIELD_NUMBER: _ClassVar[int]
+    SYSTEM_FUNCTION_FIELD_NUMBER: _ClassVar[int]
+    temperature: _dhw_service_pb2.DHWEvent
+    system_function: _dhw_service_pb2.DHWSystemFunctionEvent
+    def __init__(self, temperature: _Optional[_Union[_dhw_service_pb2.DHWEvent, _Mapping]] = ..., system_function: _Optional[_Union[_dhw_service_pb2.DHWSystemFunctionEvent, _Mapping]] = ...) -> None: ...
+
+class ResyncRequired(_message.Message):
+    __slots__ = ("reason", "dropped_events")
+    REASON_FIELD_NUMBER: _ClassVar[int]
+    DROPPED_EVENTS_FIELD_NUMBER: _ClassVar[int]
+    reason: ResyncReason
+    dropped_events: int
+    def __init__(self, reason: _Optional[_Union[ResyncReason, str]] = ..., dropped_events: _Optional[int] = ...) -> None: ...

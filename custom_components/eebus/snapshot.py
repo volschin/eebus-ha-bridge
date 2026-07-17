@@ -131,6 +131,13 @@ async def _async_read_capabilities(
         _LOGGER.debug("Capability contract read failed for SKI %s: %s", ski, _rpc_error_text(err))
         return ()
 
+    return _capability_results_from_proto(response)
+
+
+def _capability_results_from_proto(
+    response: proto_stubs.DeviceCapabilities,
+) -> tuple[CapabilityResult, ...]:
+    """Convert one explicit capability snapshot for polling or streaming."""
     results: list[CapabilityResult] = []
     for entry in response.capabilities:
         key = _CAPABILITY_KEYS.get(entry.id)

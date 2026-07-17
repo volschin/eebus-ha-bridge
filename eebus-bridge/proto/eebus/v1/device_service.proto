@@ -5,6 +5,11 @@ package eebus.v1;
 option go_package = "github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1";
 
 import "eebus/v1/common.proto";
+import "eebus/v1/dhw_service.proto";
+import "eebus/v1/hvac_service.proto";
+import "eebus/v1/lpc_service.proto";
+import "eebus/v1/monitoring_service.proto";
+import "eebus/v1/ohpcf_service.proto";
 import "google/protobuf/timestamp.proto";
 
 service DeviceService {
@@ -16,6 +21,7 @@ service DeviceService {
   rpc UnregisterRemoteSKI(RegisterSKIRequest) returns (Empty);
   rpc ListPairedDevices(Empty) returns (ListPairedDevicesResponse);
   rpc SubscribeDeviceEvents(Empty) returns (stream DeviceEvent);
+  rpc SubscribeDeviceState(DeviceRequest) returns (stream DeviceStateEvent);
 }
 
 enum CapabilityId {
@@ -103,9 +109,48 @@ message DeviceEvent {
   DeviceEventType event_type = 2;
 }
 
+// DeviceStateEvent is the ordered, device-scoped replacement for the legacy
+// domain streams. The first envelope always carries a resync_required payload
+// because the stream intentionally does not duplicate the full polling
+// snapshot.
+message DeviceStateEvent {
+  string ski = 1;
+  uint64 revision = 2;
+  google.protobuf.Timestamp event_time = 3;
+  oneof payload {
+    DeviceEvent device = 4;
+    MeasurementEvent measurement = 5;
+    LPCEvent lpc = 6;
+    DeviceStateDHWEvent dhw = 7;
+    RoomHeatingEvent hvac = 8;
+    OHPCFEvent ohpcf = 9;
+    DeviceCapabilities capability = 10;
+    ResyncRequired resync_required = 11;
+  }
+}
+
+message DeviceStateDHWEvent {
+  oneof payload {
+    DHWEvent temperature = 1;
+    DHWSystemFunctionEvent system_function = 2;
+  }
+}
+
+message ResyncRequired {
+  ResyncReason reason = 1;
+  uint64 dropped_events = 2;
+}
+
+enum ResyncReason {
+  RESYNC_REASON_UNSPECIFIED = 0;
+  RESYNC_REASON_INITIAL_STATE_REQUIRED = 1;
+  RESYNC_REASON_EVENT_DROPPED = 2;
+}
+
 enum DeviceEventType {
   DEVICE_EVENT_UNSPECIFIED = 0;
   DEVICE_EVENT_CONNECTED = 1;
   DEVICE_EVENT_DISCONNECTED = 2;
   DEVICE_EVENT_TRUST_REMOVED = 3;
+  DEVICE_EVENT_PROVIDER_UPDATED = 4;
 }

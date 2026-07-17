@@ -73,6 +73,13 @@ func (s *DeviceService) GetDeviceCapabilities(_ context.Context, req *pb.DeviceR
 	if !s.registry.KnownDevice(ski) {
 		return nil, status.Errorf(codes.NotFound, "device not found for ski %s", ski)
 	}
+	return s.deviceCapabilities(ski), nil
+}
+
+func (s *DeviceService) deviceCapabilities(ski string) *pb.DeviceCapabilities {
+	if s.registry == nil {
+		return &pb.DeviceCapabilities{Ski: ski}
+	}
 	entries, _ := s.registry.DeviceCapabilities(ski)
 	capabilities := make([]*pb.DeviceCapability, 0, len(entries))
 	for _, entry := range entries {
@@ -86,7 +93,7 @@ func (s *DeviceService) GetDeviceCapabilities(_ context.Context, req *pb.DeviceR
 		}
 		capabilities = append(capabilities, capability)
 	}
-	return &pb.DeviceCapabilities{Ski: ski, Capabilities: capabilities}, nil
+	return &pb.DeviceCapabilities{Ski: ski, Capabilities: capabilities}
 }
 
 func capabilityID(value eebus.Capability) pb.CapabilityId {

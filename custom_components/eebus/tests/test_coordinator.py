@@ -161,13 +161,21 @@ def test_start_streams_delegates_to_device_stream_component() -> None:
     coordinator._device_streams.start.assert_called_once_with()
 
 
-def test_device_streams_starts_all_compatibility_consumers() -> None:
+def test_device_streams_starts_one_consolidated_consumer() -> None:
     streams = DeviceStreams.__new__(DeviceStreams)
     streams._ski = "test-ski"
     streams._manager = MagicMock()
+    streams._legacy_manager = MagicMock()
     streams.start()
     mapping, name = streams._manager.start.call_args.args
-    assert list(mapping) == [
+    assert list(mapping) == ["device_state"]
+    assert name == "eebus_{name}_test-ski"
+    assert streams._manager.start.call_args.kwargs["on_unimplemented"] is not None
+    streams._legacy_manager.start.assert_not_called()
+
+    streams._manager.start.call_args.kwargs["on_unimplemented"]("device_state")
+    legacy_mapping, legacy_name = streams._legacy_manager.start.call_args.args
+    assert list(legacy_mapping) == [
         "device_events",
         "lpc_events",
         "measurements",
@@ -176,7 +184,7 @@ def test_device_streams_starts_all_compatibility_consumers() -> None:
         "dhw_sysfn_events",
         "room_heating_events",
     ]
-    assert name == "eebus_{name}_test-ski"
+    assert legacy_name == "eebus_{name}_test-ski"
 
 
 def _streams_with(initial: DeviceState) -> tuple[DeviceStateStore, DeviceStreams, MagicMock]:
@@ -185,6 +193,146 @@ def _streams_with(initial: DeviceState) -> tuple[DeviceStateStore, DeviceStreams
     hass.async_create_task.side_effect = lambda coroutine: coroutine.close()
     streams = DeviceStreams(hass, MagicMock(), "device-ski", store, AsyncMock())
     return store, streams, hass
+
+
+def test_consolidated_stream_ignores_duplicates_and_detects_revision_gap() -> None:
+    store, streams, hass = _streams_with(DeviceState())
+    initial = device_service_pb2.DeviceStateEvent(
+        ski="device-ski",
+        revision=4,
+        resync_required=device_service_pb2.ResyncRequired(
+            reason=device_service_pb2.RESYNC_REASON_INITIAL_STATE_REQUIRED
+        ),
+    )
+    streams.handle_device_state_event(initial)
+    streams.handle_device_state_event(initial)
+    streams.handle_device_state_event(
+        device_service_pb2.DeviceStateEvent(
+            ski="device-ski",
+            revision=6,
+            device=device_service_pb2.DeviceEvent(
+                ski="device-ski",
+                event_type=device_service_pb2.DEVICE_EVENT_PROVIDER_UPDATED,
+            ),
+        )
+    )
+
+    assert streams._last_revision == 6
+    assert hass.async_create_task.call_count == 2
+
+
+def test_consolidated_capability_payload_is_explicit_truth() -> None:
+    store, streams, _hass = _streams_with(
+        DeviceState(capabilities=CapabilitiesState(dhw=CapabilityState.AVAILABLE))
+    )
+    streams.handle_device_state_event(
+        device_service_pb2.DeviceStateEvent(
+            ski="device-ski",
+            revision=1,
+            capability=device_service_pb2.DeviceCapabilities(
+                ski="device-ski",
+                capabilities=[
+                    device_service_pb2.DeviceCapability(
+                        id=device_service_pb2.CAPABILITY_DHW,
+                        state=device_service_pb2.CAPABILITY_STATE_UNSUPPORTED,
+                        reason=device_service_pb2.CAPABILITY_REASON_REMOTE_NOT_ADVERTISED,
+                    )
+                ],
+            ),
+        )
+    )
+
+    assert store.state.explicit_capability_contract is True
+    assert store.state.capabilities.dhw == CapabilityState.UNSUPPORTED
+
+
+async def test_refresh_requests_are_coalesced_until_completion() -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def refresh() -> None:
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+
+    hass = MagicMock()
+    hass.async_create_task.side_effect = asyncio.create_task
+    streams = DeviceStreams(hass, MagicMock(), "device-ski", DeviceStateStore(), refresh)
+
+    streams._refresh()
+    streams._refresh()
+    await started.wait()
+    assert calls == 1
+    release.set()
+    assert streams._refresh_task is not None
+    await streams._refresh_task
+
+
+async def test_refresh_signal_during_poll_runs_one_trailing_refresh() -> None:
+    first_started = asyncio.Event()
+    release_first = asyncio.Event()
+    second_started = asyncio.Event()
+    calls = 0
+
+    async def refresh() -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            first_started.set()
+            await release_first.wait()
+        else:
+            second_started.set()
+
+    hass = MagicMock()
+    hass.async_create_task.side_effect = asyncio.create_task
+    streams = DeviceStreams(hass, MagicMock(), "device-ski", DeviceStateStore(), refresh)
+
+    streams._refresh()
+    await first_started.wait()
+    streams._refresh()
+    streams._refresh()
+    task = streams._refresh_task
+    assert task is not None
+    release_first.set()
+    await second_started.wait()
+    await task
+
+    assert calls == 2
+
+
+async def test_resync_reconciles_state_with_fresh_poll() -> None:
+    store = DeviceStateStore(
+        initial=DeviceState(measurements=MeasurementsState(power_watts=1.0))
+    )
+
+    async def refresh() -> None:
+        store.dispatch(
+            StateObservation(
+                state=DeviceState(measurements=MeasurementsState(power_watts=2.0)),
+                observed_fields=frozenset({StateField.POWER_WATTS}),
+            )
+        )
+
+    hass = MagicMock()
+    hass.async_create_task.side_effect = asyncio.create_task
+    streams = DeviceStreams(hass, MagicMock(), "device-ski", store, refresh)
+    streams.handle_device_state_event(
+        device_service_pb2.DeviceStateEvent(
+            ski="device-ski",
+            revision=8,
+            resync_required=device_service_pb2.ResyncRequired(
+                reason=device_service_pb2.RESYNC_REASON_EVENT_DROPPED,
+                dropped_events=3,
+            ),
+        )
+    )
+    assert streams._refresh_task is not None
+    await streams._refresh_task
+
+    assert store.state.measurements.power_watts == 2.0
+    assert StateField.POWER_WATTS in store.state.fresh_fields
 
 
 def test_disconnect_event_immediately_disables_device_and_retains_values() -> None:

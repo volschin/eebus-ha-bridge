@@ -27,6 +27,7 @@ const (
 	DeviceService_UnregisterRemoteSKI_FullMethodName   = "/eebus.v1.DeviceService/UnregisterRemoteSKI"
 	DeviceService_ListPairedDevices_FullMethodName     = "/eebus.v1.DeviceService/ListPairedDevices"
 	DeviceService_SubscribeDeviceEvents_FullMethodName = "/eebus.v1.DeviceService/SubscribeDeviceEvents"
+	DeviceService_SubscribeDeviceState_FullMethodName  = "/eebus.v1.DeviceService/SubscribeDeviceState"
 )
 
 // DeviceServiceClient is the client API for DeviceService service.
@@ -41,6 +42,7 @@ type DeviceServiceClient interface {
 	UnregisterRemoteSKI(ctx context.Context, in *RegisterSKIRequest, opts ...grpc.CallOption) (*Empty, error)
 	ListPairedDevices(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ListPairedDevicesResponse, error)
 	SubscribeDeviceEvents(ctx context.Context, in *Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DeviceEvent], error)
+	SubscribeDeviceState(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DeviceStateEvent], error)
 }
 
 type deviceServiceClient struct {
@@ -140,6 +142,25 @@ func (c *deviceServiceClient) SubscribeDeviceEvents(ctx context.Context, in *Emp
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type DeviceService_SubscribeDeviceEventsClient = grpc.ServerStreamingClient[DeviceEvent]
 
+func (c *deviceServiceClient) SubscribeDeviceState(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DeviceStateEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &DeviceService_ServiceDesc.Streams[1], DeviceService_SubscribeDeviceState_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[DeviceRequest, DeviceStateEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DeviceService_SubscribeDeviceStateClient = grpc.ServerStreamingClient[DeviceStateEvent]
+
 // DeviceServiceServer is the server API for DeviceService service.
 // All implementations must embed UnimplementedDeviceServiceServer
 // for forward compatibility.
@@ -152,6 +173,7 @@ type DeviceServiceServer interface {
 	UnregisterRemoteSKI(context.Context, *RegisterSKIRequest) (*Empty, error)
 	ListPairedDevices(context.Context, *Empty) (*ListPairedDevicesResponse, error)
 	SubscribeDeviceEvents(*Empty, grpc.ServerStreamingServer[DeviceEvent]) error
+	SubscribeDeviceState(*DeviceRequest, grpc.ServerStreamingServer[DeviceStateEvent]) error
 	mustEmbedUnimplementedDeviceServiceServer()
 }
 
@@ -185,6 +207,9 @@ func (UnimplementedDeviceServiceServer) ListPairedDevices(context.Context, *Empt
 }
 func (UnimplementedDeviceServiceServer) SubscribeDeviceEvents(*Empty, grpc.ServerStreamingServer[DeviceEvent]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeDeviceEvents not implemented")
+}
+func (UnimplementedDeviceServiceServer) SubscribeDeviceState(*DeviceRequest, grpc.ServerStreamingServer[DeviceStateEvent]) error {
+	return status.Error(codes.Unimplemented, "method SubscribeDeviceState not implemented")
 }
 func (UnimplementedDeviceServiceServer) mustEmbedUnimplementedDeviceServiceServer() {}
 func (UnimplementedDeviceServiceServer) testEmbeddedByValue()                       {}
@@ -344,6 +369,17 @@ func _DeviceService_SubscribeDeviceEvents_Handler(srv interface{}, stream grpc.S
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type DeviceService_SubscribeDeviceEventsServer = grpc.ServerStreamingServer[DeviceEvent]
 
+func _DeviceService_SubscribeDeviceState_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(DeviceRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DeviceServiceServer).SubscribeDeviceState(m, &grpc.GenericServerStream[DeviceRequest, DeviceStateEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DeviceService_SubscribeDeviceStateServer = grpc.ServerStreamingServer[DeviceStateEvent]
+
 // DeviceService_ServiceDesc is the grpc.ServiceDesc for DeviceService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -384,6 +420,11 @@ var DeviceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "SubscribeDeviceEvents",
 			Handler:       _DeviceService_SubscribeDeviceEvents_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "SubscribeDeviceState",
+			Handler:       _DeviceService_SubscribeDeviceState_Handler,
 			ServerStreams: true,
 		},
 	},

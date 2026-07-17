@@ -20,6 +20,7 @@ STREAM_BACKOFF_MAX_SECONDS = 60.0
 STREAM_BACKOFF_JITTER_SECONDS = 3.0
 
 ConsumeFn = Callable[[grpc.aio.Channel], Awaitable[None]]
+UnsupportedFn = Callable[[str], None]
 
 
 class StreamManager:
@@ -39,14 +40,19 @@ class StreamManager:
         self._jitter = jitter
         self._tasks: list[asyncio.Task[None]] = []
 
-    def start(self, streams: dict[str, ConsumeFn], task_name_prefix: str) -> None:
+    def start(
+        self,
+        streams: dict[str, ConsumeFn],
+        task_name_prefix: str,
+        on_unimplemented: UnsupportedFn | None = None,
+    ) -> None:
         """Launch one background task per named stream, unless already started."""
         if self._tasks:
             return
         for name, consume in streams.items():
             self._tasks.append(
                 self._hass.async_create_background_task(
-                    self._run_stream(name, consume),
+                    self._run_stream(name, consume, on_unimplemented),
                     name=task_name_prefix.format(name, name=name),
                 )
             )
@@ -58,7 +64,12 @@ class StreamManager:
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
 
-    async def _run_stream(self, name: str, consume: ConsumeFn) -> None:
+    async def _run_stream(
+        self,
+        name: str,
+        consume: ConsumeFn,
+        on_unimplemented: UnsupportedFn | None = None,
+    ) -> None:
         """Consume one stream with reconnect/backoff until cancelled."""
         attempt = 0
         while True:
@@ -74,6 +85,8 @@ class StreamManager:
                         "EEBUS %s stream not supported by bridge; relying on polling",
                         name,
                     )
+                    if on_unimplemented is not None:
+                        on_unimplemented(name)
                     return
                 attempt += 1
                 _LOGGER.debug(
@@ -86,7 +99,7 @@ class StreamManager:
                 _LOGGER.exception("EEBUS %s stream failed; scheduling retry", name)
 
             delay = min(
-                STREAM_BACKOFF_BASE_SECONDS * (2**attempt),
+                STREAM_BACKOFF_BASE_SECONDS * (2 ** max(0, attempt - 1)),
                 STREAM_BACKOFF_MAX_SECONDS,
             ) + self._jitter(0, STREAM_BACKOFF_JITTER_SECONDS)
             _LOGGER.debug("Retrying EEBUS %s stream in %.1fs", name, delay)

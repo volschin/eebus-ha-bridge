@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable, Coroutine
 from dataclasses import replace
@@ -22,6 +23,7 @@ from .models import (
     _setpoint_to_dict,
 )
 from .ski import normalize_ski
+from .snapshot import _capability_results_from_proto
 from .state import (
     CapabilityKey,
     CapabilityResult,
@@ -110,9 +112,20 @@ class DeviceStreams:
         self._store = store
         self._request_refresh = request_refresh
         self._manager = StreamManager(hass, channel_manager)
+        self._legacy_manager = StreamManager(hass, channel_manager)
+        self._refresh_task: asyncio.Task[None] | None = None
+        self._refresh_pending = False
+        self._last_revision: int | None = None
 
     def start(self) -> None:
-        """Start all compatibility streams for this device."""
+        """Start the consolidated stream, falling back only for old bridges."""
+
+        async def device_state(channel: grpc.aio.Channel) -> None:
+            self._last_revision = None
+            async for event in proto_stubs.device_service_stub(channel).SubscribeDeviceState(
+                proto_stubs.DeviceRequest(ski=self._ski)
+            ):
+                self.handle_device_state_event(event)
 
         async def device(channel: grpc.aio.Channel) -> None:
             async for event in proto_stubs.device_service_stub(channel).SubscribeDeviceEvents(proto_stubs.Empty()):
@@ -154,7 +167,7 @@ class DeviceStreams:
             ):
                 self.handle_room_heating_event(event)
 
-        streams: dict[str, ConsumeFn] = {
+        legacy_streams: dict[str, ConsumeFn] = {
             "device_events": device,
             "lpc_events": lpc,
             "measurements": measurements,
@@ -163,17 +176,85 @@ class DeviceStreams:
             "dhw_sysfn_events": dhw_system_function,
             "room_heating_events": room_heating,
         }
-        self._manager.start(streams, f"eebus_{{name}}_{self._ski}")
+
+        def start_legacy(_name: str) -> None:
+            self._legacy_manager.start(legacy_streams, f"eebus_{{name}}_{self._ski}")
+
+        self._manager.start(
+            {"device_state": device_state},
+            f"eebus_{{name}}_{self._ski}",
+            on_unimplemented=start_legacy,
+        )
 
     async def stop(self) -> None:
         """Stop every stream before transport shutdown."""
         await self._manager.stop()
+        await self._legacy_manager.stop()
 
     def _matches(self, event_ski: str) -> bool:
         return normalize_ski(event_ski) == normalize_ski(self._ski)
 
     def _refresh(self) -> None:
-        self._hass.async_create_task(self._request_refresh())
+        running = getattr(self, "_refresh_task", None)
+        if running is not None and not running.done():
+            self._refresh_pending = True
+            return
+        self._refresh_pending = False
+        self._refresh_task = self._hass.async_create_task(self._run_refresh())
+
+    async def _run_refresh(self) -> None:
+        """Run one refresh and exactly one trailing pass for in-flight signals."""
+        try:
+            while True:
+                self._refresh_pending = False
+                await self._request_refresh()
+                if not self._refresh_pending:
+                    return
+        finally:
+            self._refresh_task = None
+
+    def handle_device_state_event(self, event: Any) -> None:
+        """Apply one ordered envelope and request a coalesced resync on gaps."""
+        if not self._matches(event.ski):
+            return
+        revision = int(event.revision)
+        previous = self._last_revision
+        if previous is not None and revision <= previous:
+            return
+        self._last_revision = revision
+        if previous is not None and revision != previous + 1:
+            self._refresh()
+
+        payload = event.WhichOneof("payload")
+        if payload == "resync_required":
+            self._refresh()
+        elif payload == "capability":
+            self._store.dispatch(
+                StateObservation(
+                    capability_results=_capability_results_from_proto(event.capability),
+                    explicit_capability_contract=True,
+                )
+            )
+            self._refresh()
+        elif payload == "device":
+            self.handle_device_event(event.device)
+        elif payload == "measurement":
+            if event.measurement.event_type == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_UNSPECIFIED:
+                self._refresh()
+            else:
+                self.handle_measurement_event(event.measurement)
+        elif payload == "lpc":
+            self.handle_lpc_event(event.lpc)
+        elif payload == "dhw":
+            dhw_payload = event.dhw.WhichOneof("payload")
+            if dhw_payload == "temperature":
+                self.handle_dhw_event(event.dhw.temperature)
+            elif dhw_payload == "system_function":
+                self.handle_dhw_system_function_event(event.dhw.system_function)
+        elif payload == "hvac":
+            self.handle_room_heating_event(event.hvac)
+        elif payload == "ohpcf":
+            self.handle_ohpcf_event(event.ohpcf)
 
     def _support_changed(self, capability: CapabilityKey) -> None:
         """Reset sticky unsupported state only for an explicit support event."""
