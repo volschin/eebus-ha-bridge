@@ -16,12 +16,8 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ServiceValidationErr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import SECURITY_MODE_LOOPBACK
-from .grpc_client import (
-    RPC_TIMEOUT,
-    WRITE_VALIDATION_CODES,
-    GrpcChannelManager,
-    is_unimplemented as _is_unimplemented,
-)
+from .device_session import DeviceSession, WriteOutcome
+from .grpc_client import GrpcChannelManager
 from .models import (
     CompressorFlexibilityState,
     CoordinatorSnapshot,
@@ -224,116 +220,61 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
                 self._was_unavailable = True
 
             raise UpdateFailed(f"gRPC error: {err}") from err
-    async def _async_write_rpc(
-        self,
-        label: str,
-        call: Any,
-        request: Any,
-        support_attr: str | None = None,
-        validation: bool = False,
-    ) -> None:
-        """Run a write RPC with shared UNIMPLEMENTED / validation-error mapping.
+    def _finish_write(self, outcome: WriteOutcome, support_attr: str) -> None:
+        """Apply a write outcome's capability transition, then raise if the RPC failed uncleanly.
 
-        On success the capability becomes available; classified failures use
-        the shared capability transition rule. UNIMPLEMENTED returns quietly.
-        With ``validation=True``, device-side rejections
-        (WRITE_VALIDATION_CODES) surface as ServiceValidationError.
+        Mirrors the old inline _async_write_rpc control flow: the capability
+        transition always applies first, UNIMPLEMENTED returns quietly after
+        that, a classified validation failure raises ServiceValidationError,
+        and anything else re-raises the original AioRpcError.
         """
-        try:
-            await call(request, timeout=RPC_TIMEOUT)
-            if support_attr is not None:
-                capabilities = self._domain_state.capabilities
-                updated_capabilities = replace(
-                    capabilities,
-                    **{
-                        support_attr: next_capability_state(
-                            getattr(capabilities, support_attr), None
-                        )
-                    },
+        capabilities = self._domain_state.capabilities
+        updated_capabilities = replace(
+            capabilities,
+            **{
+                support_attr: next_capability_state(
+                    getattr(capabilities, support_attr), outcome.status_code
                 )
-                self._domain_state = replace(
-                    self._domain_state, capabilities=updated_capabilities
-                )
-        except grpc.aio.AioRpcError as err:
-            if support_attr is not None:
-                capabilities = self._domain_state.capabilities
-                updated_capabilities = replace(
-                    capabilities,
-                    **{
-                        support_attr: next_capability_state(
-                            getattr(capabilities, support_attr), err.code()
-                        )
-                    },
-                )
-                self._domain_state = replace(
-                    self._domain_state, capabilities=updated_capabilities
-                )
-            if _is_unimplemented(err):
-                _LOGGER.info(
-                    "%s unsupported for SKI %s: %s", label, self.ski, err.details()
-                )
-                return
-            if validation and err.code() in WRITE_VALIDATION_CODES:
-                raise ServiceValidationError(f"{label} failed: {err.details()}") from err
-            raise
+            },
+        )
+        self._domain_state = replace(
+            self._domain_state, capabilities=updated_capabilities
+        )
+        if outcome.validation_error is not None:
+            raise ServiceValidationError(outcome.validation_error) from outcome.error
+        if outcome.unimplemented:
+            return
+        if outcome.error is not None:
+            raise outcome.error
 
     async def async_write_lpc_limit(self, value_watts: float) -> None:
         """Write LPC consumption limit via gRPC."""
-        channel = await self._ensure_channel()
-        from . import proto_stubs
-        stub = proto_stubs.lpc_service_stub(channel)
-        await self._async_write_rpc(
-            "LPC write",
-            stub.WriteConsumptionLimit,
-            proto_stubs.WriteLoadLimitRequest(
-                ski=self.ski, value_watts=value_watts, is_active=True
-            ),
-            support_attr="lpc",
+        outcome = await DeviceSession(self.ski, self._ensure_channel).write_lpc_limit(
+            value_watts
         )
+        self._finish_write(outcome, "lpc")
 
     async def async_write_failsafe_limit(self, value_watts: float) -> None:
         """Write failsafe limit via gRPC."""
-        channel = await self._ensure_channel()
-        from . import proto_stubs
-        stub = proto_stubs.lpc_service_stub(channel)
-        await self._async_write_rpc(
-            "Failsafe write",
-            stub.WriteFailsafeLimit,
-            proto_stubs.WriteFailsafeLimitRequest(ski=self.ski, value_watts=value_watts),
-            support_attr="failsafe",
-        )
+        outcome = await DeviceSession(
+            self.ski, self._ensure_channel
+        ).write_failsafe_limit(value_watts)
+        self._finish_write(outcome, "failsafe")
 
     async def async_set_lpc_active(self, active: bool) -> None:
         """Activate or deactivate LPC limit via gRPC."""
-        channel = await self._ensure_channel()
-        from . import proto_stubs
-        stub = proto_stubs.lpc_service_stub(channel)
-        current = await stub.GetConsumptionLimit(
-            proto_stubs.DeviceRequest(ski=self.ski), timeout=RPC_TIMEOUT
+        outcome = await DeviceSession(self.ski, self._ensure_channel).set_lpc_active(
+            active
         )
-        await self._async_write_rpc(
-            "LPC activation",
-            stub.WriteConsumptionLimit,
-            proto_stubs.WriteLoadLimitRequest(
-                ski=self.ski,
-                value_watts=current.value_watts,
-                is_active=active,
-            ),
-            support_attr="lpc",
-        )
+        self._finish_write(outcome, "lpc")
 
     async def async_control_compressor(self, action: proto_stubs.OHPCFAction) -> None:
         """Schedule/pause/resume/abort the compressor's optional consumption."""
-        channel = await self._ensure_channel()
-        from . import proto_stubs
-        stub = proto_stubs.ohpcf_service_stub(channel)
+        outcome = await DeviceSession(
+            self.ski, self._ensure_channel
+        ).control_compressor(action)
         try:
-            await self._async_write_rpc(
-                "OHPCF control",
-                stub.ControlCompressorFlexibility,
-                proto_stubs.ControlCompressorRequest(ski=self.ski, action=action),
-                support_attr="ohpcf",
-            )
+            self._finish_write(outcome, "ohpcf")
         except grpc.aio.AioRpcError as err:
             # Surface device-side rejections (e.g. "data not available" when the
             # compressor advertises no writable offer — heating-side OHPCF not yet
@@ -345,73 +286,38 @@ class EebusCoordinator(DataUpdateCoordinator[CoordinatorSnapshot]):
 
     async def async_write_dhw_setpoint(self, value_celsius: float) -> None:
         """Write the domestic-hot-water target via the bridge."""
-        channel = await self._ensure_channel()
-        from . import proto_stubs
-
-        stub = proto_stubs.dhw_service_stub(channel)
-        await self._async_write_rpc(
-            "Domestic hot water setpoint",
-            stub.SetDHWSetpoint,
-            proto_stubs.SetDHWSetpointRequest(ski=self.ski, value_celsius=value_celsius),
-            support_attr="dhw",
-            validation=True,
-        )
+        outcome = await DeviceSession(
+            self.ski, self._ensure_channel
+        ).write_dhw_setpoint(value_celsius)
+        self._finish_write(outcome, "dhw")
 
     async def async_set_dhw_boost(self, active: bool) -> None:
         """Activate or cancel DHW one-time boost."""
-        channel = await self._ensure_channel()
-        from . import proto_stubs
-
-        stub = proto_stubs.dhw_service_stub(channel)
-        await self._async_write_rpc(
-            "Domestic hot water boost",
-            stub.SetDHWBoost,
-            proto_stubs.SetDHWBoostRequest(ski=self.ski, active=active),
-            support_attr="dhw_system_function",
-            validation=True,
+        outcome = await DeviceSession(self.ski, self._ensure_channel).set_dhw_boost(
+            active
         )
+        self._finish_write(outcome, "dhw_system_function")
 
     async def async_set_dhw_operation_mode(self, mode: str) -> None:
         """Set the DHW operation mode by advertised mode type."""
-        channel = await self._ensure_channel()
-        from . import proto_stubs
-
-        stub = proto_stubs.dhw_service_stub(channel)
-        await self._async_write_rpc(
-            "Domestic hot water operation mode",
-            stub.SetDHWOperationMode,
-            proto_stubs.SetDHWOperationModeRequest(ski=self.ski, mode=mode),
-            support_attr="dhw_system_function",
-            validation=True,
-        )
+        outcome = await DeviceSession(
+            self.ski, self._ensure_channel
+        ).set_dhw_operation_mode(mode)
+        self._finish_write(outcome, "dhw_system_function")
 
     async def async_set_room_heating_temperature(self, value_celsius: float) -> None:
         """Set the room-heating target temperature."""
-        channel = await self._ensure_channel()
-        from . import proto_stubs
-
-        await self._async_write_rpc(
-            "Room heating setpoint",
-            proto_stubs.hvac_service_stub(channel).SetRoomHeatingTemperature,
-            proto_stubs.SetRoomHeatingTemperatureRequest(
-                ski=self.ski, value_celsius=value_celsius
-            ),
-            support_attr="room_heating",
-            validation=True,
-        )
+        outcome = await DeviceSession(
+            self.ski, self._ensure_channel
+        ).set_room_heating_temperature(value_celsius)
+        self._finish_write(outcome, "room_heating")
 
     async def async_set_room_heating_mode(self, mode: str) -> None:
         """Set the room-heating operation mode."""
-        channel = await self._ensure_channel()
-        from . import proto_stubs
-
-        await self._async_write_rpc(
-            "Room heating mode",
-            proto_stubs.hvac_service_stub(channel).SetRoomHeatingMode,
-            proto_stubs.SetRoomHeatingModeRequest(ski=self.ski, mode=mode),
-            support_attr="room_heating",
-            validation=True,
-        )
+        outcome = await DeviceSession(
+            self.ski, self._ensure_channel
+        ).set_room_heating_mode(mode)
+        self._finish_write(outcome, "room_heating")
 
     @property
     def grid_push_enabled(self) -> bool:
