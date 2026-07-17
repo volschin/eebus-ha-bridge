@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.eebus.diagnostics import async_get_config_entry_diagnostics
+from custom_components.eebus.state import ConnectionState, DeviceState, MeasurementsState
 
 
 @pytest.mark.asyncio
@@ -22,7 +23,10 @@ async def test_diagnostics_output():
         "tls_private_key": "diagnostics-secret-private-key",
     }
     coordinator = MagicMock()
-    coordinator.data = {"power_watts": 1500.0, "connected": True}
+    coordinator.data = DeviceState(
+        connection=ConnectionState(connected=True),
+        measurements=MeasurementsState(power_watts=1500.0),
+    )
     entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, entry)

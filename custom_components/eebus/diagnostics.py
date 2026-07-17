@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -26,5 +27,5 @@ async def async_get_config_entry_diagnostics(
             "auth_token": "**REDACTED**" if entry.data.get("auth_token") else None,
             "device_ski": "**REDACTED**",
         },
-        "coordinator_data": dict(coordinator.data) if coordinator.data else None,
+        "coordinator_data": asdict(coordinator.data) if coordinator.data else None,
     }

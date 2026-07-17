@@ -3,11 +3,12 @@
 from unittest.mock import MagicMock
 
 from custom_components.eebus.entity import EebusEntity
+from custom_components.eebus.state import ConnectionState, DeviceState
 
 
 def _entity(*, connected: bool, poll_ok: bool) -> EebusEntity:
     coordinator = MagicMock()
-    coordinator.data = {"connected": connected}
+    coordinator.data = DeviceState(connection=ConnectionState(connected=connected))
     coordinator.ski = "test-ski"
     coordinator.last_update_success = poll_ok
     return EebusEntity(coordinator)

@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
 from .models import CapabilityState, DHWSystemFunctionState
+from .state import StateField, is_fresh
 
 PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling
 
@@ -45,11 +46,21 @@ class EebusLPCActiveSwitch(EebusEntity, SwitchEntity):
         """Return True if LPC limit is active."""
         if self.coordinator.data is None:
             return None
-        limit = self.coordinator.data.get("consumption_limit")
+        limit = self.coordinator.data.lpc.consumption_limit
         if limit is None:
             return None
-        is_active = limit.get("is_active")
-        return None if is_active is None else bool(is_active)
+        return limit.is_active
+
+    @property
+    def available(self) -> bool:
+        """Disable the operational control while its value is stale."""
+        data = self.coordinator.data
+        return bool(
+            super().available
+            and data
+            and data.capabilities.lpc == CapabilityState.AVAILABLE
+            and is_fresh(data, StateField.CONSUMPTION_LIMIT)
+        )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Activate LPC limit."""
@@ -75,19 +86,21 @@ class EebusDHWBoostSwitch(EebusEntity, SwitchEntity):
     def _state(self) -> DHWSystemFunctionState | None:
         if self.coordinator.data is None:
             return None
-        return self.coordinator.data.get("dhw_system_function")
+        return self.coordinator.data.dhw.system_function
 
     @property
     def available(self) -> bool:
         """Available only for writable DHW boost state."""
         if not super().available:
             return False
-        data = self.coordinator.data or {}
+        data = self.coordinator.data
         state = self._state()
         return bool(
-            data.get("dhw_sysfn_supported") != CapabilityState.UNSUPPORTED
+            data is not None
+            and data.capabilities.dhw_system_function == CapabilityState.AVAILABLE
+            and is_fresh(data, StateField.DHW_SYSTEM_FUNCTION)
             and state is not None
-            and state.get("boost_writable")
+            and state.boost_writable
         )
 
     @property
@@ -96,7 +109,7 @@ class EebusDHWBoostSwitch(EebusEntity, SwitchEntity):
         state = self._state()
         if state is None:
             return None
-        return state.get("boost_status") in ("active", "running")
+        return state.boost_status in ("active", "running")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -104,7 +117,7 @@ class EebusDHWBoostSwitch(EebusEntity, SwitchEntity):
         state = self._state()
         if state is None:
             return None
-        return {"boost_status": state.get("boost_status")}
+        return {"boost_status": state.boost_status}
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Activate DHW boost."""

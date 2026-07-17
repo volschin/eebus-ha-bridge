@@ -13,6 +13,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
 from .models import CapabilityState, DHWSystemFunctionState, SetpointState
+from .state import StateField, is_fresh
 
 PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling
 
@@ -39,27 +40,29 @@ class EebusDHWWaterHeater(EebusEntity, WaterHeaterEntity):
         self._attr_unique_id = f"{coordinator.ski}_domestic_hot_water"
 
     def _setpoint(self) -> SetpointState | None:
-        data = self.coordinator.data or {}
-        if data.get("dhw_supported") == CapabilityState.UNSUPPORTED:
+        data = self.coordinator.data
+        if data is None or data.capabilities.dhw != CapabilityState.AVAILABLE:
             return None
-        return data.get("dhw_setpoint")
+        return data.dhw.setpoint
 
     def _system_function(self) -> DHWSystemFunctionState | None:
-        data = self.coordinator.data or {}
-        if data.get("dhw_sysfn_supported") == CapabilityState.UNSUPPORTED:
+        data = self.coordinator.data
+        if data is None or data.capabilities.dhw_system_function != CapabilityState.AVAILABLE:
             return None
-        return data.get("dhw_system_function")
+        return data.dhw.system_function
 
     @property
     def available(self) -> bool:
         """Return whether the bridge is connected and DHW data is available."""
         if not super().available:
             return False
-        data = self.coordinator.data or {}
+        data = self.coordinator.data
+        if data is None:
+            return False
         return bool(
-            data.get("dhw_temperature_c") is not None
-            or self._setpoint() is not None
-            or self._system_function() is not None
+            (data.measurements.dhw_temperature_c is not None and is_fresh(data, StateField.DHW_TEMPERATURE_C))
+            or (self._setpoint() is not None and is_fresh(data, StateField.DHW_SETPOINT))
+            or (self._system_function() is not None and is_fresh(data, StateField.DHW_SYSTEM_FUNCTION))
         )
 
     @property
@@ -67,46 +70,43 @@ class EebusDHWWaterHeater(EebusEntity, WaterHeaterEntity):
         """Return the controls currently advertised as writable by the device."""
         features = WaterHeaterEntityFeature(0)
         setpoint = self._setpoint()
-        if setpoint is not None and setpoint.get("writable"):
+        if setpoint is not None and setpoint.writable:
             features |= WaterHeaterEntityFeature.TARGET_TEMPERATURE
         system_function = self._system_function()
-        if (
-            system_function is not None
-            and system_function.get("mode_writable")
-            and system_function.get("available_modes")
-        ):
+        if system_function is not None and system_function.mode_writable and system_function.available_modes:
             features |= WaterHeaterEntityFeature.OPERATION_MODE
         return features
 
     @property
     def current_temperature(self) -> float | None:
         """Return the measured domestic-hot-water temperature."""
-        value = (self.coordinator.data or {}).get("dhw_temperature_c")
+        data = self.coordinator.data
+        value = data.measurements.dhw_temperature_c if data is not None else None
         return None if value is None else float(value)
 
     @property
     def target_temperature(self) -> float | None:
         """Return the configured domestic-hot-water target."""
         setpoint = self._setpoint()
-        return None if setpoint is None else float(setpoint["value_celsius"])
+        return None if setpoint is None else float(setpoint.value_celsius)
 
     @property
     def min_temp(self) -> float:
         """Return the device-provided lower target-temperature bound."""
         setpoint = self._setpoint()
-        return float(setpoint["min_celsius"]) if setpoint is not None else 0.0
+        return float(setpoint.min_celsius) if setpoint is not None else 0.0
 
     @property
     def max_temp(self) -> float:
         """Return the device-provided upper target-temperature bound."""
         setpoint = self._setpoint()
-        return float(setpoint["max_celsius"]) if setpoint is not None else 100.0
+        return float(setpoint.max_celsius) if setpoint is not None else 100.0
 
     @property
     def target_temperature_step(self) -> float | None:
         """Return the device-provided target-temperature increment."""
         setpoint = self._setpoint()
-        return None if setpoint is None else float(setpoint["step_celsius"])
+        return None if setpoint is None else float(setpoint.step_celsius)
 
     @property
     def operation_list(self) -> list[str] | None:
@@ -114,8 +114,7 @@ class EebusDHWWaterHeater(EebusEntity, WaterHeaterEntity):
         system_function = self._system_function()
         if system_function is None:
             return None
-        modes = system_function.get("available_modes")
-        return list(modes) if isinstance(modes, list) else None
+        return list(system_function.available_modes)
 
     @property
     def current_operation(self) -> str | None:
@@ -123,8 +122,7 @@ class EebusDHWWaterHeater(EebusEntity, WaterHeaterEntity):
         system_function = self._system_function()
         if system_function is None:
             return None
-        mode = system_function.get("operation_mode")
-        return mode if isinstance(mode, str) and mode else None
+        return system_function.operation_mode or None
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set the domestic-hot-water target temperature."""
