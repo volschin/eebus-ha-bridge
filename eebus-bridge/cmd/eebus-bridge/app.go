@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -97,7 +98,11 @@ func useCaseRegistrar(bridgeSvc *eebus.BridgeService, modules ...eebusUseCaseReg
 	return func() ([]string, error) {
 		names := make([]string, 0, len(modules))
 		for _, module := range modules {
-			if err := bridgeSvc.Service().AddUseCase(module.useCase); err != nil {
+			useCase, err := module.resolve()
+			if err != nil {
+				return nil, err
+			}
+			if err := bridgeSvc.Service().AddUseCase(useCase); err != nil {
 				return nil, fmt.Errorf("adding %s use case: %w", module.name, err)
 			}
 			names = append(names, module.name)
@@ -106,9 +111,24 @@ func useCaseRegistrar(bridgeSvc *eebus.BridgeService, modules ...eebusUseCaseReg
 	}
 }
 
+// eebusUseCaseRegistration resolves its use case lazily: the modules slice is
+// built before the per-module setup() calls run, so capturing UseCase() eagerly
+// in the slice literal would register the pre-Setup nil use case (startup
+// panic in eebus-go AddFeatures).
 type eebusUseCaseRegistration struct {
 	name    string
-	useCase eebusapi.UseCaseInterface
+	useCase func() eebusapi.UseCaseInterface
+}
+
+func (r eebusUseCaseRegistration) resolve() (eebusapi.UseCaseInterface, error) {
+	if r.useCase == nil {
+		return nil, fmt.Errorf("%s use case has no resolver", r.name)
+	}
+	useCase := r.useCase()
+	if useCase == nil || (reflect.ValueOf(useCase).Kind() == reflect.Ptr && reflect.ValueOf(useCase).IsNil()) {
+		return nil, fmt.Errorf("%s use case is not initialised", r.name)
+	}
+	return useCase, nil
 }
 
 func newOHPCFModule(
@@ -132,7 +152,7 @@ func newOHPCFModule(
 			}
 			return useCaseRegistrar(
 				bridgeSvc,
-				eebusUseCaseRegistration{name: "OHPCF", useCase: ohpcfWrapper.UseCase()},
+				eebusUseCaseRegistration{name: "OHPCF", useCase: func() eebusapi.UseCaseInterface { return ohpcfWrapper.UseCase() }},
 			)()
 		},
 		registerGRPC: func(srv *bridgegrpc.Server) {
@@ -331,7 +351,10 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 				lpcWrapper.Setup(localEntity)
 				return nil
 			},
-			registerUseCases: useCaseRegistrar(bridgeSvc, eebusUseCaseRegistration{name: "LPC", useCase: lpcWrapper.UseCase()}),
+			registerUseCases: useCaseRegistrar(bridgeSvc, eebusUseCaseRegistration{
+				name:    "LPC",
+				useCase: func() eebusapi.UseCaseInterface { return lpcWrapper.UseCase() },
+			}),
 			registerGRPC: func(srv *bridgegrpc.Server) {
 				pb.RegisterLPCServiceServer(srv.GRPCServer(), lpcService)
 			},
@@ -361,10 +384,10 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 			},
 			registerUseCases: useCaseRegistrar(
 				bridgeSvc,
-				eebusUseCaseRegistration{name: "Monitoring", useCase: monitoringWrapper.UseCase()},
-				eebusUseCaseRegistration{name: "DHWMonitoring", useCase: dhwMonitoringWrapper.UseCase()},
-				eebusUseCaseRegistration{name: "MRT", useCase: roomMonitoringWrapper.UseCase()},
-				eebusUseCaseRegistration{name: "MOT", useCase: outdoorMonitoringWrapper.UseCase()},
+				eebusUseCaseRegistration{name: "Monitoring", useCase: func() eebusapi.UseCaseInterface { return monitoringWrapper.UseCase() }},
+				eebusUseCaseRegistration{name: "DHWMonitoring", useCase: func() eebusapi.UseCaseInterface { return dhwMonitoringWrapper.UseCase() }},
+				eebusUseCaseRegistration{name: "MRT", useCase: func() eebusapi.UseCaseInterface { return roomMonitoringWrapper.UseCase() }},
+				eebusUseCaseRegistration{name: "MOT", useCase: func() eebusapi.UseCaseInterface { return outdoorMonitoringWrapper.UseCase() }},
 			),
 			registerGRPC: func(srv *bridgegrpc.Server) {
 				pb.RegisterMonitoringServiceServer(srv.GRPCServer(), monitoringService)
@@ -374,8 +397,8 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 			name: "DHW",
 			registerUseCases: useCaseRegistrar(
 				bridgeSvc,
-				eebusUseCaseRegistration{name: "DHWTemperature", useCase: dhwTemperature.UseCase()},
-				eebusUseCaseRegistration{name: "DHWSystemFunction", useCase: dhwSystemFunction.UseCase()},
+				eebusUseCaseRegistration{name: "DHWTemperature", useCase: func() eebusapi.UseCaseInterface { return dhwTemperature.UseCase() }},
+				eebusUseCaseRegistration{name: "DHWSystemFunction", useCase: func() eebusapi.UseCaseInterface { return dhwSystemFunction.UseCase() }},
 			),
 			registerGRPC: func(srv *bridgegrpc.Server) {
 				pb.RegisterDHWServiceServer(srv.GRPCServer(), dhwService)
@@ -385,8 +408,8 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 			name: "HVAC",
 			registerUseCases: useCaseRegistrar(
 				bridgeSvc,
-				eebusUseCaseRegistration{name: "RoomHeatingTemperature", useCase: roomHeatingTemperature.UseCase()},
-				eebusUseCaseRegistration{name: "RoomHeatingSystemFunction", useCase: roomHeatingSystemFunction.UseCase()},
+				eebusUseCaseRegistration{name: "RoomHeatingTemperature", useCase: func() eebusapi.UseCaseInterface { return roomHeatingTemperature.UseCase() }},
+				eebusUseCaseRegistration{name: "RoomHeatingSystemFunction", useCase: func() eebusapi.UseCaseInterface { return roomHeatingSystemFunction.UseCase() }},
 			),
 			registerGRPC: func(srv *bridgegrpc.Server) {
 				pb.RegisterHVACServiceServer(srv.GRPCServer(), hvacService)
@@ -399,13 +422,13 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 		registerUseCases: func() ([]string, error) {
 			registrations := make([]eebusUseCaseRegistration, 0, 3)
 			if mgcpProvider != nil {
-				registrations = append(registrations, eebusUseCaseRegistration{name: "MGCP", useCase: mgcpProvider.UseCase()})
+				registrations = append(registrations, eebusUseCaseRegistration{name: "MGCP", useCase: func() eebusapi.UseCaseInterface { return mgcpProvider.UseCase() }})
 			}
 			if vapdProvider != nil {
-				registrations = append(registrations, eebusUseCaseRegistration{name: "VAPD", useCase: vapdProvider.UseCase()})
+				registrations = append(registrations, eebusUseCaseRegistration{name: "VAPD", useCase: func() eebusapi.UseCaseInterface { return vapdProvider.UseCase() }})
 			}
 			if vabdProvider != nil {
-				registrations = append(registrations, eebusUseCaseRegistration{name: "VABD", useCase: vabdProvider.UseCase()})
+				registrations = append(registrations, eebusUseCaseRegistration{name: "VABD", useCase: func() eebusapi.UseCaseInterface { return vabdProvider.UseCase() }})
 			}
 			if len(registrations) == 0 {
 				return nil, nil
