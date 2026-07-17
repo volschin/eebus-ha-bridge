@@ -76,8 +76,11 @@ rules:
     status: exempt
     comment: Authentication failures start reauthentication; other connection issues are communicated via availability and logging.
   stale-devices:
-    status: exempt
-    comment: One device per config entry, removed on unload.
+    status: done
+    comment: >-
+      async_remove_config_entry_device allows removing a device manually from
+      the UI once its identifier no longer matches the entry's canonical SKI
+      (e.g. an orphan left behind by a SKI canonicalization migration).
   async-dependency: done
   inject-websession:
     status: exempt
