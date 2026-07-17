@@ -59,14 +59,14 @@ func TestSubscribeMeasurements(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	stream, err := client.SubscribeMeasurements(ctx, &pb.DeviceRequest{Ski: "test-ski"})
+	stream, err := client.SubscribeMeasurements(ctx, &pb.DeviceRequest{Ski: testValidSKI})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Give the server-side handler goroutine time to subscribe before publishing.
 	time.Sleep(50 * time.Millisecond)
-	bus.Publish(eebus.Event{SKI: "test-ski", Type: eebus.EventTypeMonitoringPowerUpdated})
+	bus.Publish(eebus.Event{SKI: testValidSKI, Type: eebus.EventTypeMonitoringPowerUpdated})
 
 	evt, err := stream.Recv()
 	if err != nil {
@@ -91,7 +91,7 @@ func TestGetMeasurementsIncludesTemperatureUseCases(t *testing.T) {
 		eebus.NewDeviceRegistry(),
 	)
 
-	result, err := svc.GetMeasurements(context.Background(), &pb.DeviceRequest{Ski: "test-ski"})
+	result, err := svc.GetMeasurements(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
 	if err != nil {
 		t.Fatalf("GetMeasurements() error = %v", err)
 	}
@@ -118,7 +118,7 @@ func TestGetMeasurementsIncludesTemperatureUseCases(t *testing.T) {
 
 func TestGetMeasurementsMissingCompatibleEntityIsNotFound(t *testing.T) {
 	registry := eebus.NewDeviceRegistry()
-	registry.AddDevice("test-ski", eebus.DeviceInfo{
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{
 		RemoteEntities: []spineapi.EntityRemoteInterface{mocks.NewEntityRemoteInterface(t)},
 	})
 	svc := bridgegrpc.NewMonitoringService(
@@ -128,11 +128,11 @@ func TestGetMeasurementsMissingCompatibleEntityIsNotFound(t *testing.T) {
 		registry,
 	)
 
-	result, err := svc.GetMeasurements(context.Background(), &pb.DeviceRequest{Ski: "test-ski"})
+	result, err := svc.GetMeasurements(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
 	if result != nil || status.Code(err) != codes.NotFound {
 		t.Fatalf("GetMeasurements() = (%+v, %v), want nil/NotFound", result, err)
 	}
-	capabilities, _ := registry.DeviceCapabilities("test-ski")
+	capabilities, _ := registry.DeviceCapabilities(testValidSKI)
 	for _, capability := range capabilities {
 		if capability.ID == eebus.CapabilityMonitoring {
 			if capability.State != eebus.CapabilityStateUnsupported || capability.Reason != eebus.CapabilityReasonRemoteNotAdvertised {
@@ -174,7 +174,7 @@ func TestSubscribeMeasurementsIncludesTemperaturePayloads(t *testing.T) {
 	client := pb.NewMonitoringServiceClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	stream, err := client.SubscribeMeasurements(ctx, &pb.DeviceRequest{Ski: "test-ski"})
+	stream, err := client.SubscribeMeasurements(ctx, &pb.DeviceRequest{Ski: testValidSKI})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestSubscribeMeasurementsIncludesTemperaturePayloads(t *testing.T) {
 		{eebus.EventTypeMonitoringReturnTemperatureUpdated, pb.MeasurementEventType_MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED, "return_temperature", 38},
 	}
 	for _, tt := range tests {
-		bus.Publish(eebus.Event{SKI: "test-ski", Type: tt.bridgeEvent})
+		bus.Publish(eebus.Event{SKI: testValidSKI, Type: tt.bridgeEvent})
 		event, err := stream.Recv()
 		if err != nil {
 			t.Fatalf("Recv: %v", err)
@@ -213,7 +213,7 @@ func TestSubscribeMeasurementsIncludesTemperaturePayloads(t *testing.T) {
 		{eebus.EventTypeOutdoorMonitoringSupportUpdated, pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED},
 	}
 	for _, tt := range supportTests {
-		bus.Publish(eebus.Event{SKI: "test-ski", Type: tt.bridgeEvent})
+		bus.Publish(eebus.Event{SKI: testValidSKI, Type: tt.bridgeEvent})
 		event, err := stream.Recv()
 		if err != nil {
 			t.Fatalf("Recv: %v", err)
@@ -232,7 +232,7 @@ func TestGetDeviceDiagnostics(t *testing.T) {
 		eebus.NewDeviceRegistry(),
 	)
 
-	result, err := svc.GetDeviceDiagnostics(context.Background(), &pb.DeviceRequest{Ski: "test-ski"})
+	result, err := svc.GetDeviceDiagnostics(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
 	if err != nil {
 		t.Fatalf("GetDeviceDiagnostics() error = %v", err)
 	}
@@ -249,7 +249,7 @@ func TestGetDeviceDiagnosticsReturnsUnavailableWhenUnavailable(t *testing.T) {
 		eebus.NewDeviceRegistry(),
 	)
 
-	_, err := svc.GetDeviceDiagnostics(context.Background(), &pb.DeviceRequest{Ski: "test-ski"})
+	_, err := svc.GetDeviceDiagnostics(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
 	if status.Code(err) != codes.Unavailable {
 		t.Fatalf("GetDeviceDiagnostics() code = %v, want Unavailable", status.Code(err))
 	}
@@ -279,13 +279,13 @@ func TestSubscribeMeasurementsForwardsDeviceOperatingState(t *testing.T) {
 	client := pb.NewMonitoringServiceClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	stream, err := client.SubscribeMeasurements(ctx, &pb.DeviceRequest{Ski: "test-ski"})
+	stream, err := client.SubscribeMeasurements(ctx, &pb.DeviceRequest{Ski: testValidSKI})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	time.Sleep(50 * time.Millisecond)
-	bus.Publish(eebus.Event{SKI: "test-ski", Type: eebus.EventTypeMonitoringDeviceOperatingStateUpdated})
+	bus.Publish(eebus.Event{SKI: testValidSKI, Type: eebus.EventTypeMonitoringDeviceOperatingStateUpdated})
 
 	event, err := stream.Recv()
 	if err != nil {

@@ -72,7 +72,7 @@ func TestDHWServiceGetAndSet(t *testing.T) {
 	}
 	service := NewDHWService(controller, nil, eebus.NewEventBus())
 
-	response, err := service.GetDHWSetpoint(context.Background(), &pb.DeviceRequest{Ski: "test"})
+	response, err := service.GetDHWSetpoint(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
 	if err != nil {
 		t.Fatalf("GetDHWSetpoint() error = %v", err)
 	}
@@ -83,7 +83,7 @@ func TestDHWServiceGetAndSet(t *testing.T) {
 
 	if _, err := service.SetDHWSetpoint(
 		context.Background(),
-		&pb.SetDHWSetpointRequest{Ski: "test", ValueCelsius: 47},
+		&pb.SetDHWSetpointRequest{Ski: testValidSKI, ValueCelsius: 47},
 	); err != nil {
 		t.Fatalf("SetDHWSetpoint() error = %v", err)
 	}
@@ -94,14 +94,14 @@ func TestDHWServiceGetAndSet(t *testing.T) {
 
 func TestDHWNeverAdvertisedWithoutSupportCallbackBecomesUnsupported(t *testing.T) {
 	registry := eebus.NewDeviceRegistry()
-	registry.AddDevice("test", eebus.DeviceInfo{RemoteEntities: []spineapi.EntityRemoteInterface{nil}})
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{RemoteEntities: []spineapi.EntityRemoteInterface{nil}})
 	service := NewDHWService(&fakeDHWController{}, nil, eebus.NewEventBus(), registry)
 
-	_, err := service.GetDHWSetpoint(context.Background(), &pb.DeviceRequest{Ski: "test"})
+	_, err := service.GetDHWSetpoint(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("GetDHWSetpoint() code = %v, want NotFound", status.Code(err))
 	}
-	capabilities, _ := registry.DeviceCapabilities("test")
+	capabilities, _ := registry.DeviceCapabilities(testValidSKI)
 	for _, capability := range capabilities {
 		if capability.ID == eebus.CapabilityDHW {
 			if capability.State != eebus.CapabilityStateUnsupported || capability.Reason != eebus.CapabilityReasonRemoteNotAdvertised {
@@ -122,7 +122,7 @@ func TestDHWServiceMapsValidationErrors(t *testing.T) {
 
 	_, err := service.SetDHWSetpoint(
 		context.Background(),
-		&pb.SetDHWSetpointRequest{Ski: "test", ValueCelsius: 80},
+		&pb.SetDHWSetpointRequest{Ski: testValidSKI, ValueCelsius: 80},
 	)
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("SetDHWSetpoint() code = %v, want InvalidArgument", status.Code(err))
@@ -156,7 +156,7 @@ func TestDHWServiceSystemFunctionGetAndSet(t *testing.T) {
 	}
 	service := NewDHWService(nil, controller, eebus.NewEventBus())
 
-	response, err := service.GetDHWSystemFunction(context.Background(), &pb.DeviceRequest{Ski: "test"})
+	response, err := service.GetDHWSystemFunction(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
 	if err != nil {
 		t.Fatalf("GetDHWSystemFunction() error = %v", err)
 	}
@@ -166,13 +166,13 @@ func TestDHWServiceSystemFunctionGetAndSet(t *testing.T) {
 		t.Fatalf("GetDHWSystemFunction() = %+v", response)
 	}
 
-	if _, err := service.SetDHWBoost(context.Background(), &pb.SetDHWBoostRequest{Ski: "test", Active: true}); err != nil {
+	if _, err := service.SetDHWBoost(context.Background(), &pb.SetDHWBoostRequest{Ski: testValidSKI, Active: true}); err != nil {
 		t.Fatalf("SetDHWBoost() error = %v", err)
 	}
 	if controller.writtenBoost == nil || !*controller.writtenBoost {
 		t.Fatalf("written boost = %v, want true", controller.writtenBoost)
 	}
-	if _, err := service.SetDHWOperationMode(context.Background(), &pb.SetDHWOperationModeRequest{Ski: "test", Mode: "off"}); err != nil {
+	if _, err := service.SetDHWOperationMode(context.Background(), &pb.SetDHWOperationModeRequest{Ski: testValidSKI, Mode: "off"}); err != nil {
 		t.Fatalf("SetDHWOperationMode() error = %v", err)
 	}
 	if controller.writtenMode != "off" {
@@ -189,7 +189,7 @@ func TestDHWServiceMapsSystemFunctionErrors(t *testing.T) {
 
 	_, err := service.SetDHWOperationMode(
 		context.Background(),
-		&pb.SetDHWOperationModeRequest{Ski: "test", Mode: "eco"},
+		&pb.SetDHWOperationModeRequest{Ski: testValidSKI, Mode: "eco"},
 	)
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("SetDHWOperationMode() code = %v, want InvalidArgument", status.Code(err))

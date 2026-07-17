@@ -339,6 +339,7 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 		},
 		bus,
 		registry,
+		cfg.Logging.DebugEvents,
 	)
 	gridSvc := bridgegrpc.NewGridService(mgcpProvider)
 	visualizationSvc := bridgegrpc.NewVisualizationService(vapdProvider, vabdProvider)

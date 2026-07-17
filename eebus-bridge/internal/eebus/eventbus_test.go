@@ -16,7 +16,6 @@ func TestEventBusSubscribeAndPublish(t *testing.T) {
 	evt := eebus.Event{
 		SKI:  "test-ski",
 		Type: "test-event",
-		Data: map[string]any{"power": 1500.0},
 	}
 	bus.Publish(evt)
 

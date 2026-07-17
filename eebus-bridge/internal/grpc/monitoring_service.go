@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 
 	spineapi "github.com/enbility/spine-go/api"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -27,6 +26,7 @@ type MonitoringService struct {
 	diagnostics deviceOperatingStateReader
 	bus         *eebus.EventBus
 	registry    *eebus.DeviceRegistry
+	debug       bool
 }
 
 type temperatureReader interface {
@@ -54,7 +54,12 @@ func NewMonitoringService(
 	readers MonitoringReaders,
 	bus *eebus.EventBus,
 	registry *eebus.DeviceRegistry,
+	debug ...bool,
 ) *MonitoringService {
+	debugEnabled := false
+	if len(debug) > 0 {
+		debugEnabled = debug[0]
+	}
 	return &MonitoringService{
 		monitoring:  monitoring,
 		dhw:         readers.DHW,
@@ -65,12 +70,16 @@ func NewMonitoringService(
 		diagnostics: readers.Diagnostics,
 		bus:         bus,
 		registry:    registry,
+		debug:       debugEnabled,
 	}
 }
 
 func (s *MonitoringService) GetDeviceDiagnostics(_ context.Context, req *pb.DeviceRequest) (*pb.DeviceDiagnosticsData, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if _, err := normalizeReadSKI(req.Ski); err != nil {
+		return nil, err
 	}
 	if s.diagnostics == nil {
 		return nil, status.Error(codes.Unavailable, "device diagnosis reader not initialized")
@@ -91,19 +100,27 @@ func (s *MonitoringService) GetPowerConsumption(_ context.Context, req *pb.Devic
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
+	if _, err := normalizeReadSKI(req.Ski); err != nil {
+		return nil, err
+	}
 	if s.monitoring == nil {
 		return nil, status.Error(codes.Unavailable, "monitoring use case not initialized")
 	}
 	value, err := readMetric("power", s.resolveForRead(req.Ski), s.monitoring.Power)
 	s.recordMonitoringRead(req.Ski, err)
 	if err != nil {
-		log.Printf("[DEBUG] Monitoring.GetPowerConsumption read failed: requested_ski=%s err=%v", req.Ski, err)
+		debugLogf(
+			s.debug,
+			"[DEBUG] Monitoring.GetPowerConsumption read failed: requested_ski=%s err_class=%s",
+			redactedSKIForLog(req.Ski),
+			redactedErrorForLog(err),
+		)
 		if status.Code(err) != codes.Unknown {
 			return nil, err
 		}
 		return nil, mapUsecaseError("reading power", err, standardUsecaseErrorClasses)
 	}
-	log.Printf("[DEBUG] Monitoring.GetPowerConsumption success: requested_ski=%s watts=%g", req.Ski, value)
+	debugLogf(s.debug, "[DEBUG] Monitoring.GetPowerConsumption success: requested_ski=%s watts=%g", redactedSKIForLog(req.Ski), value)
 	return &pb.PowerMeasurement{
 		Watts:     value,
 		Timestamp: timestamppb.Now(),
@@ -114,19 +131,27 @@ func (s *MonitoringService) GetEnergyConsumed(_ context.Context, req *pb.DeviceR
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
+	if _, err := normalizeReadSKI(req.Ski); err != nil {
+		return nil, err
+	}
 	if s.monitoring == nil {
 		return nil, status.Error(codes.Unavailable, "monitoring use case not initialized")
 	}
 	value, err := readMetric("energy-consumed", s.resolveForRead(req.Ski), s.monitoring.EnergyConsumed)
 	s.recordMonitoringRead(req.Ski, err)
 	if err != nil {
-		log.Printf("[DEBUG] Monitoring.GetEnergyConsumed read failed: requested_ski=%s err=%v", req.Ski, err)
+		debugLogf(
+			s.debug,
+			"[DEBUG] Monitoring.GetEnergyConsumed read failed: requested_ski=%s err_class=%s",
+			redactedSKIForLog(req.Ski),
+			redactedErrorForLog(err),
+		)
 		if status.Code(err) != codes.Unknown {
 			return nil, err
 		}
 		return nil, mapUsecaseError("reading energy", err, standardUsecaseErrorClasses)
 	}
-	log.Printf("[DEBUG] Monitoring.GetEnergyConsumed success: requested_ski=%s kWh=%f", req.Ski, value)
+	debugLogf(s.debug, "[DEBUG] Monitoring.GetEnergyConsumed success: requested_ski=%s kWh=%f", redactedSKIForLog(req.Ski), value)
 	return &pb.EnergyMeasurement{
 		KilowattHours: value,
 		Timestamp:     timestamppb.Now(),
@@ -136,6 +161,9 @@ func (s *MonitoringService) GetEnergyConsumed(_ context.Context, req *pb.DeviceR
 func (s *MonitoringService) GetMeasurements(_ context.Context, req *pb.DeviceRequest) (*pb.MeasurementList, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if _, err := normalizeReadSKI(req.Ski); err != nil {
+		return nil, err
 	}
 	if s.monitoring == nil {
 		return nil, status.Error(codes.Unavailable, "monitoring use case not initialized")
@@ -231,12 +259,12 @@ func (s *MonitoringService) GetMeasurements(_ context.Context, req *pb.DeviceReq
 			return nil, resolved.err
 		}
 		s.recordMonitoringRead(req.Ski, errors.New("all monitoring reads failed"))
-		log.Printf("[DEBUG] Monitoring.GetMeasurements produced no entries: requested_ski=%s", req.Ski)
+		debugLogf(s.debug, "[DEBUG] Monitoring.GetMeasurements produced no entries: requested_ski=%s", redactedSKIForLog(req.Ski))
 		return nil, status.Error(codes.Unavailable, "monitoring measurements temporarily unavailable")
 	}
 	s.recordMonitoringRead(req.Ski, nil)
 
-	log.Printf("[DEBUG] Monitoring.GetMeasurements success: requested_ski=%s entries=%d", req.Ski, len(measurements))
+	debugLogf(s.debug, "[DEBUG] Monitoring.GetMeasurements success: requested_ski=%s entries=%d", redactedSKIForLog(req.Ski), len(measurements))
 	return &pb.MeasurementList{Measurements: measurements}, nil
 }
 
@@ -252,58 +280,38 @@ func (s *MonitoringService) recordMonitoringRead(ski string, err error) {
 }
 
 func (s *MonitoringService) SubscribeMeasurements(req *pb.DeviceRequest, stream pb.MonitoringService_SubscribeMeasurementsServer) error {
-	if req == nil {
-		return status.Error(codes.InvalidArgument, "request is required")
-	}
-	ch := s.bus.Subscribe()
-	defer s.bus.Unsubscribe(ch)
-	reqSKI := eebus.NormalizeSKI(req.Ski)
-
-	for {
-		select {
-		case evt, ok := <-ch:
-			if !ok {
-				return nil
-			}
-			if reqSKI != "" && evt.SKI != reqSKI {
-				continue
-			}
-			var eventType pb.MeasurementEventType
-			switch evt.Type {
-			case eebus.EventTypeMonitoringPowerUpdated:
-				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_POWER_UPDATED
-			case eebus.EventTypeMonitoringEnergyConsumedUpdated:
-				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_ENERGY_UPDATED
-			case eebus.EventTypeDHWTemperatureUpdated:
-				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED
-			case eebus.EventTypeDHWMonitoringSupportUpdated:
-				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_SUPPORT_UPDATED
-			case eebus.EventTypeRoomTemperatureUpdated:
-				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED
-			case eebus.EventTypeRoomMonitoringSupportUpdated:
-				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_ROOM_TEMPERATURE_SUPPORT_UPDATED
-			case eebus.EventTypeOutdoorTemperatureUpdated:
-				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED
-			case eebus.EventTypeOutdoorMonitoringSupportUpdated:
-				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED
-			case eebus.EventTypeMonitoringFlowTemperatureUpdated:
-				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED
-			case eebus.EventTypeMonitoringReturnTemperatureUpdated:
-				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED
-			case eebus.EventTypeMonitoringDeviceOperatingStateUpdated:
-				eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED
-			default:
-				continue
-			}
-			event := &pb.MeasurementEvent{Ski: evt.SKI, EventType: eventType}
-			s.attachMeasurementPayload(event, evt.SKI, eventType)
-			if err := stream.Send(event); err != nil {
-				return err
-			}
-		case <-stream.Context().Done():
-			return stream.Context().Err()
+	return subscribeFilteredEvents(s.bus, req, stream.Context(), stream.Send, func(evt eebus.Event) (*pb.MeasurementEvent, bool) {
+		var eventType pb.MeasurementEventType
+		switch evt.Type {
+		case eebus.EventTypeMonitoringPowerUpdated:
+			eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_POWER_UPDATED
+		case eebus.EventTypeMonitoringEnergyConsumedUpdated:
+			eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_ENERGY_UPDATED
+		case eebus.EventTypeDHWTemperatureUpdated:
+			eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED
+		case eebus.EventTypeDHWMonitoringSupportUpdated:
+			eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_SUPPORT_UPDATED
+		case eebus.EventTypeRoomTemperatureUpdated:
+			eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED
+		case eebus.EventTypeRoomMonitoringSupportUpdated:
+			eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_ROOM_TEMPERATURE_SUPPORT_UPDATED
+		case eebus.EventTypeOutdoorTemperatureUpdated:
+			eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED
+		case eebus.EventTypeOutdoorMonitoringSupportUpdated:
+			eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_SUPPORT_UPDATED
+		case eebus.EventTypeMonitoringFlowTemperatureUpdated:
+			eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED
+		case eebus.EventTypeMonitoringReturnTemperatureUpdated:
+			eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED
+		case eebus.EventTypeMonitoringDeviceOperatingStateUpdated:
+			eventType = pb.MeasurementEventType_MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED
+		default:
+			return nil, false
 		}
-	}
+		event := &pb.MeasurementEvent{Ski: evt.SKI, EventType: eventType}
+		s.attachMeasurementPayload(event, evt.SKI, eventType)
+		return event, true
+	})
 }
 
 // attachMeasurementPayload best-effort fills the event's typed payload with the
@@ -371,34 +379,39 @@ func (s *MonitoringService) attachTemperaturePayload(
 }
 
 func (s *MonitoringService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, error) {
+	var resolver compatibleEntityResolver
 	if s.monitoring != nil {
-		resolution := s.monitoring.CompatibleEntity(ski)
-		if resolution.Ambiguous() {
-			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
-		}
-		if resolution.Entity != nil {
-			if s.registry != nil {
-				// ski can be empty, or normalize to empty (whitespace/display
-				// separators only), on the single-device convenience path
-				// (EntityResolution resolves it via CompatibleEntity); fall
-				// back to the resolved entity's own device SKI so the
-				// per-device watchdog state lands on the real device instead
-				// of an empty-string key.
-				recordSKI := eebus.NormalizeSKI(ski)
-				if recordSKI == "" && resolution.Entity.Device() != nil {
-					recordSKI = resolution.Entity.Device().Ski()
-				}
-				s.registry.RecordMonitoringSuccess(recordSKI)
-			}
-			return resolution.Entity, nil
-		}
+		resolver = s.monitoring.CompatibleEntity
 	}
-	if s.registry == nil {
-		return nil, status.Error(codes.Unavailable, "device registry not initialized")
+	resolution, err := resolveCompatibleEntityResolution(
+		ski,
+		"monitoring entity",
+		eebus.CapabilityMonitoring,
+		s.registry,
+		resolver,
+	)
+	if err != nil {
+		debugLogf(
+			s.debug,
+			"[DEBUG] Monitoring.resolveEntity failed: requested_ski=%s err_class=%s",
+			redactedSKIForLog(ski),
+			redactedErrorForLog(err),
+		)
+		return nil, err
 	}
-	s.registry.RecordCapabilityMissingEntity(ski, eebus.CapabilityMonitoring)
-	log.Printf("[DEBUG] Monitoring.resolveEntity returning not found: requested_ski=%s", ski)
-	return nil, status.Errorf(codes.NotFound, "no compatible monitoring entity found for ski %s", ski)
+	if s.registry != nil {
+		// ski can be empty, or normalize to empty (whitespace/display separators
+		// only), on the single-device convenience path (EntityResolution resolves
+		// it via CompatibleEntity); fall back to the resolved entity's own device
+		// SKI so the per-device watchdog state lands on the real device instead
+		// of an empty-string key.
+		recordSKI := eebus.NormalizeSKI(ski)
+		if recordSKI == "" && resolution.Entity.Device() != nil {
+			recordSKI = resolution.Entity.Device().Ski()
+		}
+		s.registry.RecordMonitoringSuccess(recordSKI)
+	}
+	return resolution.Entity, nil
 }
 
 func ambiguousDeviceSelection(deviceCount int) error {
@@ -436,7 +449,6 @@ func readMetric[T any](label string, r resolvedEntity, read func(spineapi.Entity
 	if r.err == nil {
 		return read(r.entity)
 	}
-	log.Printf("[DEBUG] Monitoring.readMetric %s resolveEntity failed: requested_ski=%s err=%v", label, r.ski, r.err)
 	return zero, r.err
 }
 

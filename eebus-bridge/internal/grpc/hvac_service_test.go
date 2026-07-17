@@ -50,8 +50,8 @@ func TestHVACServiceIsolatesCompatibleDevices(t *testing.T) {
 	deviceB := mocks.NewEntityRemoteInterface(t)
 	temp := &fakeRoomHeatingTemp{
 		entities: map[string]spineapi.EntityRemoteInterface{
-			"AABBCC": deviceA,
-			"DDEEFF": deviceB,
+			eebus.NormalizeSKI(testValidSKI):      deviceA,
+			eebus.NormalizeSKI(testOtherValidSKI): deviceB,
 		},
 		states: map[spineapi.EntityRemoteInterface]usecases.RoomHeatingSetpoint{
 			deviceA: {Value: 19},
@@ -67,8 +67,8 @@ func TestHVACServiceIsolatesCompatibleDevices(t *testing.T) {
 		ski  string
 		want float64
 	}{
-		{ski: "aa:bb-cc", want: 19},
-		{ski: "DDEEFF", want: 23},
+		{ski: testValidSKI, want: 19},
+		{ski: eebus.NormalizeSKI(testOtherValidSKI), want: 23},
 	} {
 		state, err := svc.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: test.ski})
 		if err != nil {
@@ -78,7 +78,7 @@ func TestHVACServiceIsolatesCompatibleDevices(t *testing.T) {
 			t.Errorf("GetRoomHeating(%q) = %+v, want setpoint %v", test.ski, state, test.want)
 		}
 	}
-	if _, err := svc.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: "unknown"}); status.Code(err) != codes.NotFound {
+	if _, err := svc.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: testUnknownValidSKI}); status.Code(err) != codes.NotFound {
 		t.Fatalf("unknown explicit SKI error = %v, want NotFound", err)
 	}
 }
@@ -88,7 +88,7 @@ func (f *fakeRoomHeatingTemp) Write(context.Context, spineapi.EntityRemoteInterf
 
 func TestHVACServiceGetRoomHeatingReturnsNotFoundWithoutCompatibleEntity(t *testing.T) {
 	svc := NewHVACService(&fakeRoomHeatingTemp{}, nil, nil, nil)
-	_, err := svc.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: "missing"})
+	_, err := svc.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: testUnknownValidSKI})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("GetRoomHeating() error = %v, want NotFound", err)
 	}
@@ -102,7 +102,7 @@ func TestHVACServiceGetRoomHeatingReturnsSetpoint(t *testing.T) {
 	}
 	state, err := NewHVACService(temp, nil, nil, nil).GetRoomHeating(
 		context.Background(),
-		&pb.DeviceRequest{Ski: "test"},
+		&pb.DeviceRequest{Ski: testValidSKI},
 	)
 	if err != nil {
 		t.Fatalf("GetRoomHeating() error = %v", err)
@@ -118,11 +118,11 @@ func TestHVACAggregateAllPartReadsFailedIsUnavailable(t *testing.T) {
 	temp := &fakeRoomHeatingTemp{entity: entity, err: usecases.ErrRoomHeatingDataUnavailable}
 	svc := NewHVACService(temp, nil, failingTemperatureReader{err: usecases.ErrRoomHeatingDataUnavailable}, nil, registry)
 
-	state, err := svc.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: "test"})
+	state, err := svc.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
 	if state != nil || status.Code(err) != codes.Unavailable {
 		t.Fatalf("GetRoomHeating() = (%+v, %v), want nil/Unavailable", state, err)
 	}
-	capabilities, _ := registry.DeviceCapabilities("test")
+	capabilities, _ := registry.DeviceCapabilities(testValidSKI)
 	for _, capability := range capabilities {
 		if capability.ID == eebus.CapabilityRoomHeating {
 			if capability.State != eebus.CapabilityStateTemporarilyUnavailable || capability.Reason != eebus.CapabilityReasonReadFailed {
@@ -151,7 +151,7 @@ func TestHVACServiceMapsOutOfRangeToInvalidArgument(t *testing.T) {
 	svc := NewHVACService(temp, nil, nil, nil)
 	_, err := svc.SetRoomHeatingTemperature(
 		context.Background(),
-		&pb.SetRoomHeatingTemperatureRequest{Ski: "test", ValueCelsius: 99},
+		&pb.SetRoomHeatingTemperatureRequest{Ski: testValidSKI, ValueCelsius: 99},
 	)
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("SetRoomHeatingTemperature() error = %v, want InvalidArgument", err)

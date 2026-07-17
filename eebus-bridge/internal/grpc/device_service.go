@@ -46,9 +46,9 @@ func (s *DeviceService) GetDeviceStatus(_ context.Context, req *pb.DeviceRequest
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
-	ski := eebus.NormalizeSKI(req.Ski)
-	if !validSKI(ski) {
-		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
+	ski, err := requireExplicitSKI(req.Ski)
+	if err != nil {
+		return nil, err
 	}
 
 	connected, lastTransition, known := s.registry.DeviceConnection(ski)
@@ -63,15 +63,15 @@ func (s *DeviceService) GetDeviceCapabilities(_ context.Context, req *pb.DeviceR
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
-	ski := eebus.NormalizeSKI(req.Ski)
-	if !validSKI(ski) {
-		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
+	ski, err := requireExplicitSKI(req.Ski)
+	if err != nil {
+		return nil, err
 	}
 	if s.registry == nil {
 		return nil, status.Error(codes.Unavailable, "device registry not initialized")
 	}
 	if !s.registry.KnownDevice(ski) {
-		return nil, status.Errorf(codes.NotFound, "device not found for ski %s", ski)
+		return nil, status.Error(codes.NotFound, "device not found for specified ski")
 	}
 	return s.deviceCapabilities(ski), nil
 }
@@ -126,9 +126,9 @@ func (s *DeviceService) RegisterRemoteSKI(_ context.Context, req *pb.RegisterSKI
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
-	ski := eebus.NormalizeSKI(req.Ski)
-	if !validSKI(ski) {
-		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
+	ski, err := requireExplicitSKI(req.Ski)
+	if err != nil {
+		return nil, err
 	}
 	if err := s.trust.RegisterSKI(ski); err != nil {
 		return nil, mapUsecaseError("registering remote SKI", err, usecaseErrorClasses{})
@@ -144,9 +144,9 @@ func (s *DeviceService) UnregisterRemoteSKI(_ context.Context, req *pb.RegisterS
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
-	ski := eebus.NormalizeSKI(req.Ski)
-	if !validSKI(ski) {
-		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
+	ski, err := requireExplicitSKI(req.Ski)
+	if err != nil {
+		return nil, err
 	}
 	if err := s.trust.UnregisterSKI(ski); err != nil {
 		return nil, mapUsecaseError("unregistering remote SKI", err, usecaseErrorClasses{})
@@ -171,34 +171,21 @@ func (s *DeviceService) ListPairedDevices(_ context.Context, _ *pb.Empty) (*pb.L
 }
 
 func (s *DeviceService) SubscribeDeviceEvents(_ *pb.Empty, stream pb.DeviceService_SubscribeDeviceEventsServer) error {
-	ch := s.bus.Subscribe()
-	defer s.bus.Unsubscribe(ch)
-
-	for {
-		select {
-		case evt, ok := <-ch:
-			if !ok {
-				return nil
-			}
-			var eventType pb.DeviceEventType
-			switch evt.Type {
-			case eebus.EventTypeDeviceConnected:
-				eventType = pb.DeviceEventType_DEVICE_EVENT_CONNECTED
-			case eebus.EventTypeDeviceDisconnected:
-				eventType = pb.DeviceEventType_DEVICE_EVENT_DISCONNECTED
-			case eebus.EventTypeDeviceTrustRemoved:
-				eventType = pb.DeviceEventType_DEVICE_EVENT_TRUST_REMOVED
-			default:
-				continue
-			}
-			if err := stream.Send(&pb.DeviceEvent{
-				Ski:       evt.SKI,
-				EventType: eventType,
-			}); err != nil {
-				return err
-			}
-		case <-stream.Context().Done():
-			return stream.Context().Err()
+	return subscribeAllEvents(s.bus, stream.Context(), stream.Send, func(evt eebus.Event) (*pb.DeviceEvent, bool) {
+		var eventType pb.DeviceEventType
+		switch evt.Type {
+		case eebus.EventTypeDeviceConnected:
+			eventType = pb.DeviceEventType_DEVICE_EVENT_CONNECTED
+		case eebus.EventTypeDeviceDisconnected:
+			eventType = pb.DeviceEventType_DEVICE_EVENT_DISCONNECTED
+		case eebus.EventTypeDeviceTrustRemoved:
+			eventType = pb.DeviceEventType_DEVICE_EVENT_TRUST_REMOVED
+		default:
+			return nil, false
 		}
-	}
+		return &pb.DeviceEvent{
+			Ski:       evt.SKI,
+			EventType: eventType,
+		}, true
+	})
 }

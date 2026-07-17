@@ -42,20 +42,27 @@ type usecaseErrorClasses struct {
 func mapUsecaseError(action string, err error, classes usecaseErrorClasses) error {
 	switch {
 	case errorsIsAny(err, classes.invalidArgument):
-		return status.Errorf(codes.InvalidArgument, "%s: %v", action, err)
+		return status.Errorf(codes.InvalidArgument, "%s: invalid request", action)
 	case errorsIsAny(err, classes.failedPrecondition):
-		return status.Errorf(codes.FailedPrecondition, "%s: %v", action, err)
+		return status.Errorf(codes.FailedPrecondition, "%s: rejected by device", action)
 	case errorsIsAny(err, classes.notFound):
-		return status.Errorf(codes.NotFound, "%s: %v", action, err)
+		return status.Errorf(codes.NotFound, "%s: not found", action)
 	case errorsIsAny(err, classes.unavailable):
 		return status.Errorf(codes.Unavailable, "%s: temporarily unavailable", action)
 	case errors.Is(err, context.Canceled):
-		return status.Errorf(codes.Canceled, "%s: %v", action, err)
+		return status.Errorf(codes.Canceled, "%s: canceled", action)
 	case errors.Is(err, context.DeadlineExceeded):
-		return status.Errorf(codes.DeadlineExceeded, "%s: %v", action, err)
+		return status.Errorf(codes.DeadlineExceeded, "%s: deadline exceeded", action)
 	default:
 		return status.Errorf(codes.Internal, "%s failed", action)
 	}
+}
+
+func redactedErrorForLog(err error) string {
+	if err == nil {
+		return "none"
+	}
+	return status.Code(err).String()
 }
 
 func errorsIsAny(err error, targets []error) bool {

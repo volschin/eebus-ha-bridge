@@ -65,7 +65,6 @@ const (
 type Event struct {
 	SKI        string
 	Type       EventType
-	Data       map[string]any
 	Revision   uint64
 	OccurredAt time.Time
 	Dropped    uint64

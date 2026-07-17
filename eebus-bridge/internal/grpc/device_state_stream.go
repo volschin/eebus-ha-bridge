@@ -5,8 +5,6 @@ import (
 
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/eebus"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -16,49 +14,24 @@ func (s *DeviceService) SubscribeDeviceState(
 	req *pb.DeviceRequest,
 	stream pb.DeviceService_SubscribeDeviceStateServer,
 ) error {
-	if req == nil {
-		return status.Error(codes.InvalidArgument, "request is required")
-	}
-	ski := eebus.NormalizeSKI(req.Ski)
-	if !validSKI(ski) {
-		return status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
-	}
-	if s.bus == nil {
-		return status.Error(codes.Unavailable, "event bus not initialized")
-	}
-
-	ch, revision := s.bus.SubscribeWithRevision(ski)
-	defer s.bus.Unsubscribe(ch)
-	if err := stream.Send(newResyncEnvelope(
-		ski,
-		revision,
-		time.Now().UTC(),
-		pb.ResyncReason_RESYNC_REASON_INITIAL_STATE_REQUIRED,
-		0,
-	)); err != nil {
-		return err
-	}
-
-	for {
-		if event, pending := s.bus.TakePendingResync(ch); pending {
-			if err := stream.Send(s.deviceStateEnvelope(event)); err != nil {
-				return err
-			}
-			continue
-		}
-		select {
-		case event, ok := <-ch:
-			if !ok {
-				return nil
-			}
-			envelope := s.deviceStateEnvelope(event)
-			if err := stream.Send(envelope); err != nil {
-				return err
-			}
-		case <-stream.Context().Done():
-			return stream.Context().Err()
-		}
-	}
+	return subscribeRevisionedEvents(
+		s.bus,
+		req,
+		stream.Context(),
+		stream.Send,
+		func(ski string, revision uint64, eventTime time.Time) *pb.DeviceStateEvent {
+			return newResyncEnvelope(
+				ski,
+				revision,
+				eventTime,
+				pb.ResyncReason_RESYNC_REASON_INITIAL_STATE_REQUIRED,
+				0,
+			)
+		},
+		func(event eebus.Event) (*pb.DeviceStateEvent, bool) {
+			return s.deviceStateEnvelope(event), true
+		},
+	)
 }
 
 func newResyncEnvelope(

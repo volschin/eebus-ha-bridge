@@ -32,6 +32,9 @@ func (s *OHPCFService) GetCompressorFlexibility(_ context.Context, req *pb.Devic
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
+	if _, err := normalizeReadSKI(req.Ski); err != nil {
+		return nil, err
+	}
 	if s.ohpcf == nil {
 		return nil, status.Error(codes.Unavailable, "OHPCF use case not initialized")
 	}
@@ -56,8 +59,8 @@ func (s *OHPCFService) ControlCompressorFlexibility(_ context.Context, req *pb.C
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
-	if req.Ski == "" {
-		return nil, status.Error(codes.InvalidArgument, "ski is required for control operations")
+	if err := requireWriteSKI(req.Ski); err != nil {
+		return nil, err
 	}
 	if s.ohpcf == nil {
 		return nil, status.Error(codes.Unavailable, "OHPCF use case not initialized")
@@ -90,50 +93,30 @@ func (s *OHPCFService) ControlCompressorFlexibility(_ context.Context, req *pb.C
 }
 
 func (s *OHPCFService) SubscribeOHPCFEvents(req *pb.DeviceRequest, stream pb.OHPCFService_SubscribeOHPCFEventsServer) error {
-	if req == nil {
-		return status.Error(codes.InvalidArgument, "request is required")
-	}
-	ch := s.bus.Subscribe()
-	defer s.bus.Unsubscribe(ch)
-	reqSKI := eebus.NormalizeSKI(req.Ski)
-
-	for {
-		select {
-		case evt, ok := <-ch:
-			if !ok {
-				return nil
-			}
-			if reqSKI != "" && evt.SKI != reqSKI {
-				continue
-			}
-			var eventType pb.OHPCFEventType
-			switch evt.Type {
-			case eebus.EventTypeOHPCFUseCaseSupportUpdated:
-				eventType = pb.OHPCFEventType_OHPCF_EVENT_SUPPORT_UPDATED
-			case eebus.EventTypeOHPCFConsumptionStateUpdated:
-				eventType = pb.OHPCFEventType_OHPCF_EVENT_STATE_UPDATED
-			case eebus.EventTypeOHPCFConsumptionStoppableUpdated,
-				eebus.EventTypeOHPCFConsumptionPausableUpdated,
-				eebus.EventTypeOHPCFConsumptionStartTimeUpdated,
-				eebus.EventTypeOHPCFRequestedPowerEstimateUpdated,
-				eebus.EventTypeOHPCFRequestedPowerMaxUpdated,
-				eebus.EventTypeOHPCFMinimalRunDurationUpdated,
-				eebus.EventTypeOHPCFMinimalPauseDurationUpdated:
-				eventType = pb.OHPCFEventType_OHPCF_EVENT_DATA_UPDATED
-			default:
-				continue
-			}
-			event := &pb.OHPCFEvent{Ski: evt.SKI, EventType: eventType}
-			if entity, err := s.resolveEntity(evt.SKI); err == nil {
-				event.Flexibility, _ = s.buildFlexibility(entity)
-			}
-			if err := stream.Send(event); err != nil {
-				return err
-			}
-		case <-stream.Context().Done():
-			return stream.Context().Err()
+	return subscribeFilteredEvents(s.bus, req, stream.Context(), stream.Send, func(evt eebus.Event) (*pb.OHPCFEvent, bool) {
+		var eventType pb.OHPCFEventType
+		switch evt.Type {
+		case eebus.EventTypeOHPCFUseCaseSupportUpdated:
+			eventType = pb.OHPCFEventType_OHPCF_EVENT_SUPPORT_UPDATED
+		case eebus.EventTypeOHPCFConsumptionStateUpdated:
+			eventType = pb.OHPCFEventType_OHPCF_EVENT_STATE_UPDATED
+		case eebus.EventTypeOHPCFConsumptionStoppableUpdated,
+			eebus.EventTypeOHPCFConsumptionPausableUpdated,
+			eebus.EventTypeOHPCFConsumptionStartTimeUpdated,
+			eebus.EventTypeOHPCFRequestedPowerEstimateUpdated,
+			eebus.EventTypeOHPCFRequestedPowerMaxUpdated,
+			eebus.EventTypeOHPCFMinimalRunDurationUpdated,
+			eebus.EventTypeOHPCFMinimalPauseDurationUpdated:
+			eventType = pb.OHPCFEventType_OHPCF_EVENT_DATA_UPDATED
+		default:
+			return nil, false
 		}
-	}
+		event := &pb.OHPCFEvent{Ski: evt.SKI, EventType: eventType}
+		if entity, err := s.resolveEntity(evt.SKI); err == nil {
+			event.Flexibility, _ = s.buildFlexibility(entity)
+		}
+		return event, true
+	})
 }
 
 // buildFlexibility reads the current OHPCF offer/state best-effort. Individual
@@ -200,18 +183,9 @@ func convertCompressorState(st ucapi.CompressorPowerConsumptionStateType) pb.Com
 // VR940 registers several entities under one SKI, so the flat registry may return
 // the wrong one.
 func (s *OHPCFService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, error) {
+	var resolver compatibleEntityResolver
 	if s.ohpcf != nil {
-		resolution := s.ohpcf.CompatibleEntity(ski)
-		if resolution.Ambiguous() {
-			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
-		}
-		if resolution.Entity != nil {
-			return resolution.Entity, nil
-		}
+		resolver = s.ohpcf.CompatibleEntity
 	}
-	if s.registry == nil {
-		return nil, status.Error(codes.Unavailable, "device registry not initialized")
-	}
-	s.registry.RecordCapabilityMissingEntity(ski, eebus.CapabilityOHPCF)
-	return nil, status.Errorf(codes.NotFound, "no compatible OHPCF entity found for ski %s", ski)
+	return resolveCompatibleEntity(ski, "OHPCF entity", eebus.CapabilityOHPCF, s.registry, resolver)
 }

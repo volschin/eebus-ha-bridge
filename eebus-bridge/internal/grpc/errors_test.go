@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -51,5 +52,61 @@ func TestUnknownInternalErrorIsSanitized(t *testing.T) {
 	err := mapUsecaseError("reading data", errors.New("token=super-secret"), usecaseErrorClasses{})
 	if status.Code(err) != codes.Internal || strings.Contains(err.Error(), "super-secret") {
 		t.Fatalf("internal error was not sanitized: %v", err)
+	}
+}
+
+func TestClassifiedUsecaseErrorsAreSanitized(t *testing.T) {
+	secret := "token=super-secret"
+	fullSKI := testValidSKI
+	tests := []struct {
+		name     string
+		err      error
+		wantCode codes.Code
+	}{
+		{
+			name:     "invalid argument",
+			err:      mapDHWError("writing DHW", fmt.Errorf("%s ski=%s: %w", secret, fullSKI, usecases.ErrDHWOutOfRange)),
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name:     "failed precondition",
+			err:      mapUsecaseError("writing OHPCF", fmt.Errorf("%s ski=%s: %w", secret, fullSKI, usecases.ErrOHPCFRejected), standardUsecaseErrorClasses),
+			wantCode: codes.FailedPrecondition,
+		},
+		{
+			name:     "not found",
+			err:      mapUsecaseError("reading data", fmt.Errorf("%s ski=%s: %w", secret, fullSKI, eebusapi.ErrEntityNotFound), standardUsecaseErrorClasses),
+			wantCode: codes.NotFound,
+		},
+		{
+			name:     "canceled",
+			err:      mapUsecaseError("reading data", fmt.Errorf("%s ski=%s: %w", secret, fullSKI, context.Canceled), standardUsecaseErrorClasses),
+			wantCode: codes.Canceled,
+		},
+		{
+			name:     "deadline exceeded",
+			err:      mapUsecaseError("reading data", fmt.Errorf("%s ski=%s: %w", secret, fullSKI, context.DeadlineExceeded), standardUsecaseErrorClasses),
+			wantCode: codes.DeadlineExceeded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			message := status.Convert(tt.err).Message()
+			if code := status.Code(tt.err); code != tt.wantCode {
+				t.Fatalf("code = %v, want %v (err: %v)", code, tt.wantCode, tt.err)
+			}
+			if strings.Contains(message, secret) || strings.Contains(message, fullSKI) {
+				t.Fatalf("classified error leaked sensitive wrapper: %q", message)
+			}
+		})
+	}
+}
+
+func TestRedactedErrorForLogDoesNotExposeWrappedMessage(t *testing.T) {
+	leakyErr := fmt.Errorf("token=super-secret ski=%s: %w", testValidSKI, usecases.ErrOHPCFRejected)
+	got := redactedErrorForLog(leakyErr)
+	if strings.Contains(got, "super-secret") || strings.Contains(got, testValidSKI) {
+		t.Fatalf("redactedErrorForLog leaked wrapped message: %q", got)
 	}
 }
