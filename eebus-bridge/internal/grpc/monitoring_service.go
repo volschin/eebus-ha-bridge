@@ -77,10 +77,9 @@ func (s *MonitoringService) GetDeviceDiagnostics(_ context.Context, req *pb.Devi
 	}
 	state, err := s.diagnostics.OperatingState(req.Ski)
 	if err != nil {
-		if errors.Is(err, usecases.ErrDeviceOperatingStateUnavailable) {
-			return nil, status.Errorf(codes.NotFound, "reading device operating state: %v", err)
-		}
-		return nil, status.Errorf(codes.Internal, "reading device operating state: %v", err)
+		return nil, mapUsecaseError("reading device operating state", err, usecaseErrorClasses{
+			unavailable: []error{usecases.ErrDeviceOperatingStateUnavailable},
+		})
 	}
 	return &pb.DeviceDiagnosticsData{
 		OperatingState: state,
@@ -96,12 +95,13 @@ func (s *MonitoringService) GetPowerConsumption(_ context.Context, req *pb.Devic
 		return nil, status.Error(codes.Unavailable, "monitoring use case not initialized")
 	}
 	value, err := readMetric("power", s.resolveForRead(req.Ski), s.monitoring.Power)
+	s.recordMonitoringRead(req.Ski, err)
 	if err != nil {
 		log.Printf("[DEBUG] Monitoring.GetPowerConsumption read failed: requested_ski=%s err=%v", req.Ski, err)
 		if status.Code(err) != codes.Unknown {
 			return nil, err
 		}
-		return nil, status.Errorf(codes.Internal, "reading power: %v", err)
+		return nil, mapUsecaseError("reading power", err, standardUsecaseErrorClasses)
 	}
 	log.Printf("[DEBUG] Monitoring.GetPowerConsumption success: requested_ski=%s watts=%g", req.Ski, value)
 	return &pb.PowerMeasurement{
@@ -118,12 +118,13 @@ func (s *MonitoringService) GetEnergyConsumed(_ context.Context, req *pb.DeviceR
 		return nil, status.Error(codes.Unavailable, "monitoring use case not initialized")
 	}
 	value, err := readMetric("energy-consumed", s.resolveForRead(req.Ski), s.monitoring.EnergyConsumed)
+	s.recordMonitoringRead(req.Ski, err)
 	if err != nil {
 		log.Printf("[DEBUG] Monitoring.GetEnergyConsumed read failed: requested_ski=%s err=%v", req.Ski, err)
 		if status.Code(err) != codes.Unknown {
 			return nil, err
 		}
-		return nil, status.Errorf(codes.Internal, "reading energy: %v", err)
+		return nil, mapUsecaseError("reading energy", err, standardUsecaseErrorClasses)
 	}
 	log.Printf("[DEBUG] Monitoring.GetEnergyConsumed success: requested_ski=%s kWh=%f", req.Ski, value)
 	return &pb.EnergyMeasurement{
@@ -225,15 +226,35 @@ func (s *MonitoringService) GetMeasurements(_ context.Context, req *pb.DeviceReq
 	}
 
 	if len(measurements) == 0 {
+		if status.Code(resolved.err) == codes.NotFound {
+			s.recordMonitoringRead(req.Ski, resolved.err)
+			return nil, resolved.err
+		}
+		s.recordMonitoringRead(req.Ski, errors.New("all monitoring reads failed"))
 		log.Printf("[DEBUG] Monitoring.GetMeasurements produced no entries: requested_ski=%s", req.Ski)
-		return nil, status.Error(codes.NotFound, "no monitoring measurements available for device")
+		return nil, status.Error(codes.Unavailable, "monitoring measurements temporarily unavailable")
 	}
+	s.recordMonitoringRead(req.Ski, nil)
 
 	log.Printf("[DEBUG] Monitoring.GetMeasurements success: requested_ski=%s entries=%d", req.Ski, len(measurements))
 	return &pb.MeasurementList{Measurements: measurements}, nil
 }
 
+func (s *MonitoringService) recordMonitoringRead(ski string, err error) {
+	if s.registry == nil {
+		return
+	}
+	if status.Code(err) == codes.NotFound {
+		s.registry.RecordCapabilityMissingEntity(ski, eebus.CapabilityMonitoring)
+		return
+	}
+	s.registry.RecordCapabilityRead(ski, eebus.CapabilityMonitoring, err)
+}
+
 func (s *MonitoringService) SubscribeMeasurements(req *pb.DeviceRequest, stream pb.MonitoringService_SubscribeMeasurementsServer) error {
+	if req == nil {
+		return status.Error(codes.InvalidArgument, "request is required")
+	}
 	ch := s.bus.Subscribe()
 	defer s.bus.Unsubscribe(ch)
 	reqSKI := eebus.NormalizeSKI(req.Ski)
@@ -375,25 +396,9 @@ func (s *MonitoringService) resolveEntity(ski string) (spineapi.EntityRemoteInte
 	if s.registry == nil {
 		return nil, status.Error(codes.Unavailable, "device registry not initialized")
 	}
-	entity := s.registry.FirstEntity(ski)
-	if entity == nil {
-		log.Printf("[DEBUG] Monitoring.resolveEntity no entity for requested SKI: requested_ski=%s", ski)
-	}
-	if entity == nil && ski == "" {
-		resolution := s.registry.FirstAvailableEntity()
-		if resolution.Ambiguous() {
-			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
-		}
-		entity = resolution.Entity
-		if resolution.Entity != nil {
-			log.Printf("[DEBUG] Monitoring.resolveEntity selected fallback entity for empty SKI request")
-		}
-	}
-	if entity == nil {
-		log.Printf("[DEBUG] Monitoring.resolveEntity returning not found: requested_ski=%s", ski)
-		return nil, status.Errorf(codes.NotFound, "no remote entity found for ski %s", ski)
-	}
-	return entity, nil
+	s.registry.RecordCapabilityMissingEntity(ski, eebus.CapabilityMonitoring)
+	log.Printf("[DEBUG] Monitoring.resolveEntity returning not found: requested_ski=%s", ski)
+	return nil, status.Errorf(codes.NotFound, "no compatible monitoring entity found for ski %s", ski)
 }
 
 func ambiguousDeviceSelection(deviceCount int) error {

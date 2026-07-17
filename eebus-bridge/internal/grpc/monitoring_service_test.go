@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	spineapi "github.com/enbility/spine-go/api"
+	"github.com/enbility/spine-go/mocks"
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
@@ -114,6 +116,34 @@ func TestGetMeasurementsIncludesTemperatureUseCases(t *testing.T) {
 	}
 }
 
+func TestGetMeasurementsMissingCompatibleEntityIsNotFound(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice("test-ski", eebus.DeviceInfo{
+		RemoteEntities: []spineapi.EntityRemoteInterface{mocks.NewEntityRemoteInterface(t)},
+	})
+	svc := bridgegrpc.NewMonitoringService(
+		usecases.NewMonitoringWrapper(nil, registry, false),
+		bridgegrpc.MonitoringReaders{DHW: fakeDHWTemperatureReader{err: context.DeadlineExceeded}},
+		eebus.NewEventBus(),
+		registry,
+	)
+
+	result, err := svc.GetMeasurements(context.Background(), &pb.DeviceRequest{Ski: "test-ski"})
+	if result != nil || status.Code(err) != codes.NotFound {
+		t.Fatalf("GetMeasurements() = (%+v, %v), want nil/NotFound", result, err)
+	}
+	capabilities, _ := registry.DeviceCapabilities("test-ski")
+	for _, capability := range capabilities {
+		if capability.ID == eebus.CapabilityMonitoring {
+			if capability.State != eebus.CapabilityStateUnsupported || capability.Reason != eebus.CapabilityReasonRemoteNotAdvertised {
+				t.Fatalf("monitoring capability = %+v", capability)
+			}
+			return
+		}
+	}
+	t.Fatal("monitoring capability missing")
+}
+
 func TestSubscribeMeasurementsIncludesTemperaturePayloads(t *testing.T) {
 	bus := eebus.NewEventBus()
 	svc := bridgegrpc.NewMonitoringService(
@@ -211,7 +241,7 @@ func TestGetDeviceDiagnostics(t *testing.T) {
 	}
 }
 
-func TestGetDeviceDiagnosticsReturnsNotFoundWhenUnavailable(t *testing.T) {
+func TestGetDeviceDiagnosticsReturnsUnavailableWhenUnavailable(t *testing.T) {
 	svc := bridgegrpc.NewMonitoringService(
 		nil,
 		bridgegrpc.MonitoringReaders{Diagnostics: fakeDeviceOperatingStateReader{err: usecases.ErrDeviceOperatingStateUnavailable}},
@@ -220,8 +250,8 @@ func TestGetDeviceDiagnosticsReturnsNotFoundWhenUnavailable(t *testing.T) {
 	)
 
 	_, err := svc.GetDeviceDiagnostics(context.Background(), &pb.DeviceRequest{Ski: "test-ski"})
-	if status.Code(err) != codes.NotFound {
-		t.Fatalf("GetDeviceDiagnostics() code = %v, want NotFound", status.Code(err))
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("GetDeviceDiagnostics() code = %v, want Unavailable", status.Code(err))
 	}
 }
 

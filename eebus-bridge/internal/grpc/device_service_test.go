@@ -130,6 +130,100 @@ func TestGetDeviceStatusRejectsMalformedSKI(t *testing.T) {
 	}
 }
 
+func TestGetDeviceCapabilitiesContractRemoteNotAdvertised(t *testing.T) {
+	bus := eebus.NewEventBus()
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	registry.RecordCapabilitySupport(testValidSKI, eebus.CapabilityDHW, false)
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false), bus, "local", registry, &recordingTrustController{},
+	)
+
+	response, err := svc.GetDeviceCapabilities(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil {
+		t.Fatalf("GetDeviceCapabilities: %v", err)
+	}
+	if response.Ski != eebus.NormalizeSKI(testValidSKI) || len(response.Capabilities) != len(eebus.AllCapabilities) {
+		t.Fatalf("GetDeviceCapabilities = %+v", response)
+	}
+	for _, capability := range response.Capabilities {
+		if capability.Id == pb.CapabilityId_CAPABILITY_DHW {
+			if capability.State != pb.CapabilityState_CAPABILITY_STATE_UNSUPPORTED ||
+				capability.Reason != pb.CapabilityReason_CAPABILITY_REASON_REMOTE_NOT_ADVERTISED ||
+				capability.LastChanged == nil {
+				t.Fatalf("DHW capability = %+v", capability)
+			}
+			return
+		}
+	}
+	t.Fatal("DHW capability missing")
+}
+
+func deviceCapabilityContract(t *testing.T, registry *eebus.DeviceRegistry, id pb.CapabilityId) *pb.DeviceCapability {
+	t.Helper()
+	if !registry.KnownDevice(testValidSKI) {
+		registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	}
+	bus := eebus.NewEventBus()
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false), bus, "local", registry, &recordingTrustController{},
+	)
+	response, err := svc.GetDeviceCapabilities(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil {
+		t.Fatalf("GetDeviceCapabilities: %v", err)
+	}
+	for _, capability := range response.Capabilities {
+		if capability.Id == id {
+			return capability
+		}
+	}
+	t.Fatalf("capability %v missing", id)
+	return nil
+}
+
+func TestGetDeviceCapabilitiesUnknownSKIReturnsNotFoundWithoutMutation(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	bus := eebus.NewEventBus()
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false), bus, "local", registry, &recordingTrustController{},
+	)
+
+	_, err := svc.GetDeviceCapabilities(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("code = %v, want NotFound", status.Code(err))
+	}
+	if _, exists := registry.DeviceCapabilities(testValidSKI); exists {
+		t.Fatal("GetDeviceCapabilities mutated registry for unknown SKI")
+	}
+}
+
+func TestGetDeviceCapabilitiesContractLocalDisabled(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.SetLocalCapabilityEnabled(eebus.CapabilityOHPCF, false)
+	capability := deviceCapabilityContract(t, registry, pb.CapabilityId_CAPABILITY_OHPCF)
+	if capability.State != pb.CapabilityState_CAPABILITY_STATE_UNSUPPORTED || capability.Reason != pb.CapabilityReason_CAPABILITY_REASON_LOCAL_DISABLED {
+		t.Fatalf("capability = %+v", capability)
+	}
+}
+
+func TestGetDeviceCapabilitiesContractEntityNotBound(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.RecordCapabilityEntityNotBound(testValidSKI, eebus.CapabilityLPC)
+	capability := deviceCapabilityContract(t, registry, pb.CapabilityId_CAPABILITY_LPC)
+	if capability.State != pb.CapabilityState_CAPABILITY_STATE_TEMPORARILY_UNAVAILABLE || capability.Reason != pb.CapabilityReason_CAPABILITY_REASON_ENTITY_NOT_BOUND {
+		t.Fatalf("capability = %+v", capability)
+	}
+}
+
+func TestGetDeviceCapabilitiesContractTemporaryReadFailure(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.RecordCapabilityRead(testValidSKI, eebus.CapabilityMonitoring, errors.New("read failed"))
+	capability := deviceCapabilityContract(t, registry, pb.CapabilityId_CAPABILITY_MONITORING)
+	if capability.State != pb.CapabilityState_CAPABILITY_STATE_TEMPORARILY_UNAVAILABLE || capability.Reason != pb.CapabilityReason_CAPABILITY_REASON_READ_FAILED {
+		t.Fatalf("capability = %+v", capability)
+	}
+}
+
 func TestListDevicesResponsesAreSortedByNormalizedSKI(t *testing.T) {
 	bus := eebus.NewEventBus()
 	callbacks := eebus.NewCallbacks(bus, false)
@@ -173,6 +267,19 @@ func TestRegisterRemoteSKIRejectsMalformedSKI(t *testing.T) {
 	_, err := client.RegisterRemoteSKI(context.Background(), &pb.RegisterSKIRequest{Ski: "not-a-ski"})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("RegisterRemoteSKI(malformed) code = %v, want InvalidArgument", status.Code(err))
+	}
+}
+
+func TestPairingCommandsRejectNilRequest(t *testing.T) {
+	bus := eebus.NewEventBus()
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false), bus, "local", eebus.NewDeviceRegistry(), &recordingTrustController{},
+	)
+	if _, err := svc.RegisterRemoteSKI(context.Background(), nil); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("RegisterRemoteSKI(nil) code = %v", status.Code(err))
+	}
+	if _, err := svc.UnregisterRemoteSKI(context.Background(), nil); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("UnregisterRemoteSKI(nil) code = %v", status.Code(err))
 	}
 }
 

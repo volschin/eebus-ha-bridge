@@ -43,6 +43,9 @@ func (s *DeviceService) GetStatus(_ context.Context, _ *pb.Empty) (*pb.ServiceSt
 }
 
 func (s *DeviceService) GetDeviceStatus(_ context.Context, req *pb.DeviceRequest) (*pb.DeviceStatus, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
 	ski := eebus.NormalizeSKI(req.Ski)
 	if !validSKI(ski) {
 		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
@@ -54,6 +57,48 @@ func (s *DeviceService) GetDeviceStatus(_ context.Context, req *pb.DeviceRequest
 		result.LastTransition = timestamppb.New(lastTransition)
 	}
 	return result, nil
+}
+
+func (s *DeviceService) GetDeviceCapabilities(_ context.Context, req *pb.DeviceRequest) (*pb.DeviceCapabilities, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	ski := eebus.NormalizeSKI(req.Ski)
+	if !validSKI(ski) {
+		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
+	}
+	if s.registry == nil {
+		return nil, status.Error(codes.Unavailable, "device registry not initialized")
+	}
+	if !s.registry.KnownDevice(ski) {
+		return nil, status.Errorf(codes.NotFound, "device not found for ski %s", ski)
+	}
+	entries, _ := s.registry.DeviceCapabilities(ski)
+	capabilities := make([]*pb.DeviceCapability, 0, len(entries))
+	for _, entry := range entries {
+		capability := &pb.DeviceCapability{
+			Id:     capabilityID(entry.ID),
+			State:  capabilityState(entry.State),
+			Reason: capabilityReason(entry.Reason),
+		}
+		if !entry.LastChanged.IsZero() {
+			capability.LastChanged = timestamppb.New(entry.LastChanged)
+		}
+		capabilities = append(capabilities, capability)
+	}
+	return &pb.DeviceCapabilities{Ski: ski, Capabilities: capabilities}, nil
+}
+
+func capabilityID(value eebus.Capability) pb.CapabilityId {
+	return pb.CapabilityId(value)
+}
+
+func capabilityState(value eebus.CapabilityState) pb.CapabilityState {
+	return pb.CapabilityState(value)
+}
+
+func capabilityReason(value eebus.CapabilityReason) pb.CapabilityReason {
+	return pb.CapabilityReason(value)
 }
 
 func (s *DeviceService) ListDiscoveredDevices(_ context.Context, _ *pb.Empty) (*pb.ListDevicesResponse, error) {
@@ -71,12 +116,15 @@ func (s *DeviceService) ListDiscoveredDevices(_ context.Context, _ *pb.Empty) (*
 }
 
 func (s *DeviceService) RegisterRemoteSKI(_ context.Context, req *pb.RegisterSKIRequest) (*pb.Empty, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
 	ski := eebus.NormalizeSKI(req.Ski)
 	if !validSKI(ski) {
 		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
 	}
 	if err := s.trust.RegisterSKI(ski); err != nil {
-		return nil, status.Errorf(codes.Internal, "registering remote SKI: %v", err)
+		return nil, mapUsecaseError("registering remote SKI", err, usecaseErrorClasses{})
 	}
 	return &pb.Empty{}, nil
 }
@@ -86,12 +134,15 @@ func (s *DeviceService) RegisterRemoteSKI(_ context.Context, req *pb.RegisterSKI
 // be dropped without deleting internal/certs/ (which would rotate the local
 // SKI and force every other paired device to re-pair too).
 func (s *DeviceService) UnregisterRemoteSKI(_ context.Context, req *pb.RegisterSKIRequest) (*pb.Empty, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
 	ski := eebus.NormalizeSKI(req.Ski)
 	if !validSKI(ski) {
 		return nil, status.Errorf(codes.InvalidArgument, "ski must be 40 hex characters, got %q", req.Ski)
 	}
 	if err := s.trust.UnregisterSKI(ski); err != nil {
-		return nil, status.Errorf(codes.Internal, "unregistering remote SKI: %v", err)
+		return nil, mapUsecaseError("unregistering remote SKI", err, usecaseErrorClasses{})
 	}
 	return &pb.Empty{}, nil
 }

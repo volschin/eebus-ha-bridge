@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, cast
 
@@ -98,6 +99,7 @@ class OHPCFState:
 class CapabilitiesState:
     """Availability state for optional EEBUS capabilities."""
 
+    monitoring: CapabilityState = CapabilityState.UNKNOWN
     heartbeat: CapabilityState = CapabilityState.UNKNOWN
     lpc: CapabilityState = CapabilityState.UNKNOWN
     failsafe: CapabilityState = CapabilityState.UNKNOWN
@@ -150,6 +152,7 @@ class StateField(StrEnum):
 class CapabilityKey(StrEnum):
     """Typed identifiers for capability reducer inputs."""
 
+    MONITORING = "monitoring"
     LPC = "lpc"
     FAILSAFE = "failsafe"
     HEARTBEAT = "heartbeat"
@@ -170,6 +173,8 @@ class DeviceState:
     hvac: HVACState = field(default_factory=HVACState)
     ohpcf: OHPCFState = field(default_factory=OHPCFState)
     capabilities: CapabilitiesState = field(default_factory=CapabilitiesState)
+    capability_metadata: tuple[CapabilityMetadata, ...] = ()
+    explicit_capability_contract: bool = False
     fresh_fields: frozenset[StateField] = frozenset()
 
 
@@ -180,6 +185,18 @@ class CapabilityResult:
     capability: CapabilityKey
     status: grpc.StatusCode | None
     explicit_support: bool = False
+    explicit_state: CapabilityState | None = None
+    reason: str | None = None
+    last_changed: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityMetadata:
+    """Reason and bridge transition time for one explicit capability."""
+
+    capability: CapabilityKey
+    reason: str | None
+    last_changed: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,6 +207,7 @@ class StateObservation:
     observed_fields: frozenset[StateField] = frozenset()
     unavailable_fields: frozenset[StateField] = frozenset()
     capability_results: tuple[CapabilityResult, ...] = ()
+    explicit_capability_contract: bool | None = None
     base_revision: int | None = None
 
 
@@ -215,6 +233,10 @@ _MEASUREMENT_FIELDS = (
     }
 )
 _CAPABILITY_FIELDS: dict[CapabilityKey, tuple[StateField, ...]] = {
+    # Monitoring is a diagnostic aggregate. Individual telemetry leaves carry
+    # their own freshness because optional temperature readers can succeed even
+    # when the main MPC use case is unsupported.
+    CapabilityKey.MONITORING: (),
     CapabilityKey.LPC: (StateField.CONSUMPTION_LIMIT,),
     CapabilityKey.FAILSAFE: (StateField.FAILSAFE_LIMIT,),
     CapabilityKey.HEARTBEAT: (StateField.HEARTBEAT_STATUS,),
@@ -226,6 +248,11 @@ _CAPABILITY_FIELDS: dict[CapabilityKey, tuple[StateField, ...]] = {
         StateField.ROOM_HEATING_SYSTEM_FUNCTION,
     ),
 }
+_FIELD_CAPABILITY = {
+    field_name: capability
+    for capability, field_names in _CAPABILITY_FIELDS.items()
+    for field_name in field_names
+}
 
 
 def next_capability_state(
@@ -233,8 +260,11 @@ def next_capability_state(
     status: grpc.StatusCode | None,
     *,
     explicit_support: bool = False,
+    explicit_state: CapabilityState | None = None,
 ) -> CapabilityState:
     """Return the capability state after a successful call or gRPC status."""
+    if explicit_state is not None:
+        return explicit_state
     if current == CapabilityState.UNSUPPORTED and not explicit_support:
         return CapabilityState.UNSUPPORTED
     if explicit_support and status == grpc.StatusCode.UNKNOWN:
@@ -307,6 +337,16 @@ def reduce_observation(
     """Apply one observation, preserving leaves changed after a poll began."""
     updated = current
     fresh = set(current.fresh_fields)
+    explicit_contract = (
+        current.explicit_capability_contract
+        if observation.explicit_capability_contract is None
+        else observation.explicit_capability_contract
+    )
+    explicit_states = {
+        result.capability: result.explicit_state
+        for result in observation.capability_results
+        if result.explicit_state is not None
+    }
 
     def is_newer(field_name: StateField) -> bool:
         base = observation.base_revision
@@ -315,6 +355,15 @@ def reduce_observation(
     for field_name in observation.observed_fields:
         if is_newer(field_name):
             continue
+        field_capability = _FIELD_CAPABILITY.get(field_name)
+        if explicit_contract and field_capability is not None:
+            contract_state = explicit_states.get(
+                field_capability,
+                getattr(current.capabilities, field_capability.value),
+            )
+            if contract_state != CapabilityState.AVAILABLE:
+                fresh.discard(field_name)
+                continue
         updated = _replace_field(updated, field_name, _field_value(observation.state, field_name))
         fresh.add(field_name)
         field_revisions[field_name] = revision
@@ -325,17 +374,27 @@ def reduce_observation(
             field_revisions[field_name] = revision
 
     capabilities = updated.capabilities
+    metadata = {entry.capability: entry for entry in updated.capability_metadata}
     for result in observation.capability_results:
+        if explicit_contract and result.explicit_state is None:
+            continue
         value_fields = _CAPABILITY_FIELDS[result.capability]
-        if any(is_newer(field_name) for field_name in value_fields):
+        if result.explicit_state is None and any(is_newer(field_name) for field_name in value_fields):
             continue
         previous = getattr(capabilities, result.capability.value)
         capability = next_capability_state(
             previous,
             result.status,
             explicit_support=result.explicit_support,
+            explicit_state=result.explicit_state,
         )
         capabilities = replace(capabilities, **{result.capability.value: capability})
+        if result.explicit_state is not None:
+            metadata[result.capability] = CapabilityMetadata(
+                capability=result.capability,
+                reason=result.reason,
+                last_changed=result.last_changed,
+            )
         if capability == CapabilityState.UNSUPPORTED:
             for field_name in value_fields:
                 updated = _replace_field(updated, field_name, None)
@@ -345,12 +404,18 @@ def reduce_observation(
             for field_name in value_fields:
                 fresh.discard(field_name)
                 field_revisions[field_name] = revision
-        elif result.explicit_support:
+        elif result.explicit_support and result.explicit_state is None:
             for field_name in value_fields:
                 fresh.discard(field_name)
                 field_revisions[field_name] = revision
 
-    return replace(updated, capabilities=capabilities, fresh_fields=frozenset(fresh))
+    return replace(
+        updated,
+        capabilities=capabilities,
+        capability_metadata=tuple(metadata[key] for key in sorted(metadata, key=str)),
+        explicit_capability_contract=explicit_contract,
+        fresh_fields=frozenset(fresh),
+    )
 
 
 class DeviceStateStore:

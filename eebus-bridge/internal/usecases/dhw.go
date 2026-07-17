@@ -25,6 +25,7 @@ var (
 	ErrDHWNotWritable     = errors.New("DHW setpoint is not writable")
 	ErrDHWOutOfRange      = errors.New("DHW setpoint is outside the advertised range")
 	ErrDHWInvalidStep     = errors.New("DHW setpoint does not match the advertised step")
+	ErrDHWRejected        = errors.New("DHW setpoint write rejected by device")
 )
 
 // DHWSetpoint is the current domestic-hot-water target and the constraints
@@ -127,7 +128,10 @@ func (d *DHWTemperature) handleUseCaseEvent(
 	_ eebusapi.EventType,
 ) {
 	if d.registry != nil {
-		d.registry.UpsertObservation(ski, device, entity, "dhw_temperature")
+		recordCapabilitySupport(
+			d.registry, ski, device, entity, d.CompatibleEntity(observationSKI(ski, device)),
+			"dhw_temperature", eebus.CapabilityDHW,
+		)
 	}
 	if d.bus != nil {
 		d.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeDHWUseCaseSupportUpdated})
@@ -285,7 +289,7 @@ func (d *DHWTemperature) Write(ctx context.Context, entity spineapi.EntityRemote
 	select {
 	case response := <-result:
 		if response.ErrorNumber != nil && *response.ErrorNumber != 0 {
-			return fmt.Errorf("DHW setpoint rejected by device: error=%d", *response.ErrorNumber)
+			return fmt.Errorf("%w: error=%d", ErrDHWRejected, *response.ErrorNumber)
 		}
 		d.request(entity, model.FunctionTypeSetpointListData)
 		return nil

@@ -120,3 +120,20 @@ func TestLPCUnknownEventIgnored(t *testing.T) {
 		// expected: no event published
 	}
 }
+
+func TestLPCSupportEventUpdatesCapabilityRegistry(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	wrapper := usecases.NewLPCWrapper(eebus.NewEventBus(), registry, false)
+
+	wrapper.HandleEvent("ski-support", nil, nil, eglpc.UseCaseSupportUpdate)
+
+	entries, _ := registry.DeviceCapabilities("ski-support")
+	for _, entry := range entries {
+		if entry.ID != eebus.CapabilityLPC && entry.ID != eebus.CapabilityFailsafe && entry.ID != eebus.CapabilityHeartbeat {
+			continue
+		}
+		if entry.State != eebus.CapabilityStateUnsupported || entry.Reason != eebus.CapabilityReasonRemoteNotAdvertised {
+			t.Fatalf("support event capability = %+v", entry)
+		}
+	}
+}

@@ -22,6 +22,7 @@ var (
 	ErrRoomHeatingNotWritable     = errors.New("room heating setpoint is not writable")
 	ErrRoomHeatingOutOfRange      = errors.New("room heating setpoint is outside the advertised range")
 	ErrRoomHeatingInvalidStep     = errors.New("room heating setpoint does not match the advertised step")
+	ErrRoomHeatingRejected        = errors.New("room heating setpoint write rejected by device")
 )
 
 // RoomHeatingSetpoint is the current room-heating target and the constraints
@@ -123,7 +124,10 @@ func (r *RoomHeatingTemperature) handleUseCaseEvent(
 	_ eebusapi.EventType,
 ) {
 	if r.registry != nil {
-		r.registry.UpsertObservation(ski, device, entity, "room_heating_temperature")
+		recordCapabilitySupport(
+			r.registry, ski, device, entity, r.CompatibleEntity(observationSKI(ski, device)),
+			"room_heating_temperature", eebus.CapabilityRoomHeating,
+		)
 	}
 	if r.bus != nil {
 		r.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeRoomHeatingUseCaseSupportUpdated})
@@ -280,7 +284,7 @@ func (r *RoomHeatingTemperature) Write(ctx context.Context, entity spineapi.Enti
 	select {
 	case response := <-result:
 		if response.ErrorNumber != nil && *response.ErrorNumber != 0 {
-			return fmt.Errorf("room heating setpoint rejected by device: error=%d", *response.ErrorNumber)
+			return fmt.Errorf("%w: error=%d", ErrRoomHeatingRejected, *response.ErrorNumber)
 		}
 		r.request(entity, model.FunctionTypeSetpointListData)
 		return nil

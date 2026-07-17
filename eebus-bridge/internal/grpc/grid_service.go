@@ -48,16 +48,16 @@ func (s *GridService) PublishGridData(_ context.Context, req *pb.GridData) (*pb.
 		return nil, status.Error(codes.Unavailable, "MGCP grid provider not enabled")
 	}
 	if err := s.mgcp.PublishPower(req.PowerW); err != nil {
-		return nil, status.Errorf(codes.Internal, "publishing grid power: %v", err)
+		return nil, mapUsecaseError("publishing grid power", err, standardUsecaseErrorClasses)
 	}
 	if req.FeedInWh != nil {
 		if err := s.mgcp.PublishEnergyFeedIn(*req.FeedInWh); err != nil {
-			return nil, status.Errorf(codes.Internal, "publishing grid feed-in energy: %v", err)
+			return nil, mapUsecaseError("publishing grid feed-in energy", err, standardUsecaseErrorClasses)
 		}
 	}
 	if req.ConsumedWh != nil {
 		if err := s.mgcp.PublishEnergyConsumed(*req.ConsumedWh); err != nil {
-			return nil, status.Errorf(codes.Internal, "publishing grid consumed energy: %v", err)
+			return nil, mapUsecaseError("publishing grid consumed energy", err, standardUsecaseErrorClasses)
 		}
 	}
 	return &pb.Empty{}, nil

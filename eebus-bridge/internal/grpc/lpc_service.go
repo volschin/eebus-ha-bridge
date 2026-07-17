@@ -31,13 +31,14 @@ func (s *LPCService) GetConsumptionLimit(_ context.Context, req *pb.DeviceReques
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
 	}
-	entity, err := s.resolveEntity(req.Ski)
+	entity, err := s.resolveCapabilityEntity(req.Ski, eebus.CapabilityLPC)
 	if err != nil {
 		return nil, err
 	}
 	limit, err := s.lpc.ConsumptionLimit(entity)
+	s.recordRead(req.Ski, eebus.CapabilityLPC, err)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "reading consumption limit: %v", err)
+		return nil, mapUsecaseError("reading consumption limit", err, standardUsecaseErrorClasses)
 	}
 	return convertLoadLimit(limit), nil
 }
@@ -58,7 +59,7 @@ func (s *LPCService) WriteConsumptionLimit(_ context.Context, req *pb.WriteLoadL
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
 	}
-	entity, err := s.resolveEntity(req.Ski)
+	entity, err := s.resolveCapabilityEntity(req.Ski, eebus.CapabilityLPC)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +70,7 @@ func (s *LPCService) WriteConsumptionLimit(_ context.Context, req *pb.WriteLoadL
 		IsChangeable: true,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "writing consumption limit: %v", err)
+		return nil, mapUsecaseError("writing consumption limit", err, standardUsecaseErrorClasses)
 	}
 	return &pb.Empty{}, nil
 }
@@ -81,22 +82,31 @@ func (s *LPCService) GetFailsafeLimit(_ context.Context, req *pb.DeviceRequest) 
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
 	}
-	entity, err := s.resolveEntity(req.Ski)
+	entity, err := s.resolveCapabilityEntity(req.Ski, eebus.CapabilityFailsafe)
 	if err != nil {
 		return nil, err
 	}
 	value, err := s.lpc.FailsafeConsumptionActivePowerLimit(entity)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "reading failsafe power: %v", err)
+		s.recordRead(req.Ski, eebus.CapabilityFailsafe, err)
+		return nil, mapUsecaseError("reading failsafe power", err, standardUsecaseErrorClasses)
 	}
 	duration, err := s.lpc.FailsafeDurationMinimum(entity)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "reading failsafe duration: %v", err)
+		s.recordRead(req.Ski, eebus.CapabilityFailsafe, err)
+		return nil, mapUsecaseError("reading failsafe duration", err, standardUsecaseErrorClasses)
 	}
+	s.recordRead(req.Ski, eebus.CapabilityFailsafe, nil)
 	return &pb.FailsafeLimit{
 		ValueWatts:             value,
 		DurationMinimumSeconds: int64(duration / time.Second),
 	}, nil
+}
+
+func (s *LPCService) recordRead(ski string, capability eebus.Capability, err error) {
+	if s.registry != nil {
+		s.registry.RecordCapabilityRead(ski, capability, err)
+	}
 }
 
 func (s *LPCService) WriteFailsafeLimit(_ context.Context, req *pb.WriteFailsafeLimitRequest) (*pb.Empty, error) {
@@ -115,16 +125,16 @@ func (s *LPCService) WriteFailsafeLimit(_ context.Context, req *pb.WriteFailsafe
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
 	}
-	entity, err := s.resolveEntity(req.Ski)
+	entity, err := s.resolveCapabilityEntity(req.Ski, eebus.CapabilityFailsafe)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.lpc.WriteFailsafeConsumptionActivePowerLimit(entity, req.ValueWatts); err != nil {
-		return nil, status.Errorf(codes.Internal, "writing failsafe power: %v", err)
+		return nil, mapUsecaseError("writing failsafe power", err, standardUsecaseErrorClasses)
 	}
 	if req.DurationMinimumSeconds > 0 {
 		if err := s.lpc.WriteFailsafeDurationMinimum(entity, time.Duration(req.DurationMinimumSeconds)*time.Second); err != nil {
-			return nil, status.Errorf(codes.Internal, "writing failsafe duration: %v", err)
+			return nil, mapUsecaseError("writing failsafe duration", err, standardUsecaseErrorClasses)
 		}
 	}
 	return &pb.Empty{}, nil
@@ -142,7 +152,7 @@ func (s *LPCService) StartHeartbeat(_ context.Context, req *pb.DeviceRequest) (*
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
 	}
 	if err := s.lpc.StartHeartbeat(req.Ski); err != nil {
-		return nil, status.Errorf(codes.Internal, "starting LPC heartbeat: %v", err)
+		return nil, mapUsecaseError("starting LPC heartbeat", err, standardUsecaseErrorClasses)
 	}
 	return &pb.Empty{}, nil
 }
@@ -151,12 +161,15 @@ func (s *LPCService) StartHeartbeat(_ context.Context, req *pb.DeviceRequest) (*
 // is ignored.
 //
 // Deprecated: This RPC will be removed in a future breaking API version.
-func (s *LPCService) StopHeartbeat(_ context.Context, _ *pb.DeviceRequest) (*pb.Empty, error) {
+func (s *LPCService) StopHeartbeat(_ context.Context, req *pb.DeviceRequest) (*pb.Empty, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
 	}
 	if err := s.lpc.StopHeartbeat(); err != nil {
-		return nil, status.Errorf(codes.Internal, "stopping LPC heartbeat: %v", err)
+		return nil, mapUsecaseError("stopping LPC heartbeat", err, standardUsecaseErrorClasses)
 	}
 	return &pb.Empty{}, nil
 }
@@ -168,15 +181,11 @@ func (s *LPCService) GetHeartbeatStatus(_ context.Context, req *pb.DeviceRequest
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
 	}
-	// Heartbeat state is a property of the local entity, so report Running even
-	// when the remote SKI cannot be resolved yet.
-	entity, err := s.resolveEntity(req.Ski)
+	entity, err := s.resolveCapabilityEntity(req.Ski, eebus.CapabilityHeartbeat)
 	if err != nil {
-		return &pb.HeartbeatStatus{
-			Running:        s.lpc.IsHeartbeatRunning(),
-			WithinDuration: false,
-		}, nil
+		return nil, err
 	}
+	s.recordRead(req.Ski, eebus.CapabilityHeartbeat, nil)
 	return &pb.HeartbeatStatus{
 		Running:        s.lpc.IsHeartbeatRunning(),
 		WithinDuration: s.lpc.IsHeartbeatWithinDuration(entity),
@@ -184,6 +193,9 @@ func (s *LPCService) GetHeartbeatStatus(_ context.Context, req *pb.DeviceRequest
 }
 
 func (s *LPCService) SubscribeLPCEvents(req *pb.DeviceRequest, stream pb.LPCService_SubscribeLPCEventsServer) error {
+	if req == nil {
+		return status.Error(codes.InvalidArgument, "request is required")
+	}
 	ch := s.bus.Subscribe()
 	defer s.bus.Unsubscribe(ch)
 	reqSKI := eebus.NormalizeSKI(req.Ski)
@@ -227,7 +239,11 @@ func (s *LPCService) attachLPCPayload(event *pb.LPCEvent, ski string, eventType 
 	if s.lpc == nil {
 		return
 	}
-	entity, err := s.resolveEntity(ski)
+	capability := eebus.CapabilityLPC
+	if eventType == pb.LPCEventType_LPC_EVENT_FAILSAFE_UPDATED {
+		capability = eebus.CapabilityFailsafe
+	}
+	entity, err := s.resolveCapabilityEntity(ski, capability)
 	if err != nil {
 		return
 	}
@@ -258,12 +274,22 @@ func convertLoadLimit(l ucapi.LoadLimit) *pb.LoadLimit {
 }
 
 func (s *LPCService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, error) {
+	return s.resolveCapabilityEntity(ski, eebus.CapabilityLPC)
+}
+
+func (s *LPCService) resolveCapabilityEntity(ski string, capability eebus.Capability) (spineapi.EntityRemoteInterface, error) {
 	// Prefer an entity that actually advertises the LPC use case. A device such as a
 	// Vaillant VR940f gateway registers several entities under one SKI; the flat
 	// registry returns whichever was observed first (often the monitoring meter),
 	// which eebus-go rejects on write with ErrNoCompatibleEntity (issue #47).
 	if s.lpc != nil {
-		resolution := s.lpc.CompatibleEntity(ski)
+		scenario := uint(1)
+		if capability == eebus.CapabilityFailsafe {
+			scenario = 2
+		} else if capability == eebus.CapabilityHeartbeat {
+			scenario = 3
+		}
+		resolution := s.lpc.CompatibleEntityForScenario(ski, scenario)
 		if resolution.Ambiguous() {
 			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
 		}
@@ -274,16 +300,22 @@ func (s *LPCService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, 
 	if s.registry == nil {
 		return nil, status.Error(codes.Unavailable, "device registry not initialized")
 	}
-	entity := s.registry.FirstEntity(ski)
-	if entity == nil && ski == "" {
-		resolution := s.registry.FirstAvailableEntity()
-		if resolution.Ambiguous() {
-			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+	// Constructor-level tests and transitional callers without an LPC wrapper
+	// retain the old registry resolver. Production RPCs reject a missing
+	// use-case-aware scenario before ever selecting an arbitrary gateway entity.
+	if s.lpc == nil {
+		entity := s.registry.FirstEntity(ski)
+		if entity == nil && ski == "" {
+			resolution := s.registry.FirstAvailableEntity()
+			if resolution.Ambiguous() {
+				return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+			}
+			entity = resolution.Entity
 		}
-		entity = resolution.Entity
+		if entity != nil {
+			return entity, nil
+		}
 	}
-	if entity == nil {
-		return nil, status.Errorf(codes.NotFound, "no remote entity found for ski %s", ski)
-	}
-	return entity, nil
+	s.registry.RecordCapabilityMissingEntity(ski, capability)
+	return nil, status.Errorf(codes.NotFound, "no compatible LPC entity found for ski %s", ski)
 }

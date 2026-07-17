@@ -139,7 +139,10 @@ func (d *DHWSystemFunction) handleUseCaseEvent(
 	_ eebusapi.EventType,
 ) {
 	if d.registry != nil {
-		d.registry.UpsertObservation(ski, device, entity, "dhw_system_function")
+		recordCapabilitySupport(
+			d.registry, ski, device, entity, d.CompatibleEntity(observationSKI(ski, device)),
+			"dhw_system_function", eebus.CapabilityDHWSystemFunction,
+		)
 	}
 	if d.bus != nil {
 		d.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeDHWSystemFunctionSupportUpdated})

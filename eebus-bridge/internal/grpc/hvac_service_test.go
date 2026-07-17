@@ -21,6 +21,10 @@ type fakeRoomHeatingTemp struct {
 	err      error
 }
 
+type failingTemperatureReader struct{ err error }
+
+func (f failingTemperatureReader) Temperature(string) (float64, error) { return 0, f.err }
+
 func (f *fakeRoomHeatingTemp) CompatibleEntity(ski string) eebus.EntityResolution {
 	if f.entities == nil {
 		return eebus.EntityResolution{Entity: f.entity, DeviceCount: 1}
@@ -106,6 +110,28 @@ func TestHVACServiceGetRoomHeatingReturnsSetpoint(t *testing.T) {
 	if state.Setpoint == nil || state.Setpoint.ValueCelsius != 21 {
 		t.Errorf("GetRoomHeating() = %+v", state)
 	}
+}
+
+func TestHVACAggregateAllPartReadsFailedIsUnavailable(t *testing.T) {
+	entity := mocks.NewEntityRemoteInterface(t)
+	registry := eebus.NewDeviceRegistry()
+	temp := &fakeRoomHeatingTemp{entity: entity, err: usecases.ErrRoomHeatingDataUnavailable}
+	svc := NewHVACService(temp, nil, failingTemperatureReader{err: usecases.ErrRoomHeatingDataUnavailable}, nil, registry)
+
+	state, err := svc.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: "test"})
+	if state != nil || status.Code(err) != codes.Unavailable {
+		t.Fatalf("GetRoomHeating() = (%+v, %v), want nil/Unavailable", state, err)
+	}
+	capabilities, _ := registry.DeviceCapabilities("test")
+	for _, capability := range capabilities {
+		if capability.ID == eebus.CapabilityRoomHeating {
+			if capability.State != eebus.CapabilityStateTemporarilyUnavailable || capability.Reason != eebus.CapabilityReasonReadFailed {
+				t.Fatalf("room heating capability = %+v", capability)
+			}
+			return
+		}
+	}
+	t.Fatal("room heating capability missing")
 }
 
 func TestHVACServiceSetRoomHeatingTemperatureRequiresSKI(t *testing.T) {

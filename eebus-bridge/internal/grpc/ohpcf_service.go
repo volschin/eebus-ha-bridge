@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	eebusapi "github.com/enbility/eebus-go/api"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
 	spineapi "github.com/enbility/spine-go/api"
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
@@ -38,7 +39,17 @@ func (s *OHPCFService) GetCompressorFlexibility(_ context.Context, req *pb.Devic
 	if err != nil {
 		return nil, err
 	}
-	return s.buildFlexibility(entity), nil
+	flexibility, successfulReads := s.buildFlexibility(entity)
+	if successfulReads == 0 {
+		if s.registry != nil {
+			s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityOHPCF, eebusapi.ErrDataNotAvailable)
+		}
+		return nil, status.Error(codes.Unavailable, "reading compressor flexibility: temporarily unavailable")
+	}
+	if s.registry != nil {
+		s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityOHPCF, nil)
+	}
+	return flexibility, nil
 }
 
 func (s *OHPCFService) ControlCompressorFlexibility(_ context.Context, req *pb.ControlCompressorRequest) (*pb.Empty, error) {
@@ -73,12 +84,15 @@ func (s *OHPCFService) ControlCompressorFlexibility(_ context.Context, req *pb.C
 		return nil, status.Error(codes.InvalidArgument, "action is required (schedule/pause/resume/abort)")
 	}
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "ohpcf control: %v", err)
+		return nil, mapUsecaseError("controlling compressor flexibility", err, standardUsecaseErrorClasses)
 	}
 	return &pb.Empty{}, nil
 }
 
 func (s *OHPCFService) SubscribeOHPCFEvents(req *pb.DeviceRequest, stream pb.OHPCFService_SubscribeOHPCFEventsServer) error {
+	if req == nil {
+		return status.Error(codes.InvalidArgument, "request is required")
+	}
 	ch := s.bus.Subscribe()
 	defer s.bus.Unsubscribe(ch)
 	reqSKI := eebus.NormalizeSKI(req.Ski)
@@ -111,7 +125,7 @@ func (s *OHPCFService) SubscribeOHPCFEvents(req *pb.DeviceRequest, stream pb.OHP
 			}
 			event := &pb.OHPCFEvent{Ski: evt.SKI, EventType: eventType}
 			if entity, err := s.resolveEntity(evt.SKI); err == nil {
-				event.Flexibility = s.buildFlexibility(entity)
+				event.Flexibility, _ = s.buildFlexibility(entity)
 			}
 			if err := stream.Send(event); err != nil {
 				return err
@@ -125,33 +139,42 @@ func (s *OHPCFService) SubscribeOHPCFEvents(req *pb.DeviceRequest, stream pb.OHP
 // buildFlexibility reads the current OHPCF offer/state best-effort. Individual
 // reads return ErrDataInvalid when the compressor advertises no offer yet, so each
 // field is filled only when it reads cleanly; optional power fields are omitted.
-func (s *OHPCFService) buildFlexibility(entity spineapi.EntityRemoteInterface) *pb.CompressorFlexibility {
+func (s *OHPCFService) buildFlexibility(entity spineapi.EntityRemoteInterface) (*pb.CompressorFlexibility, int) {
 	f := &pb.CompressorFlexibility{}
+	successfulReads := 0
 	if available, err := s.ohpcf.OptionalPowerConsumptionAvailable(entity); err == nil {
 		f.Available = available
+		successfulReads++
 	}
 	if est, err := s.ohpcf.RequestedPowerEstimate(entity); err == nil {
 		f.RequestedPowerEstimateW = &est
+		successfulReads++
 	}
 	if max, err := s.ohpcf.RequestedPowerMax(entity); err == nil {
 		f.RequestedPowerMaxW = &max
+		successfulReads++
 	}
 	if stoppable, err := s.ohpcf.ConsumptionIsStoppable(entity); err == nil {
 		f.IsStoppable = stoppable
+		successfulReads++
 	}
 	if pausable, err := s.ohpcf.ConsumptionIsPausable(entity); err == nil {
 		f.IsPausable = pausable
+		successfulReads++
 	}
 	if st, err := s.ohpcf.ConsumptionState(entity); err == nil {
 		f.State = convertCompressorState(st)
+		successfulReads++
 	}
 	if d, err := s.ohpcf.MinimalRunDuration(entity); err == nil {
 		f.MinimalRunSeconds = int64(d / time.Second)
+		successfulReads++
 	}
 	if d, err := s.ohpcf.MinimalPauseDuration(entity); err == nil {
 		f.MinimalPauseSeconds = int64(d / time.Second)
+		successfulReads++
 	}
-	return f
+	return f, successfulReads
 }
 
 func convertCompressorState(st ucapi.CompressorPowerConsumptionStateType) pb.CompressorPowerConsumptionState {
@@ -189,16 +212,6 @@ func (s *OHPCFService) resolveEntity(ski string) (spineapi.EntityRemoteInterface
 	if s.registry == nil {
 		return nil, status.Error(codes.Unavailable, "device registry not initialized")
 	}
-	entity := s.registry.FirstEntity(ski)
-	if entity == nil && ski == "" {
-		resolution := s.registry.FirstAvailableEntity()
-		if resolution.Ambiguous() {
-			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
-		}
-		entity = resolution.Entity
-	}
-	if entity == nil {
-		return nil, status.Errorf(codes.NotFound, "no compatible OHPCF entity found for ski %s", ski)
-	}
-	return entity, nil
+	s.registry.RecordCapabilityMissingEntity(ski, eebus.CapabilityOHPCF)
+	return nil, status.Errorf(codes.NotFound, "no compatible OHPCF entity found for ski %s", ski)
 }

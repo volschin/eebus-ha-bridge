@@ -22,6 +22,183 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type CapabilityId int32
+
+const (
+	CapabilityId_CAPABILITY_UNSPECIFIED         CapabilityId = 0
+	CapabilityId_CAPABILITY_MONITORING          CapabilityId = 1
+	CapabilityId_CAPABILITY_LPC                 CapabilityId = 2
+	CapabilityId_CAPABILITY_FAILSAFE            CapabilityId = 3
+	CapabilityId_CAPABILITY_HEARTBEAT           CapabilityId = 4
+	CapabilityId_CAPABILITY_OHPCF               CapabilityId = 5
+	CapabilityId_CAPABILITY_DHW                 CapabilityId = 6
+	CapabilityId_CAPABILITY_DHW_SYSTEM_FUNCTION CapabilityId = 7
+	CapabilityId_CAPABILITY_ROOM_HEATING        CapabilityId = 8
+)
+
+// Enum value maps for CapabilityId.
+var (
+	CapabilityId_name = map[int32]string{
+		0: "CAPABILITY_UNSPECIFIED",
+		1: "CAPABILITY_MONITORING",
+		2: "CAPABILITY_LPC",
+		3: "CAPABILITY_FAILSAFE",
+		4: "CAPABILITY_HEARTBEAT",
+		5: "CAPABILITY_OHPCF",
+		6: "CAPABILITY_DHW",
+		7: "CAPABILITY_DHW_SYSTEM_FUNCTION",
+		8: "CAPABILITY_ROOM_HEATING",
+	}
+	CapabilityId_value = map[string]int32{
+		"CAPABILITY_UNSPECIFIED":         0,
+		"CAPABILITY_MONITORING":          1,
+		"CAPABILITY_LPC":                 2,
+		"CAPABILITY_FAILSAFE":            3,
+		"CAPABILITY_HEARTBEAT":           4,
+		"CAPABILITY_OHPCF":               5,
+		"CAPABILITY_DHW":                 6,
+		"CAPABILITY_DHW_SYSTEM_FUNCTION": 7,
+		"CAPABILITY_ROOM_HEATING":        8,
+	}
+)
+
+func (x CapabilityId) Enum() *CapabilityId {
+	p := new(CapabilityId)
+	*p = x
+	return p
+}
+
+func (x CapabilityId) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CapabilityId) Descriptor() protoreflect.EnumDescriptor {
+	return file_eebus_v1_device_service_proto_enumTypes[0].Descriptor()
+}
+
+func (CapabilityId) Type() protoreflect.EnumType {
+	return &file_eebus_v1_device_service_proto_enumTypes[0]
+}
+
+func (x CapabilityId) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CapabilityId.Descriptor instead.
+func (CapabilityId) EnumDescriptor() ([]byte, []int) {
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{0}
+}
+
+type CapabilityState int32
+
+const (
+	CapabilityState_CAPABILITY_STATE_UNKNOWN                 CapabilityState = 0
+	CapabilityState_CAPABILITY_STATE_AVAILABLE               CapabilityState = 1
+	CapabilityState_CAPABILITY_STATE_TEMPORARILY_UNAVAILABLE CapabilityState = 2
+	CapabilityState_CAPABILITY_STATE_UNSUPPORTED             CapabilityState = 3
+)
+
+// Enum value maps for CapabilityState.
+var (
+	CapabilityState_name = map[int32]string{
+		0: "CAPABILITY_STATE_UNKNOWN",
+		1: "CAPABILITY_STATE_AVAILABLE",
+		2: "CAPABILITY_STATE_TEMPORARILY_UNAVAILABLE",
+		3: "CAPABILITY_STATE_UNSUPPORTED",
+	}
+	CapabilityState_value = map[string]int32{
+		"CAPABILITY_STATE_UNKNOWN":                 0,
+		"CAPABILITY_STATE_AVAILABLE":               1,
+		"CAPABILITY_STATE_TEMPORARILY_UNAVAILABLE": 2,
+		"CAPABILITY_STATE_UNSUPPORTED":             3,
+	}
+)
+
+func (x CapabilityState) Enum() *CapabilityState {
+	p := new(CapabilityState)
+	*p = x
+	return p
+}
+
+func (x CapabilityState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CapabilityState) Descriptor() protoreflect.EnumDescriptor {
+	return file_eebus_v1_device_service_proto_enumTypes[1].Descriptor()
+}
+
+func (CapabilityState) Type() protoreflect.EnumType {
+	return &file_eebus_v1_device_service_proto_enumTypes[1]
+}
+
+func (x CapabilityState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CapabilityState.Descriptor instead.
+func (CapabilityState) EnumDescriptor() ([]byte, []int) {
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{1}
+}
+
+type CapabilityReason int32
+
+const (
+	CapabilityReason_CAPABILITY_REASON_UNSPECIFIED           CapabilityReason = 0
+	CapabilityReason_CAPABILITY_REASON_LOCAL_DISABLED        CapabilityReason = 1
+	CapabilityReason_CAPABILITY_REASON_REMOTE_NOT_ADVERTISED CapabilityReason = 2
+	CapabilityReason_CAPABILITY_REASON_ENTITY_NOT_BOUND      CapabilityReason = 3
+	CapabilityReason_CAPABILITY_REASON_READ_FAILED           CapabilityReason = 4
+	CapabilityReason_CAPABILITY_REASON_DEVICE_DISCONNECTED   CapabilityReason = 5
+)
+
+// Enum value maps for CapabilityReason.
+var (
+	CapabilityReason_name = map[int32]string{
+		0: "CAPABILITY_REASON_UNSPECIFIED",
+		1: "CAPABILITY_REASON_LOCAL_DISABLED",
+		2: "CAPABILITY_REASON_REMOTE_NOT_ADVERTISED",
+		3: "CAPABILITY_REASON_ENTITY_NOT_BOUND",
+		4: "CAPABILITY_REASON_READ_FAILED",
+		5: "CAPABILITY_REASON_DEVICE_DISCONNECTED",
+	}
+	CapabilityReason_value = map[string]int32{
+		"CAPABILITY_REASON_UNSPECIFIED":           0,
+		"CAPABILITY_REASON_LOCAL_DISABLED":        1,
+		"CAPABILITY_REASON_REMOTE_NOT_ADVERTISED": 2,
+		"CAPABILITY_REASON_ENTITY_NOT_BOUND":      3,
+		"CAPABILITY_REASON_READ_FAILED":           4,
+		"CAPABILITY_REASON_DEVICE_DISCONNECTED":   5,
+	}
+)
+
+func (x CapabilityReason) Enum() *CapabilityReason {
+	p := new(CapabilityReason)
+	*p = x
+	return p
+}
+
+func (x CapabilityReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CapabilityReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_eebus_v1_device_service_proto_enumTypes[2].Descriptor()
+}
+
+func (CapabilityReason) Type() protoreflect.EnumType {
+	return &file_eebus_v1_device_service_proto_enumTypes[2]
+}
+
+func (x CapabilityReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CapabilityReason.Descriptor instead.
+func (CapabilityReason) EnumDescriptor() ([]byte, []int) {
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{2}
+}
+
 type DeviceEventType int32
 
 const (
@@ -58,11 +235,11 @@ func (x DeviceEventType) String() string {
 }
 
 func (DeviceEventType) Descriptor() protoreflect.EnumDescriptor {
-	return file_eebus_v1_device_service_proto_enumTypes[0].Descriptor()
+	return file_eebus_v1_device_service_proto_enumTypes[3].Descriptor()
 }
 
 func (DeviceEventType) Type() protoreflect.EnumType {
-	return &file_eebus_v1_device_service_proto_enumTypes[0]
+	return &file_eebus_v1_device_service_proto_enumTypes[3]
 }
 
 func (x DeviceEventType) Number() protoreflect.EnumNumber {
@@ -71,7 +248,127 @@ func (x DeviceEventType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DeviceEventType.Descriptor instead.
 func (DeviceEventType) EnumDescriptor() ([]byte, []int) {
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{3}
+}
+
+type DeviceCapability struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            CapabilityId           `protobuf:"varint,1,opt,name=id,proto3,enum=eebus.v1.CapabilityId" json:"id,omitempty"`
+	State         CapabilityState        `protobuf:"varint,2,opt,name=state,proto3,enum=eebus.v1.CapabilityState" json:"state,omitempty"`
+	Reason        CapabilityReason       `protobuf:"varint,3,opt,name=reason,proto3,enum=eebus.v1.CapabilityReason" json:"reason,omitempty"`
+	LastChanged   *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=last_changed,json=lastChanged,proto3" json:"last_changed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceCapability) Reset() {
+	*x = DeviceCapability{}
+	mi := &file_eebus_v1_device_service_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceCapability) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceCapability) ProtoMessage() {}
+
+func (x *DeviceCapability) ProtoReflect() protoreflect.Message {
+	mi := &file_eebus_v1_device_service_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceCapability.ProtoReflect.Descriptor instead.
+func (*DeviceCapability) Descriptor() ([]byte, []int) {
 	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *DeviceCapability) GetId() CapabilityId {
+	if x != nil {
+		return x.Id
+	}
+	return CapabilityId_CAPABILITY_UNSPECIFIED
+}
+
+func (x *DeviceCapability) GetState() CapabilityState {
+	if x != nil {
+		return x.State
+	}
+	return CapabilityState_CAPABILITY_STATE_UNKNOWN
+}
+
+func (x *DeviceCapability) GetReason() CapabilityReason {
+	if x != nil {
+		return x.Reason
+	}
+	return CapabilityReason_CAPABILITY_REASON_UNSPECIFIED
+}
+
+func (x *DeviceCapability) GetLastChanged() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastChanged
+	}
+	return nil
+}
+
+type DeviceCapabilities struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ski           string                 `protobuf:"bytes,1,opt,name=ski,proto3" json:"ski,omitempty"`
+	Capabilities  []*DeviceCapability    `protobuf:"bytes,2,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceCapabilities) Reset() {
+	*x = DeviceCapabilities{}
+	mi := &file_eebus_v1_device_service_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceCapabilities) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceCapabilities) ProtoMessage() {}
+
+func (x *DeviceCapabilities) ProtoReflect() protoreflect.Message {
+	mi := &file_eebus_v1_device_service_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceCapabilities.ProtoReflect.Descriptor instead.
+func (*DeviceCapabilities) Descriptor() ([]byte, []int) {
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *DeviceCapabilities) GetSki() string {
+	if x != nil {
+		return x.Ski
+	}
+	return ""
+}
+
+func (x *DeviceCapabilities) GetCapabilities() []*DeviceCapability {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
 }
 
 type ServiceStatus struct {
@@ -84,7 +381,7 @@ type ServiceStatus struct {
 
 func (x *ServiceStatus) Reset() {
 	*x = ServiceStatus{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[0]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -96,7 +393,7 @@ func (x *ServiceStatus) String() string {
 func (*ServiceStatus) ProtoMessage() {}
 
 func (x *ServiceStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[0]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -109,7 +406,7 @@ func (x *ServiceStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceStatus.ProtoReflect.Descriptor instead.
 func (*ServiceStatus) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{0}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ServiceStatus) GetRunning() bool {
@@ -136,7 +433,7 @@ type DeviceStatus struct {
 
 func (x *DeviceStatus) Reset() {
 	*x = DeviceStatus{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[1]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -148,7 +445,7 @@ func (x *DeviceStatus) String() string {
 func (*DeviceStatus) ProtoMessage() {}
 
 func (x *DeviceStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[1]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -161,7 +458,7 @@ func (x *DeviceStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceStatus.ProtoReflect.Descriptor instead.
 func (*DeviceStatus) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{1}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *DeviceStatus) GetConnected() bool {
@@ -192,7 +489,7 @@ type DiscoveredDevice struct {
 
 func (x *DiscoveredDevice) Reset() {
 	*x = DiscoveredDevice{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[2]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -204,7 +501,7 @@ func (x *DiscoveredDevice) String() string {
 func (*DiscoveredDevice) ProtoMessage() {}
 
 func (x *DiscoveredDevice) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[2]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -217,7 +514,7 @@ func (x *DiscoveredDevice) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoveredDevice.ProtoReflect.Descriptor instead.
 func (*DiscoveredDevice) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{2}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *DiscoveredDevice) GetSki() string {
@@ -271,7 +568,7 @@ type ListDevicesResponse struct {
 
 func (x *ListDevicesResponse) Reset() {
 	*x = ListDevicesResponse{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[3]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -283,7 +580,7 @@ func (x *ListDevicesResponse) String() string {
 func (*ListDevicesResponse) ProtoMessage() {}
 
 func (x *ListDevicesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[3]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -296,7 +593,7 @@ func (x *ListDevicesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDevicesResponse.ProtoReflect.Descriptor instead.
 func (*ListDevicesResponse) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{3}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListDevicesResponse) GetDevices() []*DiscoveredDevice {
@@ -315,7 +612,7 @@ type RegisterSKIRequest struct {
 
 func (x *RegisterSKIRequest) Reset() {
 	*x = RegisterSKIRequest{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[4]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -327,7 +624,7 @@ func (x *RegisterSKIRequest) String() string {
 func (*RegisterSKIRequest) ProtoMessage() {}
 
 func (x *RegisterSKIRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[4]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -340,7 +637,7 @@ func (x *RegisterSKIRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterSKIRequest.ProtoReflect.Descriptor instead.
 func (*RegisterSKIRequest) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{4}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RegisterSKIRequest) GetSki() string {
@@ -364,7 +661,7 @@ type PairedDevice struct {
 
 func (x *PairedDevice) Reset() {
 	*x = PairedDevice{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[5]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -376,7 +673,7 @@ func (x *PairedDevice) String() string {
 func (*PairedDevice) ProtoMessage() {}
 
 func (x *PairedDevice) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[5]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -389,7 +686,7 @@ func (x *PairedDevice) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PairedDevice.ProtoReflect.Descriptor instead.
 func (*PairedDevice) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{5}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PairedDevice) GetSki() string {
@@ -443,7 +740,7 @@ type ListPairedDevicesResponse struct {
 
 func (x *ListPairedDevicesResponse) Reset() {
 	*x = ListPairedDevicesResponse{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[6]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -455,7 +752,7 @@ func (x *ListPairedDevicesResponse) String() string {
 func (*ListPairedDevicesResponse) ProtoMessage() {}
 
 func (x *ListPairedDevicesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[6]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -468,7 +765,7 @@ func (x *ListPairedDevicesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPairedDevicesResponse.ProtoReflect.Descriptor instead.
 func (*ListPairedDevicesResponse) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{6}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListPairedDevicesResponse) GetDevices() []*PairedDevice {
@@ -488,7 +785,7 @@ type DeviceEvent struct {
 
 func (x *DeviceEvent) Reset() {
 	*x = DeviceEvent{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[7]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -500,7 +797,7 @@ func (x *DeviceEvent) String() string {
 func (*DeviceEvent) ProtoMessage() {}
 
 func (x *DeviceEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[7]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -513,7 +810,7 @@ func (x *DeviceEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceEvent.ProtoReflect.Descriptor instead.
 func (*DeviceEvent) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{7}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DeviceEvent) GetSki() string {
@@ -534,7 +831,15 @@ var File_eebus_v1_device_service_proto protoreflect.FileDescriptor
 
 const file_eebus_v1_device_service_proto_rawDesc = "" +
 	"\n" +
-	"\x1deebus/v1/device_service.proto\x12\beebus.v1\x1a\x15eebus/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"F\n" +
+	"\x1deebus/v1/device_service.proto\x12\beebus.v1\x1a\x15eebus/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xde\x01\n" +
+	"\x10DeviceCapability\x12&\n" +
+	"\x02id\x18\x01 \x01(\x0e2\x16.eebus.v1.CapabilityIdR\x02id\x12/\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x19.eebus.v1.CapabilityStateR\x05state\x122\n" +
+	"\x06reason\x18\x03 \x01(\x0e2\x1a.eebus.v1.CapabilityReasonR\x06reason\x12=\n" +
+	"\flast_changed\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\vlastChanged\"f\n" +
+	"\x12DeviceCapabilities\x12\x10\n" +
+	"\x03ski\x18\x01 \x01(\tR\x03ski\x12>\n" +
+	"\fcapabilities\x18\x02 \x03(\v2\x1a.eebus.v1.DeviceCapabilityR\fcapabilities\"F\n" +
 	"\rServiceStatus\x12\x18\n" +
 	"\arunning\x18\x01 \x01(\bR\arunning\x12\x1b\n" +
 	"\tlocal_ski\x18\x02 \x01(\tR\blocalSki\"q\n" +
@@ -566,15 +871,38 @@ const file_eebus_v1_device_service_proto_rawDesc = "" +
 	"\vDeviceEvent\x12\x10\n" +
 	"\x03ski\x18\x01 \x01(\tR\x03ski\x128\n" +
 	"\n" +
-	"event_type\x18\x02 \x01(\x0e2\x19.eebus.v1.DeviceEventTypeR\teventType*\x8a\x01\n" +
+	"event_type\x18\x02 \x01(\x0e2\x19.eebus.v1.DeviceEventTypeR\teventType*\xf7\x01\n" +
+	"\fCapabilityId\x12\x1a\n" +
+	"\x16CAPABILITY_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15CAPABILITY_MONITORING\x10\x01\x12\x12\n" +
+	"\x0eCAPABILITY_LPC\x10\x02\x12\x17\n" +
+	"\x13CAPABILITY_FAILSAFE\x10\x03\x12\x18\n" +
+	"\x14CAPABILITY_HEARTBEAT\x10\x04\x12\x14\n" +
+	"\x10CAPABILITY_OHPCF\x10\x05\x12\x12\n" +
+	"\x0eCAPABILITY_DHW\x10\x06\x12\"\n" +
+	"\x1eCAPABILITY_DHW_SYSTEM_FUNCTION\x10\a\x12\x1b\n" +
+	"\x17CAPABILITY_ROOM_HEATING\x10\b*\x9f\x01\n" +
+	"\x0fCapabilityState\x12\x1c\n" +
+	"\x18CAPABILITY_STATE_UNKNOWN\x10\x00\x12\x1e\n" +
+	"\x1aCAPABILITY_STATE_AVAILABLE\x10\x01\x12,\n" +
+	"(CAPABILITY_STATE_TEMPORARILY_UNAVAILABLE\x10\x02\x12 \n" +
+	"\x1cCAPABILITY_STATE_UNSUPPORTED\x10\x03*\xfe\x01\n" +
+	"\x10CapabilityReason\x12!\n" +
+	"\x1dCAPABILITY_REASON_UNSPECIFIED\x10\x00\x12$\n" +
+	" CAPABILITY_REASON_LOCAL_DISABLED\x10\x01\x12+\n" +
+	"'CAPABILITY_REASON_REMOTE_NOT_ADVERTISED\x10\x02\x12&\n" +
+	"\"CAPABILITY_REASON_ENTITY_NOT_BOUND\x10\x03\x12!\n" +
+	"\x1dCAPABILITY_REASON_READ_FAILED\x10\x04\x12)\n" +
+	"%CAPABILITY_REASON_DEVICE_DISCONNECTED\x10\x05*\x8a\x01\n" +
 	"\x0fDeviceEventType\x12\x1c\n" +
 	"\x18DEVICE_EVENT_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16DEVICE_EVENT_CONNECTED\x10\x01\x12\x1d\n" +
 	"\x19DEVICE_EVENT_DISCONNECTED\x10\x02\x12\x1e\n" +
-	"\x1aDEVICE_EVENT_TRUST_REMOVED\x10\x032\xeb\x03\n" +
+	"\x1aDEVICE_EVENT_TRUST_REMOVED\x10\x032\xbb\x04\n" +
 	"\rDeviceService\x125\n" +
 	"\tGetStatus\x12\x0f.eebus.v1.Empty\x1a\x17.eebus.v1.ServiceStatus\x12B\n" +
-	"\x0fGetDeviceStatus\x12\x17.eebus.v1.DeviceRequest\x1a\x16.eebus.v1.DeviceStatus\x12G\n" +
+	"\x0fGetDeviceStatus\x12\x17.eebus.v1.DeviceRequest\x1a\x16.eebus.v1.DeviceStatus\x12N\n" +
+	"\x15GetDeviceCapabilities\x12\x17.eebus.v1.DeviceRequest\x1a\x1c.eebus.v1.DeviceCapabilities\x12G\n" +
 	"\x15ListDiscoveredDevices\x12\x0f.eebus.v1.Empty\x1a\x1d.eebus.v1.ListDevicesResponse\x12B\n" +
 	"\x11RegisterRemoteSKI\x12\x1c.eebus.v1.RegisterSKIRequest\x1a\x0f.eebus.v1.Empty\x12D\n" +
 	"\x13UnregisterRemoteSKI\x12\x1c.eebus.v1.RegisterSKIRequest\x1a\x0f.eebus.v1.Empty\x12I\n" +
@@ -593,46 +921,58 @@ func file_eebus_v1_device_service_proto_rawDescGZIP() []byte {
 	return file_eebus_v1_device_service_proto_rawDescData
 }
 
-var file_eebus_v1_device_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_eebus_v1_device_service_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_eebus_v1_device_service_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_eebus_v1_device_service_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_eebus_v1_device_service_proto_goTypes = []any{
-	(DeviceEventType)(0),              // 0: eebus.v1.DeviceEventType
-	(*ServiceStatus)(nil),             // 1: eebus.v1.ServiceStatus
-	(*DeviceStatus)(nil),              // 2: eebus.v1.DeviceStatus
-	(*DiscoveredDevice)(nil),          // 3: eebus.v1.DiscoveredDevice
-	(*ListDevicesResponse)(nil),       // 4: eebus.v1.ListDevicesResponse
-	(*RegisterSKIRequest)(nil),        // 5: eebus.v1.RegisterSKIRequest
-	(*PairedDevice)(nil),              // 6: eebus.v1.PairedDevice
-	(*ListPairedDevicesResponse)(nil), // 7: eebus.v1.ListPairedDevicesResponse
-	(*DeviceEvent)(nil),               // 8: eebus.v1.DeviceEvent
-	(*timestamppb.Timestamp)(nil),     // 9: google.protobuf.Timestamp
-	(*Empty)(nil),                     // 10: eebus.v1.Empty
-	(*DeviceRequest)(nil),             // 11: eebus.v1.DeviceRequest
+	(CapabilityId)(0),                 // 0: eebus.v1.CapabilityId
+	(CapabilityState)(0),              // 1: eebus.v1.CapabilityState
+	(CapabilityReason)(0),             // 2: eebus.v1.CapabilityReason
+	(DeviceEventType)(0),              // 3: eebus.v1.DeviceEventType
+	(*DeviceCapability)(nil),          // 4: eebus.v1.DeviceCapability
+	(*DeviceCapabilities)(nil),        // 5: eebus.v1.DeviceCapabilities
+	(*ServiceStatus)(nil),             // 6: eebus.v1.ServiceStatus
+	(*DeviceStatus)(nil),              // 7: eebus.v1.DeviceStatus
+	(*DiscoveredDevice)(nil),          // 8: eebus.v1.DiscoveredDevice
+	(*ListDevicesResponse)(nil),       // 9: eebus.v1.ListDevicesResponse
+	(*RegisterSKIRequest)(nil),        // 10: eebus.v1.RegisterSKIRequest
+	(*PairedDevice)(nil),              // 11: eebus.v1.PairedDevice
+	(*ListPairedDevicesResponse)(nil), // 12: eebus.v1.ListPairedDevicesResponse
+	(*DeviceEvent)(nil),               // 13: eebus.v1.DeviceEvent
+	(*timestamppb.Timestamp)(nil),     // 14: google.protobuf.Timestamp
+	(*Empty)(nil),                     // 15: eebus.v1.Empty
+	(*DeviceRequest)(nil),             // 16: eebus.v1.DeviceRequest
 }
 var file_eebus_v1_device_service_proto_depIdxs = []int32{
-	9,  // 0: eebus.v1.DeviceStatus.last_transition:type_name -> google.protobuf.Timestamp
-	3,  // 1: eebus.v1.ListDevicesResponse.devices:type_name -> eebus.v1.DiscoveredDevice
-	6,  // 2: eebus.v1.ListPairedDevicesResponse.devices:type_name -> eebus.v1.PairedDevice
-	0,  // 3: eebus.v1.DeviceEvent.event_type:type_name -> eebus.v1.DeviceEventType
-	10, // 4: eebus.v1.DeviceService.GetStatus:input_type -> eebus.v1.Empty
-	11, // 5: eebus.v1.DeviceService.GetDeviceStatus:input_type -> eebus.v1.DeviceRequest
-	10, // 6: eebus.v1.DeviceService.ListDiscoveredDevices:input_type -> eebus.v1.Empty
-	5,  // 7: eebus.v1.DeviceService.RegisterRemoteSKI:input_type -> eebus.v1.RegisterSKIRequest
-	5,  // 8: eebus.v1.DeviceService.UnregisterRemoteSKI:input_type -> eebus.v1.RegisterSKIRequest
-	10, // 9: eebus.v1.DeviceService.ListPairedDevices:input_type -> eebus.v1.Empty
-	10, // 10: eebus.v1.DeviceService.SubscribeDeviceEvents:input_type -> eebus.v1.Empty
-	1,  // 11: eebus.v1.DeviceService.GetStatus:output_type -> eebus.v1.ServiceStatus
-	2,  // 12: eebus.v1.DeviceService.GetDeviceStatus:output_type -> eebus.v1.DeviceStatus
-	4,  // 13: eebus.v1.DeviceService.ListDiscoveredDevices:output_type -> eebus.v1.ListDevicesResponse
-	10, // 14: eebus.v1.DeviceService.RegisterRemoteSKI:output_type -> eebus.v1.Empty
-	10, // 15: eebus.v1.DeviceService.UnregisterRemoteSKI:output_type -> eebus.v1.Empty
-	7,  // 16: eebus.v1.DeviceService.ListPairedDevices:output_type -> eebus.v1.ListPairedDevicesResponse
-	8,  // 17: eebus.v1.DeviceService.SubscribeDeviceEvents:output_type -> eebus.v1.DeviceEvent
-	11, // [11:18] is the sub-list for method output_type
-	4,  // [4:11] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	0,  // 0: eebus.v1.DeviceCapability.id:type_name -> eebus.v1.CapabilityId
+	1,  // 1: eebus.v1.DeviceCapability.state:type_name -> eebus.v1.CapabilityState
+	2,  // 2: eebus.v1.DeviceCapability.reason:type_name -> eebus.v1.CapabilityReason
+	14, // 3: eebus.v1.DeviceCapability.last_changed:type_name -> google.protobuf.Timestamp
+	4,  // 4: eebus.v1.DeviceCapabilities.capabilities:type_name -> eebus.v1.DeviceCapability
+	14, // 5: eebus.v1.DeviceStatus.last_transition:type_name -> google.protobuf.Timestamp
+	8,  // 6: eebus.v1.ListDevicesResponse.devices:type_name -> eebus.v1.DiscoveredDevice
+	11, // 7: eebus.v1.ListPairedDevicesResponse.devices:type_name -> eebus.v1.PairedDevice
+	3,  // 8: eebus.v1.DeviceEvent.event_type:type_name -> eebus.v1.DeviceEventType
+	15, // 9: eebus.v1.DeviceService.GetStatus:input_type -> eebus.v1.Empty
+	16, // 10: eebus.v1.DeviceService.GetDeviceStatus:input_type -> eebus.v1.DeviceRequest
+	16, // 11: eebus.v1.DeviceService.GetDeviceCapabilities:input_type -> eebus.v1.DeviceRequest
+	15, // 12: eebus.v1.DeviceService.ListDiscoveredDevices:input_type -> eebus.v1.Empty
+	10, // 13: eebus.v1.DeviceService.RegisterRemoteSKI:input_type -> eebus.v1.RegisterSKIRequest
+	10, // 14: eebus.v1.DeviceService.UnregisterRemoteSKI:input_type -> eebus.v1.RegisterSKIRequest
+	15, // 15: eebus.v1.DeviceService.ListPairedDevices:input_type -> eebus.v1.Empty
+	15, // 16: eebus.v1.DeviceService.SubscribeDeviceEvents:input_type -> eebus.v1.Empty
+	6,  // 17: eebus.v1.DeviceService.GetStatus:output_type -> eebus.v1.ServiceStatus
+	7,  // 18: eebus.v1.DeviceService.GetDeviceStatus:output_type -> eebus.v1.DeviceStatus
+	5,  // 19: eebus.v1.DeviceService.GetDeviceCapabilities:output_type -> eebus.v1.DeviceCapabilities
+	9,  // 20: eebus.v1.DeviceService.ListDiscoveredDevices:output_type -> eebus.v1.ListDevicesResponse
+	15, // 21: eebus.v1.DeviceService.RegisterRemoteSKI:output_type -> eebus.v1.Empty
+	15, // 22: eebus.v1.DeviceService.UnregisterRemoteSKI:output_type -> eebus.v1.Empty
+	12, // 23: eebus.v1.DeviceService.ListPairedDevices:output_type -> eebus.v1.ListPairedDevicesResponse
+	13, // 24: eebus.v1.DeviceService.SubscribeDeviceEvents:output_type -> eebus.v1.DeviceEvent
+	17, // [17:25] is the sub-list for method output_type
+	9,  // [9:17] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_eebus_v1_device_service_proto_init() }
@@ -646,8 +986,8 @@ func file_eebus_v1_device_service_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_eebus_v1_device_service_proto_rawDesc), len(file_eebus_v1_device_service_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   8,
+			NumEnums:      4,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

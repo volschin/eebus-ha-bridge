@@ -124,7 +124,10 @@ func (r *RoomHeatingSystemFunction) handleUseCaseEvent(
 	_ eebusapi.EventType,
 ) {
 	if r.registry != nil {
-		r.registry.UpsertObservation(ski, device, entity, "room_heating_system_function")
+		recordCapabilitySupport(
+			r.registry, ski, device, entity, r.CompatibleEntity(observationSKI(ski, device)),
+			"room_heating_system_function", eebus.CapabilityRoomHeating,
+		)
 	}
 	if r.bus != nil {
 		r.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeRoomHeatingSystemFunctionSupportUpdated})

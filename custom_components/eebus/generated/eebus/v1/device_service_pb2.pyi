@@ -11,16 +11,83 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
+class CapabilityId(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    CAPABILITY_UNSPECIFIED: _ClassVar[CapabilityId]
+    CAPABILITY_MONITORING: _ClassVar[CapabilityId]
+    CAPABILITY_LPC: _ClassVar[CapabilityId]
+    CAPABILITY_FAILSAFE: _ClassVar[CapabilityId]
+    CAPABILITY_HEARTBEAT: _ClassVar[CapabilityId]
+    CAPABILITY_OHPCF: _ClassVar[CapabilityId]
+    CAPABILITY_DHW: _ClassVar[CapabilityId]
+    CAPABILITY_DHW_SYSTEM_FUNCTION: _ClassVar[CapabilityId]
+    CAPABILITY_ROOM_HEATING: _ClassVar[CapabilityId]
+
+class CapabilityState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    CAPABILITY_STATE_UNKNOWN: _ClassVar[CapabilityState]
+    CAPABILITY_STATE_AVAILABLE: _ClassVar[CapabilityState]
+    CAPABILITY_STATE_TEMPORARILY_UNAVAILABLE: _ClassVar[CapabilityState]
+    CAPABILITY_STATE_UNSUPPORTED: _ClassVar[CapabilityState]
+
+class CapabilityReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    CAPABILITY_REASON_UNSPECIFIED: _ClassVar[CapabilityReason]
+    CAPABILITY_REASON_LOCAL_DISABLED: _ClassVar[CapabilityReason]
+    CAPABILITY_REASON_REMOTE_NOT_ADVERTISED: _ClassVar[CapabilityReason]
+    CAPABILITY_REASON_ENTITY_NOT_BOUND: _ClassVar[CapabilityReason]
+    CAPABILITY_REASON_READ_FAILED: _ClassVar[CapabilityReason]
+    CAPABILITY_REASON_DEVICE_DISCONNECTED: _ClassVar[CapabilityReason]
+
 class DeviceEventType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     DEVICE_EVENT_UNSPECIFIED: _ClassVar[DeviceEventType]
     DEVICE_EVENT_CONNECTED: _ClassVar[DeviceEventType]
     DEVICE_EVENT_DISCONNECTED: _ClassVar[DeviceEventType]
     DEVICE_EVENT_TRUST_REMOVED: _ClassVar[DeviceEventType]
+CAPABILITY_UNSPECIFIED: CapabilityId
+CAPABILITY_MONITORING: CapabilityId
+CAPABILITY_LPC: CapabilityId
+CAPABILITY_FAILSAFE: CapabilityId
+CAPABILITY_HEARTBEAT: CapabilityId
+CAPABILITY_OHPCF: CapabilityId
+CAPABILITY_DHW: CapabilityId
+CAPABILITY_DHW_SYSTEM_FUNCTION: CapabilityId
+CAPABILITY_ROOM_HEATING: CapabilityId
+CAPABILITY_STATE_UNKNOWN: CapabilityState
+CAPABILITY_STATE_AVAILABLE: CapabilityState
+CAPABILITY_STATE_TEMPORARILY_UNAVAILABLE: CapabilityState
+CAPABILITY_STATE_UNSUPPORTED: CapabilityState
+CAPABILITY_REASON_UNSPECIFIED: CapabilityReason
+CAPABILITY_REASON_LOCAL_DISABLED: CapabilityReason
+CAPABILITY_REASON_REMOTE_NOT_ADVERTISED: CapabilityReason
+CAPABILITY_REASON_ENTITY_NOT_BOUND: CapabilityReason
+CAPABILITY_REASON_READ_FAILED: CapabilityReason
+CAPABILITY_REASON_DEVICE_DISCONNECTED: CapabilityReason
 DEVICE_EVENT_UNSPECIFIED: DeviceEventType
 DEVICE_EVENT_CONNECTED: DeviceEventType
 DEVICE_EVENT_DISCONNECTED: DeviceEventType
 DEVICE_EVENT_TRUST_REMOVED: DeviceEventType
+
+class DeviceCapability(_message.Message):
+    __slots__ = ("id", "state", "reason", "last_changed")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    REASON_FIELD_NUMBER: _ClassVar[int]
+    LAST_CHANGED_FIELD_NUMBER: _ClassVar[int]
+    id: CapabilityId
+    state: CapabilityState
+    reason: CapabilityReason
+    last_changed: _timestamp_pb2.Timestamp
+    def __init__(self, id: _Optional[_Union[CapabilityId, str]] = ..., state: _Optional[_Union[CapabilityState, str]] = ..., reason: _Optional[_Union[CapabilityReason, str]] = ..., last_changed: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+
+class DeviceCapabilities(_message.Message):
+    __slots__ = ("ski", "capabilities")
+    SKI_FIELD_NUMBER: _ClassVar[int]
+    CAPABILITIES_FIELD_NUMBER: _ClassVar[int]
+    ski: str
+    capabilities: _containers.RepeatedCompositeFieldContainer[DeviceCapability]
+    def __init__(self, ski: _Optional[str] = ..., capabilities: _Optional[_Iterable[_Union[DeviceCapability, _Mapping]]] = ...) -> None: ...
 
 class ServiceStatus(_message.Message):
     __slots__ = ("running", "local_ski")

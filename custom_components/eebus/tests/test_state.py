@@ -1,6 +1,7 @@
 """Tests for the authoritative immutable device-state reducer."""
 
 from dataclasses import FrozenInstanceError
+from datetime import UTC, datetime
 
 import grpc
 import pytest
@@ -195,3 +196,102 @@ def test_fifo_queue_serializes_reentrant_observations() -> None:
 
 def test_capabilities_default_to_unknown() -> None:
     assert CapabilitiesState().dhw == CapabilityState.UNKNOWN
+
+
+def test_explicit_unsupported_contract_clears_operable_value() -> None:
+    store = DeviceStateStore()
+    store.dispatch(_dhw_observation(_setpoint(48.0), None))
+    changed_at = datetime(2026, 1, 1, tzinfo=UTC)
+
+    store.dispatch(
+        StateObservation(
+            capability_results=(
+                CapabilityResult(
+                    CapabilityKey.DHW,
+                    None,
+                    explicit_support=True,
+                    explicit_state=CapabilityState.UNSUPPORTED,
+                    reason="remote_not_advertised",
+                    last_changed=changed_at,
+                ),
+            )
+        )
+    )
+
+    assert store.state.capabilities.dhw == CapabilityState.UNSUPPORTED
+    assert store.state.dhw.setpoint is None
+    assert store.state.capability_metadata[0].reason == "remote_not_advertised"
+    assert store.state.capability_metadata[0].last_changed == changed_at
+
+
+def test_explicit_temporary_contract_retains_only_stale_value() -> None:
+    store = DeviceStateStore()
+    value = _setpoint(48.0)
+    store.dispatch(_dhw_observation(value, None))
+
+    store.dispatch(
+        StateObservation(
+            capability_results=(
+                CapabilityResult(
+                    CapabilityKey.DHW,
+                    None,
+                    explicit_support=True,
+                    explicit_state=CapabilityState.TEMPORARILY_UNAVAILABLE,
+                    reason="read_failed",
+                ),
+            )
+        )
+    )
+
+    assert store.state.dhw.setpoint == value
+    assert store.state.capabilities.dhw == CapabilityState.TEMPORARILY_UNAVAILABLE
+    assert not is_fresh(store.state, StateField.DHW_SETPOINT)
+
+
+def test_explicit_contract_blocks_stream_inference_and_fresh_value() -> None:
+    original = _setpoint(48.0)
+    store = DeviceStateStore()
+    store.dispatch(_dhw_observation(original, None))
+    store.dispatch(
+        StateObservation(
+            explicit_capability_contract=True,
+            capability_results=(
+                CapabilityResult(
+                    CapabilityKey.DHW,
+                    None,
+                    explicit_state=CapabilityState.TEMPORARILY_UNAVAILABLE,
+                    reason="read_failed",
+                ),
+            ),
+        )
+    )
+
+    store.dispatch(_dhw_observation(_setpoint(55.0), None))
+
+    assert store.state.dhw.setpoint == original
+    assert store.state.capabilities.dhw == CapabilityState.TEMPORARILY_UNAVAILABLE
+    assert not is_fresh(store.state, StateField.DHW_SETPOINT)
+
+
+def test_explicit_contract_result_wins_over_newer_stream_revision() -> None:
+    store = DeviceStateStore()
+    poll_base = store.revision
+    store.dispatch(_dhw_observation(_setpoint(55.0), None))
+
+    store.dispatch(
+        StateObservation(
+            explicit_capability_contract=True,
+            capability_results=(
+                CapabilityResult(
+                    CapabilityKey.DHW,
+                    None,
+                    explicit_state=CapabilityState.TEMPORARILY_UNAVAILABLE,
+                    reason="read_failed",
+                ),
+            ),
+            base_revision=poll_base,
+        )
+    )
+
+    assert store.state.capabilities.dhw == CapabilityState.TEMPORARILY_UNAVAILABLE
+    assert not is_fresh(store.state, StateField.DHW_SETPOINT)

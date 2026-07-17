@@ -19,6 +19,7 @@ from .grpc_client import (
     rpc_error_text as _rpc_error_text,
 )
 from .models import (
+    CapabilityState,
     FLAT_MEASUREMENT_KEYS,
     CompressorFlexibilityState,
     ConsumptionLimitState,
@@ -50,6 +51,7 @@ from .state import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_LEGACY_CAPABILITY_WARNED: set[str] = set()
 
 RE_REGISTER_NOT_FOUND_STREAK = 4
 
@@ -79,6 +81,74 @@ class SnapshotResult:
     observation: StateObservation
     ski_registered: bool
     not_found_streak: int
+
+
+_CAPABILITY_KEYS = {
+    proto_stubs.CapabilityId.CAPABILITY_MONITORING: CapabilityKey.MONITORING,
+    proto_stubs.CapabilityId.CAPABILITY_LPC: CapabilityKey.LPC,
+    proto_stubs.CapabilityId.CAPABILITY_FAILSAFE: CapabilityKey.FAILSAFE,
+    proto_stubs.CapabilityId.CAPABILITY_HEARTBEAT: CapabilityKey.HEARTBEAT,
+    proto_stubs.CapabilityId.CAPABILITY_OHPCF: CapabilityKey.OHPCF,
+    proto_stubs.CapabilityId.CAPABILITY_DHW: CapabilityKey.DHW,
+    proto_stubs.CapabilityId.CAPABILITY_DHW_SYSTEM_FUNCTION: CapabilityKey.DHW_SYSTEM_FUNCTION,
+    proto_stubs.CapabilityId.CAPABILITY_ROOM_HEATING: CapabilityKey.ROOM_HEATING,
+}
+_CAPABILITY_STATES = {
+    proto_stubs.CapabilityState.CAPABILITY_STATE_UNKNOWN: CapabilityState.UNKNOWN,
+    proto_stubs.CapabilityState.CAPABILITY_STATE_AVAILABLE: CapabilityState.AVAILABLE,
+    proto_stubs.CapabilityState.CAPABILITY_STATE_TEMPORARILY_UNAVAILABLE: CapabilityState.TEMPORARILY_UNAVAILABLE,
+    proto_stubs.CapabilityState.CAPABILITY_STATE_UNSUPPORTED: CapabilityState.UNSUPPORTED,
+}
+_CAPABILITY_REASONS = {
+    proto_stubs.CapabilityReason.CAPABILITY_REASON_UNSPECIFIED: None,
+    proto_stubs.CapabilityReason.CAPABILITY_REASON_LOCAL_DISABLED: "local_disabled",
+    proto_stubs.CapabilityReason.CAPABILITY_REASON_REMOTE_NOT_ADVERTISED: "remote_not_advertised",
+    proto_stubs.CapabilityReason.CAPABILITY_REASON_ENTITY_NOT_BOUND: "entity_not_bound",
+    proto_stubs.CapabilityReason.CAPABILITY_REASON_READ_FAILED: "read_failed",
+    proto_stubs.CapabilityReason.CAPABILITY_REASON_DEVICE_DISCONNECTED: "device_disconnected",
+}
+
+
+async def _async_read_capabilities(
+    device_stub: proto_stubs.DeviceServiceStub,
+    request: proto_stubs.DeviceRequest,
+    ski: str,
+) -> tuple[CapabilityResult, ...] | None:
+    """Read the explicit bridge contract; ``None`` means legacy fallback only."""
+    try:
+        response: proto_stubs.DeviceCapabilities = await device_stub.GetDeviceCapabilities(
+            request, timeout=RPC_TIMEOUT
+        )
+    except grpc.aio.AioRpcError as err:
+        if _is_unimplemented(err):
+            if ski not in _LEGACY_CAPABILITY_WARNED:
+                _LEGACY_CAPABILITY_WARNED.add(ski)
+                _LOGGER.warning(
+                    "Bridge lacks GetDeviceCapabilities; using legacy gRPC-status capability inference for SKI %s",
+                    ski,
+                )
+            return None
+        _LOGGER.debug("Capability contract read failed for SKI %s: %s", ski, _rpc_error_text(err))
+        return ()
+
+    results: list[CapabilityResult] = []
+    for entry in response.capabilities:
+        key = _CAPABILITY_KEYS.get(entry.id)
+        state = _CAPABILITY_STATES.get(entry.state)
+        if key is None or state is None:
+            continue
+        last_changed = entry.last_changed.ToDatetime() if entry.HasField("last_changed") else None
+        results.append(
+            CapabilityResult(
+                key,
+                None,
+                explicit_support=True,
+                explicit_state=state,
+                reason=_CAPABILITY_REASONS.get(entry.reason),
+                last_changed=last_changed,
+            )
+        )
+    return tuple(results)
 
 
 async def _poll_read(
@@ -388,6 +458,8 @@ async def async_build_snapshot(
         ),
     )
 
+    explicit_capabilities = await _async_read_capabilities(device_stub, request, ski)
+
     flat_measurements: dict[str, float | None] = {}
     scoped_energy: dict[str, float | None] = {"heating": None, "dhw": None}
     if measurements.value is not None:
@@ -498,15 +570,15 @@ async def async_build_snapshot(
             StateField.DHW_SYSTEM_FUNCTION,
         ),
     )
-    capability_results: list[CapabilityResult] = []
+    compatibility_capability_results: list[CapabilityResult] = []
     for capability, result, field_name in capability_reads:
-        capability_results.append(CapabilityResult(capability, result.status))
+        compatibility_capability_results.append(CapabilityResult(capability, result.status))
         if result.status is None:
             observed_fields.add(field_name)
         else:
             unavailable_fields.add(field_name)
 
-    capability_results.append(CapabilityResult(CapabilityKey.ROOM_HEATING, room_heating.status))
+    compatibility_capability_results.append(CapabilityResult(CapabilityKey.ROOM_HEATING, room_heating.status))
     room_fields = {
         StateField.ROOM_HEATING_SETPOINT,
         StateField.ROOM_HEATING_SYSTEM_FUNCTION,
@@ -517,6 +589,10 @@ async def async_build_snapshot(
             observed_fields.add(StateField.ROOM_TEMPERATURE_C)
     else:
         unavailable_fields.update(room_fields)
+
+    capability_results = (
+        tuple(compatibility_capability_results) if explicit_capabilities is None else explicit_capabilities
+    )
 
     saw_not_found = any(result.saw_not_found for result in (power, measurements, energy, limit, failsafe, heartbeat))
     updated_not_found_streak = not_found_streak + 1 if saw_not_found else 0
@@ -548,7 +624,8 @@ async def async_build_snapshot(
             state=state,
             observed_fields=frozenset(observed_fields),
             unavailable_fields=frozenset(unavailable_fields),
-            capability_results=tuple(capability_results),
+            capability_results=capability_results,
+            explicit_capability_contract=explicit_capabilities is not None,
         ),
         registered,
         updated_not_found_streak,

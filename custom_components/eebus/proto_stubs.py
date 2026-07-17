@@ -18,6 +18,10 @@ from .generated.eebus.v1.common_pb2 import (  # noqa: F401
     PowerMeasurement,
 )
 from .generated.eebus.v1.device_service_pb2 import (  # noqa: F401
+    CapabilityId,
+    CapabilityReason,
+    CapabilityState,
+    DeviceCapabilities,
     DeviceEventType,
     DeviceStatus,
     RegisterSKIRequest,
@@ -121,10 +125,14 @@ def visualization_service_stub(channel: grpc.aio.Channel) -> VisualizationServic
 
 __all__ = [
     "BatteryData",
+    "CapabilityId",
+    "CapabilityReason",
+    "CapabilityState",
     "CompressorFlexibility",
     "CompressorPowerConsumptionState",
     "ControlCompressorRequest",
     "DeviceEventType",
+    "DeviceCapabilities",
     "DeviceStatus",
     "DeviceDiagnosticsData",
     "DeviceRequest",

@@ -26,10 +26,11 @@ type roomHeatingSysFnController interface {
 // HVACService exposes the room-heating Configuration use cases over gRPC.
 type HVACService struct {
 	pb.UnimplementedHVACServiceServer
-	temp  roomHeatingTempController
-	sysfn roomHeatingSysFnController
-	room  temperatureReader
-	bus   *eebus.EventBus
+	temp     roomHeatingTempController
+	sysfn    roomHeatingSysFnController
+	room     temperatureReader
+	bus      *eebus.EventBus
+	registry *eebus.DeviceRegistry
 }
 
 func NewHVACService(
@@ -37,8 +38,13 @@ func NewHVACService(
 	sysfn roomHeatingSysFnController,
 	room temperatureReader,
 	bus *eebus.EventBus,
+	registries ...*eebus.DeviceRegistry,
 ) *HVACService {
-	return &HVACService{temp: temp, sysfn: sysfn, room: room, bus: bus}
+	var registry *eebus.DeviceRegistry
+	if len(registries) > 0 {
+		registry = registries[0]
+	}
+	return &HVACService{temp: temp, sysfn: sysfn, room: room, bus: bus, registry: registry}
 }
 
 func (s *HVACService) GetRoomHeating(_ context.Context, req *pb.DeviceRequest) (*pb.RoomHeatingState, error) {
@@ -46,11 +52,12 @@ func (s *HVACService) GetRoomHeating(_ context.Context, req *pb.DeviceRequest) (
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
 	state := &pb.RoomHeatingState{}
-	resolved := false
+	entityResolved := false
+	readSucceeded := false
 	if s.room != nil {
 		if value, err := s.room.Temperature(req.Ski); err == nil {
 			state.CurrentTemperatureCelsius = &value
-			resolved = true
+			readSucceeded = true
 		}
 	}
 	if s.temp != nil {
@@ -59,9 +66,10 @@ func (s *HVACService) GetRoomHeating(_ context.Context, req *pb.DeviceRequest) (
 			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
 		}
 		if resolution.Entity != nil {
-			resolved = true
+			entityResolved = true
 			if setpoint, err := s.temp.State(resolution.Entity); err == nil {
 				state.Setpoint = convertRoomHeatingSetpoint(setpoint)
+				readSucceeded = true
 			}
 		}
 	}
@@ -71,14 +79,27 @@ func (s *HVACService) GetRoomHeating(_ context.Context, req *pb.DeviceRequest) (
 			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
 		}
 		if resolution.Entity != nil {
-			resolved = true
+			entityResolved = true
 			if sysfn, err := s.sysfn.State(resolution.Entity); err == nil {
 				state.SystemFunction = convertRoomHeatingSystemFunction(sysfn)
+				readSucceeded = true
 			}
 		}
 	}
-	if !resolved {
+	if !entityResolved && !readSucceeded {
+		if s.registry != nil {
+			s.registry.RecordCapabilityMissingEntity(req.Ski, eebus.CapabilityRoomHeating)
+		}
 		return nil, status.Errorf(codes.NotFound, "no compatible HVACRoom found for ski %s", req.Ski)
+	}
+	if !readSucceeded {
+		if s.registry != nil {
+			s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityRoomHeating, usecases.ErrRoomHeatingDataUnavailable)
+		}
+		return nil, status.Error(codes.Unavailable, "reading room heating: temporarily unavailable")
+	}
+	if s.registry != nil {
+		s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityRoomHeating, nil)
 	}
 	return state, nil
 }
@@ -198,8 +219,8 @@ func convertRoomHeatingSystemFunction(state usecases.RoomHeatingSystemFunctionSt
 
 var roomHeatingErrorClasses = usecaseErrorClasses{
 	invalidArgument:    []error{usecases.ErrRoomHeatingOutOfRange, usecases.ErrRoomHeatingInvalidStep, usecases.ErrRoomHeatingSysFnInvalidMode},
-	failedPrecondition: []error{usecases.ErrRoomHeatingNotWritable, usecases.ErrRoomHeatingSysFnNotWritable, usecases.ErrRoomHeatingSysFnRejected},
-	notFound:           []error{usecases.ErrRoomHeatingDataUnavailable, usecases.ErrRoomHeatingSysFnDataUnavailable},
+	failedPrecondition: []error{usecases.ErrRoomHeatingNotWritable, usecases.ErrRoomHeatingRejected, usecases.ErrRoomHeatingSysFnNotWritable, usecases.ErrRoomHeatingSysFnRejected},
+	unavailable:        []error{usecases.ErrRoomHeatingDataUnavailable, usecases.ErrRoomHeatingSysFnDataUnavailable},
 }
 
 func mapRoomHeatingError(action string, err error) error {

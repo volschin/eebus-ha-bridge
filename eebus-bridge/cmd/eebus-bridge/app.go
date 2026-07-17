@@ -141,6 +141,7 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 
 	bus := eebus.NewEventBus()
 	registry := eebus.NewDeviceRegistry()
+	registry.SetLocalCapabilityEnabled(eebus.CapabilityOHPCF, *cfg.OHPCF.Enabled)
 
 	bridgeSvc, err := eebus.NewBridgeService(cfg, cert, bus)
 	if err != nil {
@@ -318,12 +319,13 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 	gridSvc := bridgegrpc.NewGridService(mgcpProvider)
 	visualizationSvc := bridgegrpc.NewVisualizationService(vapdProvider, vabdProvider)
 	ohpcfSvc := bridgegrpc.NewOHPCFService(ohpcfWrapper, bus, registry)
-	dhwSvc := bridgegrpc.NewDHWService(dhwTemperature, dhwSystemFunction, bus)
+	dhwSvc := bridgegrpc.NewDHWService(dhwTemperature, dhwSystemFunction, bus, registry)
 	hvacSvc := bridgegrpc.NewHVACService(
 		roomHeatingTemperature,
 		roomHeatingSystemFunction,
 		roomMonitoringWrapper,
 		bus,
+		registry,
 	)
 
 	pb.RegisterDeviceServiceServer(grpcSrv.GRPCServer(), deviceSvc)

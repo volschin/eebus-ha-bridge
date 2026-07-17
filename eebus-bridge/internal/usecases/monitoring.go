@@ -72,7 +72,8 @@ func (w *MonitoringWrapper) HandleEvent(ski string, device spineapi.DeviceRemote
 		eebus.DefaultUseCaseDiscovery().LogOnce(ski, device)
 	}
 
-	if w.registry != nil {
+	isSupportUpdate := event == mampc.UseCaseSupportUpdate
+	if w.registry != nil && !isSupportUpdate {
 		w.registry.UpsertObservation(ski, device, entity, "monitoring")
 		enrichDeviceClassification(w.registry, w.localEntity, ski, device, entity)
 	}
@@ -95,6 +96,10 @@ func (w *MonitoringWrapper) HandleEvent(ski string, device spineapi.DeviceRemote
 		eventType = eebus.EventTypeMonitoringFrequencyUpdated
 	case mampc.UseCaseSupportUpdate:
 		eventType = eebus.EventTypeMonitoringUseCaseSupportUpdated
+		resolution := w.CompatibleEntity(observationSKI(ski, device))
+		if recordCapabilitySupport(w.registry, ski, device, entity, resolution, "monitoring", eebus.CapabilityMonitoring) {
+			enrichDeviceClassification(w.registry, w.localEntity, ski, device, resolution.Entity)
+		}
 	default:
 		return
 	}

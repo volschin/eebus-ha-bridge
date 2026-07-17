@@ -47,16 +47,16 @@ func (s *VisualizationService) PublishPVData(_ context.Context, req *pb.PVData) 
 		return nil, status.Error(codes.Unavailable, "VAPD PV provider not enabled")
 	}
 	if err := s.vapd.PublishPower(req.PowerW); err != nil {
-		return nil, status.Errorf(codes.Internal, "publishing PV power: %v", err)
+		return nil, mapUsecaseError("publishing PV power", err, standardUsecaseErrorClasses)
 	}
 	if req.YieldWh != nil {
 		if err := s.vapd.PublishYield(*req.YieldWh); err != nil {
-			return nil, status.Errorf(codes.Internal, "publishing PV yield energy: %v", err)
+			return nil, mapUsecaseError("publishing PV yield energy", err, standardUsecaseErrorClasses)
 		}
 	}
 	if req.PeakPowerW != nil {
 		if err := s.vapd.PublishPeakPower(*req.PeakPowerW); err != nil {
-			return nil, status.Errorf(codes.Internal, "publishing PV peak power: %v", err)
+			return nil, mapUsecaseError("publishing PV peak power", err, standardUsecaseErrorClasses)
 		}
 	}
 	return &pb.Empty{}, nil
@@ -91,21 +91,21 @@ func (s *VisualizationService) PublishBatteryData(_ context.Context, req *pb.Bat
 		return nil, status.Error(codes.Unavailable, "VABD battery provider not enabled")
 	}
 	if err := s.vabd.PublishPower(req.PowerW); err != nil {
-		return nil, status.Errorf(codes.Internal, "publishing battery power: %v", err)
+		return nil, mapUsecaseError("publishing battery power", err, standardUsecaseErrorClasses)
 	}
 	if req.ChargedWh != nil {
 		if err := s.vabd.PublishEnergyCharged(*req.ChargedWh); err != nil {
-			return nil, status.Errorf(codes.Internal, "publishing battery charged energy: %v", err)
+			return nil, mapUsecaseError("publishing battery charged energy", err, standardUsecaseErrorClasses)
 		}
 	}
 	if req.DischargedWh != nil {
 		if err := s.vabd.PublishEnergyDischarged(*req.DischargedWh); err != nil {
-			return nil, status.Errorf(codes.Internal, "publishing battery discharged energy: %v", err)
+			return nil, mapUsecaseError("publishing battery discharged energy", err, standardUsecaseErrorClasses)
 		}
 	}
 	if req.StateOfChargePct != nil {
 		if err := s.vabd.PublishStateOfCharge(*req.StateOfChargePct); err != nil {
-			return nil, status.Errorf(codes.Internal, "publishing battery state of charge: %v", err)
+			return nil, mapUsecaseError("publishing battery state of charge", err, standardUsecaseErrorClasses)
 		}
 	}
 	return &pb.Empty{}, nil

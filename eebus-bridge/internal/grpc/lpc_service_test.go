@@ -9,6 +9,7 @@ import (
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
+	"github.com/volschin/eebus-bridge/internal/usecases"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -220,10 +221,28 @@ func TestHeartbeatHandlersValidation(t *testing.T) {
 	if _, err := svc.StopHeartbeat(ctx, &pb.DeviceRequest{}); err == nil {
 		t.Error("StopHeartbeat with nil lpc should error (Unavailable)")
 	}
+	if _, err := svc.StopHeartbeat(ctx, nil); status.Code(err) != codes.InvalidArgument {
+		t.Error("StopHeartbeat(nil request) should return InvalidArgument")
+	}
 	if _, err := svc.GetHeartbeatStatus(ctx, nil); err == nil {
 		t.Error("GetHeartbeatStatus(nil request) should error")
 	}
 	if _, err := svc.GetHeartbeatStatus(ctx, &pb.DeviceRequest{Ski: "x"}); err == nil {
 		t.Error("GetHeartbeatStatus with nil lpc should error (Unavailable)")
+	}
+}
+
+func TestGetHeartbeatStatusMissingEntityReturnsNotFound(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice("test-ski", eebus.DeviceInfo{})
+	svc := bridgegrpc.NewLPCService(
+		usecases.NewLPCWrapper(eebus.NewEventBus(), registry, false),
+		eebus.NewEventBus(),
+		registry,
+	)
+
+	result, err := svc.GetHeartbeatStatus(context.Background(), &pb.DeviceRequest{Ski: "test-ski"})
+	if result != nil || status.Code(err) != codes.NotFound {
+		t.Fatalf("GetHeartbeatStatus() = (%+v, %v), want nil/NotFound", result, err)
 	}
 }

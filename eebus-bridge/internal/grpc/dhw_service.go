@@ -30,10 +30,15 @@ type DHWService struct {
 	dhw      dhwController
 	dhwSysFn dhwSysFnController
 	bus      *eebus.EventBus
+	registry *eebus.DeviceRegistry
 }
 
-func NewDHWService(dhw dhwController, dhwSysFn dhwSysFnController, bus *eebus.EventBus) *DHWService {
-	return &DHWService{dhw: dhw, dhwSysFn: dhwSysFn, bus: bus}
+func NewDHWService(dhw dhwController, dhwSysFn dhwSysFnController, bus *eebus.EventBus, registries ...*eebus.DeviceRegistry) *DHWService {
+	var registry *eebus.DeviceRegistry
+	if len(registries) > 0 {
+		registry = registries[0]
+	}
+	return &DHWService{dhw: dhw, dhwSysFn: dhwSysFn, bus: bus, registry: registry}
 }
 
 func (s *DHWService) GetDHWSetpoint(_ context.Context, req *pb.DeviceRequest) (*pb.DHWSetpoint, error) {
@@ -45,6 +50,9 @@ func (s *DHWService) GetDHWSetpoint(_ context.Context, req *pb.DeviceRequest) (*
 		return nil, err
 	}
 	state, err := s.dhw.State(entity)
+	if s.registry != nil {
+		s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityDHW, err)
+	}
 	if err != nil {
 		return nil, mapDHWError("reading DHW setpoint", err)
 	}
@@ -77,6 +85,9 @@ func (s *DHWService) GetDHWSystemFunction(_ context.Context, req *pb.DeviceReque
 		return nil, err
 	}
 	state, err := s.dhwSysFn.State(entity)
+	if s.registry != nil {
+		s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityDHWSystemFunction, err)
+	}
 	if err != nil {
 		return nil, mapDHWError("reading DHW system function", err)
 	}
@@ -213,6 +224,9 @@ func (s *DHWService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, 
 		return nil, ambiguousDeviceSelection(resolution.DeviceCount)
 	}
 	if resolution.Entity == nil {
+		if s.registry != nil {
+			s.registry.RecordCapabilityMissingEntity(ski, eebus.CapabilityDHW)
+		}
 		return nil, status.Errorf(codes.NotFound, "no compatible DHWCircuit found for ski %s", ski)
 	}
 	return resolution.Entity, nil
@@ -227,6 +241,9 @@ func (s *DHWService) resolveSysFnEntity(ski string) (spineapi.EntityRemoteInterf
 		return nil, ambiguousDeviceSelection(resolution.DeviceCount)
 	}
 	if resolution.Entity == nil {
+		if s.registry != nil {
+			s.registry.RecordCapabilityMissingEntity(ski, eebus.CapabilityDHWSystemFunction)
+		}
 		return nil, status.Errorf(codes.NotFound, "no compatible DHWCircuit found for ski %s", ski)
 	}
 	return resolution.Entity, nil
@@ -269,8 +286,8 @@ func convertDHWBoostStatus(status string) pb.DHWBoostStatus {
 
 var dhwErrorClasses = usecaseErrorClasses{
 	invalidArgument:    []error{usecases.ErrDHWOutOfRange, usecases.ErrDHWInvalidStep, usecases.ErrDHWSysFnInvalidMode},
-	failedPrecondition: []error{usecases.ErrDHWNotWritable, usecases.ErrDHWSysFnNotWritable, usecases.ErrDHWSysFnRejected},
-	notFound:           []error{usecases.ErrDHWDataUnavailable, usecases.ErrDHWSysFnDataUnavailable},
+	failedPrecondition: []error{usecases.ErrDHWNotWritable, usecases.ErrDHWRejected, usecases.ErrDHWSysFnNotWritable, usecases.ErrDHWSysFnRejected},
+	unavailable:        []error{usecases.ErrDHWDataUnavailable, usecases.ErrDHWSysFnDataUnavailable},
 }
 
 func mapDHWError(action string, err error) error {
