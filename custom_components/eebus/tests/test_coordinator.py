@@ -429,20 +429,24 @@ def test_payload_free_room_event_marks_aggregate_stale_before_refresh() -> None:
     assert StateField.ROOM_HEATING_SETPOINT not in store.state.fresh_fields
 
 
-async def test_shutdown_stops_resources_in_dependency_order() -> None:
+async def test_shutdown_releases_entry_resources_but_keeps_shared_transport() -> None:
     coordinator = EebusCoordinator.__new__(EebusCoordinator)
     lifecycle = MagicMock()
     coordinator._provider_manager = MagicMock()
     coordinator._provider_manager.async_stop = AsyncMock()
-    coordinator._device_streams = MagicMock()
-    coordinator._device_streams.stop = AsyncMock()
-    coordinator._channel_manager = MagicMock()
-    coordinator._channel_manager.close = AsyncMock()
+    coordinator._runtime = MagicMock()
+    coordinator._runtime.release_device_session = AsyncMock()
+    coordinator._runtime.close = AsyncMock()
+    coordinator._runtime_session = MagicMock()
+    coordinator._owns_runtime = False
     lifecycle.attach_mock(coordinator._provider_manager.async_stop, "providers")
-    lifecycle.attach_mock(coordinator._device_streams.stop, "streams")
-    lifecycle.attach_mock(coordinator._channel_manager.close, "channel")
+    lifecycle.attach_mock(coordinator._runtime.release_device_session, "session")
     await coordinator.async_shutdown()
-    assert lifecycle.mock_calls == [call.providers(), call.streams(), call.channel()]
+    assert lifecycle.mock_calls == [
+        call.providers(),
+        call.session(coordinator._runtime_session),
+    ]
+    coordinator._runtime.close.assert_not_awaited()
 
 
 async def test_poll_read_not_found_is_attempted_once() -> None:
