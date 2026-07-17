@@ -183,6 +183,22 @@ async def async_unload_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> bo
     return unload_ok
 
 
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, config_entry: ConfigEntry, device_entry: dr.DeviceEntry
+) -> bool:
+    """Allow removing a stale device left behind by a SKI canonicalization.
+
+    A device is only removable if none of its identifiers match the entry's
+    current canonical SKI — i.e. it's an orphan from before the identifier
+    was renamed, not the device the entry is actively using.
+    """
+    current_ski = config_entry.data[CONF_DEVICE_SKI]
+    return not any(
+        domain == DOMAIN and ski == current_ski
+        for domain, ski in device_entry.identifiers
+    )
+
+
 async def _async_reload_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> None:
     """Reload on options change."""
     await hass.config_entries.async_reload(entry.entry_id)

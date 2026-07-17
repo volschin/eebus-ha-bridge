@@ -82,6 +82,30 @@ def test_remove_replaced_heartbeat_switch():
     entity_registry.async_remove.assert_called_once_with("switch.eebus_heartbeat")
 
 
+async def test_remove_config_entry_device_allows_stale_identifier():
+    """A device whose identifier no longer matches the canonical SKI is removable."""
+    from custom_components.eebus import async_remove_config_entry_device
+
+    canonical = "682F708CEBA5DF9ADCB9E6787EA911D9FC3AC490"
+    hass = MagicMock()
+    entry = MagicMock(data={CONF_DEVICE_SKI: canonical})
+    device = MagicMock(identifiers={("eebus", canonical.lower())})
+
+    assert await async_remove_config_entry_device(hass, entry, device) is True
+
+
+async def test_remove_config_entry_device_blocks_active_identifier():
+    """The device the entry is actively using cannot be removed from the UI."""
+    from custom_components.eebus import async_remove_config_entry_device
+
+    canonical = "682F708CEBA5DF9ADCB9E6787EA911D9FC3AC490"
+    hass = MagicMock()
+    entry = MagicMock(data={CONF_DEVICE_SKI: canonical})
+    device = MagicMock(identifiers={("eebus", canonical)})
+
+    assert await async_remove_config_entry_device(hass, entry, device) is False
+
+
 @pytest.mark.asyncio
 async def test_unload_entry():
     """Test async_unload_entry shuts down coordinator."""
