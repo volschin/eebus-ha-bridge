@@ -204,6 +204,19 @@ func (r *DeviceRegistry) MonitoringLastSuccessAge(ski string) (time.Duration, bo
 	return age, true
 }
 
+// MonitoringSuccessSince reports whether a real monitoring entity resolution
+// happened after the supplied recovery attempt timestamp.
+func (r *DeviceRegistry) MonitoringSuccessSince(ski string, since time.Time) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	state, ok := r.monitoring[NormalizeSKI(ski)]
+	if !ok || state.lastMonitoringSuccess.IsZero() {
+		return false
+	}
+	return state.lastMonitoringSuccess.After(since)
+}
+
 // NormalizeSKI canonicalizes a SKI for use as a registry key: uppercase, with
 // whitespace and common display separators removed. Remote peers and clients
 // may report the same SKI with differing case or formatting; normalizing

@@ -20,11 +20,9 @@ import (
 )
 
 // monitoringStaleThreshold bounds how long a connected device may go without a
-// successful Monitoring entity resolution before the watchdog restarts the
-// process. Reconnects (SHIP re-pair) can leave the SPINE entity binding stuck
-// with no error logged, silently starving Home Assistant of data; a restart
-// forces a clean re-handshake. The device normally pushes updates ~every 60s,
-// so 10min gives ample margin against brief legitimate gaps.
+// successful Monitoring entity resolution before the watchdog starts targeted
+// recovery. The device normally pushes updates ~every 60s, so 10min gives
+// ample margin against brief legitimate gaps.
 const monitoringStaleThreshold = 10 * time.Minute
 
 // monitoringGracePeriod allows a newly connected device to establish its
@@ -32,11 +30,13 @@ const monitoringStaleThreshold = 10 * time.Minute
 const monitoringGracePeriod = 2 * time.Minute
 
 const watchdogInterval = 30 * time.Second
+const monitoringRecoveryMaxAttempts = 3
 
 type bridgeLifecycle interface {
 	Start() error
 	Shutdown()
 	RegisterRemoteSKI(string)
+	UnregisterRemoteSKI(string)
 }
 
 type grpcLifecycle interface {
@@ -53,6 +53,28 @@ type heartbeatLifecycle interface {
 type monitoringRegistry interface {
 	StaleDevices(time.Duration, time.Duration) []string
 	MonitoringLastSuccessAge(string) (time.Duration, bool)
+	MonitoringSuccessSince(string, time.Time) bool
+	ClearEntities(string)
+}
+
+type deviceRecoveryStatus string
+
+const (
+	deviceRecoveryHealthy    deviceRecoveryStatus = "healthy"
+	deviceRecoveryStale      deviceRecoveryStatus = "stale"
+	deviceRecoveryInvalidate deviceRecoveryStatus = "invalidate"
+	deviceRecoveryReconnect  deviceRecoveryStatus = "reconnect"
+	deviceRecoveryRecovering deviceRecoveryStatus = "recovering"
+	deviceRecoveryFailed     deviceRecoveryStatus = "failed"
+)
+
+type deviceRecoveryState struct {
+	status           deviceRecoveryStatus
+	attempts         int
+	firstStaleAt     time.Time
+	lastAttemptAt    time.Time
+	recoverAfter     time.Time
+	restartRequested bool
 }
 
 type backgroundFailure struct {
@@ -106,6 +128,8 @@ type Application struct {
 	stopOnce                   sync.Once
 	runtimeMu                  sync.Mutex
 	cancelRuntime              context.CancelFunc
+	recoveryMu                 sync.Mutex
+	deviceRecoveries           map[string]*deviceRecoveryState
 }
 
 func run(ctx context.Context, cfg *config.Config) error {
@@ -480,34 +504,143 @@ func (a *Application) startWatchdog(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				staleDevices := a.registry.StaleDevices(monitoringStaleThreshold, monitoringGracePeriod)
-				a.grpcSrv.SetHealthy(len(staleDevices) == 0)
-				if len(staleDevices) == 0 {
-					continue
+				if a.handleMonitoringWatchdogTick(time.Now()) {
+					return
 				}
-
-				details := make([]string, 0, len(staleDevices))
-				for _, ski := range staleDevices {
-					lastSuccessAge := "never"
-					if age, ok := a.registry.MonitoringLastSuccessAge(ski); ok {
-						lastSuccessAge = age.Round(time.Second).String()
-					}
-					details = append(details, eebus.ShortSKI(ski)+"(last_success_age="+lastSuccessAge+")")
-				}
-
-				reason := "monitoring watchdog detected stale connected devices"
-				log.Printf(
-					"%s: devices=[%s] threshold=%s grace_period=%s; requesting restart",
-					reason,
-					strings.Join(details, ", "),
-					monitoringStaleThreshold,
-					monitoringGracePeriod,
-				)
-				a.reportBackgroundFailure(reason, errors.New(reason))
-				return
 			}
 		}
 	}()
+}
+
+func (a *Application) handleMonitoringWatchdogTick(now time.Time) bool {
+	if a.registry == nil || a.grpcSrv == nil {
+		return false
+	}
+	staleDevices := a.registry.StaleDevices(monitoringStaleThreshold, monitoringGracePeriod)
+	staleSet := make(map[string]struct{}, len(staleDevices))
+	for _, ski := range staleDevices {
+		staleSet[eebus.NormalizeSKI(ski)] = struct{}{}
+	}
+
+	a.recoveryMu.Lock()
+	defer a.recoveryMu.Unlock()
+
+	a.grpcSrv.SetHealthy(true)
+	for _, ski := range staleDevices {
+		if a.recoverStaleDeviceLocked(now, ski) {
+			a.grpcSrv.SetHealthy(false)
+			return true
+		}
+	}
+	for ski, recovery := range a.deviceRecoveries {
+		if _, stale := staleSet[ski]; stale {
+			continue
+		}
+		if a.recoverOutstandingDeviceLocked(now, ski, recovery) {
+			a.grpcSrv.SetHealthy(false)
+			return true
+		}
+	}
+	return false
+}
+
+func (a *Application) recoverOutstandingDeviceLocked(now time.Time, ski string, recovery *deviceRecoveryState) bool {
+	if recovery.status != deviceRecoveryRecovering {
+		return false
+	}
+	if a.registry.MonitoringSuccessSince(ski, recovery.lastAttemptAt) {
+		a.logRecoveryEvent(ski, deviceRecoveryHealthy, recovery.attempts, now.Sub(recovery.lastAttemptAt))
+		delete(a.deviceRecoveries, ski)
+		return false
+	}
+	if now.Before(recovery.recoverAfter) {
+		return false
+	}
+	return a.recoverStaleDeviceLocked(now, ski)
+}
+
+func (a *Application) recoverStaleDeviceLocked(now time.Time, ski string) bool {
+	if a.deviceRecoveries == nil {
+		a.deviceRecoveries = make(map[string]*deviceRecoveryState)
+	}
+	ski = eebus.NormalizeSKI(ski)
+	recovery := a.deviceRecoveries[ski]
+	if recovery == nil {
+		recovery = &deviceRecoveryState{status: deviceRecoveryHealthy}
+		a.deviceRecoveries[ski] = recovery
+	}
+	if recovery.firstStaleAt.IsZero() {
+		recovery.firstStaleAt = now
+	}
+
+	switch recovery.status {
+	case deviceRecoveryRecovering:
+		if now.Before(recovery.recoverAfter) {
+			return false
+		}
+	case deviceRecoveryFailed:
+		return false
+	}
+
+	if recovery.attempts >= monitoringRecoveryMaxAttempts {
+		return a.failStaleDeviceLocked(now, ski, recovery)
+	}
+
+	attempt := recovery.attempts + 1
+	recovery.status = deviceRecoveryStale
+	a.logRecoveryEvent(ski, deviceRecoveryStale, attempt, now.Sub(recovery.firstStaleAt))
+
+	a.registry.ClearEntities(ski)
+	a.logRecoveryEvent(ski, deviceRecoveryInvalidate, attempt, 0)
+
+	if a.bridgeSvc != nil {
+		a.bridgeSvc.UnregisterRemoteSKI(ski)
+		a.bridgeSvc.RegisterRemoteSKI(ski)
+	}
+	a.logRecoveryEvent(ski, deviceRecoveryReconnect, attempt, 0)
+
+	recovery.status = deviceRecoveryRecovering
+	recovery.attempts = attempt
+	recovery.lastAttemptAt = now
+	recovery.recoverAfter = now.Add(monitoringGracePeriod)
+	a.logRecoveryEvent(ski, deviceRecoveryRecovering, attempt, monitoringGracePeriod)
+	return false
+}
+
+func (a *Application) failStaleDeviceLocked(now time.Time, ski string, recovery *deviceRecoveryState) bool {
+	recovery.status = deviceRecoveryFailed
+	if recovery.restartRequested {
+		return false
+	}
+	recovery.restartRequested = true
+	a.logRecoveryEvent(ski, deviceRecoveryFailed, recovery.attempts, now.Sub(recovery.firstStaleAt))
+
+	lastSuccessAge := "never"
+	if age, ok := a.registry.MonitoringLastSuccessAge(ski); ok {
+		lastSuccessAge = age.Round(time.Second).String()
+	}
+	reason := "monitoring watchdog recovery exhausted"
+	log.Printf(
+		"%s: devices=[%s(last_success_age=%s)] threshold=%s grace_period=%s attempts=%d; requesting restart",
+		reason,
+		eebus.ShortSKI(ski),
+		lastSuccessAge,
+		monitoringStaleThreshold,
+		monitoringGracePeriod,
+		recovery.attempts,
+	)
+	a.reportBackgroundFailure(reason, errors.New(reason))
+	return true
+}
+
+func (a *Application) logRecoveryEvent(ski string, stage deviceRecoveryStatus, attempt int, duration time.Duration) {
+	log.Printf(
+		"monitoring recovery: ski=%s stage=%s attempt=%d duration=%s",
+		eebus.ShortSKI(ski),
+		stage,
+		attempt,
+		duration.Round(time.Second),
+	)
 }
 
 func (a *Application) reportBackgroundFailure(reason string, err error) {
