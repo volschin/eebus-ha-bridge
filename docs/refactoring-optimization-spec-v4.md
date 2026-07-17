@@ -1,9 +1,9 @@
 # Refactoring- und Optimierungsspezifikation v4
 
-**Status:** Entwurf  
-**Stand:** 2026-07-17  
-**Geltungsbereich:** aktueller Softwarestand auf `main` (`v0.13.0`, Commit `6052841`)  
-**Zielgruppe:** Maintainer der Home-Assistant-Integration und der Go-Bridge
+- **Status:** Entwurf
+- **Stand:** 2026-07-17
+- **Geltungsbereich:** aktueller Softwarestand auf `main` (`v0.13.1`, Commit `2fdf831`)
+- **Zielgruppe:** Maintainer der Home-Assistant-Integration und der Go-Bridge
 
 ## 1. Einordnung
 
@@ -53,17 +53,18 @@ Diese Trennung ist fachlich richtig und bleibt erhalten.
 | Bereich | Produktionscode | Tests | Beobachtung |
 |---|---:|---:|---|
 | Python | ca. 6.060 LOC / 25 Dateien | ca. 4.365 LOC / 183 Tests | immutable State Store, Strict-Typing-Konfiguration, Ruff sauber |
-| Go | ca. 10.612 LOC / 48 Dateien | ca. 7.183 LOC / 235 Tests | Race-Test in CI, klar getrennte Packages |
+| Go | ca. 10.635 LOC / 48 Dateien | ca. 7.224 LOC / 237 Tests | Race-Test in CI, klar getrennte Packages |
 | Protobuf | ca. 640 LOC | Governance- und Drift-Gates | additive v1-Evolution abgesichert |
 
 Die lokale Analyse ergab:
 
 - `ruff check custom_components/`: erfolgreich.
 - `go vet ./...`: erfolgreich.
-- `go test ./...`: erfolgreich.
-- `mypy` und `pytest` konnten lokal nicht ausgeführt werden, weil die Werkzeuge
-  in der vorhandenen Python-Umgebung nicht installiert sind; beide Läufe sind
-  Bestandteil der aktuellen CI.
+- `go test ./...` und `go test -race ./...`: erfolgreich.
+- `PYTHONPATH=. .venv/bin/python -m pytest` (206 Tests) und
+  `.venv/bin/python -m mypy custom_components/eebus` (strict): erfolgreich über
+  die Projekt-Virtualenv `.venv`; beide Läufe sind zusätzlich Bestandteil der
+  aktuellen CI.
 - Die CI prüft Buf-Lint, Breaking Changes, Stub-Drift, Proto-Governance,
   Go-Race-Tests, Integrationstests, Security-Audits und HA/HACS-Konformität.
 
@@ -78,7 +79,7 @@ Cross-Language-Verhaltenstest fehlt.
 | `device_state_stream.go` | Nicht jeder interne Eventtyp wird in einen vollständigen, typisierten Payload übersetzt. OHPCF wird im konsolidierten Stream ohne Flexibility-Payload versendet; mehrere Detailmessungen werden zu `UNSPECIFIED`. | HA markiert Werte temporär unavailable und fordert einen Vollabgleich an. Push wird faktisch wieder zu Polling. |
 | `snapshot.py` | Ein Abgleich kombiniert Status, Registrierung, sechs Basisreads, sieben weitere Reads und Capabilities in mehreren Wellen. `GetMeasurements` überschneidet sich zudem mit dedizierten Power-/Energy-Reads. | Mehr Latenz, mehr Bridge-Last und zeitlich gemischte Zustände. |
 | `providers.py` | Provider-Invalidation wird aus der Existenz von `GetDeviceCapabilities` abgeleitet; Stub und Methode werden dynamisch per `getattr` gewählt. | Versionskompatibilität ist implizit, Typprüfung endet an einer wichtigen I/O-Grenze. |
-| `app.go` | `NewApplication` verdrahtet, registriert, richtet ein und startet Module teilweise bereits während der Konstruktion. Der LPC-Heartbeat startet vor `Application.Start`. | Unklare Commit-/Rollback-Grenze und erschwerte Lifecycle-Tests. |
+| `app.go` | `NewApplication` verdrahtet, registriert, richtet ein und startet Module teilweise bereits während der Konstruktion. Use-Cases müssen wegen der Reihenfolge lazy und mit Reflection-Nil-Prüfung aufgelöst werden; der LPC-Heartbeat startet vor `Application.Start`. | Fragile Ordnungsabhängigkeit, unklare Commit-/Rollback-Grenze und erschwerte Lifecycle-Tests. |
 | `app.go` / gRPC Health | Ein einzelnes stale Gerät setzt die globale gRPC-Health auf `NOT_SERVING` und kann nach Recovery-Erschöpfung den Prozess beenden. | Ein Gerätefehler vergrößert im Multi-Device-Betrieb den Ausfallradius. |
 | `registry.go` | Gerätekatalog, Entity-Index, Connection-/Monitoring-Health und Capabilities teilen einen Store und einen Mutex. | Wachsende Invariantenmenge; schwer isoliert test- und änderbar. |
 | `state.py` | Dataclasses, `StateField`, Getter, Replacer, Capability-Zuordnung und Freshness-Regeln beschreiben dieselben Felder mehrfach; einige Pfade benötigen `Any` und `type: ignore`. | Neue Felder erfordern synchrone Änderungen an mehreren Tabellen. |
@@ -297,6 +298,10 @@ Snapshot ist zugleich der Initialzustand des konsolidierten Streams.
 
 - `DevicePoller` liest bevorzugt genau einen Snapshot-RPC.
 - Der bisherige Multi-RPC-Builder bleibt nur als Legacy-Adapter bestehen.
+- Der Legacy-Adapter führt voneinander unabhängige Reads in einem einzigen
+  `asyncio.gather` aus statt in mehreren sequentiellen Wellen; die heutige
+  Drei-Wellen-Struktur hat keine Datenabhängigkeit und verdreifacht nur die
+  Poll-Latenz gegen alte Bridges.
 - Jeder Aufruf im Legacy-Adapter, einschließlich `GetStatus`, besitzt ein
   explizites hartes Timeout und respektiert Cancellation.
 - Poll- und Streamdaten werden in denselben typisierten Patch konvertiert.
@@ -324,9 +329,11 @@ Snapshot ist zugleich der Initialzustand des konsolidierten Streams.
 
 `NewApplication` besitzt neben Verdrahtung bereits Setup-, Registrierungs- und
 Startwirkungen. Insbesondere kann der LPC-Heartbeat laufen, bevor
-`Application.Start` beginnt. Provider-Expiry-Timer besitzen keinen expliziten
-Stop-Vertrag. Der gRPC-Healthserver startet initial als `SERVING`, noch bevor
-die EEBUS-Bridge erfolgreich gestartet wurde.
+`Application.Start` beginnt. Die aktuelle lazy Use-Case-Auflösung mit
+Reflection-Nil-Prüfung kompensiert dabei eine Ordnungsabhängigkeit zwischen
+Moduldefinition und Setup, beseitigt sie aber nicht. Provider-Expiry-Timer
+besitzen keinen expliziten Stop-Vertrag. Der gRPC-Healthserver startet initial
+als `SERVING`, noch bevor die EEBUS-Bridge erfolgreich gestartet wurde.
 
 **Ziel**
 
@@ -357,6 +364,12 @@ langlaufenden Wirkungen; `Stop` beendet jede gestartete Ressource exakt einmal.
 
 - Tests prüfen Fehler nach jeder einzelnen Startstufe und die jeweilige
   Rollback-Reihenfolge.
+- Ein Boot-Test instanziiert die **produktive Composition Root**
+  (`NewApplication` mit realer Modulverdrahtung, minimaler Config und
+  Scratch-Zertifikaten) und prüft, dass alle erwarteten Use-Cases registriert
+  werden — nicht nur injizierte Fakes. Hintergrund: Der v0.13.0-Startup-Crash
+  (typed-nil Use-Case durch eager Capture) passierte bei vollständig grünen
+  Unit-, Race- und Lint-Gates, weil kein Test den Kompositionspfad bootet.
 - Ein fehlgeschlagener gRPC-Start beendet Heartbeat und EEBUS sauber.
 - Ein fehlgeschlagener EEBUS-Start veröffentlicht nie `SERVING`.
 - Nach `Stop` können keine Provider-Expiry-Callbacks mehr auf EEBUS-Features
@@ -484,11 +497,21 @@ ohne reale Hardware deterministisch in CI.
 5. Python- und Go-Coverage erhalten Ratchets: Die Baseline wird aus dem ersten
    stabilen Lauf festgelegt; spätere PRs dürfen sie nicht unbemerkt senken.
 6. Generated Code bleibt aus der Coverage-Berechnung ausgeschlossen.
+7. Die Proto-Governance-Gates selbst werden gehärtet: `check_proto_governance.py`
+   und `check_proto_cardinality.py` parsen Protos nicht mehr per Regex
+   (Zeilenheuristiken, 220-Zeichen-Fenster für `deprecated`, `MESSAGE_RE` bricht
+   an der ersten Spalte-0-Klammer), sondern über von `buf` erzeugte Descriptor-
+   Sets der bereits gepinnten Toolchain. Die Inventarliste zu schützender RPCs
+   (`REQUIRED_V1_RPCS`) wird aus dem Baseline-Descriptor des Vergleichs-Refs
+   abgeleitet statt von Hand gepflegt; ein nach diesem Commit hinzugefügter
+   Stream-RPC ist damit automatisch geschützt.
 
 **Akzeptanzkriterien**
 
 - Ein absichtlich entferntes Eventmapping lässt den Cross-Language-Test
   fehlschlagen.
+- Ein testweise in eine nested Message verschobenes Feld sowie ein entfernter
+  Stream-RPC werden von den gehärteten Governance-Gates erkannt.
 - Ein falscher Capability-/Availability-Status lässt den Test auf der
   veröffentlichten Python-State-Semantik fehlschlagen.
 - Der Test läuft in CI reproduzierbar ohne Sleeps als Synchronisationsvertrag;
@@ -519,15 +542,21 @@ private Reflection. State-Updates sind domänenweise typisiert.
 3. `RuntimeDeviceSession` veröffentlicht schmale, getypte Ports für Poll,
    Streams, Writes, State und Diagnostics.
 4. `EebusCoordinator` besitzt keine privaten Aliasfelder nur für Tests und keine
-   Eventhandler-Proxys.
-5. Diagnostics verwenden eine öffentliche, immutable `SessionDiagnostics`-
+   Eventhandler-Proxys. Nur für Tests existierende oder komplett tote öffentliche
+   API wird entfernt (aktuell z. B. `BridgeRuntimeRegistry.retain()` ohne
+   einen einzigen Produktionsaufrufer).
+5. Ein Poll-Ergebnis benachrichtigt Entities genau einmal: Der Store-Dispatch
+   im Poll-Pfad und das `DataUpdateCoordinator`-eigene Update nach
+   `_async_update_data` dürfen nicht beide `async_set_updated_data`-äquivalente
+   Listener-Läufe für denselben identischen Zustand auslösen.
+6. Diagnostics verwenden eine öffentliche, immutable `SessionDiagnostics`-
    Projektion; kein Zugriff auf `_device_streams` oder optionale Attribute per
    `getattr`.
-6. State-Updates werden als getypte Domain-Patches modelliert. Eine Abwesenheits-
+7. State-Updates werden als getypte Domain-Patches modelliert. Eine Abwesenheits-
    Sentinel unterscheidet "nicht beobachtet" von "explizit None".
-7. Der Reducer behält Feldrevisionen, Freshness und den Schutz vor verspäteten
+8. Der Reducer behält Feldrevisionen, Freshness und den Schutz vor verspäteten
    Poll-Ergebnissen bei.
-8. Reflection/`Any` an der Reducer-I/O-Grenze wird beseitigt oder auf einen
+9. Reflection/`Any` an der Reducer-I/O-Grenze wird beseitigt oder auf einen
    einzigen, vollständig getesteten Adapter begrenzt.
 
 **Akzeptanzkriterien**
@@ -702,8 +731,14 @@ Empfohlene Lieferwellen:
 ### Welle A: Vertrag absichern
 
 1. Minimalen Cross-Language-Testserver und Client-Harness aus SPEC4-07 bauen.
-2. Payload-Lücken und exhaustive Eventklassifikation aus SPEC4-01 schließen.
-3. ServerInfo/Feature-Negotiation aus SPEC4-02 additiv veröffentlichen.
+2. Kern-Slice aus SPEC4-04 vorziehen: keine Seiteneffekte mehr in
+   `NewApplication` (kein Heartbeat-/Listener-Start vor `Start`), gRPC-Health
+   `NOT_SERVING` bis zum vollständigen Start und der Composition-Root-Boot-Test.
+   Begründung: Der v0.13.0-Startup-Crash hat gezeigt, dass diese Lücke ein
+   akutes Produktionsrisiko ist, nicht nur ein Strukturthema. Die vollständige
+   Start-Transaktion mit Rollback bleibt in Welle C.
+3. Payload-Lücken und exhaustive Eventklassifikation aus SPEC4-01 schließen.
+4. ServerInfo/Feature-Negotiation aus SPEC4-02 additiv veröffentlichen.
 
 ### Welle B: Zustandsübertragung vereinfachen
 
