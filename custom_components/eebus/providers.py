@@ -7,6 +7,7 @@ import logging
 import math
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import grpc
@@ -48,6 +49,7 @@ ENERGY_UNIT_TO_WH: dict[str, float] = {
 }
 # State of charge is a plain percentage (0-100); no conversion needed.
 SOC_UNIT_TO_PCT: dict[str, float] = {PERCENTAGE: 1.0}
+PROVIDER_SAMPLE_TTL = timedelta(minutes=2)
 
 ChannelGetter = Callable[[], Awaitable[grpc.aio.Channel]]
 
@@ -279,6 +281,17 @@ class ProviderManager:
                 )
                 self._provider_push_failing[label] = True
 
+    def _sample_meta(self, *, invalid: bool = False) -> Any:
+        """Build provider validity metadata for one complete sample."""
+        from . import proto_stubs
+
+        observed_at = datetime.now(UTC)
+        return proto_stubs.ProviderSampleMeta(
+            observed_at=observed_at,
+            valid_until=observed_at + PROVIDER_SAMPLE_TTL,
+            invalid=invalid,
+        )
+
     def _start_provider_push(
         self,
         label: str,
@@ -309,6 +322,7 @@ class ProviderManager:
             self._grid_power_entity, POWER_UNIT_TO_W, "grid power"
         )
         if power_w is None:
+            await self._async_invalidate_grid_data()
             return
         feed_in_wh = self._read_sensor_value(
             self._grid_feed_in_energy_entity,
@@ -325,7 +339,7 @@ class ProviderManager:
 
         from . import proto_stubs
 
-        request = proto_stubs.GridData(power_w=power_w)
+        request = proto_stubs.GridData(power_w=power_w, sample=self._sample_meta())
         if feed_in_wh is not None:
             request.feed_in_wh = feed_in_wh
         if consumed_wh is not None:
@@ -346,6 +360,7 @@ class ProviderManager:
             self._pv_power_entity, POWER_UNIT_TO_W, "PV power", minimum=0
         )
         if power_w is None:
+            await self._async_invalidate_pv_data()
             return
         yield_wh = self._read_sensor_value(
             self._pv_yield_energy_entity,
@@ -362,14 +377,19 @@ class ProviderManager:
 
         from . import proto_stubs
 
-        request = proto_stubs.PVData(power_w=power_w)
+        request = proto_stubs.PVData(power_w=power_w, sample=self._sample_meta())
         if yield_wh is not None:
             request.yield_wh = yield_wh
-        if peak_power_w is not None:
-            request.peak_power_w = peak_power_w
         await self._async_publish_provider(
             "PV", "visualization_service_stub", "PublishPVData", request
         )
+        if peak_power_w is not None:
+            await self._async_publish_provider(
+                "PV peak",
+                "visualization_service_stub",
+                "PublishPVPeakPower",
+                proto_stubs.PVPeakPowerData(peak_power_w=peak_power_w),
+            )
 
     async def async_push_battery_data(self) -> None:
         """Push the mapped battery sensors to the bridge VABD (display) provider.
@@ -384,6 +404,7 @@ class ProviderManager:
             self._battery_power_entity, POWER_UNIT_TO_W, "battery power"
         )
         if power_w is None:
+            await self._async_invalidate_battery_data()
             return
         charged_wh = self._read_sensor_value(
             self._battery_charged_energy_entity,
@@ -407,7 +428,7 @@ class ProviderManager:
 
         from . import proto_stubs
 
-        request = proto_stubs.BatteryData(power_w=power_w)
+        request = proto_stubs.BatteryData(power_w=power_w, sample=self._sample_meta())
         if charged_wh is not None:
             request.charged_wh = charged_wh
         if discharged_wh is not None:
@@ -416,6 +437,36 @@ class ProviderManager:
             request.state_of_charge_pct = soc_pct
         await self._async_publish_provider(
             "battery", "visualization_service_stub", "PublishBatteryData", request
+        )
+
+    async def _async_invalidate_grid_data(self) -> None:
+        from . import proto_stubs
+
+        await self._async_publish_provider(
+            "grid",
+            "grid_service_stub",
+            "PublishGridData",
+            proto_stubs.GridData(sample=self._sample_meta(invalid=True)),
+        )
+
+    async def _async_invalidate_pv_data(self) -> None:
+        from . import proto_stubs
+
+        await self._async_publish_provider(
+            "PV",
+            "visualization_service_stub",
+            "PublishPVData",
+            proto_stubs.PVData(sample=self._sample_meta(invalid=True)),
+        )
+
+    async def _async_invalidate_battery_data(self) -> None:
+        from . import proto_stubs
+
+        await self._async_publish_provider(
+            "battery",
+            "visualization_service_stub",
+            "PublishBatteryData",
+            proto_stubs.BatteryData(sample=self._sample_meta(invalid=True)),
         )
 
     def async_start_grid_push(self) -> None:
@@ -461,8 +512,18 @@ class ProviderManager:
             self.async_push_battery_data,
         )
 
-    async def async_stop(self) -> None:
+    async def async_stop(self, *, invalidate: bool = True) -> None:
         """Stop all provider push workers."""
         for pusher in self._provider_pushers:
             await pusher.stop()
         self._provider_pushers.clear()
+        if not invalidate:
+            return
+        for enabled, invalidate_provider in (
+            (self.grid_push_enabled, self._async_invalidate_grid_data),
+            (self.pv_push_enabled, self._async_invalidate_pv_data),
+            (self.battery_push_enabled, self._async_invalidate_battery_data),
+        ):
+            if enabled:
+                with suppress(Exception):
+                    await invalidate_provider()

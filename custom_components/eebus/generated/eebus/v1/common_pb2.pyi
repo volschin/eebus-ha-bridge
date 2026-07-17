@@ -12,6 +12,16 @@ class Empty(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
+class ProviderSampleMeta(_message.Message):
+    __slots__ = ("observed_at", "valid_until", "invalid")
+    OBSERVED_AT_FIELD_NUMBER: _ClassVar[int]
+    VALID_UNTIL_FIELD_NUMBER: _ClassVar[int]
+    INVALID_FIELD_NUMBER: _ClassVar[int]
+    observed_at: _timestamp_pb2.Timestamp
+    valid_until: _timestamp_pb2.Timestamp
+    invalid: bool
+    def __init__(self, observed_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., valid_until: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., invalid: bool = ...) -> None: ...
+
 class DeviceRequest(_message.Message):
     __slots__ = ("ski",)
     SKI_FIELD_NUMBER: _ClassVar[int]

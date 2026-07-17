@@ -168,3 +168,46 @@ async def test_provider_push_failure_warning_is_rate_limited(monkeypatch, caplog
         for record in caplog.records
         if record.levelno == logging.INFO
     ] == ["test provider push recovered"]
+
+
+async def test_provider_manager_stop_invalidates_enabled_providers(monkeypatch):
+    """Stopping sends best-effort invalidations for all enabled provider feeds."""
+    requests = []
+
+    class _GridStub:
+        def __init__(self, _channel):
+            pass
+
+        async def PublishGridData(self, request, timeout=None):  # noqa: N802
+            requests.append(("grid", request))
+            return proto_stubs.Empty()
+
+    class _VisualizationStub:
+        def __init__(self, _channel):
+            pass
+
+        async def PublishPVData(self, request, timeout=None):  # noqa: N802
+            requests.append(("pv", request))
+            return proto_stubs.Empty()
+
+        async def PublishBatteryData(self, request, timeout=None):  # noqa: N802
+            requests.append(("battery", request))
+            return proto_stubs.Empty()
+
+    monkeypatch.setattr(proto_stubs, "GridServiceStub", _GridStub)
+    monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _VisualizationStub)
+    manager = ProviderManager(
+        _fake_hass(),
+        "test-ski",
+        AsyncMock(return_value=object()),
+        grid_power_entity="sensor.grid_power",
+        pv_power_entity="sensor.pv_power",
+        battery_power_entity="sensor.battery_power",
+    )
+
+    await manager.async_stop()
+
+    assert [label for label, _request in requests] == ["grid", "pv", "battery"]
+    for _label, request in requests:
+        assert request.HasField("sample") is True
+        assert request.sample.invalid is True

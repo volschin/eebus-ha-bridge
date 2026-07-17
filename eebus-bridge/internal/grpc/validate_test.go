@@ -75,16 +75,16 @@ func TestPublishRPCsRejectInvalidValues(t *testing.T) {
 		}
 	}
 
-	if _, err := grid.PublishGridData(ctx, &pb.GridData{PowerW: inf}); true {
+	if _, err := grid.PublishGridData(ctx, &pb.GridData{PowerW: ptrFloat64(inf)}); true {
 		assertInvalid(t, err)
 	}
-	if _, err := grid.PublishGridData(ctx, &pb.GridData{PowerW: 100, FeedInWh: &neg}); true {
+	if _, err := grid.PublishGridData(ctx, &pb.GridData{PowerW: ptrFloat64(100), FeedInWh: &neg}); true {
 		assertInvalid(t, err)
 	}
-	if _, err := viz.PublishPVData(ctx, &pb.PVData{PowerW: neg}); true {
+	if _, err := viz.PublishPVData(ctx, &pb.PVData{PowerW: ptrFloat64(neg)}); true {
 		assertInvalid(t, err)
 	}
-	if _, err := viz.PublishBatteryData(ctx, &pb.BatteryData{PowerW: 0, StateOfChargePct: &soc}); true {
+	if _, err := viz.PublishBatteryData(ctx, &pb.BatteryData{PowerW: ptrFloat64(0), StateOfChargePct: &soc}); true {
 		assertInvalid(t, err)
 	}
 }

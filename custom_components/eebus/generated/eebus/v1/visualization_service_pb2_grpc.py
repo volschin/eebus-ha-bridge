@@ -50,6 +50,11 @@ class VisualizationServiceStub(object):
                 request_serializer=eebus_dot_v1_dot_visualization__service__pb2.PVData.SerializeToString,
                 response_deserializer=eebus_dot_v1_dot_common__pb2.Empty.FromString,
                 _registered_method=True)
+        self.PublishPVPeakPower = channel.unary_unary(
+                '/eebus.v1.VisualizationService/PublishPVPeakPower',
+                request_serializer=eebus_dot_v1_dot_visualization__service__pb2.PVPeakPowerData.SerializeToString,
+                response_deserializer=eebus_dot_v1_dot_common__pb2.Empty.FromString,
+                _registered_method=True)
         self.PublishBatteryData = channel.unary_unary(
                 '/eebus.v1.VisualizationService/PublishBatteryData',
                 request_serializer=eebus_dot_v1_dot_visualization__service__pb2.BatteryData.SerializeToString,
@@ -76,6 +81,12 @@ class VisualizationServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def PublishPVPeakPower(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def PublishBatteryData(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -88,6 +99,11 @@ def add_VisualizationServiceServicer_to_server(servicer, server):
             'PublishPVData': grpc.unary_unary_rpc_method_handler(
                     servicer.PublishPVData,
                     request_deserializer=eebus_dot_v1_dot_visualization__service__pb2.PVData.FromString,
+                    response_serializer=eebus_dot_v1_dot_common__pb2.Empty.SerializeToString,
+            ),
+            'PublishPVPeakPower': grpc.unary_unary_rpc_method_handler(
+                    servicer.PublishPVPeakPower,
+                    request_deserializer=eebus_dot_v1_dot_visualization__service__pb2.PVPeakPowerData.FromString,
                     response_serializer=eebus_dot_v1_dot_common__pb2.Empty.SerializeToString,
             ),
             'PublishBatteryData': grpc.unary_unary_rpc_method_handler(
@@ -132,6 +148,33 @@ class VisualizationService(object):
             target,
             '/eebus.v1.VisualizationService/PublishPVData',
             eebus_dot_v1_dot_visualization__service__pb2.PVData.SerializeToString,
+            eebus_dot_v1_dot_common__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PublishPVPeakPower(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/eebus.v1.VisualizationService/PublishPVPeakPower',
+            eebus_dot_v1_dot_visualization__service__pb2.PVPeakPowerData.SerializeToString,
             eebus_dot_v1_dot_common__pb2.Empty.FromString,
             options,
             channel_credentials,

@@ -513,7 +513,7 @@ async def test_provider_reconfigure_failure_keeps_previous_manager() -> None:
 
     assert coordinator._provider_manager is previous
     previous.async_stop.assert_not_awaited()
-    replacement.async_stop.assert_awaited_once_with()
+    replacement.async_stop.assert_awaited_once_with(invalidate=False)
 
 
 def _coordinator_for_runtime_handover() -> EebusCoordinator:
@@ -634,7 +634,7 @@ async def test_runtime_handover_staging_failure_does_not_publish_state() -> None
     assert coordinator._provider_manager is previous_provider
     coordinator._publish_state.assert_not_called()
     previous_provider.async_stop.assert_not_awaited()
-    replacement_provider.async_stop.assert_awaited_once_with()
+    replacement_provider.async_stop.assert_awaited_once_with(invalidate=False)
     replacement_runtime.release_device_session.assert_awaited_once_with(
         replacement_session
     )

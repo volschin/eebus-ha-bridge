@@ -129,11 +129,70 @@ async def test_pv_push_publishes_power_and_optional_fields(monkeypatch):
     await coordinator.async_push_pv_data()
 
     request = captured["request"]
+    assert request.HasField("sample") is True
+    assert request.sample.invalid is False
+    assert request.sample.valid_until.seconds > request.sample.observed_at.seconds
     assert request.power_w == 3200.0
     assert request.HasField("yield_wh") is True
     assert request.yield_wh == 18000.0
     # Peak-power sensor is absent → field omitted, not zero.
     assert request.HasField("peak_power_w") is False
+
+
+async def test_pv_push_publishes_peak_power_separately(monkeypatch):
+    """PV peak power is static config and is sent outside atomic PVData."""
+    states = {
+        "sensor.pv_power": _state("3.2", "kW"),
+        "sensor.pv_peak": _state("5", "kW"),
+    }
+    coordinator = _make_coordinator(
+        states,
+        pv_power="sensor.pv_power",
+        pv_peak="sensor.pv_peak",
+    )
+    captured = {}
+
+    class _FakeStub:
+        def __init__(self, _channel):
+            pass
+
+        async def PublishPVData(self, request, timeout=None):  # noqa: N802
+            captured["pv"] = request
+            return proto_stubs.Empty()
+
+        async def PublishPVPeakPower(self, request, timeout=None):  # noqa: N802
+            captured["peak"] = request
+            return proto_stubs.Empty()
+
+    monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _FakeStub)
+
+    await coordinator.async_push_pv_data()
+
+    assert captured["pv"].HasField("peak_power_w") is False
+    assert captured["peak"].peak_power_w == 5000.0
+
+
+async def test_pv_push_invalidates_when_power_unavailable(monkeypatch):
+    """Unavailable required PV power sensor sends an explicit invalidation."""
+    states = {"sensor.pv_power": _state("unavailable", "W")}
+    coordinator = _make_coordinator(states, pv_power="sensor.pv_power")
+    captured = {}
+
+    class _FakeStub:
+        def __init__(self, _channel):
+            pass
+
+        async def PublishPVData(self, request, timeout=None):  # noqa: N802
+            captured["request"] = request
+            return proto_stubs.Empty()
+
+    monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _FakeStub)
+
+    await coordinator.async_push_pv_data()
+
+    request = captured["request"]
+    assert request.HasField("sample") is True
+    assert request.sample.invalid is True
 
 
 async def test_battery_push_skips_without_power_entity():
@@ -171,9 +230,35 @@ async def test_battery_push_publishes_power_and_optional_fields(monkeypatch):
     await coordinator.async_push_battery_data()
 
     request = captured["request"]
+    assert request.HasField("sample") is True
+    assert request.sample.invalid is False
+    assert request.sample.valid_until.seconds > request.sample.observed_at.seconds
     assert request.power_w == -1500.0
     assert request.HasField("state_of_charge_pct") is True
     assert request.state_of_charge_pct == 64.0
     # Charged-energy sensor is absent → field omitted, not zero.
     assert request.HasField("charged_wh") is False
     assert request.HasField("discharged_wh") is False
+
+
+async def test_battery_push_invalidates_when_power_unavailable(monkeypatch):
+    """Unavailable required battery power sensor sends an explicit invalidation."""
+    states = {"sensor.bat_power": _state("unknown", "W")}
+    coordinator = _make_coordinator(states, battery_power="sensor.bat_power")
+    captured = {}
+
+    class _FakeStub:
+        def __init__(self, _channel):
+            pass
+
+        async def PublishBatteryData(self, request, timeout=None):  # noqa: N802
+            captured["request"] = request
+            return proto_stubs.Empty()
+
+    monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _FakeStub)
+
+    await coordinator.async_push_battery_data()
+
+    request = captured["request"]
+    assert request.HasField("sample") is True
+    assert request.sample.invalid is True

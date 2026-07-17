@@ -16,6 +16,7 @@ from .generated.eebus.v1.common_pb2 import (  # noqa: F401
     LoadLimit,
     MeasurementEntry,
     PowerMeasurement,
+    ProviderSampleMeta,
 )
 from .generated.eebus.v1.device_service_pb2 import (  # noqa: F401
     CapabilityId,
@@ -73,6 +74,7 @@ from .generated.eebus.v1.monitoring_service_pb2_grpc import MonitoringServiceStu
 from .generated.eebus.v1.visualization_service_pb2 import (  # noqa: F401
     BatteryData,
     PVData,
+    PVPeakPowerData,
 )
 from .generated.eebus.v1.visualization_service_pb2_grpc import (  # noqa: F401
     VisualizationServiceStub,
@@ -167,7 +169,9 @@ __all__ = [
     "OHPCFEventType",
     "OHPCFServiceStub",
     "PVData",
+    "PVPeakPowerData",
     "PowerMeasurement",
+    "ProviderSampleMeta",
     "RegisterSKIRequest",
     "ResyncReason",
     "RoomHeatingEvent",

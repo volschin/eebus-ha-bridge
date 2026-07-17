@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x15\x65\x65\x62us/v1/common.proto\x12\x08\x65\x65\x62us.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x07\n\x05\x45mpty\"\x1c\n\rDeviceRequest\x12\x0b\n\x03ski\x18\x01 \x01(\t\"d\n\tLoadLimit\x12\x13\n\x0bvalue_watts\x18\x01 \x01(\x01\x12\x18\n\x10\x64uration_seconds\x18\x02 \x01(\x03\x12\x11\n\tis_active\x18\x03 \x01(\x08\x12\x15\n\ris_changeable\x18\x04 \x01(\x08\"P\n\x10PowerMeasurement\x12\r\n\x05watts\x18\x01 \x01(\x01\x12-\n\ttimestamp\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"l\n\x10MeasurementEntry\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01\x12\x0c\n\x04unit\x18\x03 \x01(\t\x12-\n\ttimestamp\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.TimestampB=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x15\x65\x65\x62us/v1/common.proto\x12\x08\x65\x65\x62us.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x07\n\x05\x45mpty\"\x87\x01\n\x12ProviderSampleMeta\x12/\n\x0bobserved_at\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12/\n\x0bvalid_until\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x0f\n\x07invalid\x18\x03 \x01(\x08\"\x1c\n\rDeviceRequest\x12\x0b\n\x03ski\x18\x01 \x01(\t\"d\n\tLoadLimit\x12\x13\n\x0bvalue_watts\x18\x01 \x01(\x01\x12\x18\n\x10\x64uration_seconds\x18\x02 \x01(\x03\x12\x11\n\tis_active\x18\x03 \x01(\x08\x12\x15\n\ris_changeable\x18\x04 \x01(\x08\"P\n\x10PowerMeasurement\x12\r\n\x05watts\x18\x01 \x01(\x01\x12-\n\ttimestamp\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"l\n\x10MeasurementEntry\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01\x12\x0c\n\x04unit\x18\x03 \x01(\t\x12-\n\ttimestamp\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.TimestampB=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -35,12 +35,14 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._serialized_options = b'Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1'
   _globals['_EMPTY']._serialized_start=68
   _globals['_EMPTY']._serialized_end=75
-  _globals['_DEVICEREQUEST']._serialized_start=77
-  _globals['_DEVICEREQUEST']._serialized_end=105
-  _globals['_LOADLIMIT']._serialized_start=107
-  _globals['_LOADLIMIT']._serialized_end=207
-  _globals['_POWERMEASUREMENT']._serialized_start=209
-  _globals['_POWERMEASUREMENT']._serialized_end=289
-  _globals['_MEASUREMENTENTRY']._serialized_start=291
-  _globals['_MEASUREMENTENTRY']._serialized_end=399
+  _globals['_PROVIDERSAMPLEMETA']._serialized_start=78
+  _globals['_PROVIDERSAMPLEMETA']._serialized_end=213
+  _globals['_DEVICEREQUEST']._serialized_start=215
+  _globals['_DEVICEREQUEST']._serialized_end=243
+  _globals['_LOADLIMIT']._serialized_start=245
+  _globals['_LOADLIMIT']._serialized_end=345
+  _globals['_POWERMEASUREMENT']._serialized_start=347
+  _globals['_POWERMEASUREMENT']._serialized_end=427
+  _globals['_MEASUREMENTENTRY']._serialized_start=429
+  _globals['_MEASUREMENTENTRY']._serialized_end=537
 # @@protoc_insertion_point(module_scope)

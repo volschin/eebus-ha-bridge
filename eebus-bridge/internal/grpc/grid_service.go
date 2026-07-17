@@ -17,21 +17,45 @@ import (
 // behaviour).
 type GridService struct {
 	pb.UnimplementedGridServiceServer
-	mgcp *usecases.MGCPProvider
+	mgcp gridSnapshotPublisher
 }
 
 func NewGridService(mgcp *usecases.MGCPProvider) *GridService {
-	return &GridService{mgcp: mgcp}
+	service := &GridService{}
+	if mgcp != nil {
+		service.mgcp = mgcp
+	}
+	return service
+}
+
+type gridSnapshotPublisher interface {
+	PublishGridSnapshot(usecases.GridSnapshot) error
 }
 
 func (s *GridService) PublishGridData(_ context.Context, req *pb.GridData) (*pb.Empty, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
+	validity, err := providerValidity(req.Sample)
+	if err != nil {
+		return nil, err
+	}
+	if validity.Invalid {
+		if s.mgcp == nil {
+			return nil, status.Error(codes.Unavailable, "MGCP grid provider not enabled")
+		}
+		if err := s.mgcp.PublishGridSnapshot(usecases.GridSnapshot{Validity: validity}); err != nil {
+			return nil, mapUsecaseError("invalidating grid data", err, standardUsecaseErrorClasses)
+		}
+		return &pb.Empty{}, nil
+	}
 	// PowerW is the signed grid surplus signal (negative = export), so any finite
 	// value is valid; the energy totals are cumulative counters and cannot be
 	// negative. Reject bad input before touching the provider.
-	if err := finite("grid power", req.PowerW); err != nil {
+	if req.PowerW == nil {
+		return nil, status.Error(codes.InvalidArgument, "grid power is required")
+	}
+	if err := finite("grid power", *req.PowerW); err != nil {
 		return nil, err
 	}
 	if req.FeedInWh != nil {
@@ -47,18 +71,13 @@ func (s *GridService) PublishGridData(_ context.Context, req *pb.GridData) (*pb.
 	if s.mgcp == nil {
 		return nil, status.Error(codes.Unavailable, "MGCP grid provider not enabled")
 	}
-	if err := s.mgcp.PublishPower(req.PowerW); err != nil {
-		return nil, mapUsecaseError("publishing grid power", err, standardUsecaseErrorClasses)
-	}
-	if req.FeedInWh != nil {
-		if err := s.mgcp.PublishEnergyFeedIn(*req.FeedInWh); err != nil {
-			return nil, mapUsecaseError("publishing grid feed-in energy", err, standardUsecaseErrorClasses)
-		}
-	}
-	if req.ConsumedWh != nil {
-		if err := s.mgcp.PublishEnergyConsumed(*req.ConsumedWh); err != nil {
-			return nil, mapUsecaseError("publishing grid consumed energy", err, standardUsecaseErrorClasses)
-		}
+	if err := s.mgcp.PublishGridSnapshot(usecases.GridSnapshot{
+		PowerW:     *req.PowerW,
+		FeedInWh:   req.FeedInWh,
+		ConsumedWh: req.ConsumedWh,
+		Validity:   validity,
+	}); err != nil {
+		return nil, mapUsecaseError("publishing grid data", err, standardUsecaseErrorClasses)
 	}
 	return &pb.Empty{}, nil
 }

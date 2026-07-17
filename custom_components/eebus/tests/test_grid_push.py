@@ -112,8 +112,34 @@ async def test_push_publishes_power_and_optional_energy(monkeypatch):
     await coordinator.async_push_grid_data()
 
     request = captured["request"]
+    assert request.HasField("sample") is True
+    assert request.sample.invalid is False
+    assert request.sample.valid_until.seconds > request.sample.observed_at.seconds
     assert request.power_w == -2000.0
     assert request.HasField("feed_in_wh") is True
     assert request.feed_in_wh == 5000.0
     # Consumed sensor is absent → field omitted, not zero.
     assert request.HasField("consumed_wh") is False
+
+
+async def test_push_invalidates_when_power_unavailable(monkeypatch):
+    """Unavailable required power sensor sends an explicit invalidation."""
+    states = {"sensor.power": _state("unavailable", "W")}
+    coordinator = _make_grid_coordinator(states, power="sensor.power")
+    captured = {}
+
+    class _FakeStub:
+        def __init__(self, _channel):
+            pass
+
+        async def PublishGridData(self, request, timeout=None):  # noqa: N802
+            captured["request"] = request
+            return proto_stubs.Empty()
+
+    monkeypatch.setattr(proto_stubs, "GridServiceStub", _FakeStub)
+
+    await coordinator.async_push_grid_data()
+
+    request = captured["request"]
+    assert request.HasField("sample") is True
+    assert request.sample.invalid is True

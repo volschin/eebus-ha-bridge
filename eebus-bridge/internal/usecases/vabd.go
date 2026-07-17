@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
+	"time"
 
 	eebusapi "github.com/enbility/eebus-go/api"
 	"github.com/enbility/eebus-go/features/server"
@@ -49,12 +51,17 @@ type VABDProvider struct {
 	*usecase.UseCaseBase
 	bus           *eebus.EventBus
 	batteryEntity spineapi.EntityLocalInterface
-	meas          *server.Measurement
+	meas          measurementServer
 	powerID       *model.MeasurementIdType // scenario 1: AC total power (W); negative = charge
 	chargedID     *model.MeasurementIdType // scenario 2: total charged energy (Wh)
 	dischargedID  *model.MeasurementIdType // scenario 3: total discharged energy (Wh)
 	socID         *model.MeasurementIdType // scenario 4: state of charge (%)
 	debug         bool
+
+	snapshotMu      sync.Mutex
+	snapshot        *BatterySnapshot
+	snapshotVersion uint64
+	expiryTimer     *time.Timer
 }
 
 // NewVABDProvider builds the provider on the given local battery-system entity
@@ -196,6 +203,82 @@ func (p *VABDProvider) publishMeasurement(id *model.MeasurementIdType, value flo
 		},
 		Id: *id,
 	}})
+}
+
+func (p *VABDProvider) publishBatteryMeasurements(snapshot BatterySnapshot) error {
+	if p.meas == nil || p.powerID == nil || p.chargedID == nil || p.dischargedID == nil || p.socID == nil {
+		return errVABDNotInitialized
+	}
+	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{
+		measurementDataForID(*p.powerID, &snapshot.PowerW),
+		measurementDataForID(*p.chargedID, snapshot.ChargedWh),
+		measurementDataForID(*p.dischargedID, snapshot.DischargedWh),
+		measurementDataForID(*p.socID, snapshot.StateOfChargePct),
+	})
+}
+
+func (p *VABDProvider) invalidateBatteryMeasurements() error {
+	if p.meas == nil || p.powerID == nil || p.chargedID == nil || p.dischargedID == nil || p.socID == nil {
+		return errVABDNotInitialized
+	}
+	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{
+		invalidMeasurementDataForID(*p.powerID),
+		invalidMeasurementDataForID(*p.chargedID),
+		invalidMeasurementDataForID(*p.dischargedID),
+		invalidMeasurementDataForID(*p.socID),
+	})
+}
+
+func (p *VABDProvider) PublishBatterySnapshot(snapshot BatterySnapshot) error {
+	p.snapshotMu.Lock()
+	defer p.snapshotMu.Unlock()
+
+	if snapshot.Validity.Invalid {
+		if err := p.invalidateBatteryMeasurements(); err != nil {
+			return err
+		}
+		p.snapshotVersion++
+		stopProviderExpiryTimer(&p.expiryTimer)
+		p.snapshot = nil
+		return nil
+	}
+	if err := p.publishBatteryMeasurements(snapshot); err != nil {
+		return err
+	}
+	next := snapshot.clone()
+	p.snapshotVersion++
+	p.snapshot = &next
+	version := p.snapshotVersion
+	scheduleProviderExpiryTimer(&p.expiryTimer, snapshot.Validity.ValidUntil, func() {
+		p.expireBatterySnapshot(version, time.Now())
+	})
+	return nil
+}
+
+func (p *VABDProvider) CurrentBatterySnapshot(now time.Time) (BatterySnapshot, bool) {
+	p.snapshotMu.Lock()
+	defer p.snapshotMu.Unlock()
+
+	if p.snapshot == nil || !p.snapshot.Validity.Current(now) {
+		return BatterySnapshot{}, false
+	}
+	return p.snapshot.clone(), true
+}
+
+func (p *VABDProvider) expireBatterySnapshot(version uint64, now time.Time) {
+	p.snapshotMu.Lock()
+	defer p.snapshotMu.Unlock()
+
+	if p.snapshotVersion != version || p.snapshot == nil || p.snapshot.Validity.Current(now) {
+		return
+	}
+	if err := p.invalidateBatteryMeasurements(); err != nil {
+		log.Printf("[VABD] expiring battery sample failed: %v", err)
+		return
+	}
+	p.snapshotVersion++
+	p.snapshot = nil
+	stopProviderExpiryTimer(&p.expiryTimer)
 }
 
 // PublishPower pushes the momentary total battery power (W; scenario 1).

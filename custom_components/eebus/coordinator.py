@@ -171,12 +171,12 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
             replacement.async_start_pv_push()
             replacement.async_start_battery_push()
         except BaseException:
-            await replacement.async_stop()
+            await replacement.async_stop(invalidate=False)
             raise
         previous = self._provider_manager
         self._provider_manager = replacement
         try:
-            await previous.async_stop()
+            await previous.async_stop(invalidate=False)
         except Exception:  # noqa: BLE001
             _LOGGER.exception("Failed to stop previous EEBUS provider manager")
 
@@ -232,7 +232,7 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
         except BaseException:
             try:
                 if replacement_provider is not None:
-                    await replacement_provider.async_stop()
+                    await replacement_provider.async_stop(invalidate=False)
             finally:
                 await runtime.release_device_session(replacement_session)
             raise
@@ -263,7 +263,7 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
         # the caller release the now-active replacement runtime.
         cancellation: asyncio.CancelledError | None = None
         try:
-            await previous_provider.async_stop()
+            await previous_provider.async_stop(invalidate=False)
         except asyncio.CancelledError as err:
             cancellation = err
         except Exception:  # noqa: BLE001

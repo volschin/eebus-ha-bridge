@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
+	"time"
 
 	eebusapi "github.com/enbility/eebus-go/api"
 	"github.com/enbility/eebus-go/features/server"
@@ -48,11 +50,16 @@ type MGCPProvider struct {
 	*usecase.UseCaseBase
 	bus        *eebus.EventBus
 	gridEntity spineapi.EntityLocalInterface
-	meas       *server.Measurement
+	meas       measurementServer
 	powerID    *model.MeasurementIdType // scenario 2: AC total power (W)
 	feedInID   *model.MeasurementIdType // scenario 3: total grid feed-in energy (Wh)
 	consumedID *model.MeasurementIdType // scenario 4: total grid consumed energy (Wh)
 	debug      bool
+
+	snapshotMu      sync.Mutex
+	snapshot        *GridSnapshot
+	snapshotVersion uint64
+	expiryTimer     *time.Timer
 }
 
 // NewMGCPProvider builds the provider on the given local grid-connection-point
@@ -194,6 +201,80 @@ func (p *MGCPProvider) publishMeasurement(id *model.MeasurementIdType, value flo
 		},
 		Id: *id,
 	}})
+}
+
+func (p *MGCPProvider) publishGridMeasurements(snapshot GridSnapshot) error {
+	if p.meas == nil || p.powerID == nil || p.feedInID == nil || p.consumedID == nil {
+		return errMGCPNotInitialized
+	}
+	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{
+		measurementDataForID(*p.powerID, &snapshot.PowerW),
+		measurementDataForID(*p.feedInID, snapshot.FeedInWh),
+		measurementDataForID(*p.consumedID, snapshot.ConsumedWh),
+	})
+}
+
+func (p *MGCPProvider) invalidateGridMeasurements() error {
+	if p.meas == nil || p.powerID == nil || p.feedInID == nil || p.consumedID == nil {
+		return errMGCPNotInitialized
+	}
+	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{
+		invalidMeasurementDataForID(*p.powerID),
+		invalidMeasurementDataForID(*p.feedInID),
+		invalidMeasurementDataForID(*p.consumedID),
+	})
+}
+
+func (p *MGCPProvider) PublishGridSnapshot(snapshot GridSnapshot) error {
+	p.snapshotMu.Lock()
+	defer p.snapshotMu.Unlock()
+
+	if snapshot.Validity.Invalid {
+		if err := p.invalidateGridMeasurements(); err != nil {
+			return err
+		}
+		p.snapshotVersion++
+		stopProviderExpiryTimer(&p.expiryTimer)
+		p.snapshot = nil
+		return nil
+	}
+	if err := p.publishGridMeasurements(snapshot); err != nil {
+		return err
+	}
+	next := snapshot.clone()
+	p.snapshotVersion++
+	p.snapshot = &next
+	version := p.snapshotVersion
+	scheduleProviderExpiryTimer(&p.expiryTimer, snapshot.Validity.ValidUntil, func() {
+		p.expireGridSnapshot(version, time.Now())
+	})
+	return nil
+}
+
+func (p *MGCPProvider) CurrentGridSnapshot(now time.Time) (GridSnapshot, bool) {
+	p.snapshotMu.Lock()
+	defer p.snapshotMu.Unlock()
+
+	if p.snapshot == nil || !p.snapshot.Validity.Current(now) {
+		return GridSnapshot{}, false
+	}
+	return p.snapshot.clone(), true
+}
+
+func (p *MGCPProvider) expireGridSnapshot(version uint64, now time.Time) {
+	p.snapshotMu.Lock()
+	defer p.snapshotMu.Unlock()
+
+	if p.snapshotVersion != version || p.snapshot == nil || p.snapshot.Validity.Current(now) {
+		return
+	}
+	if err := p.invalidateGridMeasurements(); err != nil {
+		log.Printf("[MGCP] expiring grid sample failed: %v", err)
+		return
+	}
+	p.snapshotVersion++
+	p.snapshot = nil
+	stopProviderExpiryTimer(&p.expiryTimer)
 }
 
 // PublishPower pushes the momentary total grid power (W; negative = export/surplus,

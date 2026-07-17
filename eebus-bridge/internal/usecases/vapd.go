@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
+	"time"
 
 	eebusapi "github.com/enbility/eebus-go/api"
 	"github.com/enbility/eebus-go/features/server"
@@ -47,12 +49,17 @@ type VAPDProvider struct {
 	*usecase.UseCaseBase
 	bus      *eebus.EventBus
 	pvEntity spineapi.EntityLocalInterface
-	meas     *server.Measurement
-	devConf  *server.DeviceConfiguration
+	meas     measurementServer
+	devConf  deviceConfigurationServer
 	powerID  *model.MeasurementIdType            // scenario 2: AC total power (W)
 	yieldID  *model.MeasurementIdType            // scenario 3: total AC yield energy (Wh)
 	peakID   *model.DeviceConfigurationKeyIdType // scenario 1: nominal peak power (W)
 	debug    bool
+
+	snapshotMu      sync.Mutex
+	snapshot        *PVSnapshot
+	snapshotVersion uint64
+	expiryTimer     *time.Timer
 }
 
 // NewVAPDProvider builds the provider on the given local PV-system entity
@@ -197,6 +204,78 @@ func (p *VAPDProvider) publishMeasurement(id *model.MeasurementIdType, value flo
 		},
 		Id: *id,
 	}})
+}
+
+func (p *VAPDProvider) publishPVMeasurements(snapshot PVSnapshot) error {
+	if p.meas == nil || p.powerID == nil || p.yieldID == nil {
+		return errVAPDNotInitialized
+	}
+	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{
+		measurementDataForID(*p.powerID, &snapshot.PowerW),
+		measurementDataForID(*p.yieldID, snapshot.YieldWh),
+	})
+}
+
+func (p *VAPDProvider) invalidatePVMeasurements() error {
+	if p.meas == nil || p.powerID == nil || p.yieldID == nil {
+		return errVAPDNotInitialized
+	}
+	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{
+		invalidMeasurementDataForID(*p.powerID),
+		invalidMeasurementDataForID(*p.yieldID),
+	})
+}
+
+func (p *VAPDProvider) PublishPVSnapshot(snapshot PVSnapshot) error {
+	p.snapshotMu.Lock()
+	defer p.snapshotMu.Unlock()
+
+	if snapshot.Validity.Invalid {
+		if err := p.invalidatePVMeasurements(); err != nil {
+			return err
+		}
+		p.snapshotVersion++
+		stopProviderExpiryTimer(&p.expiryTimer)
+		p.snapshot = nil
+		return nil
+	}
+	if err := p.publishPVMeasurements(snapshot); err != nil {
+		return err
+	}
+	next := snapshot.clone()
+	p.snapshotVersion++
+	p.snapshot = &next
+	version := p.snapshotVersion
+	scheduleProviderExpiryTimer(&p.expiryTimer, snapshot.Validity.ValidUntil, func() {
+		p.expirePVSnapshot(version, time.Now())
+	})
+	return nil
+}
+
+func (p *VAPDProvider) CurrentPVSnapshot(now time.Time) (PVSnapshot, bool) {
+	p.snapshotMu.Lock()
+	defer p.snapshotMu.Unlock()
+
+	if p.snapshot == nil || !p.snapshot.Validity.Current(now) {
+		return PVSnapshot{}, false
+	}
+	return p.snapshot.clone(), true
+}
+
+func (p *VAPDProvider) expirePVSnapshot(version uint64, now time.Time) {
+	p.snapshotMu.Lock()
+	defer p.snapshotMu.Unlock()
+
+	if p.snapshotVersion != version || p.snapshot == nil || p.snapshot.Validity.Current(now) {
+		return
+	}
+	if err := p.invalidatePVMeasurements(); err != nil {
+		log.Printf("[VAPD] expiring PV sample failed: %v", err)
+		return
+	}
+	p.snapshotVersion++
+	p.snapshot = nil
+	stopProviderExpiryTimer(&p.expiryTimer)
 }
 
 // PublishPower pushes the momentary total PV power (W; scenario 2).

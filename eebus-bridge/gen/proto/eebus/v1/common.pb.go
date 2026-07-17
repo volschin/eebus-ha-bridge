@@ -58,6 +58,68 @@ func (*Empty) Descriptor() ([]byte, []int) {
 	return file_eebus_v1_common_proto_rawDescGZIP(), []int{0}
 }
 
+type ProviderSampleMeta struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ObservedAt *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	ValidUntil *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=valid_until,json=validUntil,proto3" json:"valid_until,omitempty"`
+	// True means the required sensor is unavailable and any last-good sample for
+	// this provider must be explicitly invalidated. Value fields are ignored.
+	Invalid       bool `protobuf:"varint,3,opt,name=invalid,proto3" json:"invalid,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProviderSampleMeta) Reset() {
+	*x = ProviderSampleMeta{}
+	mi := &file_eebus_v1_common_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderSampleMeta) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderSampleMeta) ProtoMessage() {}
+
+func (x *ProviderSampleMeta) ProtoReflect() protoreflect.Message {
+	mi := &file_eebus_v1_common_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderSampleMeta.ProtoReflect.Descriptor instead.
+func (*ProviderSampleMeta) Descriptor() ([]byte, []int) {
+	return file_eebus_v1_common_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ProviderSampleMeta) GetObservedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ObservedAt
+	}
+	return nil
+}
+
+func (x *ProviderSampleMeta) GetValidUntil() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ValidUntil
+	}
+	return nil
+}
+
+func (x *ProviderSampleMeta) GetInvalid() bool {
+	if x != nil {
+		return x.Invalid
+	}
+	return false
+}
+
 type DeviceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ski           string                 `protobuf:"bytes,1,opt,name=ski,proto3" json:"ski,omitempty"`
@@ -67,7 +129,7 @@ type DeviceRequest struct {
 
 func (x *DeviceRequest) Reset() {
 	*x = DeviceRequest{}
-	mi := &file_eebus_v1_common_proto_msgTypes[1]
+	mi := &file_eebus_v1_common_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -79,7 +141,7 @@ func (x *DeviceRequest) String() string {
 func (*DeviceRequest) ProtoMessage() {}
 
 func (x *DeviceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_common_proto_msgTypes[1]
+	mi := &file_eebus_v1_common_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -92,7 +154,7 @@ func (x *DeviceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceRequest.ProtoReflect.Descriptor instead.
 func (*DeviceRequest) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_common_proto_rawDescGZIP(), []int{1}
+	return file_eebus_v1_common_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *DeviceRequest) GetSki() string {
@@ -114,7 +176,7 @@ type LoadLimit struct {
 
 func (x *LoadLimit) Reset() {
 	*x = LoadLimit{}
-	mi := &file_eebus_v1_common_proto_msgTypes[2]
+	mi := &file_eebus_v1_common_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -126,7 +188,7 @@ func (x *LoadLimit) String() string {
 func (*LoadLimit) ProtoMessage() {}
 
 func (x *LoadLimit) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_common_proto_msgTypes[2]
+	mi := &file_eebus_v1_common_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -139,7 +201,7 @@ func (x *LoadLimit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoadLimit.ProtoReflect.Descriptor instead.
 func (*LoadLimit) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_common_proto_rawDescGZIP(), []int{2}
+	return file_eebus_v1_common_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *LoadLimit) GetValueWatts() float64 {
@@ -180,7 +242,7 @@ type PowerMeasurement struct {
 
 func (x *PowerMeasurement) Reset() {
 	*x = PowerMeasurement{}
-	mi := &file_eebus_v1_common_proto_msgTypes[3]
+	mi := &file_eebus_v1_common_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -192,7 +254,7 @@ func (x *PowerMeasurement) String() string {
 func (*PowerMeasurement) ProtoMessage() {}
 
 func (x *PowerMeasurement) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_common_proto_msgTypes[3]
+	mi := &file_eebus_v1_common_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -205,7 +267,7 @@ func (x *PowerMeasurement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PowerMeasurement.ProtoReflect.Descriptor instead.
 func (*PowerMeasurement) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_common_proto_rawDescGZIP(), []int{3}
+	return file_eebus_v1_common_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PowerMeasurement) GetWatts() float64 {
@@ -234,7 +296,7 @@ type MeasurementEntry struct {
 
 func (x *MeasurementEntry) Reset() {
 	*x = MeasurementEntry{}
-	mi := &file_eebus_v1_common_proto_msgTypes[4]
+	mi := &file_eebus_v1_common_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -246,7 +308,7 @@ func (x *MeasurementEntry) String() string {
 func (*MeasurementEntry) ProtoMessage() {}
 
 func (x *MeasurementEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_common_proto_msgTypes[4]
+	mi := &file_eebus_v1_common_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -259,7 +321,7 @@ func (x *MeasurementEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MeasurementEntry.ProtoReflect.Descriptor instead.
 func (*MeasurementEntry) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_common_proto_rawDescGZIP(), []int{4}
+	return file_eebus_v1_common_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *MeasurementEntry) GetType() string {
@@ -295,7 +357,13 @@ var File_eebus_v1_common_proto protoreflect.FileDescriptor
 const file_eebus_v1_common_proto_rawDesc = "" +
 	"\n" +
 	"\x15eebus/v1/common.proto\x12\beebus.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\a\n" +
-	"\x05Empty\"!\n" +
+	"\x05Empty\"\xa8\x01\n" +
+	"\x12ProviderSampleMeta\x12;\n" +
+	"\vobserved_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"observedAt\x12;\n" +
+	"\vvalid_until\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"validUntil\x12\x18\n" +
+	"\ainvalid\x18\x03 \x01(\bR\ainvalid\"!\n" +
 	"\rDeviceRequest\x12\x10\n" +
 	"\x03ski\x18\x01 \x01(\tR\x03ski\"\x99\x01\n" +
 	"\tLoadLimit\x12\x1f\n" +
@@ -325,23 +393,26 @@ func file_eebus_v1_common_proto_rawDescGZIP() []byte {
 	return file_eebus_v1_common_proto_rawDescData
 }
 
-var file_eebus_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_eebus_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_eebus_v1_common_proto_goTypes = []any{
 	(*Empty)(nil),                 // 0: eebus.v1.Empty
-	(*DeviceRequest)(nil),         // 1: eebus.v1.DeviceRequest
-	(*LoadLimit)(nil),             // 2: eebus.v1.LoadLimit
-	(*PowerMeasurement)(nil),      // 3: eebus.v1.PowerMeasurement
-	(*MeasurementEntry)(nil),      // 4: eebus.v1.MeasurementEntry
-	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
+	(*ProviderSampleMeta)(nil),    // 1: eebus.v1.ProviderSampleMeta
+	(*DeviceRequest)(nil),         // 2: eebus.v1.DeviceRequest
+	(*LoadLimit)(nil),             // 3: eebus.v1.LoadLimit
+	(*PowerMeasurement)(nil),      // 4: eebus.v1.PowerMeasurement
+	(*MeasurementEntry)(nil),      // 5: eebus.v1.MeasurementEntry
+	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
 }
 var file_eebus_v1_common_proto_depIdxs = []int32{
-	5, // 0: eebus.v1.PowerMeasurement.timestamp:type_name -> google.protobuf.Timestamp
-	5, // 1: eebus.v1.MeasurementEntry.timestamp:type_name -> google.protobuf.Timestamp
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	6, // 0: eebus.v1.ProviderSampleMeta.observed_at:type_name -> google.protobuf.Timestamp
+	6, // 1: eebus.v1.ProviderSampleMeta.valid_until:type_name -> google.protobuf.Timestamp
+	6, // 2: eebus.v1.PowerMeasurement.timestamp:type_name -> google.protobuf.Timestamp
+	6, // 3: eebus.v1.MeasurementEntry.timestamp:type_name -> google.protobuf.Timestamp
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_eebus_v1_common_proto_init() }
@@ -355,7 +426,7 @@ func file_eebus_v1_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_eebus_v1_common_proto_rawDesc), len(file_eebus_v1_common_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
