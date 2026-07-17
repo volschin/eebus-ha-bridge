@@ -17,13 +17,13 @@ class EebusEntity(CoordinatorEntity[EebusCoordinator]):
     def __init__(self, coordinator: EebusCoordinator) -> None:
         """Initialize the entity."""
         super().__init__(coordinator)
-        info = (coordinator.data or {}).get("device_info") or {}
+        info = coordinator.data.connection.device_info if coordinator.data else None
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.ski)},
             name=f"EEBUS {coordinator.ski[:8]}",
-            manufacturer=info.get("manufacturer"),
-            model=info.get("model"),
-            serial_number=info.get("serial"),
+            manufacturer=info.manufacturer if info else None,
+            model=info.model if info else None,
+            serial_number=info.serial if info else None,
         )
 
     @property
@@ -31,4 +31,4 @@ class EebusEntity(CoordinatorEntity[EebusCoordinator]):
         """Unavailable whenever the coordinator poll failed or the remote device is disconnected."""
         if not super().available:
             return False
-        return bool((self.coordinator.data or {}).get("connected"))
+        return bool(self.coordinator.data and self.coordinator.data.connection.connected)

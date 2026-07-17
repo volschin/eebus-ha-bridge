@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"time"
 
 	eebusapi "github.com/enbility/eebus-go/api"
 	usecase "github.com/enbility/eebus-go/usecases/usecase"
@@ -124,7 +123,10 @@ func (r *RoomHeatingSystemFunction) handleUseCaseEvent(
 	_ eebusapi.EventType,
 ) {
 	if r.registry != nil {
-		r.registry.UpsertObservation(ski, device, entity, "room_heating_system_function")
+		recordCapabilitySupport(
+			r.registry, ski, device, entity, r.CompatibleEntity(observationSKI(ski, device)),
+			"room_heating_system_function", eebus.CapabilityRoomHeating,
+		)
 	}
 	if r.bus != nil {
 		r.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeRoomHeatingSystemFunctionSupportUpdated})
@@ -163,18 +165,7 @@ func (r *RoomHeatingSystemFunction) Refresh(entity spineapi.EntityRemoteInterfac
 }
 
 func (r *RoomHeatingSystemFunction) request(entity spineapi.EntityRemoteInterface, function model.FunctionType) {
-	remote := hvacServer(entity)
-	local := r.localHvacFeature()
-	if remote == nil || local == nil {
-		return
-	}
-	operation := remote.Operations()[function]
-	if operation == nil || !operation.Read() {
-		return
-	}
-	if _, err := local.RequestRemoteData(function, nil, nil, remote); err != nil && r.debug {
-		log.Printf("[ROOMHEATINGSYSFN] requesting %s failed: %s", function, err.String())
-	}
+	requestRemoteFeatureData(entity, hvacServer, r.localHvacFeature, function, r.debug, "ROOMHEATINGSYSFN")
 }
 
 // CompatibleEntity returns the negotiated HVACRoom for a device SKI.
@@ -261,36 +252,7 @@ func (r *RoomHeatingSystemFunction) write(
 	refresh model.FunctionType,
 	label string,
 ) error {
-	counter, err := entity.Device().Sender().Write(local.Address(), remote.Address(), cmd)
-	if err != nil {
-		return fmt.Errorf("sending %s: %w", label, err)
-	}
-	if counter == nil {
-		return fmt.Errorf("sending %s returned no message counter", label)
-	}
-	result := make(chan model.ResultDataType, 1)
-	if err := local.AddResponseCallback(*counter, func(message spineapi.ResponseMessage) {
-		if data, ok := message.Data.(*model.ResultDataType); ok && data != nil {
-			result <- *data
-		}
-	}); err != nil {
-		return fmt.Errorf("waiting for %s result: %w", label, err)
-	}
-
-	timer := time.NewTimer(dhwWriteTimeout)
-	defer timer.Stop()
-	select {
-	case response := <-result:
-		if response.ErrorNumber != nil && *response.ErrorNumber != 0 {
-			return fmt.Errorf("%w: %s error=%d", ErrRoomHeatingSysFnRejected, label, *response.ErrorNumber)
-		}
-		r.request(entity, refresh)
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return fmt.Errorf("timed out waiting for %s result", label)
-	}
+	return writeHvacCommand(ctx, entity, remote, local, cmd, refresh, label, ErrRoomHeatingSysFnRejected, r.request)
 }
 
 func (r *RoomHeatingSystemFunction) localHvacFeature() spineapi.FeatureLocalInterface {

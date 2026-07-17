@@ -2,9 +2,17 @@ package grpc
 
 import (
 	"math"
+	"time"
 
+	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
+	"github.com/volschin/eebus-bridge/internal/usecases"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+)
+
+const (
+	legacyProviderSampleTTL      = 2 * time.Minute
+	providerObservedFutureLeeway = 30 * time.Second
 )
 
 // validSKI reports whether ski is a well-formed EEBUS SKI: the SHA-1
@@ -62,4 +70,43 @@ func percent(name string, v float64) error {
 		return status.Errorf(codes.InvalidArgument, "%s must be between 0 and 100, got %g", name, v)
 	}
 	return nil
+}
+
+func providerValidity(meta *pb.ProviderSampleMeta) (usecases.ProviderValidity, error) {
+	if meta == nil {
+		observedAt := time.Now()
+		return usecases.ProviderValidity{
+			ObservedAt: observedAt,
+			ValidUntil: observedAt.Add(legacyProviderSampleTTL),
+		}, nil
+	}
+	if meta.ObservedAt == nil {
+		return usecases.ProviderValidity{}, status.Error(codes.InvalidArgument, "sample observed_at is required")
+	}
+	if meta.ValidUntil == nil {
+		return usecases.ProviderValidity{}, status.Error(codes.InvalidArgument, "sample valid_until is required")
+	}
+	if err := meta.ObservedAt.CheckValid(); err != nil {
+		return usecases.ProviderValidity{}, status.Errorf(codes.InvalidArgument, "sample observed_at is invalid: %v", err)
+	}
+	if err := meta.ValidUntil.CheckValid(); err != nil {
+		return usecases.ProviderValidity{}, status.Errorf(codes.InvalidArgument, "sample valid_until is invalid: %v", err)
+	}
+	observedAt := meta.ObservedAt.AsTime()
+	validUntil := meta.ValidUntil.AsTime()
+	now := time.Now()
+	if !meta.Invalid && observedAt.After(now.Add(providerObservedFutureLeeway)) {
+		return usecases.ProviderValidity{}, status.Error(codes.InvalidArgument, "sample observed_at must not be in the future")
+	}
+	if !meta.Invalid && !validUntil.After(observedAt) {
+		return usecases.ProviderValidity{}, status.Error(codes.InvalidArgument, "sample valid_until must be after observed_at")
+	}
+	if !meta.Invalid && !validUntil.After(now) {
+		return usecases.ProviderValidity{}, status.Error(codes.InvalidArgument, "sample is expired")
+	}
+	return usecases.ProviderValidity{
+		ObservedAt: observedAt,
+		ValidUntil: validUntil,
+		Invalid:    meta.Invalid,
+	}, nil
 }

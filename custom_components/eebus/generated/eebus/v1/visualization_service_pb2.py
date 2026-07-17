@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from . import common_pb2 as eebus_dot_v1_dot_common__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n$eebus/v1/visualization_service.proto\x12\x08\x65\x65\x62us.v1\x1a\x15\x65\x65\x62us/v1/common.proto\"i\n\x06PVData\x12\x0f\n\x07power_w\x18\x01 \x01(\x01\x12\x15\n\x08yield_wh\x18\x02 \x01(\x01H\x00\x88\x01\x01\x12\x19\n\x0cpeak_power_w\x18\x03 \x01(\x01H\x01\x88\x01\x01\x42\x0b\n\t_yield_whB\x0f\n\r_peak_power_w\"\xae\x01\n\x0b\x42\x61tteryData\x12\x0f\n\x07power_w\x18\x01 \x01(\x01\x12\x17\n\ncharged_wh\x18\x02 \x01(\x01H\x00\x88\x01\x01\x12\x1a\n\rdischarged_wh\x18\x03 \x01(\x01H\x01\x88\x01\x01\x12 \n\x13state_of_charge_pct\x18\x04 \x01(\x01H\x02\x88\x01\x01\x42\r\n\x0b_charged_whB\x10\n\x0e_discharged_whB\x16\n\x14_state_of_charge_pct2\x88\x01\n\x14VisualizationService\x12\x32\n\rPublishPVData\x12\x10.eebus.v1.PVData\x1a\x0f.eebus.v1.Empty\x12<\n\x12PublishBatteryData\x12\x15.eebus.v1.BatteryData\x1a\x0f.eebus.v1.EmptyB=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n$eebus/v1/visualization_service.proto\x12\x08\x65\x65\x62us.v1\x1a\x15\x65\x65\x62us/v1/common.proto\"\xac\x01\n\x06PVData\x12\x14\n\x07power_w\x18\x01 \x01(\x01H\x00\x88\x01\x01\x12\x15\n\x08yield_wh\x18\x02 \x01(\x01H\x01\x88\x01\x01\x12\x1d\n\x0cpeak_power_w\x18\x03 \x01(\x01\x42\x02\x18\x01H\x02\x88\x01\x01\x12,\n\x06sample\x18\x04 \x01(\x0b\x32\x1c.eebus.v1.ProviderSampleMetaB\n\n\x08_power_wB\x0b\n\t_yield_whB\x0f\n\r_peak_power_w\"\'\n\x0fPVPeakPowerData\x12\x14\n\x0cpeak_power_w\x18\x01 \x01(\x01\"\xed\x01\n\x0b\x42\x61tteryData\x12\x14\n\x07power_w\x18\x01 \x01(\x01H\x00\x88\x01\x01\x12\x17\n\ncharged_wh\x18\x02 \x01(\x01H\x01\x88\x01\x01\x12\x1a\n\rdischarged_wh\x18\x03 \x01(\x01H\x02\x88\x01\x01\x12 \n\x13state_of_charge_pct\x18\x04 \x01(\x01H\x03\x88\x01\x01\x12,\n\x06sample\x18\x05 \x01(\x0b\x32\x1c.eebus.v1.ProviderSampleMetaB\n\n\x08_power_wB\r\n\x0b_charged_whB\x10\n\x0e_discharged_whB\x16\n\x14_state_of_charge_pct2\xca\x01\n\x14VisualizationService\x12\x32\n\rPublishPVData\x12\x10.eebus.v1.PVData\x1a\x0f.eebus.v1.Empty\x12@\n\x12PublishPVPeakPower\x12\x19.eebus.v1.PVPeakPowerData\x1a\x0f.eebus.v1.Empty\x12<\n\x12PublishBatteryData\x12\x15.eebus.v1.BatteryData\x1a\x0f.eebus.v1.EmptyB=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,10 +33,14 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'eebus.v1.visualization_serv
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1'
-  _globals['_PVDATA']._serialized_start=73
-  _globals['_PVDATA']._serialized_end=178
-  _globals['_BATTERYDATA']._serialized_start=181
-  _globals['_BATTERYDATA']._serialized_end=355
-  _globals['_VISUALIZATIONSERVICE']._serialized_start=358
-  _globals['_VISUALIZATIONSERVICE']._serialized_end=494
+  _globals['_PVDATA'].fields_by_name['peak_power_w']._loaded_options = None
+  _globals['_PVDATA'].fields_by_name['peak_power_w']._serialized_options = b'\030\001'
+  _globals['_PVDATA']._serialized_start=74
+  _globals['_PVDATA']._serialized_end=246
+  _globals['_PVPEAKPOWERDATA']._serialized_start=248
+  _globals['_PVPEAKPOWERDATA']._serialized_end=287
+  _globals['_BATTERYDATA']._serialized_start=290
+  _globals['_BATTERYDATA']._serialized_end=527
+  _globals['_VISUALIZATIONSERVICE']._serialized_start=530
+  _globals['_VISUALIZATIONSERVICE']._serialized_end=732
 # @@protoc_insertion_point(module_scope)

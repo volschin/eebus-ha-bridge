@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
+	"time"
 
 	eebusapi "github.com/enbility/eebus-go/api"
 	"github.com/enbility/eebus-go/features/server"
@@ -49,12 +51,18 @@ type VABDProvider struct {
 	*usecase.UseCaseBase
 	bus           *eebus.EventBus
 	batteryEntity spineapi.EntityLocalInterface
-	meas          *server.Measurement
+	meas          measurementServer
+	publisher     serializedMeasurementPublisher
 	powerID       *model.MeasurementIdType // scenario 1: AC total power (W); negative = charge
 	chargedID     *model.MeasurementIdType // scenario 2: total charged energy (Wh)
 	dischargedID  *model.MeasurementIdType // scenario 3: total discharged energy (Wh)
 	socID         *model.MeasurementIdType // scenario 4: state of charge (%)
 	debug         bool
+
+	snapshotMu      sync.Mutex
+	snapshot        *BatterySnapshot
+	snapshotVersion uint64
+	expiryTimer     *time.Timer
 }
 
 // NewVABDProvider builds the provider on the given local battery-system entity
@@ -105,12 +113,11 @@ func (p *VABDProvider) UseCase() eebusapi.UseCaseInterface { return p }
 func (p *VABDProvider) AddFeatures() error {
 	// server.New* only look up an existing server feature on the entity; they do
 	// not create it. Add them first.
-	p.batteryEntity.GetOrAddFeature(model.FeatureTypeTypeMeasurement, model.RoleTypeServer)
 	p.batteryEntity.GetOrAddFeature(model.FeatureTypeTypeElectricalConnection, model.RoleTypeServer)
 
-	meas, err := server.NewMeasurement(p.batteryEntity)
+	meas, err := setupProviderMeasurementServer(p.batteryEntity, "VABD")
 	if err != nil {
-		return fmt.Errorf("[VABD] creating Measurement server feature failed: %w", err)
+		return err
 	}
 	p.meas = meas
 
@@ -186,16 +193,81 @@ func (p *VABDProvider) AddFeatures() error {
 
 // publishMeasurement is the shared path for pushing one measurement value.
 func (p *VABDProvider) publishMeasurement(id *model.MeasurementIdType, value float64) error {
-	if p.meas == nil || id == nil {
-		return errVABDNotInitialized
+	return p.publisher.publishValue(p.meas, errVABDNotInitialized, id, value)
+}
+
+func (p *VABDProvider) publishBatteryMeasurements(snapshot BatterySnapshot) error {
+	return p.publisher.publishValues(
+		p.meas,
+		errVABDNotInitialized,
+		providerMeasurementValue{id: p.powerID, value: &snapshot.PowerW},
+		providerMeasurementValue{id: p.chargedID, value: snapshot.ChargedWh},
+		providerMeasurementValue{id: p.dischargedID, value: snapshot.DischargedWh},
+		providerMeasurementValue{id: p.socID, value: snapshot.StateOfChargePct},
+	)
+}
+
+func (p *VABDProvider) invalidateBatteryMeasurements() error {
+	return p.publisher.invalidate(
+		p.meas,
+		errVABDNotInitialized,
+		p.powerID,
+		p.chargedID,
+		p.dischargedID,
+		p.socID,
+	)
+}
+
+func (p *VABDProvider) PublishBatterySnapshot(snapshot BatterySnapshot) error {
+	p.snapshotMu.Lock()
+	defer p.snapshotMu.Unlock()
+
+	if snapshot.Validity.Invalid {
+		if err := p.invalidateBatteryMeasurements(); err != nil {
+			return err
+		}
+		p.snapshotVersion++
+		stopProviderExpiryTimer(&p.expiryTimer)
+		p.snapshot = nil
+		return nil
 	}
-	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{{
-		Data: model.MeasurementDataType{
-			ValueType: util.Ptr(model.MeasurementValueTypeTypeValue),
-			Value:     model.NewScaledNumberType(value),
-		},
-		Id: *id,
-	}})
+	if err := p.publishBatteryMeasurements(snapshot); err != nil {
+		return err
+	}
+	next := snapshot.clone()
+	p.snapshotVersion++
+	p.snapshot = &next
+	version := p.snapshotVersion
+	scheduleProviderExpiryTimer(&p.expiryTimer, snapshot.Validity.ValidUntil, func() {
+		p.expireBatterySnapshot(version, time.Now())
+	})
+	return nil
+}
+
+func (p *VABDProvider) CurrentBatterySnapshot(now time.Time) (BatterySnapshot, bool) {
+	p.snapshotMu.Lock()
+	defer p.snapshotMu.Unlock()
+
+	if p.snapshot == nil || !p.snapshot.Validity.Current(now) {
+		return BatterySnapshot{}, false
+	}
+	return p.snapshot.clone(), true
+}
+
+func (p *VABDProvider) expireBatterySnapshot(version uint64, now time.Time) {
+	p.snapshotMu.Lock()
+	defer p.snapshotMu.Unlock()
+
+	if p.snapshotVersion != version || p.snapshot == nil || p.snapshot.Validity.Current(now) {
+		return
+	}
+	if err := p.invalidateBatteryMeasurements(); err != nil {
+		log.Printf("[VABD] expiring battery sample failed: %v", err)
+		return
+	}
+	p.snapshotVersion++
+	p.snapshot = nil
+	stopProviderExpiryTimer(&p.expiryTimer)
 }
 
 // PublishPower pushes the momentary total battery power (W; scenario 1).

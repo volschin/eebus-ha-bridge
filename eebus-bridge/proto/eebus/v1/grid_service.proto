@@ -20,11 +20,16 @@ service GridService {
 message GridData {
   // Momentary total active power at the grid connection point, in watts.
   // Negative = export / PV surplus (MGCP scenario 2 convention).
-  double power_w = 1;
+  optional double power_w = 1;
   // Cumulative grid feed-in (export) energy in Wh (MGCP scenario 3). Optional;
-  // omit when Home Assistant has no feed-in energy sensor mapped.
+  // omitted means "not current in this complete sample" and clears any older
+  // feed-in value from the provider snapshot.
   optional double feed_in_wh = 2;
   // Cumulative grid consumed (import) energy in Wh (MGCP scenario 4). Optional;
-  // omit when no consumption energy sensor is mapped.
+  // omitted means "not current in this complete sample" and clears any older
+  // consumed-energy value from the provider snapshot.
   optional double consumed_wh = 3;
+  // Sample validity metadata. If invalid=true, the bridge invalidates the
+  // current grid sample and ignores the value fields.
+  ProviderSampleMeta sample = 4;
 }

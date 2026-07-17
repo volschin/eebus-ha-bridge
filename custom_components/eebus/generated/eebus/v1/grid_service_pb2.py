@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from . import common_pb2 as eebus_dot_v1_dot_common__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1b\x65\x65\x62us/v1/grid_service.proto\x12\x08\x65\x65\x62us.v1\x1a\x15\x65\x65\x62us/v1/common.proto\"m\n\x08GridData\x12\x0f\n\x07power_w\x18\x01 \x01(\x01\x12\x17\n\nfeed_in_wh\x18\x02 \x01(\x01H\x00\x88\x01\x01\x12\x18\n\x0b\x63onsumed_wh\x18\x03 \x01(\x01H\x01\x88\x01\x01\x42\r\n\x0b_feed_in_whB\x0e\n\x0c_consumed_wh2E\n\x0bGridService\x12\x36\n\x0fPublishGridData\x12\x12.eebus.v1.GridData\x1a\x0f.eebus.v1.EmptyB=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1b\x65\x65\x62us/v1/grid_service.proto\x12\x08\x65\x65\x62us.v1\x1a\x15\x65\x65\x62us/v1/common.proto\"\xac\x01\n\x08GridData\x12\x14\n\x07power_w\x18\x01 \x01(\x01H\x00\x88\x01\x01\x12\x17\n\nfeed_in_wh\x18\x02 \x01(\x01H\x01\x88\x01\x01\x12\x18\n\x0b\x63onsumed_wh\x18\x03 \x01(\x01H\x02\x88\x01\x01\x12,\n\x06sample\x18\x04 \x01(\x0b\x32\x1c.eebus.v1.ProviderSampleMetaB\n\n\x08_power_wB\r\n\x0b_feed_in_whB\x0e\n\x0c_consumed_wh2E\n\x0bGridService\x12\x36\n\x0fPublishGridData\x12\x12.eebus.v1.GridData\x1a\x0f.eebus.v1.EmptyB=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,8 +33,8 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'eebus.v1.grid_service_pb2',
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1'
-  _globals['_GRIDDATA']._serialized_start=64
-  _globals['_GRIDDATA']._serialized_end=173
-  _globals['_GRIDSERVICE']._serialized_start=175
-  _globals['_GRIDSERVICE']._serialized_end=244
+  _globals['_GRIDDATA']._serialized_start=65
+  _globals['_GRIDDATA']._serialized_end=237
+  _globals['_GRIDSERVICE']._serialized_start=239
+  _globals['_GRIDSERVICE']._serialized_end=308
 # @@protoc_insertion_point(module_scope)

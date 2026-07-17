@@ -32,9 +32,11 @@ from .const import (
     SECURITY_MODE_LOOPBACK,
 )
 from .coordinator import EebusCoordinator
+from .runtime import BridgeRuntimeRegistry
 from .ski import is_valid_ski, normalize_ski
 
 _LOGGER = logging.getLogger(__name__)
+_RUNTIME_REGISTRY = "runtime_registry"
 
 if TYPE_CHECKING:
     EebusConfigEntry = ConfigEntry[EebusCoordinator]
@@ -119,41 +121,71 @@ def _migrate_device_registry_identifier(
 
 async def async_setup_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> bool:
     """Set up EEBUS from a config entry."""
-    coordinator = EebusCoordinator(
-        hass,
-        host=entry.data[CONF_GRPC_HOST],
-        port=entry.data[CONF_GRPC_PORT],
-        ski=entry.data[CONF_DEVICE_SKI],
-        security_mode=entry.data.get(CONF_SECURITY_MODE, SECURITY_MODE_LOOPBACK),
-        tls_ca_certificate=entry.data.get(CONF_TLS_CA_CERTIFICATE),
-        auth_token=entry.data.get(CONF_AUTH_TOKEN),
-        grid_power_entity=entry.options.get(CONF_GRID_POWER_ENTITY) or None,
-        grid_feed_in_energy_entity=entry.options.get(CONF_GRID_FEED_IN_ENERGY_ENTITY) or None,
-        grid_consumption_energy_entity=entry.options.get(CONF_GRID_CONSUMPTION_ENERGY_ENTITY) or None,
-        pv_power_entity=entry.options.get(CONF_PV_POWER_ENTITY) or None,
-        pv_yield_energy_entity=entry.options.get(CONF_PV_YIELD_ENERGY_ENTITY) or None,
-        pv_peak_power_entity=entry.options.get(CONF_PV_PEAK_POWER_ENTITY) or None,
-        battery_power_entity=entry.options.get(CONF_BATTERY_POWER_ENTITY) or None,
-        battery_charged_energy_entity=entry.options.get(CONF_BATTERY_CHARGED_ENERGY_ENTITY) or None,
-        battery_discharged_energy_entity=entry.options.get(CONF_BATTERY_DISCHARGED_ENERGY_ENTITY) or None,
-        battery_soc_entity=entry.options.get(CONF_BATTERY_SOC_ENTITY) or None,
+    registry = _get_runtime_registry(hass)
+    runtime = await registry.acquire(
+        entry.data[CONF_GRPC_HOST],
+        entry.data[CONF_GRPC_PORT],
+        entry.data.get(CONF_SECURITY_MODE, SECURITY_MODE_LOOPBACK),
+        entry.data.get(CONF_TLS_CA_CERTIFICATE),
+        entry.data.get(CONF_AUTH_TOKEN),
     )
-    await coordinator.async_config_entry_first_refresh()
-    coordinator.async_start_streams()
-    coordinator.async_start_grid_push()
-    coordinator.async_start_pv_push()
-    coordinator.async_start_battery_push()
+    coordinator: EebusCoordinator | None = None
+    try:
+        coordinator = EebusCoordinator(
+            hass,
+            host=entry.data[CONF_GRPC_HOST],
+            port=entry.data[CONF_GRPC_PORT],
+            ski=entry.data[CONF_DEVICE_SKI],
+            security_mode=entry.data.get(CONF_SECURITY_MODE, SECURITY_MODE_LOOPBACK),
+            tls_ca_certificate=entry.data.get(CONF_TLS_CA_CERTIFICATE),
+            auth_token=entry.data.get(CONF_AUTH_TOKEN),
+            grid_power_entity=entry.options.get(CONF_GRID_POWER_ENTITY) or None,
+            grid_feed_in_energy_entity=entry.options.get(CONF_GRID_FEED_IN_ENERGY_ENTITY) or None,
+            grid_consumption_energy_entity=entry.options.get(CONF_GRID_CONSUMPTION_ENERGY_ENTITY) or None,
+            pv_power_entity=entry.options.get(CONF_PV_POWER_ENTITY) or None,
+            pv_yield_energy_entity=entry.options.get(CONF_PV_YIELD_ENERGY_ENTITY) or None,
+            pv_peak_power_entity=entry.options.get(CONF_PV_PEAK_POWER_ENTITY) or None,
+            battery_power_entity=entry.options.get(CONF_BATTERY_POWER_ENTITY) or None,
+            battery_charged_energy_entity=entry.options.get(CONF_BATTERY_CHARGED_ENERGY_ENTITY) or None,
+            battery_discharged_energy_entity=entry.options.get(CONF_BATTERY_DISCHARGED_ENERGY_ENTITY) or None,
+            battery_soc_entity=entry.options.get(CONF_BATTERY_SOC_ENTITY) or None,
+            runtime=runtime,
+        )
+        await coordinator.async_config_entry_first_refresh()
+        coordinator.async_start_streams()
+        coordinator.async_start_grid_push()
+        coordinator.async_start_pv_push()
+        coordinator.async_start_battery_push()
 
-    entry.runtime_data = coordinator
+        entry.runtime_data = coordinator
 
-    _remove_replaced_dhw_entities(hass, coordinator.ski)
-    _remove_replaced_heartbeat_switch(hass, coordinator.ski)
+        _remove_replaced_dhw_entities(hass, coordinator.ski)
+        _remove_replaced_heartbeat_switch(hass, coordinator.ski)
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+        entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+    except BaseException:
+        try:
+            if coordinator is not None:
+                await coordinator.async_shutdown()
+        finally:
+            await registry.release(runtime)
+        raise
 
     return True
+
+
+def _get_runtime_registry(hass: HomeAssistant) -> BridgeRuntimeRegistry:
+    """Return the Home Assistant instance's shared runtime registry."""
+    if not isinstance(hass.data, dict):
+        hass.data = {}
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    registry = domain_data.get(_RUNTIME_REGISTRY)
+    if not isinstance(registry, BridgeRuntimeRegistry):
+        registry = BridgeRuntimeRegistry()
+        domain_data[_RUNTIME_REGISTRY] = registry
+    return registry
 
 
 def _remove_replaced_dhw_entities(hass: HomeAssistant, ski: str) -> None:
@@ -178,8 +210,16 @@ def _remove_replaced_heartbeat_switch(hass: HomeAssistant, ski: str) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> bool:
     """Unload EEBUS config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        await entry.runtime_data.async_shutdown()
+    coordinator = entry.runtime_data
+    async with coordinator.reconfigure_lock:
+        if unload_ok := await hass.config_entries.async_unload_platforms(
+            entry, PLATFORMS
+        ):
+            coordinator.mark_entry_unloaded()
+            try:
+                await coordinator.async_shutdown()
+            finally:
+                await _get_runtime_registry(hass).release(coordinator.runtime)
     return unload_ok
 
 
@@ -200,5 +240,61 @@ async def async_remove_config_entry_device(
 
 
 async def _async_reload_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> None:
-    """Reload on options change."""
-    await hass.config_entries.async_reload(entry.entry_id)
+    """Atomically hand an entry over while preserving exact runtime ownership."""
+    registry = _get_runtime_registry(hass)
+    coordinator = entry.runtime_data
+    async with coordinator.reconfigure_lock:
+        if coordinator.entry_unloaded is True:
+            return
+        current = coordinator.runtime
+        replacement = await registry.acquire(
+            entry.data[CONF_GRPC_HOST],
+            entry.data[CONF_GRPC_PORT],
+            entry.data.get(CONF_SECURITY_MODE, SECURITY_MODE_LOOPBACK),
+            entry.data.get(CONF_TLS_CA_CERTIFICATE),
+            entry.data.get(CONF_AUTH_TOKEN),
+        )
+        if replacement is current:
+            # Provider-only option changes do not need to tear down the shared
+            # transport or the per-SKI session at all.
+            await registry.release(replacement)
+            await coordinator.async_reconfigure_providers(
+                grid_power_entity=entry.options.get(CONF_GRID_POWER_ENTITY) or None,
+                grid_feed_in_energy_entity=entry.options.get(CONF_GRID_FEED_IN_ENERGY_ENTITY) or None,
+                grid_consumption_energy_entity=entry.options.get(CONF_GRID_CONSUMPTION_ENERGY_ENTITY) or None,
+                pv_power_entity=entry.options.get(CONF_PV_POWER_ENTITY) or None,
+                pv_yield_energy_entity=entry.options.get(CONF_PV_YIELD_ENERGY_ENTITY) or None,
+                pv_peak_power_entity=entry.options.get(CONF_PV_PEAK_POWER_ENTITY) or None,
+                battery_power_entity=entry.options.get(CONF_BATTERY_POWER_ENTITY) or None,
+                battery_charged_energy_entity=entry.options.get(CONF_BATTERY_CHARGED_ENERGY_ENTITY) or None,
+                battery_discharged_energy_entity=entry.options.get(CONF_BATTERY_DISCHARGED_ENERGY_ENTITY) or None,
+                battery_soc_entity=entry.options.get(CONF_BATTERY_SOC_ENTITY) or None,
+            )
+            return
+
+        try:
+            await coordinator.async_reconfigure_runtime(
+                replacement,
+                host=entry.data[CONF_GRPC_HOST],
+                port=entry.data[CONF_GRPC_PORT],
+                security_mode=entry.data.get(CONF_SECURITY_MODE, SECURITY_MODE_LOOPBACK),
+                tls_ca_certificate=entry.data.get(CONF_TLS_CA_CERTIFICATE),
+                auth_token=entry.data.get(CONF_AUTH_TOKEN),
+                grid_power_entity=entry.options.get(CONF_GRID_POWER_ENTITY) or None,
+                grid_feed_in_energy_entity=entry.options.get(CONF_GRID_FEED_IN_ENERGY_ENTITY) or None,
+                grid_consumption_energy_entity=entry.options.get(CONF_GRID_CONSUMPTION_ENERGY_ENTITY) or None,
+                pv_power_entity=entry.options.get(CONF_PV_POWER_ENTITY) or None,
+                pv_yield_energy_entity=entry.options.get(CONF_PV_YIELD_ENERGY_ENTITY) or None,
+                pv_peak_power_entity=entry.options.get(CONF_PV_PEAK_POWER_ENTITY) or None,
+                battery_power_entity=entry.options.get(CONF_BATTERY_POWER_ENTITY) or None,
+                battery_charged_energy_entity=entry.options.get(CONF_BATTERY_CHARGED_ENERGY_ENTITY) or None,
+                battery_discharged_energy_entity=entry.options.get(CONF_BATTERY_DISCHARGED_ENERGY_ENTITY) or None,
+                battery_soc_entity=entry.options.get(CONF_BATTERY_SOC_ENTITY) or None,
+            )
+        finally:
+            # Reconfiguration may be cancelled on either side of its commit point.
+            # The coordinator's active runtime is the authoritative ownership bit.
+            if coordinator.runtime is replacement:
+                await registry.release(current)
+            else:
+                await registry.release(replacement)

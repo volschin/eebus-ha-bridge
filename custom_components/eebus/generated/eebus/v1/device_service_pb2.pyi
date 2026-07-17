@@ -1,6 +1,11 @@
 import datetime
 
 from . import common_pb2 as _common_pb2
+from . import dhw_service_pb2 as _dhw_service_pb2
+from . import hvac_service_pb2 as _hvac_service_pb2
+from . import lpc_service_pb2 as _lpc_service_pb2
+from . import monitoring_service_pb2 as _monitoring_service_pb2
+from . import ohpcf_service_pb2 as _ohpcf_service_pb2
 from google.protobuf import timestamp_pb2 as _timestamp_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
@@ -11,16 +16,94 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
+class CapabilityId(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    CAPABILITY_UNSPECIFIED: _ClassVar[CapabilityId]
+    CAPABILITY_MONITORING: _ClassVar[CapabilityId]
+    CAPABILITY_LPC: _ClassVar[CapabilityId]
+    CAPABILITY_FAILSAFE: _ClassVar[CapabilityId]
+    CAPABILITY_HEARTBEAT: _ClassVar[CapabilityId]
+    CAPABILITY_OHPCF: _ClassVar[CapabilityId]
+    CAPABILITY_DHW: _ClassVar[CapabilityId]
+    CAPABILITY_DHW_SYSTEM_FUNCTION: _ClassVar[CapabilityId]
+    CAPABILITY_ROOM_HEATING: _ClassVar[CapabilityId]
+
+class CapabilityState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    CAPABILITY_STATE_UNKNOWN: _ClassVar[CapabilityState]
+    CAPABILITY_STATE_AVAILABLE: _ClassVar[CapabilityState]
+    CAPABILITY_STATE_TEMPORARILY_UNAVAILABLE: _ClassVar[CapabilityState]
+    CAPABILITY_STATE_UNSUPPORTED: _ClassVar[CapabilityState]
+
+class CapabilityReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    CAPABILITY_REASON_UNSPECIFIED: _ClassVar[CapabilityReason]
+    CAPABILITY_REASON_LOCAL_DISABLED: _ClassVar[CapabilityReason]
+    CAPABILITY_REASON_REMOTE_NOT_ADVERTISED: _ClassVar[CapabilityReason]
+    CAPABILITY_REASON_ENTITY_NOT_BOUND: _ClassVar[CapabilityReason]
+    CAPABILITY_REASON_READ_FAILED: _ClassVar[CapabilityReason]
+    CAPABILITY_REASON_DEVICE_DISCONNECTED: _ClassVar[CapabilityReason]
+
+class ResyncReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    RESYNC_REASON_UNSPECIFIED: _ClassVar[ResyncReason]
+    RESYNC_REASON_INITIAL_STATE_REQUIRED: _ClassVar[ResyncReason]
+    RESYNC_REASON_EVENT_DROPPED: _ClassVar[ResyncReason]
+
 class DeviceEventType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     DEVICE_EVENT_UNSPECIFIED: _ClassVar[DeviceEventType]
     DEVICE_EVENT_CONNECTED: _ClassVar[DeviceEventType]
     DEVICE_EVENT_DISCONNECTED: _ClassVar[DeviceEventType]
     DEVICE_EVENT_TRUST_REMOVED: _ClassVar[DeviceEventType]
+    DEVICE_EVENT_PROVIDER_UPDATED: _ClassVar[DeviceEventType]
+CAPABILITY_UNSPECIFIED: CapabilityId
+CAPABILITY_MONITORING: CapabilityId
+CAPABILITY_LPC: CapabilityId
+CAPABILITY_FAILSAFE: CapabilityId
+CAPABILITY_HEARTBEAT: CapabilityId
+CAPABILITY_OHPCF: CapabilityId
+CAPABILITY_DHW: CapabilityId
+CAPABILITY_DHW_SYSTEM_FUNCTION: CapabilityId
+CAPABILITY_ROOM_HEATING: CapabilityId
+CAPABILITY_STATE_UNKNOWN: CapabilityState
+CAPABILITY_STATE_AVAILABLE: CapabilityState
+CAPABILITY_STATE_TEMPORARILY_UNAVAILABLE: CapabilityState
+CAPABILITY_STATE_UNSUPPORTED: CapabilityState
+CAPABILITY_REASON_UNSPECIFIED: CapabilityReason
+CAPABILITY_REASON_LOCAL_DISABLED: CapabilityReason
+CAPABILITY_REASON_REMOTE_NOT_ADVERTISED: CapabilityReason
+CAPABILITY_REASON_ENTITY_NOT_BOUND: CapabilityReason
+CAPABILITY_REASON_READ_FAILED: CapabilityReason
+CAPABILITY_REASON_DEVICE_DISCONNECTED: CapabilityReason
+RESYNC_REASON_UNSPECIFIED: ResyncReason
+RESYNC_REASON_INITIAL_STATE_REQUIRED: ResyncReason
+RESYNC_REASON_EVENT_DROPPED: ResyncReason
 DEVICE_EVENT_UNSPECIFIED: DeviceEventType
 DEVICE_EVENT_CONNECTED: DeviceEventType
 DEVICE_EVENT_DISCONNECTED: DeviceEventType
 DEVICE_EVENT_TRUST_REMOVED: DeviceEventType
+DEVICE_EVENT_PROVIDER_UPDATED: DeviceEventType
+
+class DeviceCapability(_message.Message):
+    __slots__ = ("id", "state", "reason", "last_changed")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    REASON_FIELD_NUMBER: _ClassVar[int]
+    LAST_CHANGED_FIELD_NUMBER: _ClassVar[int]
+    id: CapabilityId
+    state: CapabilityState
+    reason: CapabilityReason
+    last_changed: _timestamp_pb2.Timestamp
+    def __init__(self, id: _Optional[_Union[CapabilityId, str]] = ..., state: _Optional[_Union[CapabilityState, str]] = ..., reason: _Optional[_Union[CapabilityReason, str]] = ..., last_changed: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+
+class DeviceCapabilities(_message.Message):
+    __slots__ = ("ski", "capabilities")
+    SKI_FIELD_NUMBER: _ClassVar[int]
+    CAPABILITIES_FIELD_NUMBER: _ClassVar[int]
+    ski: str
+    capabilities: _containers.RepeatedCompositeFieldContainer[DeviceCapability]
+    def __init__(self, ski: _Optional[str] = ..., capabilities: _Optional[_Iterable[_Union[DeviceCapability, _Mapping]]] = ...) -> None: ...
 
 class ServiceStatus(_message.Message):
     __slots__ = ("running", "local_ski")
@@ -95,3 +178,45 @@ class DeviceEvent(_message.Message):
     ski: str
     event_type: DeviceEventType
     def __init__(self, ski: _Optional[str] = ..., event_type: _Optional[_Union[DeviceEventType, str]] = ...) -> None: ...
+
+class DeviceStateEvent(_message.Message):
+    __slots__ = ("ski", "revision", "event_time", "device", "measurement", "lpc", "dhw", "hvac", "ohpcf", "capability", "resync_required")
+    SKI_FIELD_NUMBER: _ClassVar[int]
+    REVISION_FIELD_NUMBER: _ClassVar[int]
+    EVENT_TIME_FIELD_NUMBER: _ClassVar[int]
+    DEVICE_FIELD_NUMBER: _ClassVar[int]
+    MEASUREMENT_FIELD_NUMBER: _ClassVar[int]
+    LPC_FIELD_NUMBER: _ClassVar[int]
+    DHW_FIELD_NUMBER: _ClassVar[int]
+    HVAC_FIELD_NUMBER: _ClassVar[int]
+    OHPCF_FIELD_NUMBER: _ClassVar[int]
+    CAPABILITY_FIELD_NUMBER: _ClassVar[int]
+    RESYNC_REQUIRED_FIELD_NUMBER: _ClassVar[int]
+    ski: str
+    revision: int
+    event_time: _timestamp_pb2.Timestamp
+    device: DeviceEvent
+    measurement: _monitoring_service_pb2.MeasurementEvent
+    lpc: _lpc_service_pb2.LPCEvent
+    dhw: DeviceStateDHWEvent
+    hvac: _hvac_service_pb2.RoomHeatingEvent
+    ohpcf: _ohpcf_service_pb2.OHPCFEvent
+    capability: DeviceCapabilities
+    resync_required: ResyncRequired
+    def __init__(self, ski: _Optional[str] = ..., revision: _Optional[int] = ..., event_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., device: _Optional[_Union[DeviceEvent, _Mapping]] = ..., measurement: _Optional[_Union[_monitoring_service_pb2.MeasurementEvent, _Mapping]] = ..., lpc: _Optional[_Union[_lpc_service_pb2.LPCEvent, _Mapping]] = ..., dhw: _Optional[_Union[DeviceStateDHWEvent, _Mapping]] = ..., hvac: _Optional[_Union[_hvac_service_pb2.RoomHeatingEvent, _Mapping]] = ..., ohpcf: _Optional[_Union[_ohpcf_service_pb2.OHPCFEvent, _Mapping]] = ..., capability: _Optional[_Union[DeviceCapabilities, _Mapping]] = ..., resync_required: _Optional[_Union[ResyncRequired, _Mapping]] = ...) -> None: ...
+
+class DeviceStateDHWEvent(_message.Message):
+    __slots__ = ("temperature", "system_function")
+    TEMPERATURE_FIELD_NUMBER: _ClassVar[int]
+    SYSTEM_FUNCTION_FIELD_NUMBER: _ClassVar[int]
+    temperature: _dhw_service_pb2.DHWEvent
+    system_function: _dhw_service_pb2.DHWSystemFunctionEvent
+    def __init__(self, temperature: _Optional[_Union[_dhw_service_pb2.DHWEvent, _Mapping]] = ..., system_function: _Optional[_Union[_dhw_service_pb2.DHWSystemFunctionEvent, _Mapping]] = ...) -> None: ...
+
+class ResyncRequired(_message.Message):
+    __slots__ = ("reason", "dropped_events")
+    REASON_FIELD_NUMBER: _ClassVar[int]
+    DROPPED_EVENTS_FIELD_NUMBER: _ClassVar[int]
+    reason: ResyncReason
+    dropped_events: int
+    def __init__(self, reason: _Optional[_Union[ResyncReason, str]] = ..., dropped_events: _Optional[int] = ...) -> None: ...

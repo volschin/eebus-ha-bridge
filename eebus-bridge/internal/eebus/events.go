@@ -1,5 +1,7 @@
 package eebus
 
+import "time"
+
 // EventType identifies an event published on the internal event bus.
 type EventType string
 
@@ -9,6 +11,7 @@ const (
 	EventTypeDeviceTrustRemoved EventType = "device.trust_removed"
 	EventTypeDiscoveryUpdated   EventType = "discovery.updated"
 	EventTypePairingUpdated     EventType = "pairing.updated"
+	EventTypeResyncRequired     EventType = "device_state.resync_required"
 
 	EventTypeMonitoringPowerUpdated                EventType = "monitoring.power_updated"
 	EventTypeMonitoringPowerPerPhaseUpdated        EventType = "monitoring.power_per_phase_updated"
@@ -60,7 +63,9 @@ const (
 
 // Event represents an internal event from eebus-go callbacks.
 type Event struct {
-	SKI  string
-	Type EventType
-	Data map[string]any
+	SKI        string
+	Type       EventType
+	Revision   uint64
+	OccurredAt time.Time
+	Dropped    uint64
 }

@@ -1,17 +1,23 @@
-"""Tests for the grouped EEBUS domain state and pure reducer."""
+"""Tests for the authoritative immutable device-state reducer."""
 
 from dataclasses import FrozenInstanceError
+from datetime import UTC, datetime
 
 import grpc
 import pytest
 
-from custom_components.eebus.models import CapabilityState
+from custom_components.eebus.models import CapabilityState, SetpointState
 from custom_components.eebus.state import (
     CapabilitiesState,
+    CapabilityKey,
+    CapabilityResult,
     DHWState,
-    DomainState,
-    apply_reading,
-    flatten,
+    DeviceState,
+    DeviceStateStore,
+    MeasurementsState,
+    StateField,
+    StateObservation,
+    is_fresh,
     next_capability_state,
 )
 
@@ -20,11 +26,7 @@ from custom_components.eebus.state import (
     ("current", "status", "expected"),
     [
         (CapabilityState.UNKNOWN, None, CapabilityState.AVAILABLE),
-        (
-            CapabilityState.UNKNOWN,
-            grpc.StatusCode.UNIMPLEMENTED,
-            CapabilityState.UNSUPPORTED,
-        ),
+        (CapabilityState.UNKNOWN, grpc.StatusCode.UNIMPLEMENTED, CapabilityState.UNSUPPORTED),
         (
             CapabilityState.UNKNOWN,
             grpc.StatusCode.NOT_FOUND,
@@ -35,148 +37,261 @@ from custom_components.eebus.state import (
             grpc.StatusCode.UNAVAILABLE,
             CapabilityState.TEMPORARILY_UNAVAILABLE,
         ),
-        (
-            CapabilityState.AVAILABLE,
-            grpc.StatusCode.INTERNAL,
-            CapabilityState.AVAILABLE,
-        ),
+        (CapabilityState.AVAILABLE, grpc.StatusCode.INTERNAL, CapabilityState.AVAILABLE),
     ],
 )
-def test_next_capability_state_transitions(
-    current: CapabilityState,
-    status: grpc.StatusCode | None,
-    expected: CapabilityState,
-) -> None:
-    """Capability outcomes follow the shared transition table."""
+def test_next_capability_state_transitions(current, status, expected) -> None:
     assert next_capability_state(current, status) == expected
 
 
-def test_apply_reading_updates_value_and_capability_immutably() -> None:
-    """One reducer call replaces both state parts without mutating its inputs."""
-    group = DHWState()
-    capabilities = CapabilitiesState()
-    value = {
-        "value_celsius": 48.0,
-        "min_celsius": 35.0,
-        "max_celsius": 70.0,
-        "step_celsius": 1.0,
-        "writable": True,
-    }
-
-    updated_group, updated_capabilities = apply_reading(
-        group, "setpoint", value, capabilities, "dhw", None
-    )
-
-    assert group.setpoint is None
-    assert capabilities.dhw == CapabilityState.UNKNOWN
-    assert updated_group is not group
-    assert updated_capabilities is not capabilities
-    assert updated_group.setpoint == value
-    assert updated_capabilities.dhw == CapabilityState.AVAILABLE
-
-
-def test_apply_reading_without_value_leaves_group_unchanged() -> None:
-    """A failed observation changes capability state without clearing a value."""
-    existing = {
-        "value_celsius": 48.0,
-        "min_celsius": 35.0,
-        "max_celsius": 70.0,
-        "step_celsius": 1.0,
-        "writable": True,
-    }
-    group = DHWState(setpoint=existing)
-
-    updated_group, updated_capabilities = apply_reading(
-        group,
-        "setpoint",
-        None,
-        CapabilitiesState(dhw=CapabilityState.AVAILABLE),
-        "dhw",
-        grpc.StatusCode.NOT_FOUND,
-    )
-
-    assert updated_group is group
-    assert updated_group.setpoint == existing
-    assert updated_capabilities.dhw == CapabilityState.TEMPORARILY_UNAVAILABLE
-
-
-def test_domain_state_is_frozen() -> None:
-    """Grouped state cannot be assigned to in place."""
-    domain = DomainState()
-
+def test_device_state_is_deeply_immutable() -> None:
+    state = DeviceState(dhw=DHWState(setpoint=_setpoint(48.0)))
     with pytest.raises(FrozenInstanceError):
-        domain.dhw = DHWState()  # type: ignore[misc]
+        state.dhw = DHWState()  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        state.dhw.setpoint.value_celsius = 50.0  # type: ignore[misc,union-attr]
 
 
-def test_flatten_empty_domain_matches_public_initial_shape() -> None:
-    """An untouched domain produces every public snapshot key and default."""
-    assert flatten(DomainState()) == {
-        "connected": False,
-        "local_ski": "",
-        "ski_registered": False,
-        "power_l1_w": None,
-        "power_l2_w": None,
-        "power_l3_w": None,
-        "current_l1_a": None,
-        "current_l2_a": None,
-        "current_l3_a": None,
-        "voltage_l1_v": None,
-        "voltage_l2_v": None,
-        "voltage_l3_v": None,
-        "frequency_hz": None,
-        "energy_produced_kwh": None,
-        "dhw_temperature_c": None,
-        "room_temperature_c": None,
-        "outdoor_temperature_c": None,
-        "flow_temperature_c": None,
-        "return_temperature_c": None,
-        "compressor_temperature_c": None,
-        "compressor_power_w": None,
-        "power_watts": None,
-        "energy_consumed_heating_kwh": None,
-        "energy_consumed_dhw_kwh": None,
-        "energy_consumed_kwh": None,
-        "consumption_limit": None,
-        "failsafe_limit": None,
-        "heartbeat_status": None,
-        "heartbeat_supported": CapabilityState.UNKNOWN,
-        "lpc_supported": CapabilityState.UNKNOWN,
-        "failsafe_supported": CapabilityState.UNKNOWN,
-        "device_info": None,
-        "compressor_flexibility": None,
-        "dhw_setpoint": None,
-        "dhw_system_function": None,
-        "room_heating_setpoint": None,
-        "room_heating_system_function": None,
-        "device_operating_state": None,
-        "ohpcf_supported": CapabilityState.UNKNOWN,
-        "dhw_supported": CapabilityState.UNKNOWN,
-        "dhw_sysfn_supported": CapabilityState.UNKNOWN,
-        "room_heating_supported": CapabilityState.UNKNOWN,
-    }
+def _setpoint(value: float) -> SetpointState:
+    return SetpointState(value, 35.0, 70.0, 1.0, True)
 
 
-def test_equivalent_poll_and_stream_readings_flatten_identically() -> None:
-    """Equivalent poll and stream observations share one reduction path."""
-    value = {
-        "value_celsius": 48.0,
-        "min_celsius": 35.0,
-        "max_celsius": 70.0,
-        "step_celsius": 1.0,
-        "writable": True,
-    }
-    poll_group, poll_capabilities = apply_reading(
-        DHWState(), "setpoint", value, CapabilitiesState(), "dhw", None
-    )
-    stream_group, stream_capabilities = apply_reading(
-        DHWState(), "setpoint", value, CapabilitiesState(), "dhw", None
+def _dhw_observation(
+    value: SetpointState | None,
+    status: grpc.StatusCode | None,
+    *,
+    base_revision: int | None = None,
+) -> StateObservation:
+    observed = frozenset({StateField.DHW_SETPOINT}) if status is None else frozenset()
+    return StateObservation(
+        state=DeviceState(dhw=DHWState(setpoint=value)),
+        observed_fields=observed,
+        unavailable_fields=(frozenset() if status is None else frozenset({StateField.DHW_SETPOINT})),
+        capability_results=(CapabilityResult(CapabilityKey.DHW, status),),
+        base_revision=base_revision,
     )
 
-    poll_snapshot = flatten(
-        DomainState(dhw=poll_group, capabilities=poll_capabilities)
+
+def test_successful_empty_read_clears_value() -> None:
+    store = DeviceStateStore()
+    store.dispatch(_dhw_observation(_setpoint(48.0), None))
+    store.dispatch(_dhw_observation(None, None))
+    assert store.state.dhw.setpoint is None
+    assert store.state.capabilities.dhw == CapabilityState.AVAILABLE
+    assert is_fresh(store.state, StateField.DHW_SETPOINT)
+
+
+def test_temporary_failure_retains_last_value_but_marks_it_stale() -> None:
+    store = DeviceStateStore()
+    value = _setpoint(48.0)
+    store.dispatch(_dhw_observation(value, None))
+    store.dispatch(_dhw_observation(None, grpc.StatusCode.NOT_FOUND))
+    assert store.state.dhw.setpoint == value
+    assert store.state.capabilities.dhw == CapabilityState.TEMPORARILY_UNAVAILABLE
+    assert not is_fresh(store.state, StateField.DHW_SETPOINT)
+
+
+def test_unsupported_clears_last_value() -> None:
+    store = DeviceStateStore()
+    store.dispatch(_dhw_observation(_setpoint(48.0), None))
+    store.dispatch(_dhw_observation(None, grpc.StatusCode.UNIMPLEMENTED))
+    assert store.state.dhw.setpoint is None
+    assert store.state.capabilities.dhw == CapabilityState.UNSUPPORTED
+
+
+def test_unsupported_is_sticky_until_explicit_support_event() -> None:
+    store = DeviceStateStore()
+    store.dispatch(_dhw_observation(None, grpc.StatusCode.UNIMPLEMENTED))
+    store.dispatch(_dhw_observation(_setpoint(48.0), None))
+    assert store.state.capabilities.dhw == CapabilityState.UNSUPPORTED
+    assert store.state.dhw.setpoint is None
+
+    poll_base = store.revision
+    store.dispatch(
+        StateObservation(
+            capability_results=(
+                CapabilityResult(
+                    CapabilityKey.DHW,
+                    grpc.StatusCode.UNKNOWN,
+                    explicit_support=True,
+                ),
+            )
+        )
     )
-    stream_snapshot = flatten(
-        DomainState(dhw=stream_group, capabilities=stream_capabilities)
+    store.dispatch(_dhw_observation(_setpoint(42.0), None, base_revision=poll_base))
+    assert store.state.capabilities.dhw == CapabilityState.UNKNOWN
+    assert store.state.dhw.setpoint is None
+    assert not is_fresh(store.state, StateField.DHW_SETPOINT)
+
+    store.dispatch(_dhw_observation(_setpoint(48.0), None))
+    assert store.state.capabilities.dhw == CapabilityState.AVAILABLE
+    assert store.state.dhw.setpoint == _setpoint(48.0)
+
+
+def test_newer_stream_value_wins_over_poll_started_earlier() -> None:
+    """A poll candidate cannot overwrite a stream leaf newer than its base revision."""
+    store = DeviceStateStore()
+    poll_base = store.revision
+    store.dispatch(
+        StateObservation(
+            state=DeviceState(measurements=MeasurementsState(power_watts=2000.0)),
+            observed_fields=frozenset({StateField.POWER_WATTS}),
+        )
+    )
+    store.dispatch(
+        StateObservation(
+            state=DeviceState(measurements=MeasurementsState(power_watts=1000.0)),
+            observed_fields=frozenset({StateField.POWER_WATTS}),
+            base_revision=poll_base,
+        )
+    )
+    assert store.state.measurements.power_watts == 2000.0
+
+
+def test_newer_stale_observation_blocks_older_successful_poll() -> None:
+    store = DeviceStateStore()
+    value = _setpoint(48.0)
+    store.dispatch(_dhw_observation(value, None))
+    poll_base = store.revision
+    store.dispatch(_dhw_observation(None, grpc.StatusCode.NOT_FOUND))
+    store.dispatch(_dhw_observation(_setpoint(42.0), None, base_revision=poll_base))
+    assert store.state.dhw.setpoint == value
+    assert store.state.capabilities.dhw == CapabilityState.TEMPORARILY_UNAVAILABLE
+    assert not is_fresh(store.state, StateField.DHW_SETPOINT)
+
+
+def test_equivalent_poll_and_stream_observations_produce_same_state() -> None:
+    observation = _dhw_observation(_setpoint(48.0), None)
+    poll_store = DeviceStateStore()
+    stream_store = DeviceStateStore()
+    poll_store.dispatch(observation)
+    stream_store.dispatch(observation)
+    assert poll_store.state == stream_store.state
+
+
+def test_fifo_queue_serializes_reentrant_observations() -> None:
+    published: list[float | None] = []
+    store: DeviceStateStore
+
+    def publish(state: DeviceState) -> None:
+        published.append(state.measurements.power_watts)
+        if len(published) == 1:
+            store.dispatch(
+                StateObservation(
+                    state=DeviceState(measurements=MeasurementsState(power_watts=2.0)),
+                    observed_fields=frozenset({StateField.POWER_WATTS}),
+                )
+            )
+
+    store = DeviceStateStore(publish)
+    store.dispatch(
+        StateObservation(
+            state=DeviceState(measurements=MeasurementsState(power_watts=1.0)),
+            observed_fields=frozenset({StateField.POWER_WATTS}),
+        )
+    )
+    assert published == [1.0, 2.0]
+    assert store.state.measurements.power_watts == 2.0
+
+
+def test_capabilities_default_to_unknown() -> None:
+    assert CapabilitiesState().dhw == CapabilityState.UNKNOWN
+
+
+def test_explicit_unsupported_contract_clears_operable_value() -> None:
+    store = DeviceStateStore()
+    store.dispatch(_dhw_observation(_setpoint(48.0), None))
+    changed_at = datetime(2026, 1, 1, tzinfo=UTC)
+
+    store.dispatch(
+        StateObservation(
+            capability_results=(
+                CapabilityResult(
+                    CapabilityKey.DHW,
+                    None,
+                    explicit_support=True,
+                    explicit_state=CapabilityState.UNSUPPORTED,
+                    reason="remote_not_advertised",
+                    last_changed=changed_at,
+                ),
+            )
+        )
     )
 
-    assert poll_snapshot == stream_snapshot
+    assert store.state.capabilities.dhw == CapabilityState.UNSUPPORTED
+    assert store.state.dhw.setpoint is None
+    assert store.state.capability_metadata[0].reason == "remote_not_advertised"
+    assert store.state.capability_metadata[0].last_changed == changed_at
+
+
+def test_explicit_temporary_contract_retains_only_stale_value() -> None:
+    store = DeviceStateStore()
+    value = _setpoint(48.0)
+    store.dispatch(_dhw_observation(value, None))
+
+    store.dispatch(
+        StateObservation(
+            capability_results=(
+                CapabilityResult(
+                    CapabilityKey.DHW,
+                    None,
+                    explicit_support=True,
+                    explicit_state=CapabilityState.TEMPORARILY_UNAVAILABLE,
+                    reason="read_failed",
+                ),
+            )
+        )
+    )
+
+    assert store.state.dhw.setpoint == value
+    assert store.state.capabilities.dhw == CapabilityState.TEMPORARILY_UNAVAILABLE
+    assert not is_fresh(store.state, StateField.DHW_SETPOINT)
+
+
+def test_explicit_contract_blocks_stream_inference_and_fresh_value() -> None:
+    original = _setpoint(48.0)
+    store = DeviceStateStore()
+    store.dispatch(_dhw_observation(original, None))
+    store.dispatch(
+        StateObservation(
+            explicit_capability_contract=True,
+            capability_results=(
+                CapabilityResult(
+                    CapabilityKey.DHW,
+                    None,
+                    explicit_state=CapabilityState.TEMPORARILY_UNAVAILABLE,
+                    reason="read_failed",
+                ),
+            ),
+        )
+    )
+
+    store.dispatch(_dhw_observation(_setpoint(55.0), None))
+
+    assert store.state.dhw.setpoint == original
+    assert store.state.capabilities.dhw == CapabilityState.TEMPORARILY_UNAVAILABLE
+    assert not is_fresh(store.state, StateField.DHW_SETPOINT)
+
+
+def test_explicit_contract_result_wins_over_newer_stream_revision() -> None:
+    store = DeviceStateStore()
+    poll_base = store.revision
+    store.dispatch(_dhw_observation(_setpoint(55.0), None))
+
+    store.dispatch(
+        StateObservation(
+            explicit_capability_contract=True,
+            capability_results=(
+                CapabilityResult(
+                    CapabilityKey.DHW,
+                    None,
+                    explicit_state=CapabilityState.TEMPORARILY_UNAVAILABLE,
+                    reason="read_failed",
+                ),
+            ),
+            base_revision=poll_base,
+        )
+    )
+
+    assert store.state.capabilities.dhw == CapabilityState.TEMPORARILY_UNAVAILABLE
+    assert not is_fresh(store.state, StateField.DHW_SETPOINT)

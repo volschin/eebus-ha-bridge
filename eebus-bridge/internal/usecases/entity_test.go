@@ -4,7 +4,10 @@ import (
 	"testing"
 
 	eebusapi "github.com/enbility/eebus-go/api"
+	spineapi "github.com/enbility/spine-go/api"
 	"github.com/enbility/spine-go/mocks"
+	"github.com/enbility/spine-go/model"
+	"github.com/volschin/eebus-bridge/internal/eebus"
 )
 
 func scenarioWithSKI(t *testing.T, ski string) eebusapi.RemoteEntityScenarios {
@@ -14,6 +17,59 @@ func scenarioWithSKI(t *testing.T, ski string) eebusapi.RemoteEntityScenarios {
 	entity := mocks.NewEntityRemoteInterface(t)
 	entity.On("Device").Return(device).Maybe()
 	return eebusapi.RemoteEntityScenarios{Entity: entity}
+}
+
+func TestObservationSKIFallsBackToRemoteDevice(t *testing.T) {
+	device := mocks.NewDeviceRemoteInterface(t)
+	device.On("Ski").Return("ab:cd")
+	if got := observationSKI("", device); got != "ab:cd" {
+		t.Fatalf("observationSKI = %q, want remote SKI", got)
+	}
+	if got := observationSKI("explicit", device); got != "explicit" {
+		t.Fatalf("observationSKI explicit = %q", got)
+	}
+}
+
+func TestCompatibleEntityForScenarioSeparatesLPCFeatures(t *testing.T) {
+	remote := scenarioWithSKI(t, "ab:cd")
+	remote.Scenarios = []uint{1, 3}
+	scenarios := []eebusapi.RemoteEntityScenarios{remote}
+
+	if compatibleEntityForScenario(scenarios, "ABCD", 1).Entity == nil {
+		t.Fatal("scenario 1 should be advertised")
+	}
+	if compatibleEntityForScenario(scenarios, "ABCD", 2).Entity != nil {
+		t.Fatal("scenario 2 should be unsupported")
+	}
+	if compatibleEntityForScenario(scenarios, "ABCD", 3).Entity == nil {
+		t.Fatal("scenario 3 should be advertised")
+	}
+}
+
+func TestSupportRemovalUsesCurrentScenariosAndDropsCachedEntity(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	device := mocks.NewDeviceRemoteInterface(t)
+	device.On("Ski").Return("ab:cd").Maybe()
+	entity := mocks.NewEntityRemoteInterface(t)
+	entity.On("Address").Return((*model.EntityAddressType)(nil)).Maybe()
+	entity.On("EntityType").Return(model.EntityTypeTypeDeviceInformation).Maybe()
+	entity.On("Features").Return([]spineapi.FeatureRemoteInterface(nil)).Maybe()
+	registry.UpsertObservation("ab:cd", device, entity, "lpc")
+
+	recordCapabilitySupport(
+		registry, "ab:cd", device, entity, eebus.EntityResolution{}, "lpc", eebus.CapabilityLPC,
+	)
+
+	if registry.FirstEntity("ab:cd") != nil {
+		t.Fatal("removed support entity remained cached")
+	}
+	entries, _ := registry.DeviceCapabilities("ab:cd")
+	for _, entry := range entries {
+		if entry.ID == eebus.CapabilityLPC &&
+			(entry.State != eebus.CapabilityStateUnsupported || entry.Reason != eebus.CapabilityReasonRemoteNotAdvertised) {
+			t.Fatalf("removed support capability = %+v", entry)
+		}
+	}
 }
 
 func TestCompatibleEntitySKIMatching(t *testing.T) {

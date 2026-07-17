@@ -1,5 +1,6 @@
 """Tests for EEBUS integration setup and unload."""
 
+import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
@@ -116,6 +117,8 @@ async def test_unload_entry():
 
     coordinator = AsyncMock()
     coordinator.async_shutdown = AsyncMock()
+    coordinator.mark_entry_unloaded = MagicMock()
+    coordinator.reconfigure_lock = asyncio.Lock()
     entry.runtime_data = coordinator
 
     hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)

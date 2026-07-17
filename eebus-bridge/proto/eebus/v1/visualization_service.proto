@@ -18,29 +18,49 @@ import "eebus/v1/common.proto";
 // provider may be disabled, in which case its RPC returns Unavailable.
 service VisualizationService {
   rpc PublishPVData(PVData) returns (Empty);
+  rpc PublishPVPeakPower(PVPeakPowerData) returns (Empty);
   rpc PublishBatteryData(BatteryData) returns (Empty);
 }
 
 message PVData {
   // Momentary total AC power produced by the PV system, in watts (VAPD
   // scenario 2). Conventionally non-negative (production).
-  double power_w = 1;
-  // Cumulative AC yield energy in Wh (VAPD scenario 3). Optional; omit when Home
-  // Assistant has no yield energy sensor mapped.
+  optional double power_w = 1;
+  // Cumulative AC yield energy in Wh (VAPD scenario 3). Optional; omitted means
+  // "not current in this complete sample" and clears any older yield value from
+  // the provider snapshot.
   optional double yield_wh = 2;
-  // Nominal peak power of the PV system in watts (VAPD scenario 1). Optional;
-  // typically a static configured value, omit when unknown.
-  optional double peak_power_w = 3;
+  // Deprecated: use PublishPVPeakPower. PVData is the atomic live measurement
+  // sample; embedding static DeviceConfiguration here would make live publish
+  // failure handling non-atomic, so requests that set this field are rejected.
+  optional double peak_power_w = 3 [deprecated = true];
+  // Sample validity metadata. If invalid=true, the bridge invalidates the
+  // current PV sample and ignores the value fields.
+  ProviderSampleMeta sample = 4;
+}
+
+message PVPeakPowerData {
+  // Nominal peak power of the PV system in watts (VAPD scenario 1). Static
+  // DeviceConfiguration; intentionally separate from atomic live PVData samples.
+  double peak_power_w = 1;
 }
 
 message BatteryData {
   // Momentary total AC power at the battery, in watts (VABD scenario 1).
-  double power_w = 1;
-  // Cumulative charged energy in Wh (VABD scenario 2). Optional.
+  optional double power_w = 1;
+  // Cumulative charged energy in Wh (VABD scenario 2). Optional; omitted means
+  // "not current in this complete sample" and clears any older charged-energy
+  // value from the provider snapshot.
   optional double charged_wh = 2;
-  // Cumulative discharged energy in Wh (VABD scenario 3). Optional.
+  // Cumulative discharged energy in Wh (VABD scenario 3). Optional; omitted means
+  // "not current in this complete sample" and clears any older discharged-energy
+  // value from the provider snapshot.
   optional double discharged_wh = 3;
   // State of charge in percent, 0-100 (VABD scenario 4). Optional; omit when no
-  // state-of-charge sensor is mapped.
+  // state-of-charge sensor is mapped. Omitted means "not current in this
+  // complete sample" and clears any older SoC value from the provider snapshot.
   optional double state_of_charge_pct = 4;
+  // Sample validity metadata. If invalid=true, the bridge invalidates the
+  // current battery sample and ignores the value fields.
+  ProviderSampleMeta sample = 5;
 }

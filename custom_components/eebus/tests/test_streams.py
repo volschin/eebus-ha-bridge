@@ -51,7 +51,7 @@ async def test_stream_abort_backs_off_and_reacquires_channel() -> None:
 
     assert calls == 2
     assert channel_manager.ensure_channel.await_count == 2
-    sleep.assert_awaited_once_with(4.0)
+    sleep.assert_awaited_once_with(2.0)
 
 
 async def test_unimplemented_stream_stops_permanently() -> None:
@@ -63,6 +63,18 @@ async def test_unimplemented_stream_stops_permanently() -> None:
 
     consume.assert_awaited_once()
     channel_manager.ensure_channel.assert_awaited_once_with()
+    sleep.assert_not_awaited()
+
+
+async def test_unimplemented_stream_starts_compatibility_fallback_once() -> None:
+    """The consolidated stream may activate legacy consumers without retrying."""
+    manager, _channel_manager, sleep = _manager()
+    consume = AsyncMock(side_effect=_rpc_error(grpc.StatusCode.UNIMPLEMENTED))
+    fallback = MagicMock()
+
+    await manager._run_stream("device_state", consume, fallback)
+
+    fallback.assert_called_once_with("device_state")
     sleep.assert_not_awaited()
 
 
@@ -116,7 +128,7 @@ async def test_backoff_resets_after_successful_reconnect() -> None:
     with pytest.raises(asyncio.CancelledError):
         await manager._run_stream("dhw_events", consume)
 
-    assert [call.args[0] for call in sleep.await_args_list] == [4.0, 8.0, 2.0, 4.0]
+    assert [call.args[0] for call in sleep.await_args_list] == [2.0, 4.0, 2.0, 2.0]
 
 
 async def test_backoff_is_bounded_and_adds_jitter() -> None:
@@ -143,11 +155,11 @@ async def test_backoff_is_bounded_and_adds_jitter() -> None:
         await manager._run_stream("room_heating_events", consume)
 
     assert [call.args[0] for call in sleep.await_args_list] == [
+        4.5,
         6.5,
         10.5,
         18.5,
         34.5,
-        62.5,
     ]
     assert jitter.call_count == 5
     jitter.assert_called_with(0, 3.0)

@@ -32,6 +32,8 @@ type OHPCFWrapper struct {
 
 var errOHPCFNotInitialized = errors.New("ohpcf use case not initialized")
 
+var ErrOHPCFRejected = errors.New("OHPCF control rejected by device")
+
 // NewOHPCFWrapper creates a new OHPCFWrapper. Call Setup() before using the use case.
 func NewOHPCFWrapper(bus *eebus.EventBus, registry *eebus.DeviceRegistry, debugEvents bool) *OHPCFWrapper {
 	return &OHPCFWrapper{bus: bus, registry: registry, debug: debugEvents}
@@ -76,7 +78,8 @@ func (w *OHPCFWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInter
 		eebus.DefaultUseCaseDiscovery().LogOnce(ski, device)
 	}
 
-	if w.registry != nil {
+	isSupportUpdate := event == cemohpcf.UseCaseSupportUpdate
+	if w.registry != nil && !isSupportUpdate {
 		w.registry.UpsertObservation(ski, device, entity, "ohpcf")
 		enrichDeviceClassification(w.registry, w.localEntity, ski, device, entity)
 	}
@@ -85,6 +88,10 @@ func (w *OHPCFWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInter
 	switch event {
 	case cemohpcf.UseCaseSupportUpdate:
 		eventType = eebus.EventTypeOHPCFUseCaseSupportUpdated
+		resolution := w.CompatibleEntity(observationSKI(ski, device))
+		if recordCapabilitySupport(w.registry, ski, device, entity, resolution, "ohpcf", eebus.CapabilityOHPCF) {
+			enrichDeviceClassification(w.registry, w.localEntity, ski, device, resolution.Entity)
+		}
 	case cemohpcf.DataUpdateConsumptionState:
 		eventType = eebus.EventTypeOHPCFConsumptionStateUpdated
 	case cemohpcf.DataUpdateConsumptionIsStoppable:
@@ -210,7 +217,7 @@ func awaitWrite(action string, write func(func(model.ResultDataType, model.MsgCo
 	select {
 	case r := <-res:
 		if r.ErrorNumber != nil && uint(*r.ErrorNumber) != 0 {
-			err := fmt.Errorf("ohpcf %s rejected by device: error=%d", action, *r.ErrorNumber)
+			err := fmt.Errorf("%w: action=%s error=%d", ErrOHPCFRejected, action, *r.ErrorNumber)
 			if r.Description != nil && *r.Description != "" {
 				err = fmt.Errorf("%w (%s)", err, *r.Description)
 			}

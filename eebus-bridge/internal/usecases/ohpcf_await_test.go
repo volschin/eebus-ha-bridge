@@ -35,6 +35,9 @@ func TestAwaitWriteRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("awaitWrite rejected = nil, want error")
 	}
+	if !errors.Is(err, ErrOHPCFRejected) {
+		t.Fatalf("awaitWrite error = %v, want ErrOHPCFRejected", err)
+	}
 	for _, want := range []string{"schedule", "7", "not commissioned"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q missing %q", err.Error(), want)

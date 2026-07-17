@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
 from .models import CapabilityState
+from .state import StateField, is_fresh
 
 PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling
 
@@ -22,10 +23,12 @@ async def async_setup_entry(
 ) -> None:
     """Set up EEBUS number entities."""
     coordinator: EebusCoordinator = entry.runtime_data
-    async_add_entities([
-        EebusLPCLimitNumber(coordinator),
-        EebusFailsafeLimitNumber(coordinator),
-    ])
+    async_add_entities(
+        [
+            EebusLPCLimitNumber(coordinator),
+            EebusFailsafeLimitNumber(coordinator),
+        ]
+    )
 
 
 class EebusLPCLimitNumber(EebusEntity, NumberEntity):
@@ -53,11 +56,10 @@ class EebusLPCLimitNumber(EebusEntity, NumberEntity):
         """Return current limit value."""
         if self.coordinator.data is None:
             return None
-        limit = self.coordinator.data.get("consumption_limit")
+        limit = self.coordinator.data.lpc.consumption_limit
         if limit is None:
             return None
-        value = limit.get("value_watts")
-        return None if value is None else float(value)
+        return float(limit.value_watts)
 
     @property
     def available(self) -> bool:
@@ -66,7 +68,9 @@ class EebusLPCLimitNumber(EebusEntity, NumberEntity):
             return False
         if self.coordinator.data is None:
             return False
-        return self.coordinator.data.get("lpc_supported") != CapabilityState.UNSUPPORTED
+        return self.coordinator.data.capabilities.lpc == CapabilityState.AVAILABLE and is_fresh(
+            self.coordinator.data, StateField.CONSUMPTION_LIMIT
+        )
 
     async def async_set_native_value(self, value: float) -> None:
         """Set new LPC limit via gRPC."""
@@ -100,11 +104,10 @@ class EebusFailsafeLimitNumber(EebusEntity, NumberEntity):
         """Return current failsafe limit."""
         if self.coordinator.data is None:
             return None
-        failsafe = self.coordinator.data.get("failsafe_limit")
+        failsafe = self.coordinator.data.lpc.failsafe_limit
         if failsafe is None:
             return None
-        value = failsafe.get("value_watts")
-        return None if value is None else float(value)
+        return float(failsafe.value_watts)
 
     @property
     def available(self) -> bool:
@@ -113,9 +116,8 @@ class EebusFailsafeLimitNumber(EebusEntity, NumberEntity):
             return False
         if self.coordinator.data is None:
             return False
-        return (
-            self.coordinator.data.get("failsafe_supported")
-            != CapabilityState.UNSUPPORTED
+        return self.coordinator.data.capabilities.failsafe == CapabilityState.AVAILABLE and is_fresh(
+            self.coordinator.data, StateField.FAILSAFE_LIMIT
         )
 
     async def async_set_native_value(self, value: float) -> None:

@@ -15,8 +15,8 @@ import (
 // EnsureCertificate returns a TLS certificate using this priority:
 // 1. Explicit certFile + keyFile if both set
 // 2. Existing cert.pem + key.pem in storagePath
-// 3. Auto-generate via ship-go, persist in storagePath
-func EnsureCertificate(certFile, keyFile, storagePath string) (tls.Certificate, error) {
+// 3. Auto-generate via ship-go, persist in storagePath when autoGenerate is true
+func EnsureCertificate(certFile, keyFile, storagePath string, autoGenerate bool) (tls.Certificate, error) {
 	// Priority 1: explicit files
 	if certFile != "" && keyFile != "" {
 		return tls.LoadX509KeyPair(certFile, keyFile)
@@ -29,6 +29,10 @@ func EnsureCertificate(certFile, keyFile, storagePath string) (tls.Certificate, 
 		if fileExists(certPath) && fileExists(keyPath) {
 			return tls.LoadX509KeyPair(certPath, keyPath)
 		}
+	}
+
+	if !autoGenerate {
+		return tls.Certificate{}, fmt.Errorf("no certificate found and auto_generate is false")
 	}
 
 	// Priority 3: auto-generate

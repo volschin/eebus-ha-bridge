@@ -9,6 +9,7 @@ import (
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
+	"github.com/volschin/eebus-bridge/internal/usecases"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -27,7 +28,7 @@ func TestLPCNumericWriteValidation(t *testing.T) {
 		{
 			name: "consumption limit NaN watts",
 			write: func() error {
-				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: "test-ski", ValueWatts: math.NaN()})
+				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: testValidSKI, ValueWatts: math.NaN()})
 				return err
 			},
 			wantCode: codes.InvalidArgument,
@@ -35,7 +36,7 @@ func TestLPCNumericWriteValidation(t *testing.T) {
 		{
 			name: "consumption limit positive infinity watts",
 			write: func() error {
-				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: "test-ski", ValueWatts: math.Inf(1)})
+				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: testValidSKI, ValueWatts: math.Inf(1)})
 				return err
 			},
 			wantCode: codes.InvalidArgument,
@@ -43,7 +44,7 @@ func TestLPCNumericWriteValidation(t *testing.T) {
 		{
 			name: "consumption limit negative infinity watts",
 			write: func() error {
-				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: "test-ski", ValueWatts: math.Inf(-1)})
+				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: testValidSKI, ValueWatts: math.Inf(-1)})
 				return err
 			},
 			wantCode: codes.InvalidArgument,
@@ -51,7 +52,7 @@ func TestLPCNumericWriteValidation(t *testing.T) {
 		{
 			name: "consumption limit negative watts",
 			write: func() error {
-				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: "test-ski", ValueWatts: -1})
+				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: testValidSKI, ValueWatts: -1})
 				return err
 			},
 			wantCode: codes.InvalidArgument,
@@ -59,7 +60,7 @@ func TestLPCNumericWriteValidation(t *testing.T) {
 		{
 			name: "consumption limit negative duration",
 			write: func() error {
-				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: "test-ski", DurationSeconds: -1})
+				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: testValidSKI, DurationSeconds: -1})
 				return err
 			},
 			wantCode: codes.InvalidArgument,
@@ -67,7 +68,7 @@ func TestLPCNumericWriteValidation(t *testing.T) {
 		{
 			name: "consumption limit non-negative values",
 			write: func() error {
-				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: "test-ski", ValueWatts: 1, DurationSeconds: 1})
+				_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: testValidSKI, ValueWatts: 1, DurationSeconds: 1})
 				return err
 			},
 			wantCode: codes.Unavailable,
@@ -75,7 +76,7 @@ func TestLPCNumericWriteValidation(t *testing.T) {
 		{
 			name: "failsafe limit NaN watts",
 			write: func() error {
-				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: "test-ski", ValueWatts: math.NaN()})
+				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: testValidSKI, ValueWatts: math.NaN()})
 				return err
 			},
 			wantCode: codes.InvalidArgument,
@@ -83,7 +84,7 @@ func TestLPCNumericWriteValidation(t *testing.T) {
 		{
 			name: "failsafe limit positive infinity watts",
 			write: func() error {
-				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: "test-ski", ValueWatts: math.Inf(1)})
+				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: testValidSKI, ValueWatts: math.Inf(1)})
 				return err
 			},
 			wantCode: codes.InvalidArgument,
@@ -91,7 +92,7 @@ func TestLPCNumericWriteValidation(t *testing.T) {
 		{
 			name: "failsafe limit negative infinity watts",
 			write: func() error {
-				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: "test-ski", ValueWatts: math.Inf(-1)})
+				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: testValidSKI, ValueWatts: math.Inf(-1)})
 				return err
 			},
 			wantCode: codes.InvalidArgument,
@@ -99,7 +100,7 @@ func TestLPCNumericWriteValidation(t *testing.T) {
 		{
 			name: "failsafe limit negative watts",
 			write: func() error {
-				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: "test-ski", ValueWatts: -1})
+				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: testValidSKI, ValueWatts: -1})
 				return err
 			},
 			wantCode: codes.InvalidArgument,
@@ -107,7 +108,7 @@ func TestLPCNumericWriteValidation(t *testing.T) {
 		{
 			name: "failsafe limit negative duration",
 			write: func() error {
-				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: "test-ski", DurationMinimumSeconds: -1})
+				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: testValidSKI, DurationMinimumSeconds: -1})
 				return err
 			},
 			wantCode: codes.InvalidArgument,
@@ -115,7 +116,7 @@ func TestLPCNumericWriteValidation(t *testing.T) {
 		{
 			name: "failsafe limit non-negative values",
 			write: func() error {
-				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: "test-ski", ValueWatts: 1, DurationMinimumSeconds: 1})
+				_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: testValidSKI, ValueWatts: 1, DurationMinimumSeconds: 1})
 				return err
 			},
 			wantCode: codes.Unavailable,
@@ -151,14 +152,14 @@ func TestSubscribeLPCEvents(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	stream, err := client.SubscribeLPCEvents(ctx, &pb.DeviceRequest{Ski: "test-ski"})
+	stream, err := client.SubscribeLPCEvents(ctx, &pb.DeviceRequest{Ski: testValidSKI})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Give the server-side handler goroutine time to subscribe before publishing.
 	time.Sleep(50 * time.Millisecond)
-	bus.Publish(eebus.Event{SKI: "test-ski", Type: eebus.EventTypeLPCLimitUpdated})
+	bus.Publish(eebus.Event{SKI: testValidSKI, Type: eebus.EventTypeLPCLimitUpdated})
 
 	evt, err := stream.Recv()
 	if err != nil {
@@ -189,13 +190,13 @@ func TestSubscribeLPCEventsHeartbeat(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	stream, err := client.SubscribeLPCEvents(ctx, &pb.DeviceRequest{Ski: "test-ski"})
+	stream, err := client.SubscribeLPCEvents(ctx, &pb.DeviceRequest{Ski: testValidSKI})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	time.Sleep(50 * time.Millisecond)
-	bus.Publish(eebus.Event{SKI: "test-ski", Type: eebus.EventTypeLPCHeartbeatUpdated})
+	bus.Publish(eebus.Event{SKI: testValidSKI, Type: eebus.EventTypeLPCHeartbeatUpdated})
 
 	evt, err := stream.Recv()
 	if err != nil {
@@ -220,10 +221,28 @@ func TestHeartbeatHandlersValidation(t *testing.T) {
 	if _, err := svc.StopHeartbeat(ctx, &pb.DeviceRequest{}); err == nil {
 		t.Error("StopHeartbeat with nil lpc should error (Unavailable)")
 	}
+	if _, err := svc.StopHeartbeat(ctx, nil); status.Code(err) != codes.InvalidArgument {
+		t.Error("StopHeartbeat(nil request) should return InvalidArgument")
+	}
 	if _, err := svc.GetHeartbeatStatus(ctx, nil); err == nil {
 		t.Error("GetHeartbeatStatus(nil request) should error")
 	}
 	if _, err := svc.GetHeartbeatStatus(ctx, &pb.DeviceRequest{Ski: "x"}); err == nil {
 		t.Error("GetHeartbeatStatus with nil lpc should error (Unavailable)")
+	}
+}
+
+func TestGetHeartbeatStatusMissingEntityReturnsNotFound(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	svc := bridgegrpc.NewLPCService(
+		usecases.NewLPCWrapper(eebus.NewEventBus(), registry, false),
+		eebus.NewEventBus(),
+		registry,
+	)
+
+	result, err := svc.GetHeartbeatStatus(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
+	if result != nil || status.Code(err) != codes.NotFound {
+		t.Fatalf("GetHeartbeatStatus() = (%+v, %v), want nil/NotFound", result, err)
 	}
 }

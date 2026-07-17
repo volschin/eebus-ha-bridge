@@ -25,13 +25,18 @@ type GridData struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Momentary total active power at the grid connection point, in watts.
 	// Negative = export / PV surplus (MGCP scenario 2 convention).
-	PowerW float64 `protobuf:"fixed64,1,opt,name=power_w,json=powerW,proto3" json:"power_w,omitempty"`
+	PowerW *float64 `protobuf:"fixed64,1,opt,name=power_w,json=powerW,proto3,oneof" json:"power_w,omitempty"`
 	// Cumulative grid feed-in (export) energy in Wh (MGCP scenario 3). Optional;
-	// omit when Home Assistant has no feed-in energy sensor mapped.
+	// omitted means "not current in this complete sample" and clears any older
+	// feed-in value from the provider snapshot.
 	FeedInWh *float64 `protobuf:"fixed64,2,opt,name=feed_in_wh,json=feedInWh,proto3,oneof" json:"feed_in_wh,omitempty"`
 	// Cumulative grid consumed (import) energy in Wh (MGCP scenario 4). Optional;
-	// omit when no consumption energy sensor is mapped.
-	ConsumedWh    *float64 `protobuf:"fixed64,3,opt,name=consumed_wh,json=consumedWh,proto3,oneof" json:"consumed_wh,omitempty"`
+	// omitted means "not current in this complete sample" and clears any older
+	// consumed-energy value from the provider snapshot.
+	ConsumedWh *float64 `protobuf:"fixed64,3,opt,name=consumed_wh,json=consumedWh,proto3,oneof" json:"consumed_wh,omitempty"`
+	// Sample validity metadata. If invalid=true, the bridge invalidates the
+	// current grid sample and ignores the value fields.
+	Sample        *ProviderSampleMeta `protobuf:"bytes,4,opt,name=sample,proto3" json:"sample,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -67,8 +72,8 @@ func (*GridData) Descriptor() ([]byte, []int) {
 }
 
 func (x *GridData) GetPowerW() float64 {
-	if x != nil {
-		return x.PowerW
+	if x != nil && x.PowerW != nil {
+		return *x.PowerW
 	}
 	return 0
 }
@@ -87,17 +92,27 @@ func (x *GridData) GetConsumedWh() float64 {
 	return 0
 }
 
+func (x *GridData) GetSample() *ProviderSampleMeta {
+	if x != nil {
+		return x.Sample
+	}
+	return nil
+}
+
 var File_eebus_v1_grid_service_proto protoreflect.FileDescriptor
 
 const file_eebus_v1_grid_service_proto_rawDesc = "" +
 	"\n" +
-	"\x1beebus/v1/grid_service.proto\x12\beebus.v1\x1a\x15eebus/v1/common.proto\"\x8b\x01\n" +
-	"\bGridData\x12\x17\n" +
-	"\apower_w\x18\x01 \x01(\x01R\x06powerW\x12!\n" +
+	"\x1beebus/v1/grid_service.proto\x12\beebus.v1\x1a\x15eebus/v1/common.proto\"\xd2\x01\n" +
+	"\bGridData\x12\x1c\n" +
+	"\apower_w\x18\x01 \x01(\x01H\x00R\x06powerW\x88\x01\x01\x12!\n" +
 	"\n" +
-	"feed_in_wh\x18\x02 \x01(\x01H\x00R\bfeedInWh\x88\x01\x01\x12$\n" +
-	"\vconsumed_wh\x18\x03 \x01(\x01H\x01R\n" +
-	"consumedWh\x88\x01\x01B\r\n" +
+	"feed_in_wh\x18\x02 \x01(\x01H\x01R\bfeedInWh\x88\x01\x01\x12$\n" +
+	"\vconsumed_wh\x18\x03 \x01(\x01H\x02R\n" +
+	"consumedWh\x88\x01\x01\x124\n" +
+	"\x06sample\x18\x04 \x01(\v2\x1c.eebus.v1.ProviderSampleMetaR\x06sampleB\n" +
+	"\n" +
+	"\b_power_wB\r\n" +
 	"\v_feed_in_whB\x0e\n" +
 	"\f_consumed_wh2E\n" +
 	"\vGridService\x126\n" +
@@ -117,17 +132,19 @@ func file_eebus_v1_grid_service_proto_rawDescGZIP() []byte {
 
 var file_eebus_v1_grid_service_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_eebus_v1_grid_service_proto_goTypes = []any{
-	(*GridData)(nil), // 0: eebus.v1.GridData
-	(*Empty)(nil),    // 1: eebus.v1.Empty
+	(*GridData)(nil),           // 0: eebus.v1.GridData
+	(*ProviderSampleMeta)(nil), // 1: eebus.v1.ProviderSampleMeta
+	(*Empty)(nil),              // 2: eebus.v1.Empty
 }
 var file_eebus_v1_grid_service_proto_depIdxs = []int32{
-	0, // 0: eebus.v1.GridService.PublishGridData:input_type -> eebus.v1.GridData
-	1, // 1: eebus.v1.GridService.PublishGridData:output_type -> eebus.v1.Empty
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	1, // 0: eebus.v1.GridData.sample:type_name -> eebus.v1.ProviderSampleMeta
+	0, // 1: eebus.v1.GridService.PublishGridData:input_type -> eebus.v1.GridData
+	2, // 2: eebus.v1.GridService.PublishGridData:output_type -> eebus.v1.Empty
+	2, // [2:3] is the sub-list for method output_type
+	1, // [1:2] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_eebus_v1_grid_service_proto_init() }

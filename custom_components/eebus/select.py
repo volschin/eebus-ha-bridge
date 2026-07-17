@@ -12,6 +12,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
 from .models import CompressorFlexibilityState
+from .models import CapabilityState
+from .state import StateField, is_fresh
 
 PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling
 
@@ -60,12 +62,19 @@ class EebusCompressorFlexibilitySelect(EebusEntity, SelectEntity):
     def _flex(self) -> CompressorFlexibilityState | None:
         if self.coordinator.data is None:
             return None
-        return self.coordinator.data.get("compressor_flexibility")
+        return self.coordinator.data.ohpcf.compressor_flexibility
 
     @property
     def available(self) -> bool:
         """Available only while the compressor advertises a flexibility offer."""
-        return super().available and self._flex() is not None
+        data = self.coordinator.data
+        return bool(
+            super().available
+            and data
+            and data.capabilities.ohpcf == CapabilityState.AVAILABLE
+            and is_fresh(data, StateField.COMPRESSOR_FLEXIBILITY)
+            and self._flex() is not None
+        )
 
     @property
     def current_option(self) -> str | None:
@@ -73,7 +82,7 @@ class EebusCompressorFlexibilitySelect(EebusEntity, SelectEntity):
         flex = self._flex()
         if flex is None:
             return None
-        state = flex.get("state")
+        state = flex.state
         if state in _OHPCF_ON_STATES:
             return OPTION_ON
         if state == _OHPCF_PAUSED_STATE:
@@ -87,9 +96,9 @@ class EebusCompressorFlexibilitySelect(EebusEntity, SelectEntity):
         if flex is None:
             return None
         return {
-            "is_stoppable": flex.get("is_stoppable"),
-            "minimal_run_seconds": flex.get("minimal_run_seconds"),
-            "minimal_pause_seconds": flex.get("minimal_pause_seconds"),
+            "is_stoppable": flex.is_stoppable,
+            "minimal_run_seconds": flex.minimal_run_seconds,
+            "minimal_pause_seconds": flex.minimal_pause_seconds,
         }
 
     async def async_select_option(self, option: str) -> None:
@@ -100,7 +109,7 @@ class EebusCompressorFlexibilitySelect(EebusEntity, SelectEntity):
         if option == OPTION_ON:
             action = (
                 proto_stubs.OHPCFAction.OHPCF_ACTION_RESUME
-                if flex is not None and flex.get("state") == _OHPCF_PAUSED_STATE
+                if flex is not None and flex.state == _OHPCF_PAUSED_STATE
                 else proto_stubs.OHPCFAction.OHPCF_ACTION_SCHEDULE
             )
         elif option == OPTION_PAUSED:

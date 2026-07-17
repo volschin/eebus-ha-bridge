@@ -35,6 +35,10 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.14"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26"
+          check-latest: true
 
       - name: Resolve HA grpcio pin and current floor
         id: vers
@@ -85,6 +89,7 @@ jobs:
           # Minimal-diff version bumps (preserve surrounding formatting).
           sed -i -E "s/grpcio>=[0-9.]+/grpcio>=${NEW}/g" custom_components/eebus/manifest.json
           sed -i -E "s/grpcio>=[0-9.]+/grpcio>=${NEW}/g" .github/workflows/ci.yml
+          sed -i -E "s/^GRPCIO_TOOLS_VERSION=.*/GRPCIO_TOOLS_VERSION=${NEW}/" proto-tools.env
           # Regenerate stubs with matching grpcio-tools so GRPC_GENERATED_VERSION
           # does not exceed HA's runtime grpcio.
           GRPCIO_TOOLS_VERSION="${NEW}" bash generate_proto.sh
@@ -108,7 +113,9 @@ jobs:
           git switch -c "${BRANCH}"
           git add custom_components/eebus/manifest.json \
             .github/workflows/ci.yml \
-            custom_components/eebus/generated/
+            proto-tools.env \
+            custom_components/eebus/generated/ \
+            eebus-bridge/gen/proto/eebus/v1/
           git commit -m "chore(deps): bump grpcio floor to ${NEW} (HA ${HA_TAG})"
           git push origin "${BRANCH}"
           gh pr create \

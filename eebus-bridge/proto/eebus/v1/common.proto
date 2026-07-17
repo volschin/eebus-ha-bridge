@@ -8,6 +8,14 @@ import "google/protobuf/timestamp.proto";
 
 message Empty {}
 
+message ProviderSampleMeta {
+  google.protobuf.Timestamp observed_at = 1;
+  google.protobuf.Timestamp valid_until = 2;
+  // True means the required sensor is unavailable and any last-good sample for
+  // this provider must be explicitly invalidated. Value fields are ignored.
+  bool invalid = 3;
+}
+
 message DeviceRequest {
   string ski = 1;
 }

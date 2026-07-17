@@ -16,21 +16,57 @@ import (
 // Unavailable (mirrors the grid/LPC services' not-initialized behaviour).
 type VisualizationService struct {
 	pb.UnimplementedVisualizationServiceServer
-	vapd *usecases.VAPDProvider
-	vabd *usecases.VABDProvider
+	vapd pvSnapshotPublisher
+	vabd batterySnapshotPublisher
 }
 
 func NewVisualizationService(vapd *usecases.VAPDProvider, vabd *usecases.VABDProvider) *VisualizationService {
-	return &VisualizationService{vapd: vapd, vabd: vabd}
+	service := &VisualizationService{}
+	if vapd != nil {
+		service.vapd = vapd
+	}
+	if vabd != nil {
+		service.vabd = vabd
+	}
+	return service
+}
+
+type pvSnapshotPublisher interface {
+	PublishPVSnapshot(usecases.PVSnapshot) error
+	PublishPeakPower(float64) error
+}
+
+type batterySnapshotPublisher interface {
+	PublishBatterySnapshot(usecases.BatterySnapshot) error
 }
 
 func (s *VisualizationService) PublishPVData(_ context.Context, req *pb.PVData) (*pb.Empty, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
+	validity, err := providerValidity(req.Sample)
+	if err != nil {
+		return nil, err
+	}
+	if validity.Invalid {
+		if s.vapd == nil {
+			return nil, status.Error(codes.Unavailable, "VAPD PV provider not enabled")
+		}
+		if err := s.vapd.PublishPVSnapshot(usecases.PVSnapshot{Validity: validity}); err != nil {
+			return nil, mapUsecaseError("invalidating PV data", err, standardUsecaseErrorClasses)
+		}
+		return &pb.Empty{}, nil
+	}
 	// PV production and its yield/peak figures are non-negative by definition.
 	// Reject bad input before touching the provider.
-	if err := nonNegative("PV power", req.PowerW); err != nil {
+	powerW := 0.0
+	if req.PowerW == nil && req.Sample != nil {
+		return nil, status.Error(codes.InvalidArgument, "PV power is required")
+	}
+	if req.PowerW != nil {
+		powerW = *req.PowerW
+	}
+	if err := nonNegative("PV power", powerW); err != nil {
 		return nil, err
 	}
 	if req.YieldWh != nil {
@@ -38,6 +74,7 @@ func (s *VisualizationService) PublishPVData(_ context.Context, req *pb.PVData) 
 			return nil, err
 		}
 	}
+	//nolint:staticcheck // deprecated field kept readable: released HA clients still embed peak power here.
 	if req.PeakPowerW != nil {
 		if err := nonNegative("PV peak power", *req.PeakPowerW); err != nil {
 			return nil, err
@@ -46,18 +83,34 @@ func (s *VisualizationService) PublishPVData(_ context.Context, req *pb.PVData) 
 	if s.vapd == nil {
 		return nil, status.Error(codes.Unavailable, "VAPD PV provider not enabled")
 	}
-	if err := s.vapd.PublishPower(req.PowerW); err != nil {
-		return nil, status.Errorf(codes.Internal, "publishing PV power: %v", err)
+	if err := s.vapd.PublishPVSnapshot(usecases.PVSnapshot{
+		PowerW:   powerW,
+		YieldWh:  req.YieldWh,
+		Validity: validity,
+	}); err != nil {
+		return nil, mapUsecaseError("publishing PV data", err, standardUsecaseErrorClasses)
 	}
-	if req.YieldWh != nil {
-		if err := s.vapd.PublishYield(*req.YieldWh); err != nil {
-			return nil, status.Errorf(codes.Internal, "publishing PV yield energy: %v", err)
-		}
-	}
+	//nolint:staticcheck // deprecated field kept readable: released HA clients still embed peak power here.
 	if req.PeakPowerW != nil {
 		if err := s.vapd.PublishPeakPower(*req.PeakPowerW); err != nil {
-			return nil, status.Errorf(codes.Internal, "publishing PV peak power: %v", err)
+			return nil, mapUsecaseError("publishing PV peak power", err, standardUsecaseErrorClasses)
 		}
+	}
+	return &pb.Empty{}, nil
+}
+
+func (s *VisualizationService) PublishPVPeakPower(_ context.Context, req *pb.PVPeakPowerData) (*pb.Empty, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if err := nonNegative("PV peak power", req.PeakPowerW); err != nil {
+		return nil, err
+	}
+	if s.vapd == nil {
+		return nil, status.Error(codes.Unavailable, "VAPD PV provider not enabled")
+	}
+	if err := s.vapd.PublishPeakPower(req.PeakPowerW); err != nil {
+		return nil, mapUsecaseError("publishing PV peak power", err, standardUsecaseErrorClasses)
 	}
 	return &pb.Empty{}, nil
 }
@@ -66,10 +119,30 @@ func (s *VisualizationService) PublishBatteryData(_ context.Context, req *pb.Bat
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
+	validity, err := providerValidity(req.Sample)
+	if err != nil {
+		return nil, err
+	}
+	if validity.Invalid {
+		if s.vabd == nil {
+			return nil, status.Error(codes.Unavailable, "VABD battery provider not enabled")
+		}
+		if err := s.vabd.PublishBatterySnapshot(usecases.BatterySnapshot{Validity: validity}); err != nil {
+			return nil, mapUsecaseError("invalidating battery data", err, standardUsecaseErrorClasses)
+		}
+		return &pb.Empty{}, nil
+	}
 	// Battery PowerW is signed (negative = charging), so any finite value is
 	// valid; the energy totals are non-negative counters and SoC is a percentage.
 	// Reject bad input before touching the provider.
-	if err := finite("battery power", req.PowerW); err != nil {
+	powerW := 0.0
+	if req.PowerW == nil && req.Sample != nil {
+		return nil, status.Error(codes.InvalidArgument, "battery power is required")
+	}
+	if req.PowerW != nil {
+		powerW = *req.PowerW
+	}
+	if err := finite("battery power", powerW); err != nil {
 		return nil, err
 	}
 	if req.ChargedWh != nil {
@@ -90,23 +163,14 @@ func (s *VisualizationService) PublishBatteryData(_ context.Context, req *pb.Bat
 	if s.vabd == nil {
 		return nil, status.Error(codes.Unavailable, "VABD battery provider not enabled")
 	}
-	if err := s.vabd.PublishPower(req.PowerW); err != nil {
-		return nil, status.Errorf(codes.Internal, "publishing battery power: %v", err)
-	}
-	if req.ChargedWh != nil {
-		if err := s.vabd.PublishEnergyCharged(*req.ChargedWh); err != nil {
-			return nil, status.Errorf(codes.Internal, "publishing battery charged energy: %v", err)
-		}
-	}
-	if req.DischargedWh != nil {
-		if err := s.vabd.PublishEnergyDischarged(*req.DischargedWh); err != nil {
-			return nil, status.Errorf(codes.Internal, "publishing battery discharged energy: %v", err)
-		}
-	}
-	if req.StateOfChargePct != nil {
-		if err := s.vabd.PublishStateOfCharge(*req.StateOfChargePct); err != nil {
-			return nil, status.Errorf(codes.Internal, "publishing battery state of charge: %v", err)
-		}
+	if err := s.vabd.PublishBatterySnapshot(usecases.BatterySnapshot{
+		PowerW:           powerW,
+		ChargedWh:        req.ChargedWh,
+		DischargedWh:     req.DischargedWh,
+		StateOfChargePct: req.StateOfChargePct,
+		Validity:         validity,
+	}); err != nil {
+		return nil, mapUsecaseError("publishing battery data", err, standardUsecaseErrorClasses)
 	}
 	return &pb.Empty{}, nil
 }

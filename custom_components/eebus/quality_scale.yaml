@@ -7,7 +7,7 @@ rules:
   common-modules: done
   config-flow:
     status: done
-    comment: Host/port, explicit loopback or TLS+token security, and device selection are all configured and connection-tested in the flow.
+    comment: Host/port, explicit loopback or TLS+token security, and device selection are configured and connection-tested; TLS trust, invalid_auth, and incompatible gRPC endpoint errors have translated user-facing paths.
   config-flow-test-coverage: done
   dependency-transparency: done
   docs-actions:
@@ -31,7 +31,7 @@ rules:
   docs-installation-parameters: done
   entity-unavailable:
     status: done
-    comment: EebusEntity.available requires both a successful coordinator poll and the device-level connected state from GetDeviceStatus (registry-backed, not bridge liveness) — every platform's own available override chains through it via super().available.
+    comment: Entity availability is driven by fresh authoritative state and device connection. Platform overrides that bypass super().available only expose diagnostic transport state intentionally; value entities use the shared freshness regime.
   integration-owner: done
   log-when-unavailable: done
   parallel-updates: done
@@ -71,7 +71,7 @@ rules:
   icon-translations: done
   reconfiguration-flow:
     status: done
-    comment: Reconfigure updates host/port in one step and loopback or TLS+token settings in a dedicated security step, preserving a blank existing token.
+    comment: Reconfigure updates host/port in one step and loopback or TLS+token settings in a dedicated security step, preserving a blank existing token and surfacing TLS trust, invalid_auth, and incompatible endpoint errors.
   repair-issues:
     status: exempt
     comment: Authentication failures start reauthentication; other connection issues are communicated via availability and logging.

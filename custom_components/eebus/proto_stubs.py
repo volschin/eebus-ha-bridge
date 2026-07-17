@@ -16,11 +16,19 @@ from .generated.eebus.v1.common_pb2 import (  # noqa: F401
     LoadLimit,
     MeasurementEntry,
     PowerMeasurement,
+    ProviderSampleMeta,
 )
 from .generated.eebus.v1.device_service_pb2 import (  # noqa: F401
+    CapabilityId,
+    CapabilityReason,
+    CapabilityState,
+    DeviceCapabilities,
     DeviceEventType,
+    DeviceStateDHWEvent,
+    DeviceStateEvent,
     DeviceStatus,
     RegisterSKIRequest,
+    ResyncReason,
     ServiceStatus,
 )
 from .generated.eebus.v1.device_service_pb2_grpc import DeviceServiceStub  # noqa: F401
@@ -66,6 +74,7 @@ from .generated.eebus.v1.monitoring_service_pb2_grpc import MonitoringServiceStu
 from .generated.eebus.v1.visualization_service_pb2 import (  # noqa: F401
     BatteryData,
     PVData,
+    PVPeakPowerData,
 )
 from .generated.eebus.v1.visualization_service_pb2_grpc import (  # noqa: F401
     VisualizationServiceStub,
@@ -121,10 +130,16 @@ def visualization_service_stub(channel: grpc.aio.Channel) -> VisualizationServic
 
 __all__ = [
     "BatteryData",
+    "CapabilityId",
+    "CapabilityReason",
+    "CapabilityState",
     "CompressorFlexibility",
     "CompressorPowerConsumptionState",
     "ControlCompressorRequest",
     "DeviceEventType",
+    "DeviceStateDHWEvent",
+    "DeviceStateEvent",
+    "DeviceCapabilities",
     "DeviceStatus",
     "DeviceDiagnosticsData",
     "DeviceRequest",
@@ -154,8 +169,11 @@ __all__ = [
     "OHPCFEventType",
     "OHPCFServiceStub",
     "PVData",
+    "PVPeakPowerData",
     "PowerMeasurement",
+    "ProviderSampleMeta",
     "RegisterSKIRequest",
+    "ResyncReason",
     "RoomHeatingEvent",
     "RoomHeatingEventType",
     "RoomHeatingSetpoint",
@@ -170,4 +188,12 @@ __all__ = [
     "VisualizationServiceStub",
     "WriteFailsafeLimitRequest",
     "WriteLoadLimitRequest",
+    "device_service_stub",
+    "dhw_service_stub",
+    "grid_service_stub",
+    "hvac_service_stub",
+    "lpc_service_stub",
+    "monitoring_service_stub",
+    "ohpcf_service_stub",
+    "visualization_service_stub",
 ]

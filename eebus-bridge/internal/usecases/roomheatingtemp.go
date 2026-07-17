@@ -3,10 +3,7 @@ package usecases
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
-	"math"
-	"time"
 
 	eebusapi "github.com/enbility/eebus-go/api"
 	usecase "github.com/enbility/eebus-go/usecases/usecase"
@@ -22,6 +19,7 @@ var (
 	ErrRoomHeatingNotWritable     = errors.New("room heating setpoint is not writable")
 	ErrRoomHeatingOutOfRange      = errors.New("room heating setpoint is outside the advertised range")
 	ErrRoomHeatingInvalidStep     = errors.New("room heating setpoint does not match the advertised step")
+	ErrRoomHeatingRejected        = errors.New("room heating setpoint write rejected by device")
 )
 
 // RoomHeatingSetpoint is the current room-heating target and the constraints
@@ -123,7 +121,10 @@ func (r *RoomHeatingTemperature) handleUseCaseEvent(
 	_ eebusapi.EventType,
 ) {
 	if r.registry != nil {
-		r.registry.UpsertObservation(ski, device, entity, "room_heating_temperature")
+		recordCapabilitySupport(
+			r.registry, ski, device, entity, r.CompatibleEntity(observationSKI(ski, device)),
+			"room_heating_temperature", eebus.CapabilityRoomHeating,
+		)
 	}
 	if r.bus != nil {
 		r.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeRoomHeatingUseCaseSupportUpdated})
@@ -162,18 +163,7 @@ func (r *RoomHeatingTemperature) Refresh(entity spineapi.EntityRemoteInterface) 
 }
 
 func (r *RoomHeatingTemperature) request(entity spineapi.EntityRemoteInterface, function model.FunctionType) {
-	remote := entity.FeatureOfTypeAndRole(model.FeatureTypeTypeSetpoint, model.RoleTypeServer)
-	local := r.localSetpointFeature()
-	if remote == nil || local == nil {
-		return
-	}
-	operation := remote.Operations()[function]
-	if operation == nil || !operation.Read() {
-		return
-	}
-	if _, err := local.RequestRemoteData(function, nil, nil, remote); err != nil && r.debug {
-		log.Printf("[ROOMHEATING] requesting %s failed: %s", function, err.String())
-	}
+	requestRemoteFeatureData(entity, setpointServer, r.localSetpointFeature, function, r.debug, "ROOMHEATING")
 }
 
 // CompatibleEntity returns the negotiated HVACRoom for a device SKI.
@@ -184,111 +174,41 @@ func (r *RoomHeatingTemperature) CompatibleEntity(ski string) eebus.EntityResolu
 // State reads the room-heating target and its complete constraints from the
 // remote cache. Missing or partial metadata fails closed.
 func (r *RoomHeatingTemperature) State(entity spineapi.EntityRemoteInterface) (RoomHeatingSetpoint, error) {
-	remote := setpointServer(entity)
-	if remote == nil {
-		return RoomHeatingSetpoint{}, ErrRoomHeatingDataUnavailable
+	state, _, _, err := readSetpointState(entity, roomHeatingSetpointID, ErrRoomHeatingDataUnavailable)
+	if err != nil {
+		return RoomHeatingSetpoint{}, err
 	}
-	id, ok := roomHeatingSetpointID(remote)
-	if !ok {
-		return RoomHeatingSetpoint{}, ErrRoomHeatingDataUnavailable
-	}
-	value, ok := setpointValue(remote, id)
-	if !ok {
-		return RoomHeatingSetpoint{}, ErrRoomHeatingDataUnavailable
-	}
-	minimum, maximum, step, ok := setpointRange(remote, id)
-	if !ok {
-		return RoomHeatingSetpoint{}, ErrRoomHeatingDataUnavailable
-	}
-	operation := remote.Operations()[model.FunctionTypeSetpointListData]
-	return RoomHeatingSetpoint{
-		Value:    value,
-		Minimum:  minimum,
-		Maximum:  maximum,
-		Step:     step,
-		Writable: operation != nil && operation.Write(),
-	}, nil
+	return RoomHeatingSetpoint(state), nil
 }
 
 // Write validates against device-provided constraints, sends the complete
 // SetpointListData required by the VR940, and waits for the device result.
 func (r *RoomHeatingTemperature) Write(ctx context.Context, entity spineapi.EntityRemoteInterface, value float64) error {
-	state, err := r.State(entity)
+	state, id, remote, err := readSetpointState(entity, roomHeatingSetpointID, ErrRoomHeatingDataUnavailable)
 	if err != nil {
 		return err
 	}
-	if !state.Writable {
-		return ErrRoomHeatingNotWritable
+	if err := validateSetpointWrite(
+		state,
+		value,
+		ErrRoomHeatingNotWritable,
+		ErrRoomHeatingOutOfRange,
+		ErrRoomHeatingInvalidStep,
+	); err != nil {
+		return err
 	}
-	if !isFinite(value) || value < state.Minimum || value > state.Maximum {
-		return fmt.Errorf("%w: %.3f not in [%.3f, %.3f]", ErrRoomHeatingOutOfRange, value, state.Minimum, state.Maximum)
-	}
-	steps := math.Round((value - state.Minimum) / state.Step)
-	if math.Abs(state.Minimum+steps*state.Step-value) > 1e-6 {
-		return fmt.Errorf("%w: %.3f with step %.3f", ErrRoomHeatingInvalidStep, value, state.Step)
-	}
-
-	remote := setpointServer(entity)
-	local := r.localSetpointFeature()
-	if remote == nil || local == nil {
-		return ErrRoomHeatingDataUnavailable
-	}
-	data, ok := remote.DataCopy(model.FunctionTypeSetpointListData).(*model.SetpointListDataType)
-	if !ok || data == nil {
-		return ErrRoomHeatingDataUnavailable
-	}
-	id, ok := roomHeatingSetpointID(remote)
-	if !ok {
-		return ErrRoomHeatingDataUnavailable
-	}
-	entries := make([]model.SetpointDataType, len(data.SetpointData))
-	copy(entries, data.SetpointData)
-	found := false
-	for index := range entries {
-		if entries[index].SetpointId != nil && *entries[index].SetpointId == id {
-			entries[index].Value = model.NewScaledNumberType(value)
-			found = true
-			break
-		}
-	}
-	if !found {
-		return ErrRoomHeatingDataUnavailable
-	}
-
-	counter, err := entity.Device().Sender().Write(
-		local.Address(),
-		remote.Address(),
-		model.CmdType{SetpointListData: &model.SetpointListDataType{SetpointData: entries}},
+	return writeSetpointValue(
+		ctx,
+		entity,
+		remote,
+		r.localSetpointFeature(),
+		id,
+		value,
+		"room heating setpoint",
+		ErrRoomHeatingDataUnavailable,
+		ErrRoomHeatingRejected,
+		func() { r.request(entity, model.FunctionTypeSetpointListData) },
 	)
-	if err != nil {
-		return fmt.Errorf("sending room heating setpoint: %w", err)
-	}
-	if counter == nil {
-		return errors.New("sending room heating setpoint returned no message counter")
-	}
-	result := make(chan model.ResultDataType, 1)
-	if err := local.AddResponseCallback(*counter, func(message spineapi.ResponseMessage) {
-		if data, ok := message.Data.(*model.ResultDataType); ok && data != nil {
-			result <- *data
-		}
-	}); err != nil {
-		return fmt.Errorf("waiting for room heating setpoint result: %w", err)
-	}
-
-	timer := time.NewTimer(dhwWriteTimeout)
-	defer timer.Stop()
-	select {
-	case response := <-result:
-		if response.ErrorNumber != nil && *response.ErrorNumber != 0 {
-			return fmt.Errorf("room heating setpoint rejected by device: error=%d", *response.ErrorNumber)
-		}
-		r.request(entity, model.FunctionTypeSetpointListData)
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return errors.New("timed out waiting for room heating setpoint result")
-	}
 }
 
 func (r *RoomHeatingTemperature) localSetpointFeature() spineapi.FeatureLocalInterface {

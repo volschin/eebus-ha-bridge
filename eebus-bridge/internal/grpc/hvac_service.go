@@ -26,10 +26,11 @@ type roomHeatingSysFnController interface {
 // HVACService exposes the room-heating Configuration use cases over gRPC.
 type HVACService struct {
 	pb.UnimplementedHVACServiceServer
-	temp  roomHeatingTempController
-	sysfn roomHeatingSysFnController
-	room  temperatureReader
-	bus   *eebus.EventBus
+	temp     roomHeatingTempController
+	sysfn    roomHeatingSysFnController
+	room     temperatureReader
+	bus      *eebus.EventBus
+	registry *eebus.DeviceRegistry
 }
 
 func NewHVACService(
@@ -37,48 +38,89 @@ func NewHVACService(
 	sysfn roomHeatingSysFnController,
 	room temperatureReader,
 	bus *eebus.EventBus,
+	registries ...*eebus.DeviceRegistry,
 ) *HVACService {
-	return &HVACService{temp: temp, sysfn: sysfn, room: room, bus: bus}
+	var registry *eebus.DeviceRegistry
+	if len(registries) > 0 {
+		registry = registries[0]
+	}
+	return &HVACService{temp: temp, sysfn: sysfn, room: room, bus: bus, registry: registry}
 }
 
 func (s *HVACService) GetRoomHeating(_ context.Context, req *pb.DeviceRequest) (*pb.RoomHeatingState, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
+	if _, err := normalizeReadSKI(req.Ski); err != nil {
+		return nil, err
+	}
 	state := &pb.RoomHeatingState{}
-	resolved := false
+	entityResolved := false
+	readSucceeded := false
+	var resolveErr error
 	if s.room != nil {
 		if value, err := s.room.Temperature(req.Ski); err == nil {
 			state.CurrentTemperatureCelsius = &value
-			resolved = true
+			readSucceeded = true
 		}
 	}
 	if s.temp != nil {
-		resolution := s.temp.CompatibleEntity(req.Ski)
-		if resolution.Ambiguous() {
-			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
-		}
-		if resolution.Entity != nil {
-			resolved = true
-			if setpoint, err := s.temp.State(resolution.Entity); err == nil {
+		entity, err := resolveCompatibleEntity(
+			req.Ski,
+			"HVACRoom",
+			eebus.CapabilityRoomHeating,
+			s.registry,
+			s.temp.CompatibleEntity,
+		)
+		if err == nil {
+			entityResolved = true
+			if setpoint, err := s.temp.State(entity); err == nil {
 				state.Setpoint = convertRoomHeatingSetpoint(setpoint)
+				readSucceeded = true
 			}
+		} else if status.Code(err) == codes.InvalidArgument || status.Code(err) == codes.FailedPrecondition {
+			return nil, err
+		} else if resolveErr == nil {
+			resolveErr = err
 		}
 	}
 	if s.sysfn != nil {
-		resolution := s.sysfn.CompatibleEntity(req.Ski)
-		if resolution.Ambiguous() {
-			return nil, ambiguousDeviceSelection(resolution.DeviceCount)
-		}
-		if resolution.Entity != nil {
-			resolved = true
-			if sysfn, err := s.sysfn.State(resolution.Entity); err == nil {
+		entity, err := resolveCompatibleEntity(
+			req.Ski,
+			"HVACRoom",
+			eebus.CapabilityRoomHeating,
+			s.registry,
+			s.sysfn.CompatibleEntity,
+		)
+		if err == nil {
+			entityResolved = true
+			if sysfn, err := s.sysfn.State(entity); err == nil {
 				state.SystemFunction = convertRoomHeatingSystemFunction(sysfn)
+				readSucceeded = true
 			}
+		} else if status.Code(err) == codes.InvalidArgument || status.Code(err) == codes.FailedPrecondition {
+			return nil, err
+		} else if resolveErr == nil {
+			resolveErr = err
 		}
 	}
-	if !resolved {
-		return nil, status.Errorf(codes.NotFound, "no compatible HVACRoom found for ski %s", req.Ski)
+	if !entityResolved && !readSucceeded {
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		if s.registry != nil {
+			s.registry.RecordCapabilityMissingEntity(req.Ski, eebus.CapabilityRoomHeating)
+		}
+		return nil, status.Errorf(codes.NotFound, "no compatible HVACRoom found for %s ski", requestedSKIForError(req.Ski))
+	}
+	if !readSucceeded {
+		if s.registry != nil {
+			s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityRoomHeating, usecases.ErrRoomHeatingDataUnavailable)
+		}
+		return nil, status.Error(codes.Unavailable, "reading room heating: temporarily unavailable")
+	}
+	if s.registry != nil {
+		s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityRoomHeating, nil)
 	}
 	return state, nil
 }
@@ -87,20 +129,26 @@ func (s *HVACService) SetRoomHeatingTemperature(
 	ctx context.Context,
 	req *pb.SetRoomHeatingTemperatureRequest,
 ) (*pb.Empty, error) {
-	if req == nil || req.Ski == "" {
-		return nil, status.Error(codes.InvalidArgument, "ski is required for write operations")
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if err := requireWriteSKI(req.Ski); err != nil {
+		return nil, err
 	}
 	if s.temp == nil {
 		return nil, status.Error(codes.Unavailable, "room heating temperature use case not initialized")
 	}
-	resolution := s.temp.CompatibleEntity(req.Ski)
-	if resolution.Ambiguous() {
-		return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+	entity, err := resolveCompatibleEntity(
+		req.Ski,
+		"HVACRoom",
+		eebus.CapabilityRoomHeating,
+		s.registry,
+		s.temp.CompatibleEntity,
+	)
+	if err != nil {
+		return nil, err
 	}
-	if resolution.Entity == nil {
-		return nil, status.Errorf(codes.NotFound, "no compatible HVACRoom found for ski %s", req.Ski)
-	}
-	if err := s.temp.Write(ctx, resolution.Entity, req.ValueCelsius); err != nil {
+	if err := s.temp.Write(ctx, entity, req.ValueCelsius); err != nil {
 		return nil, mapRoomHeatingError("writing room heating setpoint", err)
 	}
 	return &pb.Empty{}, nil
@@ -110,20 +158,26 @@ func (s *HVACService) SetRoomHeatingMode(
 	ctx context.Context,
 	req *pb.SetRoomHeatingModeRequest,
 ) (*pb.Empty, error) {
-	if req == nil || req.Ski == "" {
-		return nil, status.Error(codes.InvalidArgument, "ski is required for write operations")
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if err := requireWriteSKI(req.Ski); err != nil {
+		return nil, err
 	}
 	if s.sysfn == nil {
 		return nil, status.Error(codes.Unavailable, "room heating system function use case not initialized")
 	}
-	resolution := s.sysfn.CompatibleEntity(req.Ski)
-	if resolution.Ambiguous() {
-		return nil, ambiguousDeviceSelection(resolution.DeviceCount)
+	entity, err := resolveCompatibleEntity(
+		req.Ski,
+		"HVACRoom",
+		eebus.CapabilityRoomHeating,
+		s.registry,
+		s.sysfn.CompatibleEntity,
+	)
+	if err != nil {
+		return nil, err
 	}
-	if resolution.Entity == nil {
-		return nil, status.Errorf(codes.NotFound, "no compatible HVACRoom found for ski %s", req.Ski)
-	}
-	if err := s.sysfn.WriteOperationMode(ctx, resolution.Entity, req.Mode); err != nil {
+	if err := s.sysfn.WriteOperationMode(ctx, entity, req.Mode); err != nil {
 		return nil, mapRoomHeatingError("writing room heating mode", err)
 	}
 	return &pb.Empty{}, nil
@@ -133,48 +187,29 @@ func (s *HVACService) SubscribeRoomHeatingEvents(
 	req *pb.DeviceRequest,
 	stream pb.HVACService_SubscribeRoomHeatingEventsServer,
 ) error {
-	if req == nil {
-		return status.Error(codes.InvalidArgument, "request is required")
-	}
-	if s.bus == nil {
-		return status.Error(codes.Unavailable, "event bus not initialized")
-	}
-	ch := s.bus.Subscribe()
-	defer s.bus.Unsubscribe(ch)
-	reqSKI := eebus.NormalizeSKI(req.Ski)
-
-	for {
-		select {
-		case evt, ok := <-ch:
-			if !ok {
-				return nil
-			}
-			if reqSKI != "" && evt.SKI != reqSKI {
-				continue
-			}
-			var eventType pb.RoomHeatingEventType
-			switch evt.Type {
-			case eebus.EventTypeRoomHeatingUseCaseSupportUpdated, eebus.EventTypeRoomHeatingSystemFunctionSupportUpdated:
-				eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SUPPORT_UPDATED
-			case eebus.EventTypeRoomTemperatureUpdated:
-				eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_CURRENT_TEMPERATURE_UPDATED
-			case eebus.EventTypeRoomHeatingSetpointUpdated:
-				eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SETPOINT_UPDATED
-			case eebus.EventTypeRoomHeatingSystemFunctionUpdated:
-				eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SYSTEM_FUNCTION_UPDATED
-			default:
-				continue
-			}
-			event := &pb.RoomHeatingEvent{Ski: evt.SKI, EventType: eventType}
-			if state, err := s.GetRoomHeating(stream.Context(), &pb.DeviceRequest{Ski: evt.SKI}); err == nil {
-				event.State = state
-			}
-			if err := stream.Send(event); err != nil {
-				return err
-			}
-		case <-stream.Context().Done():
-			return stream.Context().Err()
+	return subscribeFilteredEvents(s.bus, req, stream.Context(), stream.Send, func(evt eebus.Event) (*pb.RoomHeatingEvent, bool) {
+		var eventType pb.RoomHeatingEventType
+		switch evt.Type {
+		case eebus.EventTypeRoomHeatingUseCaseSupportUpdated, eebus.EventTypeRoomHeatingSystemFunctionSupportUpdated:
+			eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SUPPORT_UPDATED
+		case eebus.EventTypeRoomTemperatureUpdated:
+			eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_CURRENT_TEMPERATURE_UPDATED
+		case eebus.EventTypeRoomHeatingSetpointUpdated:
+			eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SETPOINT_UPDATED
+		case eebus.EventTypeRoomHeatingSystemFunctionUpdated:
+			eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SYSTEM_FUNCTION_UPDATED
+		default:
+			return nil, false
 		}
+		event := &pb.RoomHeatingEvent{Ski: evt.SKI, EventType: eventType}
+		s.attachRoomHeatingPayload(event, evt.SKI)
+		return event, true
+	})
+}
+
+func (s *HVACService) attachRoomHeatingPayload(event *pb.RoomHeatingEvent, ski string) {
+	if state, err := s.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: ski}); err == nil {
+		event.State = state
 	}
 }
 
@@ -198,8 +233,8 @@ func convertRoomHeatingSystemFunction(state usecases.RoomHeatingSystemFunctionSt
 
 var roomHeatingErrorClasses = usecaseErrorClasses{
 	invalidArgument:    []error{usecases.ErrRoomHeatingOutOfRange, usecases.ErrRoomHeatingInvalidStep, usecases.ErrRoomHeatingSysFnInvalidMode},
-	failedPrecondition: []error{usecases.ErrRoomHeatingNotWritable, usecases.ErrRoomHeatingSysFnNotWritable, usecases.ErrRoomHeatingSysFnRejected},
-	notFound:           []error{usecases.ErrRoomHeatingDataUnavailable, usecases.ErrRoomHeatingSysFnDataUnavailable},
+	failedPrecondition: []error{usecases.ErrRoomHeatingNotWritable, usecases.ErrRoomHeatingRejected, usecases.ErrRoomHeatingSysFnNotWritable, usecases.ErrRoomHeatingSysFnRejected},
+	unavailable:        []error{usecases.ErrRoomHeatingDataUnavailable, usecases.ErrRoomHeatingSysFnDataUnavailable},
 }
 
 func mapRoomHeatingError(action string, err error) error {

@@ -56,6 +56,139 @@ func setupDeviceTest(t *testing.T) pb.DeviceServiceClient {
 	return pb.NewDeviceServiceClient(conn)
 }
 
+func setupDeviceStateTest(t *testing.T) (pb.DeviceServiceClient, *eebus.EventBus, *eebus.DeviceRegistry) {
+	t.Helper()
+	bus := eebus.NewEventBus()
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false), bus, "test-local-ski", registry, &recordingTrustController{},
+	)
+	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
+	pb.RegisterDeviceServiceServer(srv.GRPCServer(), svc)
+	go srv.Start()
+	t.Cleanup(srv.Stop)
+	time.Sleep(100 * time.Millisecond)
+	conn, err := grpc.NewClient(srv.Addr(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	return pb.NewDeviceServiceClient(conn), bus, registry
+}
+
+func TestSubscribeDeviceStateStartsWithRevisionAndResync(t *testing.T) {
+	client, bus, _ := setupDeviceStateTest(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	stream, err := client.SubscribeDeviceState(ctx, &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil {
+		t.Fatalf("SubscribeDeviceState: %v", err)
+	}
+	initial, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("initial Recv: %v", err)
+	}
+	if initial.Ski != eebus.NormalizeSKI(testValidSKI) || initial.Revision != 0 ||
+		initial.GetResyncRequired().GetReason() != pb.ResyncReason_RESYNC_REASON_INITIAL_STATE_REQUIRED ||
+		initial.EventTime == nil {
+		t.Fatalf("initial envelope = %+v", initial)
+	}
+
+	bus.Publish(eebus.Event{SKI: testValidSKI, Type: eebus.EventTypeLPCLimitUpdated})
+	event, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("event Recv: %v", err)
+	}
+	if event.Revision != 1 || event.GetLpc().GetEventType() != pb.LPCEventType_LPC_EVENT_LIMIT_UPDATED {
+		t.Fatalf("LPC envelope = %+v", event)
+	}
+}
+
+func TestSubscribeDeviceStatePublishesCapabilityTruth(t *testing.T) {
+	client, bus, registry := setupDeviceStateTest(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	stream, err := client.SubscribeDeviceState(ctx, &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil {
+		t.Fatalf("SubscribeDeviceState: %v", err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatalf("initial Recv: %v", err)
+	}
+	registry.RecordCapabilitySupport(testValidSKI, eebus.CapabilityDHW, false)
+	bus.Publish(eebus.Event{SKI: testValidSKI, Type: eebus.EventTypeDHWUseCaseSupportUpdated})
+	event, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("capability Recv: %v", err)
+	}
+	capabilities := event.GetCapability()
+	if capabilities == nil || capabilities.Ski != eebus.NormalizeSKI(testValidSKI) {
+		t.Fatalf("capability envelope = %+v", event)
+	}
+	for _, capability := range capabilities.Capabilities {
+		if capability.Id == pb.CapabilityId_CAPABILITY_DHW {
+			if capability.State != pb.CapabilityState_CAPABILITY_STATE_UNSUPPORTED {
+				t.Fatalf("DHW capability = %+v", capability)
+			}
+			return
+		}
+	}
+	t.Fatal("DHW capability missing")
+}
+
+func TestSubscribeDeviceStateAttachesBestEffortPayload(t *testing.T) {
+	bus := eebus.NewEventBus()
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	hvacService := bridgegrpc.NewHVACService(
+		nil,
+		nil,
+		fakeDHWTemperatureReader{value: 20.5},
+		bus,
+		registry,
+	)
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false),
+		bus,
+		"test-local-ski",
+		registry,
+		&recordingTrustController{},
+		bridgegrpc.WithDeviceStatePayloads(bridgegrpc.DeviceStatePayloadSources{HVAC: hvacService}),
+	)
+	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
+	pb.RegisterDeviceServiceServer(srv.GRPCServer(), svc)
+	go srv.Start()
+	t.Cleanup(srv.Stop)
+	time.Sleep(100 * time.Millisecond)
+	conn, err := grpc.NewClient(srv.Addr(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	stream, err := pb.NewDeviceServiceClient(conn).SubscribeDeviceState(ctx, &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil {
+		t.Fatalf("SubscribeDeviceState: %v", err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatalf("initial Recv: %v", err)
+	}
+	bus.Publish(eebus.Event{SKI: testValidSKI, Type: eebus.EventTypeRoomTemperatureUpdated})
+
+	event, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("event Recv: %v", err)
+	}
+	state := event.GetHvac().GetState()
+	if event.GetHvac().GetEventType() != pb.RoomHeatingEventType_ROOM_HEATING_EVENT_CURRENT_TEMPERATURE_UPDATED ||
+		state == nil || state.GetCurrentTemperatureCelsius() != 20.5 {
+		t.Fatalf("device state HVAC payload = %+v", event)
+	}
+}
+
 func TestGetStatus(t *testing.T) {
 	client := setupDeviceTest(t)
 
@@ -130,6 +263,100 @@ func TestGetDeviceStatusRejectsMalformedSKI(t *testing.T) {
 	}
 }
 
+func TestGetDeviceCapabilitiesContractRemoteNotAdvertised(t *testing.T) {
+	bus := eebus.NewEventBus()
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	registry.RecordCapabilitySupport(testValidSKI, eebus.CapabilityDHW, false)
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false), bus, "local", registry, &recordingTrustController{},
+	)
+
+	response, err := svc.GetDeviceCapabilities(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil {
+		t.Fatalf("GetDeviceCapabilities: %v", err)
+	}
+	if response.Ski != eebus.NormalizeSKI(testValidSKI) || len(response.Capabilities) != len(eebus.AllCapabilities) {
+		t.Fatalf("GetDeviceCapabilities = %+v", response)
+	}
+	for _, capability := range response.Capabilities {
+		if capability.Id == pb.CapabilityId_CAPABILITY_DHW {
+			if capability.State != pb.CapabilityState_CAPABILITY_STATE_UNSUPPORTED ||
+				capability.Reason != pb.CapabilityReason_CAPABILITY_REASON_REMOTE_NOT_ADVERTISED ||
+				capability.LastChanged == nil {
+				t.Fatalf("DHW capability = %+v", capability)
+			}
+			return
+		}
+	}
+	t.Fatal("DHW capability missing")
+}
+
+func deviceCapabilityContract(t *testing.T, registry *eebus.DeviceRegistry, id pb.CapabilityId) *pb.DeviceCapability {
+	t.Helper()
+	if !registry.KnownDevice(testValidSKI) {
+		registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	}
+	bus := eebus.NewEventBus()
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false), bus, "local", registry, &recordingTrustController{},
+	)
+	response, err := svc.GetDeviceCapabilities(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil {
+		t.Fatalf("GetDeviceCapabilities: %v", err)
+	}
+	for _, capability := range response.Capabilities {
+		if capability.Id == id {
+			return capability
+		}
+	}
+	t.Fatalf("capability %v missing", id)
+	return nil
+}
+
+func TestGetDeviceCapabilitiesUnknownSKIReturnsNotFoundWithoutMutation(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	bus := eebus.NewEventBus()
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false), bus, "local", registry, &recordingTrustController{},
+	)
+
+	_, err := svc.GetDeviceCapabilities(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("code = %v, want NotFound", status.Code(err))
+	}
+	if _, exists := registry.DeviceCapabilities(testValidSKI); exists {
+		t.Fatal("GetDeviceCapabilities mutated registry for unknown SKI")
+	}
+}
+
+func TestGetDeviceCapabilitiesContractLocalDisabled(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.SetLocalCapabilityEnabled(eebus.CapabilityOHPCF, false)
+	capability := deviceCapabilityContract(t, registry, pb.CapabilityId_CAPABILITY_OHPCF)
+	if capability.State != pb.CapabilityState_CAPABILITY_STATE_UNSUPPORTED || capability.Reason != pb.CapabilityReason_CAPABILITY_REASON_LOCAL_DISABLED {
+		t.Fatalf("capability = %+v", capability)
+	}
+}
+
+func TestGetDeviceCapabilitiesContractEntityNotBound(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.RecordCapabilityEntityNotBound(testValidSKI, eebus.CapabilityLPC)
+	capability := deviceCapabilityContract(t, registry, pb.CapabilityId_CAPABILITY_LPC)
+	if capability.State != pb.CapabilityState_CAPABILITY_STATE_TEMPORARILY_UNAVAILABLE || capability.Reason != pb.CapabilityReason_CAPABILITY_REASON_ENTITY_NOT_BOUND {
+		t.Fatalf("capability = %+v", capability)
+	}
+}
+
+func TestGetDeviceCapabilitiesContractTemporaryReadFailure(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.RecordCapabilityRead(testValidSKI, eebus.CapabilityMonitoring, errors.New("read failed"))
+	capability := deviceCapabilityContract(t, registry, pb.CapabilityId_CAPABILITY_MONITORING)
+	if capability.State != pb.CapabilityState_CAPABILITY_STATE_TEMPORARILY_UNAVAILABLE || capability.Reason != pb.CapabilityReason_CAPABILITY_REASON_READ_FAILED {
+		t.Fatalf("capability = %+v", capability)
+	}
+}
+
 func TestListDevicesResponsesAreSortedByNormalizedSKI(t *testing.T) {
 	bus := eebus.NewEventBus()
 	callbacks := eebus.NewCallbacks(bus, false)
@@ -173,6 +400,19 @@ func TestRegisterRemoteSKIRejectsMalformedSKI(t *testing.T) {
 	_, err := client.RegisterRemoteSKI(context.Background(), &pb.RegisterSKIRequest{Ski: "not-a-ski"})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("RegisterRemoteSKI(malformed) code = %v, want InvalidArgument", status.Code(err))
+	}
+}
+
+func TestPairingCommandsRejectNilRequest(t *testing.T) {
+	bus := eebus.NewEventBus()
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false), bus, "local", eebus.NewDeviceRegistry(), &recordingTrustController{},
+	)
+	if _, err := svc.RegisterRemoteSKI(context.Background(), nil); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("RegisterRemoteSKI(nil) code = %v", status.Code(err))
+	}
+	if _, err := svc.UnregisterRemoteSKI(context.Background(), nil); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("UnregisterRemoteSKI(nil) code = %v", status.Code(err))
 	}
 }
 

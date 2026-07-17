@@ -32,9 +32,7 @@ async def test_provider_pusher_coalesces_burst_and_publishes_latest(monkeypatch)
         callbacks.append(callback)
         return unsub
 
-    monkeypatch.setattr(
-        providers_module, "async_track_state_change_event", _track_state_changes
-    )
+    monkeypatch.setattr(providers_module, "async_track_state_change_event", _track_state_changes)
 
     current_value = 0
     in_flight = 0
@@ -60,9 +58,7 @@ async def test_provider_pusher_coalesces_burst_and_publishes_latest(monkeypatch)
             if len(published) >= 2:
                 drained.set()
 
-    pusher = _ProviderPusher(
-        _fake_hass(), "test", "test-ski", ("sensor.provider",), _push
-    )
+    pusher = _ProviderPusher(_fake_hass(), "test", "test-ski", ("sensor.provider",), _push)
     pusher.start()
     await asyncio.wait_for(first_started.wait(), timeout=1)
 
@@ -97,9 +93,7 @@ async def test_provider_pusher_stop_cancels_in_flight_push(monkeypatch):
         push_started.set()
         await never_release.wait()
 
-    pusher = _ProviderPusher(
-        _fake_hass(), "test", "test-ski", ("sensor.provider",), _push
-    )
+    pusher = _ProviderPusher(_fake_hass(), "test", "test-ski", ("sensor.provider",), _push)
     pusher.start()
     await asyncio.wait_for(push_started.wait(), timeout=1)
     pusher.signal()
@@ -130,9 +124,7 @@ async def test_provider_push_failure_warning_is_rate_limited(monkeypatch, caplog
             if outcome is not None:
                 raise outcome
 
-    manager = ProviderManager(
-        _fake_hass(), "test-ski", AsyncMock(return_value=object())
-    )
+    manager = ProviderManager(_fake_hass(), "test-ski", AsyncMock(return_value=object()))
     monkeypatch.setattr(
         proto_stubs,
         "test_provider_stub",
@@ -142,20 +134,12 @@ async def test_provider_push_failure_warning_is_rate_limited(monkeypatch, caplog
     caplog.set_level(logging.DEBUG, logger=providers_module.__name__)
 
     for _ in range(3):
-        await manager._async_publish_provider(
-            "test", "test_provider_stub", "Publish", object()
-        )
-    await manager._async_publish_provider(
-        "test", "test_provider_stub", "Publish", object()
-    )
-    await manager._async_publish_provider(
-        "test", "test_provider_stub", "Publish", object()
-    )
+        await manager._async_publish_provider("test", "test_provider_stub", "Publish", object())
+    await manager._async_publish_provider("test", "test_provider_stub", "Publish", object())
+    await manager._async_publish_provider("test", "test_provider_stub", "Publish", object())
 
     failure_records = [
-        record
-        for record in caplog.records
-        if record.getMessage().startswith("Failed to push test data")
+        record for record in caplog.records if record.getMessage().startswith("Failed to push test data")
     ]
     assert [record.levelno for record in failure_records] == [
         logging.WARNING,
@@ -163,8 +147,90 @@ async def test_provider_push_failure_warning_is_rate_limited(monkeypatch, caplog
         logging.DEBUG,
         logging.WARNING,
     ]
-    assert [
-        record.getMessage()
-        for record in caplog.records
-        if record.levelno == logging.INFO
-    ] == ["test provider push recovered"]
+    assert [record.getMessage() for record in caplog.records if record.levelno == logging.INFO] == [
+        "test provider push recovered"
+    ]
+
+
+async def test_provider_manager_stop_invalidates_enabled_providers(monkeypatch):
+    """Stopping sends best-effort invalidations for all enabled provider feeds."""
+    requests = []
+
+    class _GridStub:
+        def __init__(self, _channel):
+            pass
+
+        async def PublishGridData(self, request, timeout=None):  # noqa: N802
+            requests.append(("grid", request))
+            return proto_stubs.Empty()
+
+    class _VisualizationStub:
+        def __init__(self, _channel):
+            pass
+
+        async def PublishPVData(self, request, timeout=None):  # noqa: N802
+            requests.append(("pv", request))
+            return proto_stubs.Empty()
+
+        async def PublishBatteryData(self, request, timeout=None):  # noqa: N802
+            requests.append(("battery", request))
+            return proto_stubs.Empty()
+
+    class _DeviceStub:
+        def __init__(self, _channel):
+            pass
+
+        async def GetDeviceCapabilities(self, request, timeout=None):  # noqa: N802
+            return proto_stubs.DeviceCapabilities(ski=request.ski)
+
+    monkeypatch.setattr(proto_stubs, "GridServiceStub", _GridStub)
+    monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _VisualizationStub)
+    monkeypatch.setattr(proto_stubs, "DeviceServiceStub", _DeviceStub)
+    manager = ProviderManager(
+        _fake_hass(),
+        "test-ski",
+        AsyncMock(return_value=object()),
+        grid_power_entity="sensor.grid_power",
+        pv_power_entity="sensor.pv_power",
+        battery_power_entity="sensor.battery_power",
+    )
+
+    await manager.async_stop()
+
+    assert [label for label, _request in requests] == ["grid", "pv", "battery"]
+    for _label, request in requests:
+        assert request.HasField("sample") is True
+        assert request.sample.invalid is True
+
+
+async def test_provider_manager_skips_invalidations_for_old_bridge(monkeypatch):
+    requests = []
+    error = AioRpcError(grpc.StatusCode.UNIMPLEMENTED, Metadata(), Metadata(), details="old bridge")
+
+    class _DeviceStub:
+        def __init__(self, _channel):
+            pass
+
+        async def GetDeviceCapabilities(self, request, timeout=None):  # noqa: N802
+            raise error
+
+    class _GridStub:
+        def __init__(self, _channel):
+            pass
+
+        async def PublishGridData(self, request, timeout=None):  # noqa: N802
+            requests.append(request)
+            return proto_stubs.Empty()
+
+    monkeypatch.setattr(proto_stubs, "DeviceServiceStub", _DeviceStub)
+    monkeypatch.setattr(proto_stubs, "GridServiceStub", _GridStub)
+    manager = ProviderManager(
+        _fake_hass(),
+        "test-ski",
+        AsyncMock(return_value=object()),
+        grid_power_entity="sensor.grid_power",
+    )
+
+    await manager.async_stop()
+
+    assert requests == []

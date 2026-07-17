@@ -10,6 +10,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+func ptrFloat64(value float64) *float64 {
+	return &value
+}
+
 func TestPublishGridDataValidation(t *testing.T) {
 	// nil provider: the service must report Unavailable, never panic, so the
 	// HA integration can detect the provider is disabled (UNIMPLEMENTED-like).
@@ -21,8 +25,18 @@ func TestPublishGridDataValidation(t *testing.T) {
 	}
 
 	feedIn := 12340.0
-	_, err := svc.PublishGridData(ctx, &pb.GridData{PowerW: -1500, FeedInWh: &feedIn})
+	_, err := svc.PublishGridData(ctx, &pb.GridData{PowerW: ptrFloat64(-1500), FeedInWh: &feedIn})
 	if status.Code(err) != codes.Unavailable {
 		t.Errorf("PublishGridData with nil provider code = %v, want Unavailable", status.Code(err))
+	}
+
+	_, err = svc.PublishGridData(ctx, &pb.GridData{})
+	if status.Code(err) != codes.Unavailable {
+		t.Errorf("legacy PublishGridData without power code = %v, want Unavailable", status.Code(err))
+	}
+
+	_, err = svc.PublishGridData(ctx, &pb.GridData{Sample: &pb.ProviderSampleMeta{}})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("new-style PublishGridData without power code = %v, want InvalidArgument", status.Code(err))
 	}
 }

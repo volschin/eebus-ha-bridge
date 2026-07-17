@@ -30,10 +30,15 @@ type DHWService struct {
 	dhw      dhwController
 	dhwSysFn dhwSysFnController
 	bus      *eebus.EventBus
+	registry *eebus.DeviceRegistry
 }
 
-func NewDHWService(dhw dhwController, dhwSysFn dhwSysFnController, bus *eebus.EventBus) *DHWService {
-	return &DHWService{dhw: dhw, dhwSysFn: dhwSysFn, bus: bus}
+func NewDHWService(dhw dhwController, dhwSysFn dhwSysFnController, bus *eebus.EventBus, registries ...*eebus.DeviceRegistry) *DHWService {
+	var registry *eebus.DeviceRegistry
+	if len(registries) > 0 {
+		registry = registries[0]
+	}
+	return &DHWService{dhw: dhw, dhwSysFn: dhwSysFn, bus: bus, registry: registry}
 }
 
 func (s *DHWService) GetDHWSetpoint(_ context.Context, req *pb.DeviceRequest) (*pb.DHWSetpoint, error) {
@@ -45,6 +50,9 @@ func (s *DHWService) GetDHWSetpoint(_ context.Context, req *pb.DeviceRequest) (*
 		return nil, err
 	}
 	state, err := s.dhw.State(entity)
+	if s.registry != nil {
+		s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityDHW, err)
+	}
 	if err != nil {
 		return nil, mapDHWError("reading DHW setpoint", err)
 	}
@@ -55,8 +63,8 @@ func (s *DHWService) SetDHWSetpoint(ctx context.Context, req *pb.SetDHWSetpointR
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
-	if req.Ski == "" {
-		return nil, status.Error(codes.InvalidArgument, "ski is required for write operations")
+	if err := requireWriteSKI(req.Ski); err != nil {
+		return nil, err
 	}
 	entity, err := s.resolveEntity(req.Ski)
 	if err != nil {
@@ -77,6 +85,9 @@ func (s *DHWService) GetDHWSystemFunction(_ context.Context, req *pb.DeviceReque
 		return nil, err
 	}
 	state, err := s.dhwSysFn.State(entity)
+	if s.registry != nil {
+		s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityDHWSystemFunction, err)
+	}
 	if err != nil {
 		return nil, mapDHWError("reading DHW system function", err)
 	}
@@ -87,8 +98,8 @@ func (s *DHWService) SetDHWBoost(ctx context.Context, req *pb.SetDHWBoostRequest
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
-	if req.Ski == "" {
-		return nil, status.Error(codes.InvalidArgument, "ski is required for write operations")
+	if err := requireWriteSKI(req.Ski); err != nil {
+		return nil, err
 	}
 	entity, err := s.resolveSysFnEntity(req.Ski)
 	if err != nil {
@@ -104,8 +115,8 @@ func (s *DHWService) SetDHWOperationMode(ctx context.Context, req *pb.SetDHWOper
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
-	if req.Ski == "" {
-		return nil, status.Error(codes.InvalidArgument, "ski is required for write operations")
+	if err := requireWriteSKI(req.Ski); err != nil {
+		return nil, err
 	}
 	entity, err := s.resolveSysFnEntity(req.Ski)
 	if err != nil {
@@ -118,118 +129,82 @@ func (s *DHWService) SetDHWOperationMode(ctx context.Context, req *pb.SetDHWOper
 }
 
 func (s *DHWService) SubscribeDHWEvents(req *pb.DeviceRequest, stream pb.DHWService_SubscribeDHWEventsServer) error {
-	if req == nil {
-		return status.Error(codes.InvalidArgument, "request is required")
-	}
-	ch := s.bus.Subscribe()
-	defer s.bus.Unsubscribe(ch)
-	reqSKI := eebus.NormalizeSKI(req.Ski)
-
-	for {
-		select {
-		case evt, ok := <-ch:
-			if !ok {
-				return nil
-			}
-			if reqSKI != "" && evt.SKI != reqSKI {
-				continue
-			}
-			var eventType pb.DHWEventType
-			switch evt.Type {
-			case eebus.EventTypeDHWUseCaseSupportUpdated:
-				eventType = pb.DHWEventType_DHW_EVENT_SUPPORT_UPDATED
-			case eebus.EventTypeDHWSetpointUpdated:
-				eventType = pb.DHWEventType_DHW_EVENT_SETPOINT_UPDATED
-			default:
-				continue
-			}
-			event := &pb.DHWEvent{Ski: evt.SKI, EventType: eventType}
-			if resolution := s.dhw.CompatibleEntity(evt.SKI); resolution.Entity != nil {
-				if state, err := s.dhw.State(resolution.Entity); err == nil {
-					event.Setpoint = convertDHWSetpoint(state)
-				}
-			}
-			if err := stream.Send(event); err != nil {
-				return err
-			}
-		case <-stream.Context().Done():
-			return stream.Context().Err()
+	return subscribeFilteredEvents(s.bus, req, stream.Context(), stream.Send, func(evt eebus.Event) (*pb.DHWEvent, bool) {
+		var eventType pb.DHWEventType
+		switch evt.Type {
+		case eebus.EventTypeDHWUseCaseSupportUpdated:
+			eventType = pb.DHWEventType_DHW_EVENT_SUPPORT_UPDATED
+		case eebus.EventTypeDHWSetpointUpdated:
+			eventType = pb.DHWEventType_DHW_EVENT_SETPOINT_UPDATED
+		default:
+			return nil, false
 		}
-	}
+		event := &pb.DHWEvent{Ski: evt.SKI, EventType: eventType}
+		s.attachDHWPayload(event, evt.SKI)
+		return event, true
+	})
 }
 
 func (s *DHWService) SubscribeDHWSystemFunctionEvents(
 	req *pb.DeviceRequest,
 	stream pb.DHWService_SubscribeDHWSystemFunctionEventsServer,
 ) error {
-	if req == nil {
-		return status.Error(codes.InvalidArgument, "request is required")
-	}
-	ch := s.bus.Subscribe()
-	defer s.bus.Unsubscribe(ch)
-	reqSKI := eebus.NormalizeSKI(req.Ski)
+	return subscribeFilteredEvents(s.bus, req, stream.Context(), stream.Send, func(evt eebus.Event) (*pb.DHWSystemFunctionEvent, bool) {
+		var eventType pb.DHWSystemFunctionEventType
+		switch evt.Type {
+		case eebus.EventTypeDHWSystemFunctionSupportUpdated:
+			eventType = pb.DHWSystemFunctionEventType_DHW_SYSTEM_FUNCTION_EVENT_SUPPORT_UPDATED
+		case eebus.EventTypeDHWSystemFunctionUpdated:
+			eventType = pb.DHWSystemFunctionEventType_DHW_SYSTEM_FUNCTION_EVENT_STATE_UPDATED
+		default:
+			return nil, false
+		}
+		event := &pb.DHWSystemFunctionEvent{Ski: evt.SKI, EventType: eventType}
+		s.attachDHWSystemFunctionPayload(event, evt.SKI)
+		return event, true
+	})
+}
 
-	for {
-		select {
-		case evt, ok := <-ch:
-			if !ok {
-				return nil
-			}
-			if reqSKI != "" && evt.SKI != reqSKI {
-				continue
-			}
-			var eventType pb.DHWSystemFunctionEventType
-			switch evt.Type {
-			case eebus.EventTypeDHWSystemFunctionSupportUpdated:
-				eventType = pb.DHWSystemFunctionEventType_DHW_SYSTEM_FUNCTION_EVENT_SUPPORT_UPDATED
-			case eebus.EventTypeDHWSystemFunctionUpdated:
-				eventType = pb.DHWSystemFunctionEventType_DHW_SYSTEM_FUNCTION_EVENT_STATE_UPDATED
-			default:
-				continue
-			}
-			event := &pb.DHWSystemFunctionEvent{Ski: evt.SKI, EventType: eventType}
-			if s.dhwSysFn != nil {
-				if resolution := s.dhwSysFn.CompatibleEntity(evt.SKI); resolution.Entity != nil {
-					if state, err := s.dhwSysFn.State(resolution.Entity); err == nil {
-						event.State = convertDHWSystemFunctionState(state)
-					}
-				}
-			}
-			if err := stream.Send(event); err != nil {
-				return err
-			}
-		case <-stream.Context().Done():
-			return stream.Context().Err()
+func (s *DHWService) attachDHWPayload(event *pb.DHWEvent, ski string) {
+	if entity, err := s.resolveEntity(ski); err == nil {
+		if state, err := s.dhw.State(entity); err == nil {
+			event.Setpoint = convertDHWSetpoint(state)
+		}
+	}
+}
+
+func (s *DHWService) attachDHWSystemFunctionPayload(event *pb.DHWSystemFunctionEvent, ski string) {
+	if entity, err := s.resolveSysFnEntity(ski); err == nil {
+		if state, err := s.dhwSysFn.State(entity); err == nil {
+			event.State = convertDHWSystemFunctionState(state)
 		}
 	}
 }
 
 func (s *DHWService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, error) {
+	if _, err := normalizeReadSKI(ski); err != nil {
+		return nil, err
+	}
 	if s.dhw == nil {
 		return nil, status.Error(codes.Unavailable, "DHW temperature use case not initialized")
 	}
-	resolution := s.dhw.CompatibleEntity(ski)
-	if resolution.Ambiguous() {
-		return nil, ambiguousDeviceSelection(resolution.DeviceCount)
-	}
-	if resolution.Entity == nil {
-		return nil, status.Errorf(codes.NotFound, "no compatible DHWCircuit found for ski %s", ski)
-	}
-	return resolution.Entity, nil
+	return resolveCompatibleEntity(ski, "DHWCircuit", eebus.CapabilityDHW, s.registry, s.dhw.CompatibleEntity)
 }
 
 func (s *DHWService) resolveSysFnEntity(ski string) (spineapi.EntityRemoteInterface, error) {
+	if _, err := normalizeReadSKI(ski); err != nil {
+		return nil, err
+	}
 	if s.dhwSysFn == nil {
 		return nil, status.Error(codes.Unavailable, "DHW system function use case not initialized")
 	}
-	resolution := s.dhwSysFn.CompatibleEntity(ski)
-	if resolution.Ambiguous() {
-		return nil, ambiguousDeviceSelection(resolution.DeviceCount)
-	}
-	if resolution.Entity == nil {
-		return nil, status.Errorf(codes.NotFound, "no compatible DHWCircuit found for ski %s", ski)
-	}
-	return resolution.Entity, nil
+	return resolveCompatibleEntity(
+		ski,
+		"DHWCircuit",
+		eebus.CapabilityDHWSystemFunction,
+		s.registry,
+		s.dhwSysFn.CompatibleEntity,
+	)
 }
 
 func convertDHWSetpoint(state usecases.DHWSetpoint) *pb.DHWSetpoint {
@@ -269,8 +244,8 @@ func convertDHWBoostStatus(status string) pb.DHWBoostStatus {
 
 var dhwErrorClasses = usecaseErrorClasses{
 	invalidArgument:    []error{usecases.ErrDHWOutOfRange, usecases.ErrDHWInvalidStep, usecases.ErrDHWSysFnInvalidMode},
-	failedPrecondition: []error{usecases.ErrDHWNotWritable, usecases.ErrDHWSysFnNotWritable, usecases.ErrDHWSysFnRejected},
-	notFound:           []error{usecases.ErrDHWDataUnavailable, usecases.ErrDHWSysFnDataUnavailable},
+	failedPrecondition: []error{usecases.ErrDHWNotWritable, usecases.ErrDHWRejected, usecases.ErrDHWSysFnNotWritable, usecases.ErrDHWSysFnRejected},
+	unavailable:        []error{usecases.ErrDHWDataUnavailable, usecases.ErrDHWSysFnDataUnavailable},
 }
 
 func mapDHWError(action string, err error) error {

@@ -1,6 +1,7 @@
 package eebus_test
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -12,6 +13,148 @@ import (
 
 type fakeClock struct {
 	now time.Time
+}
+
+func capability(t *testing.T, registry *eebus.DeviceRegistry, ski string, id eebus.Capability) eebus.DeviceCapability {
+	t.Helper()
+	entries, _ := registry.DeviceCapabilities(ski)
+	for _, entry := range entries {
+		if entry.ID == id {
+			return entry
+		}
+	}
+	t.Fatalf("capability %d not found", id)
+	return eebus.DeviceCapability{}
+}
+
+func TestCapabilityContractLocalDisabled(t *testing.T) {
+	clock := &fakeClock{now: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)}
+	registry := eebus.NewDeviceRegistryWithClock(clock)
+	registry.SetLocalCapabilityEnabled(eebus.CapabilityOHPCF, false)
+	registry.AddDevice("ab:cd", eebus.DeviceInfo{})
+
+	entry := capability(t, registry, "ab:cd", eebus.CapabilityOHPCF)
+	if entry.State != eebus.CapabilityStateUnsupported || entry.Reason != eebus.CapabilityReasonLocalDisabled {
+		t.Fatalf("disabled capability = %+v", entry)
+	}
+}
+
+func TestCapabilityContractRemoteNotAdvertisedIsSticky(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.RecordCapabilitySupport("ab:cd", eebus.CapabilityDHW, false)
+	registry.RecordCapabilityRead("ab:cd", eebus.CapabilityDHW, nil)
+
+	entry := capability(t, registry, "ABCD", eebus.CapabilityDHW)
+	if entry.State != eebus.CapabilityStateUnsupported || entry.Reason != eebus.CapabilityReasonRemoteNotAdvertised {
+		t.Fatalf("remote unsupported capability = %+v", entry)
+	}
+}
+
+func TestAggregateCapabilitySupportUsesAnyAdvertisedSource(t *testing.T) {
+	tests := []struct {
+		name        string
+		temperature bool
+		systemFn    bool
+		wantState   eebus.CapabilityState
+	}{
+		{"temperature only", true, false, eebus.CapabilityStateUnknown},
+		{"system function only", false, true, eebus.CapabilityStateUnknown},
+		{"neither", false, false, eebus.CapabilityStateUnsupported},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := eebus.NewDeviceRegistry()
+			registry.RecordCapabilitySourceSupport(
+				"ab:cd", eebus.CapabilityRoomHeating, "room_heating_temperature", tt.temperature,
+			)
+			registry.RecordCapabilitySourceSupport(
+				"ab:cd", eebus.CapabilityRoomHeating, "room_heating_system_function", tt.systemFn,
+			)
+
+			entry := capability(t, registry, "ABCD", eebus.CapabilityRoomHeating)
+			if entry.State != tt.wantState {
+				t.Fatalf("aggregate capability = %+v, want state %v", entry, tt.wantState)
+			}
+			if tt.wantState == eebus.CapabilityStateUnsupported &&
+				entry.Reason != eebus.CapabilityReasonRemoteNotAdvertised {
+				t.Fatalf("unsupported aggregate capability = %+v", entry)
+			}
+		})
+	}
+}
+
+func TestCapabilityContractEntityNotBound(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.RecordCapabilityEntityNotBound("ab:cd", eebus.CapabilityRoomHeating)
+
+	entry := capability(t, registry, "ABCD", eebus.CapabilityRoomHeating)
+	if entry.State != eebus.CapabilityStateTemporarilyUnavailable || entry.Reason != eebus.CapabilityReasonEntityNotBound {
+		t.Fatalf("unbound capability = %+v", entry)
+	}
+}
+
+func TestCapabilityMissingEntityOnKnownDeviceIsRemoteUnsupported(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice("ab:cd", eebus.DeviceInfo{RemoteEntities: []spineapi.EntityRemoteInterface{nil}})
+	registry.RecordCapabilityMissingEntity("ab:cd", eebus.CapabilityOHPCF)
+
+	entry := capability(t, registry, "ABCD", eebus.CapabilityOHPCF)
+	if entry.State != eebus.CapabilityStateUnsupported || entry.Reason != eebus.CapabilityReasonRemoteNotAdvertised {
+		t.Fatalf("missing advertised capability = %+v", entry)
+	}
+}
+
+func TestCapabilityContractTemporaryReadFailure(t *testing.T) {
+	changedAt := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	clock := &fakeClock{now: changedAt}
+	registry := eebus.NewDeviceRegistryWithClock(clock)
+	registry.RecordCapabilityRead("ab:cd", eebus.CapabilityMonitoring, errors.New("transport detail"))
+
+	entry := capability(t, registry, "ABCD", eebus.CapabilityMonitoring)
+	if entry.State != eebus.CapabilityStateTemporarilyUnavailable || entry.Reason != eebus.CapabilityReasonReadFailed || entry.LastChanged != changedAt {
+		t.Fatalf("failed capability = %+v", entry)
+	}
+}
+
+func TestCapabilityContractDisconnectUsesSameRegistry(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.MarkConnected("ab:cd")
+	registry.RecordCapabilityRead("ab:cd", eebus.CapabilityLPC, nil)
+	registry.MarkDisconnected("ab:cd")
+
+	entry := capability(t, registry, "ABCD", eebus.CapabilityLPC)
+	if entry.State != eebus.CapabilityStateTemporarilyUnavailable || entry.Reason != eebus.CapabilityReasonDeviceDisconnected {
+		t.Fatalf("disconnected capability = %+v", entry)
+	}
+}
+
+func TestCapabilitySupportRemovalAfterDisconnectPreservesDisconnectReason(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.MarkConnected("ab:cd")
+	registry.RecordCapabilityRead("ab:cd", eebus.CapabilityLPC, nil)
+	registry.MarkDisconnected("ab:cd")
+	registry.RecordCapabilitySupport("ab:cd", eebus.CapabilityLPC, false)
+
+	entry := capability(t, registry, "ABCD", eebus.CapabilityLPC)
+	if entry.State != eebus.CapabilityStateTemporarilyUnavailable || entry.Reason != eebus.CapabilityReasonDeviceDisconnected {
+		t.Fatalf("post-disconnect support removal capability = %+v", entry)
+	}
+}
+
+func TestLateCapabilityUpdatesAfterDisconnectPreserveDisconnectReason(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.MarkConnected("ab:cd")
+	registry.RecordCapabilityRead("ab:cd", eebus.CapabilityLPC, nil)
+	registry.MarkDisconnected("ab:cd")
+
+	registry.RecordCapabilityRead("ab:cd", eebus.CapabilityLPC, nil)
+	registry.RecordCapabilityMissingEntity("ab:cd", eebus.CapabilityLPC)
+	registry.RecordCapabilityEntityNotBound("ab:cd", eebus.CapabilityLPC)
+
+	entry := capability(t, registry, "ABCD", eebus.CapabilityLPC)
+	if entry.State != eebus.CapabilityStateTemporarilyUnavailable || entry.Reason != eebus.CapabilityReasonDeviceDisconnected {
+		t.Fatalf("late post-disconnect capability = %+v", entry)
+	}
 }
 
 func (c *fakeClock) Now() time.Time {

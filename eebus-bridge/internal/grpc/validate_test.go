@@ -4,10 +4,12 @@ import (
 	"context"
 	"math"
 	"testing"
+	"time"
 
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestFiniteNonNegativePercent(t *testing.T) {
@@ -75,16 +77,35 @@ func TestPublishRPCsRejectInvalidValues(t *testing.T) {
 		}
 	}
 
-	if _, err := grid.PublishGridData(ctx, &pb.GridData{PowerW: inf}); true {
+	if _, err := grid.PublishGridData(ctx, &pb.GridData{PowerW: ptrFloat64(inf)}); true {
 		assertInvalid(t, err)
 	}
-	if _, err := grid.PublishGridData(ctx, &pb.GridData{PowerW: 100, FeedInWh: &neg}); true {
+	if _, err := grid.PublishGridData(ctx, &pb.GridData{PowerW: ptrFloat64(100), FeedInWh: &neg}); true {
 		assertInvalid(t, err)
 	}
-	if _, err := viz.PublishPVData(ctx, &pb.PVData{PowerW: neg}); true {
+	if _, err := viz.PublishPVData(ctx, &pb.PVData{PowerW: ptrFloat64(neg)}); true {
 		assertInvalid(t, err)
 	}
-	if _, err := viz.PublishBatteryData(ctx, &pb.BatteryData{PowerW: 0, StateOfChargePct: &soc}); true {
+	if _, err := viz.PublishBatteryData(ctx, &pb.BatteryData{PowerW: ptrFloat64(0), StateOfChargePct: &soc}); true {
 		assertInvalid(t, err)
+	}
+}
+
+func TestProviderValidityAllowsSmallHostClockSkew(t *testing.T) {
+	now := time.Now()
+	_, err := providerValidity(&pb.ProviderSampleMeta{
+		ObservedAt: timestamppb.New(now.Add(time.Second)),
+		ValidUntil: timestamppb.New(now.Add(time.Minute)),
+	})
+	if err != nil {
+		t.Fatalf("providerValidity rejected small future observed_at: %v", err)
+	}
+
+	_, err = providerValidity(&pb.ProviderSampleMeta{
+		ObservedAt: timestamppb.New(now.Add(time.Minute)),
+		ValidUntil: timestamppb.New(now.Add(2 * time.Minute)),
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("providerValidity far future code = %v, want InvalidArgument", status.Code(err))
 	}
 }

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -20,7 +21,8 @@ class CapabilityState(StrEnum):
     UNSUPPORTED = "unsupported"
 
 
-class SetpointState(TypedDict):
+@dataclass(frozen=True, slots=True)
+class SetpointState:
     """Temperature setpoint and its device-provided constraints."""
 
     value_celsius: float
@@ -30,25 +32,28 @@ class SetpointState(TypedDict):
     writable: bool
 
 
-class SystemFunctionState(TypedDict):
+@dataclass(frozen=True, slots=True)
+class SystemFunctionState:
     """Operation mode state shared by system-function use cases."""
 
     operation_mode: str
-    available_modes: list[str]
+    available_modes: tuple[str, ...]
     mode_writable: bool
 
 
-class DHWSystemFunctionState(TypedDict):
+@dataclass(frozen=True, slots=True)
+class DHWSystemFunctionState:
     """Domestic-hot-water boost and operation mode state."""
 
     boost_status: str
     boost_writable: bool
     operation_mode: str
-    available_modes: list[str]
+    available_modes: tuple[str, ...]
     mode_writable: bool
 
 
-class ConsumptionLimitState(TypedDict):
+@dataclass(frozen=True, slots=True)
+class ConsumptionLimitState:
     """Current limitation-of-power-consumption state."""
 
     value_watts: float
@@ -56,21 +61,24 @@ class ConsumptionLimitState(TypedDict):
     is_changeable: bool
 
 
-class FailsafeState(TypedDict):
+@dataclass(frozen=True, slots=True)
+class FailsafeState:
     """Current failsafe limit state."""
 
     value_watts: float
     duration_minimum_seconds: int
 
 
-class HeartbeatState(TypedDict):
+@dataclass(frozen=True, slots=True)
+class HeartbeatState:
     """Current heartbeat state."""
 
     running: bool
     within_duration: bool
 
 
-class CompressorFlexibilityState(TypedDict):
+@dataclass(frozen=True, slots=True)
+class CompressorFlexibilityState:
     """OHPCF compressor offer and process state."""
 
     available: bool
@@ -83,60 +91,23 @@ class CompressorFlexibilityState(TypedDict):
     minimal_pause_seconds: int
 
 
-class DeviceInfo(TypedDict, total=False):
+@dataclass(frozen=True, slots=True)
+class DeviceInfo:
     """Optional device classification fields reported by the bridge."""
 
-    manufacturer: str
-    model: str
-    serial: str
-    device_type: str
+    manufacturer: str | None = None
+    model: str | None = None
+    serial: str | None = None
+    device_type: str | None = None
 
 
-class CoordinatorSnapshot(TypedDict):
-    """Complete atomically published coordinator polling snapshot."""
+@dataclass(frozen=True, slots=True)
+class RoomHeatingValues:
+    """Fields returned together by the room-heating aggregate."""
 
-    connected: bool
-    local_ski: str
-    ski_registered: bool
-    power_l1_w: float | None
-    power_l2_w: float | None
-    power_l3_w: float | None
-    current_l1_a: float | None
-    current_l2_a: float | None
-    current_l3_a: float | None
-    voltage_l1_v: float | None
-    voltage_l2_v: float | None
-    voltage_l3_v: float | None
-    frequency_hz: float | None
-    energy_produced_kwh: float | None
-    dhw_temperature_c: float | None
-    room_temperature_c: float | None
-    outdoor_temperature_c: float | None
-    flow_temperature_c: float | None
-    return_temperature_c: float | None
-    compressor_temperature_c: float | None
-    compressor_power_w: float | None
-    power_watts: float | None
-    energy_consumed_heating_kwh: float | None
-    energy_consumed_dhw_kwh: float | None
-    energy_consumed_kwh: float | None
-    consumption_limit: ConsumptionLimitState | None
-    failsafe_limit: FailsafeState | None
-    heartbeat_status: HeartbeatState | None
-    heartbeat_supported: CapabilityState
-    lpc_supported: CapabilityState
-    failsafe_supported: CapabilityState
-    device_info: DeviceInfo | None
-    compressor_flexibility: CompressorFlexibilityState | None
-    dhw_setpoint: SetpointState | None
-    dhw_system_function: DHWSystemFunctionState | None
-    room_heating_setpoint: SetpointState | None
-    room_heating_system_function: SystemFunctionState | None
-    device_operating_state: str | None
-    ohpcf_supported: CapabilityState
-    dhw_supported: CapabilityState
-    dhw_sysfn_supported: CapabilityState
-    room_heating_supported: CapabilityState
+    setpoint: SetpointState | None
+    system_function: SystemFunctionState | None
+    current_temperature_celsius: float | None
 
 
 # Maps a GetMeasurements entry type (as emitted by the Go bridge) to the
@@ -174,37 +145,50 @@ def _dhw_system_function_to_dict(state: proto_stubs.DHWSystemFunctionState) -> D
     prefix = "DHW_BOOST_STATUS_"
     if status.startswith(prefix):
         status = status[len(prefix) :]
-    return {
-        "boost_status": status.lower(),
-        "boost_writable": state.boost_writable,
-        "operation_mode": state.operation_mode,
-        "available_modes": list(state.available_modes),
-        "mode_writable": state.mode_writable,
-    }
+    return DHWSystemFunctionState(
+        boost_status=status.lower(),
+        boost_writable=state.boost_writable,
+        operation_mode=state.operation_mode,
+        available_modes=tuple(state.available_modes),
+        mode_writable=state.mode_writable,
+    )
 
 
 def _setpoint_to_dict(
     setpoint: proto_stubs.DHWSetpoint | proto_stubs.RoomHeatingSetpoint,
 ) -> SetpointState:
     """Convert a protobuf setpoint (value/min/max/step/writable) to coordinator data."""
-    return {
-        "value_celsius": setpoint.value_celsius,
-        "min_celsius": setpoint.min_celsius,
-        "max_celsius": setpoint.max_celsius,
-        "step_celsius": setpoint.step_celsius,
-        "writable": setpoint.writable,
-    }
+    return SetpointState(
+        value_celsius=setpoint.value_celsius,
+        min_celsius=setpoint.min_celsius,
+        max_celsius=setpoint.max_celsius,
+        step_celsius=setpoint.step_celsius,
+        writable=setpoint.writable,
+    )
 
 
 def _system_function_to_dict(
     system_function: proto_stubs.RoomHeatingSystemFunction,
 ) -> SystemFunctionState:
     """Convert a protobuf system-function state to coordinator data."""
-    return {
-        "operation_mode": system_function.operation_mode,
-        "available_modes": list(system_function.available_modes),
-        "mode_writable": system_function.mode_writable,
-    }
+    return SystemFunctionState(
+        operation_mode=system_function.operation_mode,
+        available_modes=tuple(system_function.available_modes),
+        mode_writable=system_function.mode_writable,
+    )
+
+
+def _room_heating_from_proto(state: proto_stubs.RoomHeatingState) -> RoomHeatingValues:
+    """Convert the aggregate identically for polling and streaming paths."""
+    return RoomHeatingValues(
+        setpoint=_setpoint_to_dict(state.setpoint) if state.HasField("setpoint") else None,
+        system_function=(
+            _system_function_to_dict(state.system_function) if state.HasField("system_function") else None
+        ),
+        current_temperature_celsius=(
+            state.current_temperature_celsius if state.HasField("current_temperature_celsius") else None
+        ),
+    )
 
 
 def _extract_scoped_energy_kwh(

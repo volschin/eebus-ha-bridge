@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
+	"time"
 
 	eebusapi "github.com/enbility/eebus-go/api"
 	"github.com/enbility/eebus-go/features/server"
@@ -48,11 +50,17 @@ type MGCPProvider struct {
 	*usecase.UseCaseBase
 	bus        *eebus.EventBus
 	gridEntity spineapi.EntityLocalInterface
-	meas       *server.Measurement
+	meas       measurementServer
+	publisher  serializedMeasurementPublisher
 	powerID    *model.MeasurementIdType // scenario 2: AC total power (W)
 	feedInID   *model.MeasurementIdType // scenario 3: total grid feed-in energy (Wh)
 	consumedID *model.MeasurementIdType // scenario 4: total grid consumed energy (Wh)
 	debug      bool
+
+	snapshotMu      sync.Mutex
+	snapshot        *GridSnapshot
+	snapshotVersion uint64
+	expiryTimer     *time.Timer
 }
 
 // NewMGCPProvider builds the provider on the given local grid-connection-point
@@ -102,12 +110,11 @@ func (p *MGCPProvider) UseCase() eebusapi.UseCaseInterface { return p }
 func (p *MGCPProvider) AddFeatures() error {
 	// server.NewMeasurement/NewElectricalConnection only look up an existing
 	// server feature on the entity; they do not create it. Add them first.
-	p.gridEntity.GetOrAddFeature(model.FeatureTypeTypeMeasurement, model.RoleTypeServer)
 	p.gridEntity.GetOrAddFeature(model.FeatureTypeTypeElectricalConnection, model.RoleTypeServer)
 
-	meas, err := server.NewMeasurement(p.gridEntity)
+	meas, err := setupProviderMeasurementServer(p.gridEntity, "MGCP")
 	if err != nil {
-		return fmt.Errorf("[MGCP] creating Measurement server feature failed: %w", err)
+		return err
 	}
 	p.meas = meas
 
@@ -184,16 +191,73 @@ func idVal(id *model.MeasurementIdType) int {
 
 // publishMeasurement is the shared path for pushing one measurement value.
 func (p *MGCPProvider) publishMeasurement(id *model.MeasurementIdType, value float64) error {
-	if p.meas == nil || id == nil {
-		return errMGCPNotInitialized
+	return p.publisher.publishValue(p.meas, errMGCPNotInitialized, id, value)
+}
+
+func (p *MGCPProvider) publishGridMeasurements(snapshot GridSnapshot) error {
+	return p.publisher.publishValues(
+		p.meas,
+		errMGCPNotInitialized,
+		providerMeasurementValue{id: p.powerID, value: &snapshot.PowerW},
+		providerMeasurementValue{id: p.feedInID, value: snapshot.FeedInWh},
+		providerMeasurementValue{id: p.consumedID, value: snapshot.ConsumedWh},
+	)
+}
+
+func (p *MGCPProvider) invalidateGridMeasurements() error {
+	return p.publisher.invalidate(p.meas, errMGCPNotInitialized, p.powerID, p.feedInID, p.consumedID)
+}
+
+func (p *MGCPProvider) PublishGridSnapshot(snapshot GridSnapshot) error {
+	p.snapshotMu.Lock()
+	defer p.snapshotMu.Unlock()
+
+	if snapshot.Validity.Invalid {
+		if err := p.invalidateGridMeasurements(); err != nil {
+			return err
+		}
+		p.snapshotVersion++
+		stopProviderExpiryTimer(&p.expiryTimer)
+		p.snapshot = nil
+		return nil
 	}
-	return p.meas.UpdateDataForIds([]eebusapi.MeasurementDataForID{{
-		Data: model.MeasurementDataType{
-			ValueType: util.Ptr(model.MeasurementValueTypeTypeValue),
-			Value:     model.NewScaledNumberType(value),
-		},
-		Id: *id,
-	}})
+	if err := p.publishGridMeasurements(snapshot); err != nil {
+		return err
+	}
+	next := snapshot.clone()
+	p.snapshotVersion++
+	p.snapshot = &next
+	version := p.snapshotVersion
+	scheduleProviderExpiryTimer(&p.expiryTimer, snapshot.Validity.ValidUntil, func() {
+		p.expireGridSnapshot(version, time.Now())
+	})
+	return nil
+}
+
+func (p *MGCPProvider) CurrentGridSnapshot(now time.Time) (GridSnapshot, bool) {
+	p.snapshotMu.Lock()
+	defer p.snapshotMu.Unlock()
+
+	if p.snapshot == nil || !p.snapshot.Validity.Current(now) {
+		return GridSnapshot{}, false
+	}
+	return p.snapshot.clone(), true
+}
+
+func (p *MGCPProvider) expireGridSnapshot(version uint64, now time.Time) {
+	p.snapshotMu.Lock()
+	defer p.snapshotMu.Unlock()
+
+	if p.snapshotVersion != version || p.snapshot == nil || p.snapshot.Validity.Current(now) {
+		return
+	}
+	if err := p.invalidateGridMeasurements(); err != nil {
+		log.Printf("[MGCP] expiring grid sample failed: %v", err)
+		return
+	}
+	p.snapshotVersion++
+	p.snapshot = nil
+	stopProviderExpiryTimer(&p.expiryTimer)
 }
 
 // PublishPower pushes the momentary total grid power (W; negative = export/surplus,

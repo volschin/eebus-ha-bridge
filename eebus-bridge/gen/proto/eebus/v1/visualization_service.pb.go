@@ -25,13 +25,20 @@ type PVData struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Momentary total AC power produced by the PV system, in watts (VAPD
 	// scenario 2). Conventionally non-negative (production).
-	PowerW float64 `protobuf:"fixed64,1,opt,name=power_w,json=powerW,proto3" json:"power_w,omitempty"`
-	// Cumulative AC yield energy in Wh (VAPD scenario 3). Optional; omit when Home
-	// Assistant has no yield energy sensor mapped.
+	PowerW *float64 `protobuf:"fixed64,1,opt,name=power_w,json=powerW,proto3,oneof" json:"power_w,omitempty"`
+	// Cumulative AC yield energy in Wh (VAPD scenario 3). Optional; omitted means
+	// "not current in this complete sample" and clears any older yield value from
+	// the provider snapshot.
 	YieldWh *float64 `protobuf:"fixed64,2,opt,name=yield_wh,json=yieldWh,proto3,oneof" json:"yield_wh,omitempty"`
-	// Nominal peak power of the PV system in watts (VAPD scenario 1). Optional;
-	// typically a static configured value, omit when unknown.
-	PeakPowerW    *float64 `protobuf:"fixed64,3,opt,name=peak_power_w,json=peakPowerW,proto3,oneof" json:"peak_power_w,omitempty"`
+	// Deprecated: use PublishPVPeakPower. PVData is the atomic live measurement
+	// sample; embedding static DeviceConfiguration here would make live publish
+	// failure handling non-atomic, so requests that set this field are rejected.
+	//
+	// Deprecated: Marked as deprecated in eebus/v1/visualization_service.proto.
+	PeakPowerW *float64 `protobuf:"fixed64,3,opt,name=peak_power_w,json=peakPowerW,proto3,oneof" json:"peak_power_w,omitempty"`
+	// Sample validity metadata. If invalid=true, the bridge invalidates the
+	// current PV sample and ignores the value fields.
+	Sample        *ProviderSampleMeta `protobuf:"bytes,4,opt,name=sample,proto3" json:"sample,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -67,8 +74,8 @@ func (*PVData) Descriptor() ([]byte, []int) {
 }
 
 func (x *PVData) GetPowerW() float64 {
-	if x != nil {
-		return x.PowerW
+	if x != nil && x.PowerW != nil {
+		return *x.PowerW
 	}
 	return 0
 }
@@ -80,6 +87,7 @@ func (x *PVData) GetYieldWh() float64 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in eebus/v1/visualization_service.proto.
 func (x *PVData) GetPeakPowerW() float64 {
 	if x != nil && x.PeakPowerW != nil {
 		return *x.PeakPowerW
@@ -87,24 +95,85 @@ func (x *PVData) GetPeakPowerW() float64 {
 	return 0
 }
 
+func (x *PVData) GetSample() *ProviderSampleMeta {
+	if x != nil {
+		return x.Sample
+	}
+	return nil
+}
+
+type PVPeakPowerData struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Nominal peak power of the PV system in watts (VAPD scenario 1). Static
+	// DeviceConfiguration; intentionally separate from atomic live PVData samples.
+	PeakPowerW    float64 `protobuf:"fixed64,1,opt,name=peak_power_w,json=peakPowerW,proto3" json:"peak_power_w,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PVPeakPowerData) Reset() {
+	*x = PVPeakPowerData{}
+	mi := &file_eebus_v1_visualization_service_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PVPeakPowerData) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PVPeakPowerData) ProtoMessage() {}
+
+func (x *PVPeakPowerData) ProtoReflect() protoreflect.Message {
+	mi := &file_eebus_v1_visualization_service_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PVPeakPowerData.ProtoReflect.Descriptor instead.
+func (*PVPeakPowerData) Descriptor() ([]byte, []int) {
+	return file_eebus_v1_visualization_service_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *PVPeakPowerData) GetPeakPowerW() float64 {
+	if x != nil {
+		return x.PeakPowerW
+	}
+	return 0
+}
+
 type BatteryData struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Momentary total AC power at the battery, in watts (VABD scenario 1).
-	PowerW float64 `protobuf:"fixed64,1,opt,name=power_w,json=powerW,proto3" json:"power_w,omitempty"`
-	// Cumulative charged energy in Wh (VABD scenario 2). Optional.
+	PowerW *float64 `protobuf:"fixed64,1,opt,name=power_w,json=powerW,proto3,oneof" json:"power_w,omitempty"`
+	// Cumulative charged energy in Wh (VABD scenario 2). Optional; omitted means
+	// "not current in this complete sample" and clears any older charged-energy
+	// value from the provider snapshot.
 	ChargedWh *float64 `protobuf:"fixed64,2,opt,name=charged_wh,json=chargedWh,proto3,oneof" json:"charged_wh,omitempty"`
-	// Cumulative discharged energy in Wh (VABD scenario 3). Optional.
+	// Cumulative discharged energy in Wh (VABD scenario 3). Optional; omitted means
+	// "not current in this complete sample" and clears any older discharged-energy
+	// value from the provider snapshot.
 	DischargedWh *float64 `protobuf:"fixed64,3,opt,name=discharged_wh,json=dischargedWh,proto3,oneof" json:"discharged_wh,omitempty"`
 	// State of charge in percent, 0-100 (VABD scenario 4). Optional; omit when no
-	// state-of-charge sensor is mapped.
+	// state-of-charge sensor is mapped. Omitted means "not current in this
+	// complete sample" and clears any older SoC value from the provider snapshot.
 	StateOfChargePct *float64 `protobuf:"fixed64,4,opt,name=state_of_charge_pct,json=stateOfChargePct,proto3,oneof" json:"state_of_charge_pct,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Sample validity metadata. If invalid=true, the bridge invalidates the
+	// current battery sample and ignores the value fields.
+	Sample        *ProviderSampleMeta `protobuf:"bytes,5,opt,name=sample,proto3" json:"sample,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BatteryData) Reset() {
 	*x = BatteryData{}
-	mi := &file_eebus_v1_visualization_service_proto_msgTypes[1]
+	mi := &file_eebus_v1_visualization_service_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -116,7 +185,7 @@ func (x *BatteryData) String() string {
 func (*BatteryData) ProtoMessage() {}
 
 func (x *BatteryData) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_visualization_service_proto_msgTypes[1]
+	mi := &file_eebus_v1_visualization_service_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -129,12 +198,12 @@ func (x *BatteryData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatteryData.ProtoReflect.Descriptor instead.
 func (*BatteryData) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_visualization_service_proto_rawDescGZIP(), []int{1}
+	return file_eebus_v1_visualization_service_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *BatteryData) GetPowerW() float64 {
-	if x != nil {
-		return x.PowerW
+	if x != nil && x.PowerW != nil {
+		return *x.PowerW
 	}
 	return 0
 }
@@ -160,29 +229,46 @@ func (x *BatteryData) GetStateOfChargePct() float64 {
 	return 0
 }
 
+func (x *BatteryData) GetSample() *ProviderSampleMeta {
+	if x != nil {
+		return x.Sample
+	}
+	return nil
+}
+
 var File_eebus_v1_visualization_service_proto protoreflect.FileDescriptor
 
 const file_eebus_v1_visualization_service_proto_rawDesc = "" +
 	"\n" +
-	"$eebus/v1/visualization_service.proto\x12\beebus.v1\x1a\x15eebus/v1/common.proto\"\x86\x01\n" +
-	"\x06PVData\x12\x17\n" +
-	"\apower_w\x18\x01 \x01(\x01R\x06powerW\x12\x1e\n" +
-	"\byield_wh\x18\x02 \x01(\x01H\x00R\ayieldWh\x88\x01\x01\x12%\n" +
-	"\fpeak_power_w\x18\x03 \x01(\x01H\x01R\n" +
-	"peakPowerW\x88\x01\x01B\v\n" +
-	"\t_yield_whB\x0f\n" +
-	"\r_peak_power_w\"\xe1\x01\n" +
-	"\vBatteryData\x12\x17\n" +
-	"\apower_w\x18\x01 \x01(\x01R\x06powerW\x12\"\n" +
+	"$eebus/v1/visualization_service.proto\x12\beebus.v1\x1a\x15eebus/v1/common.proto\"\xd1\x01\n" +
+	"\x06PVData\x12\x1c\n" +
+	"\apower_w\x18\x01 \x01(\x01H\x00R\x06powerW\x88\x01\x01\x12\x1e\n" +
+	"\byield_wh\x18\x02 \x01(\x01H\x01R\ayieldWh\x88\x01\x01\x12)\n" +
+	"\fpeak_power_w\x18\x03 \x01(\x01B\x02\x18\x01H\x02R\n" +
+	"peakPowerW\x88\x01\x01\x124\n" +
+	"\x06sample\x18\x04 \x01(\v2\x1c.eebus.v1.ProviderSampleMetaR\x06sampleB\n" +
 	"\n" +
-	"charged_wh\x18\x02 \x01(\x01H\x00R\tchargedWh\x88\x01\x01\x12(\n" +
-	"\rdischarged_wh\x18\x03 \x01(\x01H\x01R\fdischargedWh\x88\x01\x01\x122\n" +
-	"\x13state_of_charge_pct\x18\x04 \x01(\x01H\x02R\x10stateOfChargePct\x88\x01\x01B\r\n" +
+	"\b_power_wB\v\n" +
+	"\t_yield_whB\x0f\n" +
+	"\r_peak_power_w\"3\n" +
+	"\x0fPVPeakPowerData\x12 \n" +
+	"\fpeak_power_w\x18\x01 \x01(\x01R\n" +
+	"peakPowerW\"\xa8\x02\n" +
+	"\vBatteryData\x12\x1c\n" +
+	"\apower_w\x18\x01 \x01(\x01H\x00R\x06powerW\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"charged_wh\x18\x02 \x01(\x01H\x01R\tchargedWh\x88\x01\x01\x12(\n" +
+	"\rdischarged_wh\x18\x03 \x01(\x01H\x02R\fdischargedWh\x88\x01\x01\x122\n" +
+	"\x13state_of_charge_pct\x18\x04 \x01(\x01H\x03R\x10stateOfChargePct\x88\x01\x01\x124\n" +
+	"\x06sample\x18\x05 \x01(\v2\x1c.eebus.v1.ProviderSampleMetaR\x06sampleB\n" +
+	"\n" +
+	"\b_power_wB\r\n" +
 	"\v_charged_whB\x10\n" +
 	"\x0e_discharged_whB\x16\n" +
-	"\x14_state_of_charge_pct2\x88\x01\n" +
+	"\x14_state_of_charge_pct2\xca\x01\n" +
 	"\x14VisualizationService\x122\n" +
-	"\rPublishPVData\x12\x10.eebus.v1.PVData\x1a\x0f.eebus.v1.Empty\x12<\n" +
+	"\rPublishPVData\x12\x10.eebus.v1.PVData\x1a\x0f.eebus.v1.Empty\x12@\n" +
+	"\x12PublishPVPeakPower\x12\x19.eebus.v1.PVPeakPowerData\x1a\x0f.eebus.v1.Empty\x12<\n" +
 	"\x12PublishBatteryData\x12\x15.eebus.v1.BatteryData\x1a\x0f.eebus.v1.EmptyB=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3"
 
 var (
@@ -197,22 +283,28 @@ func file_eebus_v1_visualization_service_proto_rawDescGZIP() []byte {
 	return file_eebus_v1_visualization_service_proto_rawDescData
 }
 
-var file_eebus_v1_visualization_service_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_eebus_v1_visualization_service_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_eebus_v1_visualization_service_proto_goTypes = []any{
-	(*PVData)(nil),      // 0: eebus.v1.PVData
-	(*BatteryData)(nil), // 1: eebus.v1.BatteryData
-	(*Empty)(nil),       // 2: eebus.v1.Empty
+	(*PVData)(nil),             // 0: eebus.v1.PVData
+	(*PVPeakPowerData)(nil),    // 1: eebus.v1.PVPeakPowerData
+	(*BatteryData)(nil),        // 2: eebus.v1.BatteryData
+	(*ProviderSampleMeta)(nil), // 3: eebus.v1.ProviderSampleMeta
+	(*Empty)(nil),              // 4: eebus.v1.Empty
 }
 var file_eebus_v1_visualization_service_proto_depIdxs = []int32{
-	0, // 0: eebus.v1.VisualizationService.PublishPVData:input_type -> eebus.v1.PVData
-	1, // 1: eebus.v1.VisualizationService.PublishBatteryData:input_type -> eebus.v1.BatteryData
-	2, // 2: eebus.v1.VisualizationService.PublishPVData:output_type -> eebus.v1.Empty
-	2, // 3: eebus.v1.VisualizationService.PublishBatteryData:output_type -> eebus.v1.Empty
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	3, // 0: eebus.v1.PVData.sample:type_name -> eebus.v1.ProviderSampleMeta
+	3, // 1: eebus.v1.BatteryData.sample:type_name -> eebus.v1.ProviderSampleMeta
+	0, // 2: eebus.v1.VisualizationService.PublishPVData:input_type -> eebus.v1.PVData
+	1, // 3: eebus.v1.VisualizationService.PublishPVPeakPower:input_type -> eebus.v1.PVPeakPowerData
+	2, // 4: eebus.v1.VisualizationService.PublishBatteryData:input_type -> eebus.v1.BatteryData
+	4, // 5: eebus.v1.VisualizationService.PublishPVData:output_type -> eebus.v1.Empty
+	4, // 6: eebus.v1.VisualizationService.PublishPVPeakPower:output_type -> eebus.v1.Empty
+	4, // 7: eebus.v1.VisualizationService.PublishBatteryData:output_type -> eebus.v1.Empty
+	5, // [5:8] is the sub-list for method output_type
+	2, // [2:5] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_eebus_v1_visualization_service_proto_init() }
@@ -222,14 +314,14 @@ func file_eebus_v1_visualization_service_proto_init() {
 	}
 	file_eebus_v1_common_proto_init()
 	file_eebus_v1_visualization_service_proto_msgTypes[0].OneofWrappers = []any{}
-	file_eebus_v1_visualization_service_proto_msgTypes[1].OneofWrappers = []any{}
+	file_eebus_v1_visualization_service_proto_msgTypes[2].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_eebus_v1_visualization_service_proto_rawDesc), len(file_eebus_v1_visualization_service_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -16,7 +16,6 @@ func TestEventBusSubscribeAndPublish(t *testing.T) {
 	evt := eebus.Event{
 		SKI:  "test-ski",
 		Type: "test-event",
-		Data: map[string]any{"power": 1500.0},
 	}
 	bus.Publish(evt)
 
@@ -120,5 +119,80 @@ func TestEventBusSlowSubscriberDoesNotBlock(t *testing.T) {
 		// OK — publishing didn't block
 	case <-time.After(2 * time.Second):
 		t.Fatal("Publish blocked on slow subscriber")
+	}
+}
+
+func TestEventBusAssignsMonotonicDeviceRevisions(t *testing.T) {
+	bus := eebus.NewEventBus()
+	ch, initial := bus.SubscribeWithRevision("test:ski")
+	defer bus.Unsubscribe(ch)
+	if initial != 0 {
+		t.Fatalf("initial revision = %d, want 0", initial)
+	}
+
+	bus.Publish(eebus.Event{SKI: "test-ski", Type: "first"})
+	bus.Publish(eebus.Event{SKI: "test-ski", Type: "second"})
+	first := <-ch
+	second := <-ch
+	if first.Revision != 1 || second.Revision != 2 {
+		t.Fatalf("revisions = %d, %d, want 1, 2", first.Revision, second.Revision)
+	}
+	if first.OccurredAt.IsZero() || second.OccurredAt.Before(first.OccurredAt) {
+		t.Fatalf("event times = %v, %v", first.OccurredAt, second.OccurredAt)
+	}
+	if got := bus.Revision(" TEST SKI "); got != 2 {
+		t.Fatalf("Revision() = %d, want 2", got)
+	}
+}
+
+func TestDeviceSubscriptionReceivesOnlyItsSKI(t *testing.T) {
+	bus := eebus.NewEventBus()
+	ch, _ := bus.SubscribeWithRevision("device-a")
+	defer bus.Unsubscribe(ch)
+
+	bus.Publish(eebus.Event{SKI: "device-b", Type: "other"})
+	bus.Publish(eebus.Event{SKI: "device-a", Type: "target"})
+	event := <-ch
+	if event.SKI != "DEVICEA" || event.Type != "target" || event.Revision != 1 {
+		t.Fatalf("scoped event = %+v", event)
+	}
+	if len(ch) != 0 {
+		t.Fatalf("scoped subscription received %d extra events", len(ch))
+	}
+}
+
+func TestEventBusSignalsOneResyncAfterSubscriberDrop(t *testing.T) {
+	bus := eebus.NewEventBus()
+	ch, _ := bus.SubscribeWithRevision("test-ski")
+	defer bus.Unsubscribe(ch)
+
+	for range 65 {
+		bus.Publish(eebus.Event{SKI: "test-ski", Type: "data"})
+	}
+	if got := bus.SubscriberDroppedEvents(ch); got != 1 {
+		t.Fatalf("drops before recovery = %d, want 1", got)
+	}
+	resync, ok := bus.TakePendingResync(ch)
+	if !ok {
+		t.Fatal("pending resync was not returned")
+	}
+	if resync.Revision != 65 || resync.Dropped != 1 {
+		t.Fatalf("resync = %+v, want revision 65 covering 1 drop", resync)
+	}
+	if _, duplicate := bus.TakePendingResync(ch); duplicate {
+		t.Fatal("same drop produced more than one resync")
+	}
+	if got := bus.SubscriberDroppedEvents(ch); got != 1 {
+		t.Fatalf("total drops = %d, want 1", got)
+	}
+
+	<-ch // make the subscriber writable again
+	bus.Publish(eebus.Event{SKI: "test-ski", Type: "after-resync"})
+	for len(ch) > 1 {
+		<-ch
+	}
+	event := <-ch
+	if event.Type != "after-resync" || event.Revision != 66 {
+		t.Fatalf("event after resync = %+v, want revision 66", event)
 	}
 }

@@ -13,6 +13,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
+from .state import StateField, is_fresh
 
 PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling
 
@@ -24,10 +25,12 @@ async def async_setup_entry(
 ) -> None:
     """Set up EEBUS binary sensors."""
     coordinator: EebusCoordinator = entry.runtime_data
-    async_add_entities([
-        EebusConnectedSensor(coordinator),
-        EebusHeartbeatOkSensor(coordinator),
-    ])
+    async_add_entities(
+        [
+            EebusConnectedSensor(coordinator),
+            EebusHeartbeatOkSensor(coordinator),
+        ]
+    )
 
 
 class EebusConnectedSensor(EebusEntity, BinarySensorEntity):
@@ -60,7 +63,7 @@ class EebusConnectedSensor(EebusEntity, BinarySensorEntity):
         """Return True if connected."""
         if self.coordinator.data is None:
             return None
-        return self.coordinator.data.get("connected")
+        return self.coordinator.data.connection.connected
 
 
 class EebusHeartbeatOkSensor(EebusEntity, BinarySensorEntity):
@@ -81,24 +84,22 @@ class EebusHeartbeatOkSensor(EebusEntity, BinarySensorEntity):
 
     @property
     def available(self) -> bool:
-        """Stay available on a successful poll regardless of connected state.
-
-        EebusEntity.available gates on device connection, which would flip
-        this sensor to "unavailable" (grey, no history) on every transient
-        per-device disconnect instead of a stable on/off a dashboard can plot.
-        """
-        return self.coordinator.last_update_success
+        """Expose heartbeat health only while its observation is fresh."""
+        data = self.coordinator.data
+        return bool(
+            self.coordinator.last_update_success
+            and data
+            and data.connection.connected
+            and is_fresh(data, StateField.HEARTBEAT_STATUS)
+        )
 
     @property
     def is_on(self) -> bool | None:
         """Return True if heartbeat has a problem (inverted for PROBLEM class)."""
         if self.coordinator.data is None:
             return None
-        hb = self.coordinator.data.get("heartbeat_status")
+        hb = self.coordinator.data.lpc.heartbeat_status
         if hb is None:
             return None
-        within_duration = hb.get("within_duration")
-        if within_duration is None:
-            return None
         # PROBLEM class: is_on=True means there's a problem
-        return not within_duration
+        return not hb.within_duration

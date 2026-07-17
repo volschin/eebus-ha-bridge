@@ -60,7 +60,8 @@ func (w *LPCWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInterfa
 		eebus.DefaultUseCaseDiscovery().LogOnce(ski, device)
 	}
 
-	if w.registry != nil {
+	isSupportUpdate := event == eglpc.UseCaseSupportUpdate
+	if w.registry != nil && !isSupportUpdate {
 		w.registry.UpsertObservation(ski, device, entity, "lpc")
 		enrichDeviceClassification(w.registry, w.localEntity, ski, device, entity)
 	}
@@ -75,6 +76,43 @@ func (w *LPCWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInterfa
 		eventType = eebus.EventTypeLPCFailsafeDurationUpdated
 	case eglpc.UseCaseSupportUpdate:
 		eventType = eebus.EventTypeLPCUseCaseSupportUpdated
+		var scenarios []eebusapi.RemoteEntityScenarios
+		if w.uc != nil {
+			scenarios = w.uc.RemoteEntitiesScenarios()
+		}
+		resolvedSKI := observationSKI(ski, device)
+		overall := compatibleEntity(scenarios, resolvedSKI)
+		if w.registry != nil {
+			connected, _, connectionKnown := w.registry.DeviceConnection(resolvedSKI)
+			if connectionKnown && !connected {
+				w.registry.RemoveEntityObservation(resolvedSKI, entity)
+			} else if entity != nil && !entityPresentInScenarios(scenarios, entity) {
+				w.registry.RemoveEntityObservation(resolvedSKI, entity)
+			}
+			observedEntity := overall.Entity
+			if entityPresentInScenarios(scenarios, entity) {
+				observedEntity = entity
+			}
+			if observedEntity != nil && (!connectionKnown || connected) {
+				w.registry.UpsertObservation(resolvedSKI, device, observedEntity, "lpc")
+			}
+		}
+		for _, support := range []struct {
+			capability eebus.Capability
+			scenario   uint
+		}{
+			{eebus.CapabilityLPC, 1},
+			{eebus.CapabilityFailsafe, 2},
+			{eebus.CapabilityHeartbeat, 3},
+		} {
+			resolution := compatibleEntityForScenario(scenarios, resolvedSKI, support.scenario)
+			if w.registry != nil {
+				w.registry.RecordCapabilitySupport(resolvedSKI, support.capability, resolution.Entity != nil)
+			}
+			if w.registry != nil && resolution.Entity != nil {
+				enrichDeviceClassification(w.registry, w.localEntity, ski, device, resolution.Entity)
+			}
+		}
 	case eglpc.DataUpdateHeartbeat:
 		// Per eebus-go: signals the remote entering or leaving failsafe state.
 		// No payload is attached; HA reconciles via GetHeartbeatStatus on refresh.
@@ -102,6 +140,13 @@ func (w *LPCWrapper) CompatibleEntity(ski string) eebus.EntityResolution {
 		return eebus.EntityResolution{}
 	}
 	return compatibleEntity(w.uc.RemoteEntitiesScenarios(), ski)
+}
+
+func (w *LPCWrapper) CompatibleEntityForScenario(ski string, scenario uint) eebus.EntityResolution {
+	if w.uc == nil {
+		return eebus.EntityResolution{}
+	}
+	return compatibleEntityForScenario(w.uc.RemoteEntitiesScenarios(), ski, scenario)
 }
 
 // ConsumptionLimit returns the current load control limit for the given remote entity.
