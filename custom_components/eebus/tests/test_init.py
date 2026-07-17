@@ -155,13 +155,50 @@ async def test_migrate_entry_canonicalizes_data_and_unique_id():
     )
     hass.config_entries.async_entries.return_value = [entry]
 
-    assert await async_migrate_entry(hass, entry)
+    with patch("custom_components.eebus.dr.async_get") as async_get_device_registry:
+        device_registry = MagicMock()
+        async_get_device_registry.return_value = device_registry
+
+        assert await async_migrate_entry(hass, entry)
+
+        device_registry.async_get_device.assert_called_once_with(
+            identifiers={("eebus", raw)}
+        )
+        device_registry.async_update_device.assert_called_once_with(
+            device_registry.async_get_device.return_value.id,
+            new_identifiers={("eebus", canonical)},
+        )
     hass.config_entries.async_update_entry.assert_called_once_with(
         entry,
         data={CONF_DEVICE_SKI: canonical, "grpc_host": "bridge"},
         unique_id=canonical,
         version=2,
     )
+
+
+async def test_migrate_entry_skips_device_rename_when_device_not_found():
+    """No matching device registry entry means nothing to rename."""
+    from custom_components.eebus import async_migrate_entry
+
+    raw = "68:2f:70:8C:EB:A5:DF:9A:DC:B9:E6:78:7E:A9:11:D9:FC:3A:C4:90"
+    hass = MagicMock()
+    entry = MagicMock(
+        version=1,
+        data={CONF_DEVICE_SKI: raw},
+        unique_id=raw,
+        entry_id="01",
+        title="Heat pump",
+    )
+    hass.config_entries.async_entries.return_value = [entry]
+
+    with patch("custom_components.eebus.dr.async_get") as async_get_device_registry:
+        device_registry = MagicMock()
+        device_registry.async_get_device.return_value = None
+        async_get_device_registry.return_value = device_registry
+
+        assert await async_migrate_entry(hass, entry)
+
+        device_registry.async_update_device.assert_not_called()
 
 
 async def test_migrate_entry_rejects_newer_duplicate(caplog: pytest.LogCaptureFixture):

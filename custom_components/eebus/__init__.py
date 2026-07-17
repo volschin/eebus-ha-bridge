@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
@@ -84,6 +85,10 @@ async def async_migrate_entry(
         hass.config_entries.async_update_entry(config_entry, version=2)
         return True
 
+    raw_ski = config_entry.data[CONF_DEVICE_SKI]
+    if raw_ski != canonical_ski:
+        _migrate_device_registry_identifier(hass, raw_ski, canonical_ski)
+
     data = {**config_entry.data, CONF_DEVICE_SKI: canonical_ski}
     hass.config_entries.async_update_entry(
         config_entry,
@@ -92,6 +97,24 @@ async def async_migrate_entry(
         version=2,
     )
     return True
+
+
+def _migrate_device_registry_identifier(
+    hass: HomeAssistant, raw_ski: str, canonical_ski: str
+) -> None:
+    """Rename a device registry entry's identifier from raw to canonical SKI.
+
+    EebusEntity keys device identifiers off the stored SKI. Without this, a
+    canonicalized config entry re-registers under a new identifier and HA
+    creates a second device, orphaning the original's area/history/automation
+    references instead of reusing it.
+    """
+    device_registry = dr.async_get(hass)
+    device = device_registry.async_get_device(identifiers={(DOMAIN, raw_ski)})
+    if device is not None:
+        device_registry.async_update_device(
+            device.id, new_identifiers={(DOMAIN, canonical_ski)}
+        )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> bool:
