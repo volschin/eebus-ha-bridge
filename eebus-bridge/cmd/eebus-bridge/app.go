@@ -125,7 +125,7 @@ func (r eebusUseCaseRegistration) resolve() (eebusapi.UseCaseInterface, error) {
 		return nil, fmt.Errorf("%s use case has no resolver", r.name)
 	}
 	useCase := r.useCase()
-	if useCase == nil || (reflect.ValueOf(useCase).Kind() == reflect.Ptr && reflect.ValueOf(useCase).IsNil()) {
+	if useCase == nil || (reflect.ValueOf(useCase).Kind() == reflect.Pointer && reflect.ValueOf(useCase).IsNil()) {
 		return nil, fmt.Errorf("%s use case is not initialised", r.name)
 	}
 	return useCase, nil
