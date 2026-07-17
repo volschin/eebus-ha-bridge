@@ -178,13 +178,7 @@ func (r *RoomHeatingTemperature) State(entity spineapi.EntityRemoteInterface) (R
 	if err != nil {
 		return RoomHeatingSetpoint{}, err
 	}
-	return RoomHeatingSetpoint{
-		Value:    state.Value,
-		Minimum:  state.Minimum,
-		Maximum:  state.Maximum,
-		Step:     state.Step,
-		Writable: state.Writable,
-	}, nil
+	return RoomHeatingSetpoint(state), nil
 }
 
 // Write validates against device-provided constraints, sends the complete

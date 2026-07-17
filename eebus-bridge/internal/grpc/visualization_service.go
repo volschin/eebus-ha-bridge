@@ -74,6 +74,7 @@ func (s *VisualizationService) PublishPVData(_ context.Context, req *pb.PVData) 
 			return nil, err
 		}
 	}
+	//nolint:staticcheck // deprecated field kept readable: released HA clients still embed peak power here.
 	if req.PeakPowerW != nil {
 		if err := nonNegative("PV peak power", *req.PeakPowerW); err != nil {
 			return nil, err
@@ -89,6 +90,7 @@ func (s *VisualizationService) PublishPVData(_ context.Context, req *pb.PVData) 
 	}); err != nil {
 		return nil, mapUsecaseError("publishing PV data", err, standardUsecaseErrorClasses)
 	}
+	//nolint:staticcheck // deprecated field kept readable: released HA clients still embed peak power here.
 	if req.PeakPowerW != nil {
 		if err := s.vapd.PublishPeakPower(*req.PeakPowerW); err != nil {
 			return nil, mapUsecaseError("publishing PV peak power", err, standardUsecaseErrorClasses)

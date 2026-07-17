@@ -193,11 +193,12 @@ func lpcEvent(event eebus.Event) *pb.LPCEvent {
 
 func roomHeatingEvent(event eebus.Event) *pb.RoomHeatingEvent {
 	eventType := pb.RoomHeatingEventType_ROOM_HEATING_EVENT_UNSPECIFIED
-	if event.Type == eebus.EventTypeRoomTemperatureUpdated {
+	switch event.Type {
+	case eebus.EventTypeRoomTemperatureUpdated:
 		eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_CURRENT_TEMPERATURE_UPDATED
-	} else if event.Type == eebus.EventTypeRoomHeatingSetpointUpdated {
+	case eebus.EventTypeRoomHeatingSetpointUpdated:
 		eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SETPOINT_UPDATED
-	} else if event.Type == eebus.EventTypeRoomHeatingSystemFunctionUpdated {
+	case eebus.EventTypeRoomHeatingSystemFunctionUpdated:
 		eventType = pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SYSTEM_FUNCTION_UPDATED
 	}
 	return &pb.RoomHeatingEvent{Ski: event.SKI, EventType: eventType}

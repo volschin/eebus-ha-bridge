@@ -185,13 +185,7 @@ func (d *DHWTemperature) State(entity spineapi.EntityRemoteInterface) (DHWSetpoi
 	if err != nil {
 		return DHWSetpoint{}, err
 	}
-	return DHWSetpoint{
-		Value:    state.Value,
-		Minimum:  state.Minimum,
-		Maximum:  state.Maximum,
-		Step:     state.Step,
-		Writable: state.Writable,
-	}, nil
+	return DHWSetpoint(state), nil
 }
 
 // Write validates against device-provided constraints, sends the complete

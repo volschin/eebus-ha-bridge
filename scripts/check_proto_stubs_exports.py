@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import importlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,9 +34,21 @@ def used_proto_stub_names() -> set[str]:
     return names
 
 
+def declared_all() -> set[str]:
+    """Extract proto_stubs.__all__ without importing it (no HA/grpcio needed)."""
+    stub_path = PACKAGE / "proto_stubs.py"
+    tree = ast.parse(stub_path.read_text(), filename=str(stub_path))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets
+        ):
+            value = ast.literal_eval(node.value)
+            return set(value)
+    raise SystemExit(f"{stub_path} does not declare a literal __all__")
+
+
 def main() -> None:
-    proto_stubs = importlib.import_module("custom_components.eebus.proto_stubs")
-    public = set(getattr(proto_stubs, "__all__", ()))
+    public = declared_all()
     missing = sorted(name for name in used_proto_stub_names() if name not in public)
     if missing:
         joined = ", ".join(missing)

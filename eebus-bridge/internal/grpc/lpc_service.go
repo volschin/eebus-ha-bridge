@@ -268,10 +268,6 @@ func convertLoadLimit(l ucapi.LoadLimit) *pb.LoadLimit {
 	}
 }
 
-func (s *LPCService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, error) {
-	return s.resolveCapabilityEntity(ski, eebus.CapabilityLPC)
-}
-
 func (s *LPCService) resolveCapabilityEntity(ski string, capability eebus.Capability) (spineapi.EntityRemoteInterface, error) {
 	// Prefer an entity that actually advertises the LPC use case. A device such as a
 	// Vaillant VR940f gateway registers several entities under one SKI; the flat
@@ -279,11 +275,14 @@ func (s *LPCService) resolveCapabilityEntity(ski string, capability eebus.Capabi
 	// which eebus-go rejects on write with ErrNoCompatibleEntity (issue #47).
 	var resolver compatibleEntityResolver
 	if s.lpc != nil {
-		scenario := uint(1)
-		if capability == eebus.CapabilityFailsafe {
+		var scenario uint
+		switch capability {
+		case eebus.CapabilityFailsafe:
 			scenario = 2
-		} else if capability == eebus.CapabilityHeartbeat {
+		case eebus.CapabilityHeartbeat:
 			scenario = 3
+		default:
+			scenario = 1
 		}
 		resolver = func(ski string) eebus.EntityResolution {
 			return s.lpc.CompatibleEntityForScenario(ski, scenario)
