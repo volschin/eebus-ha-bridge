@@ -66,6 +66,11 @@ def _operational_diagnostics_from_proto(
         dropped_events=int(events.dropped_events),
         resync_count=int(events.resync_count),
         unresolved_events=int(events.unresolved_events),
+        connection_age_seconds=(
+            int(value.connection_age_seconds)
+            if value.HasField("connection_age_seconds")
+            else None
+        ),
         monitoring_last_success_age_seconds=(
             int(value.monitoring_last_success_age_seconds)
             if value.HasField("monitoring_last_success_age_seconds")
@@ -248,10 +253,15 @@ class BridgeRuntime:
         self, channel: grpc.aio.Channel, generation: int
     ) -> None:
         contract = await async_read_bridge_contract(channel)
+        changed = False
         async with self._contract_lock:
             if generation >= self._contract_generation:
+                changed = self._contract is not None and self._contract != contract
                 self._contract = contract
                 self._contract_generation = generation
+        if changed:
+            for session in tuple(self._sessions.values()):
+                session.streams.contract_changed()
 
     @property
     def contract(self) -> BridgeContract | None:

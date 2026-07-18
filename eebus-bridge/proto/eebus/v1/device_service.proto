@@ -155,6 +155,7 @@ message DeviceOperationalDiagnostics {
   SnapshotReadDiagnostics snapshot_reads = 6;
   repeated ProviderSampleDiagnostics providers = 7;
   repeated FeatureId features = 8;
+  optional uint64 connection_age_seconds = 9;
 }
 
 message DiscoveredDevice {

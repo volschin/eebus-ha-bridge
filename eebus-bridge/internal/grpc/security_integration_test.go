@@ -154,6 +154,13 @@ func TestTLSTokenSecuresUnaryWriteStreamAndHealth(t *testing.T) {
 	if _, err := dc.GetDeviceSnapshot(ctx, &pb.DeviceRequest{Ski: remoteSKI}); err != nil {
 		t.Fatalf("secured device snapshot: %v", err)
 	}
+	diagnostics, err := dc.GetDeviceDiagnostics(ctx, &pb.DeviceRequest{Ski: remoteSKI})
+	if err != nil {
+		t.Fatalf("secured operational diagnostics: %v", err)
+	}
+	if diagnostics.GetRedactedSki() == "" || strings.Contains(diagnostics.GetRedactedSki(), strings.ToUpper(remoteSKI)) {
+		t.Fatalf("operational diagnostics exposed full SKI: %q", diagnostics.GetRedactedSki())
+	}
 	stateStream, err := dc.SubscribeDeviceState(ctx, &pb.DeviceRequest{Ski: remoteSKI})
 	if err != nil {
 		t.Fatalf("secured device-state stream: %v", err)
@@ -215,6 +222,9 @@ func TestTLSTokenSecuresUnaryWriteStreamAndHealth(t *testing.T) {
 			}
 			if _, err := client.GetDeviceSnapshot(unauthorizedCtx, &pb.DeviceRequest{Ski: remoteSKI}); status.Code(err) != codes.Unauthenticated {
 				t.Fatalf("device snapshot code = %s, want Unauthenticated", status.Code(err))
+			}
+			if _, err := client.GetDeviceDiagnostics(unauthorizedCtx, &pb.DeviceRequest{Ski: remoteSKI}); status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("operational diagnostics code = %s, want Unauthenticated", status.Code(err))
 			}
 			stateStream, err := client.SubscribeDeviceState(unauthorizedCtx, &pb.DeviceRequest{Ski: remoteSKI})
 			if err == nil {

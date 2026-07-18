@@ -50,6 +50,7 @@ class OperationalDiagnostics:
     dropped_events: int
     resync_count: int
     unresolved_events: int
+    connection_age_seconds: int | None
     monitoring_last_success_age_seconds: int | None
     snapshot_duration_milliseconds: int
     snapshot_last_success: datetime | None

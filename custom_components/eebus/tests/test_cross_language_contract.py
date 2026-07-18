@@ -21,6 +21,7 @@ from custom_components.eebus.state import DeviceStateStore, StateField
 ROOT = Path(__file__).resolve().parents[3]
 SKI_A = "1111111111111111111111111111111111111111"
 SKI_B = "2222222222222222222222222222222222222222"
+SKI_C = "3333333333333333333333333333333333333333"
 
 
 def _terminate(process: subprocess.Popen[str]) -> None:
@@ -119,6 +120,11 @@ async def test_go_server_to_python_state_contract(go_contract_server: str) -> No
     await stub.RegisterRemoteSKI(proto_stubs.RegisterSKIRequest(ski=SKI_B), timeout=5)
     events_b = await _read_events(stream_b, 8)
     snapshot_b = await stub.GetDeviceSnapshot(proto_stubs.DeviceRequest(ski=SKI_B), timeout=5)
+
+    diagnostics_a, diagnostics_b = await asyncio.gather(
+        stub.GetDeviceDiagnostics(proto_stubs.DeviceRequest(ski=SKI_A), timeout=5),
+        stub.GetDeviceDiagnostics(proto_stubs.DeviceRequest(ski=SKI_B), timeout=5),
+    )
     assert snapshot_a.ski == SKI_A.upper()
     assert snapshot_b.ski == SKI_B.upper()
     assert snapshot_a.measurements[0].value == 600
@@ -127,6 +133,60 @@ async def test_go_server_to_python_state_contract(go_contract_server: str) -> No
     assert [event.revision for event in events_b] == list(range(1, 9))
     assert {event.ski for event in events_a} == {SKI_A.upper()}
     assert {event.ski for event in events_b} == {SKI_B.upper()}
+    assert diagnostics_a.redacted_ski != SKI_A.upper()
+    assert diagnostics_b.redacted_ski != SKI_B.upper()
+    assert diagnostics_a.redacted_ski.endswith(SKI_A[-6:].upper())
+    assert diagnostics_b.redacted_ski.endswith(SKI_B[-6:].upper())
+    assert diagnostics_a.readiness == proto_stubs.DeviceReadinessState.DEVICE_READINESS_READY
+    assert diagnostics_b.readiness == proto_stubs.DeviceReadinessState.DEVICE_READINESS_READY
+    assert diagnostics_a.events.revision == 8
+    assert diagnostics_b.events.revision == 8
+    assert diagnostics_a.events.dropped_events == 0
+    assert diagnostics_a.HasField("connection_age_seconds")
+    assert diagnostics_a.snapshot_reads.HasField("last_success")
+    assert diagnostics_a.providers[0].provider == "grid"
+    assert diagnostics_a.providers[0].state == proto_stubs.ProviderSampleState.PROVIDER_SAMPLE_STATE_CURRENT
+    assert proto_stubs.FeatureId.FEATURE_OPERATIONAL_DIAGNOSTICS in diagnostics_a.features
+
+    stream_c = stub.SubscribeDeviceState(proto_stubs.DeviceRequest(ski=SKI_C))
+    initial_c = await asyncio.wait_for(stream_c.read(), timeout=5)
+    assert initial_c.resync_required.reason == proto_stubs.ResyncReason.RESYNC_REASON_INITIAL_STATE_REQUIRED
+
+    drop_refresh = AsyncMock()
+    drop_hass = MagicMock()
+    drop_hass.async_create_task.side_effect = asyncio.create_task
+    drop_consumer = DeviceStreams(
+        drop_hass,
+        manager,
+        SKI_C,
+        DeviceStateStore(),
+        drop_refresh,
+        contract.supports,
+    )
+    drop_consumer._last_revision = int(initial_c.revision)
+    await stub.RegisterRemoteSKI(proto_stubs.RegisterSKIRequest(ski=SKI_C), timeout=5)
+    for _ in range(256):
+        dropped = await asyncio.wait_for(stream_c.read(), timeout=5)
+        if dropped.HasField("resync_required") and (
+            dropped.resync_required.reason == proto_stubs.ResyncReason.RESYNC_REASON_EVENT_DROPPED
+        ):
+            # The single envelope represents both the revision gap and the
+            # explicit drop. The production reducer must schedule only one
+            # reconciliation for those two descriptions of the same loss.
+            drop_consumer.handle_device_state_event(dropped)
+            break
+    else:
+        raise AssertionError("Go stream did not emit its coalesced drop resync")
+    assert drop_consumer._refresh_task is not None
+    await drop_consumer._refresh_task
+    drop_refresh.assert_awaited_once_with()
+
+    diagnostics_c = await stub.GetDeviceDiagnostics(proto_stubs.DeviceRequest(ski=SKI_C), timeout=5)
+    assert diagnostics_c.redacted_ski != SKI_C.upper()
+    assert diagnostics_c.events.revision == 264
+    assert diagnostics_c.events.dropped_events > 0
+    assert diagnostics_c.events.resync_count == 1
+    stream_c.cancel()
     assert all(
         event.availability == proto_stubs.EventAvailability.EVENT_AVAILABILITY_AVAILABLE for event in events_a
     )

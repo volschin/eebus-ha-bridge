@@ -42,7 +42,12 @@ rules:
   devices: done
   diagnostics:
     status: done
-    comment: Device SKI, TLS CA certificate, and authentication token are explicitly redacted and covered by diagnostics tests.
+    comment: >-
+      Typed device-scoped operational diagnostics expose readiness/recovery,
+      stream reconnects, event drop/resync counters, snapshot timing, and
+      provider freshness. Device SKIs, TLS CA certificates, authentication
+      tokens, PEM material, and private paths are redacted and covered by
+      diagnostics and secured-RPC tests.
   discovery:
     status: done
     comment: mDNS-based EEBUS/SHIP Discovery via Bridge gRPC API.

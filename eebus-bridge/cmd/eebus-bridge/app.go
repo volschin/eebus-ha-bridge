@@ -218,7 +218,7 @@ type Application struct {
 	lifecycleMu                sync.Mutex
 	lifecycle                  *lifecycleTransaction
 	stopped                    bool
-	runtimeMu                  sync.Mutex
+	startupMu                  sync.Mutex
 	cancelRuntime              context.CancelFunc
 	watchdogWG                 sync.WaitGroup
 	recoverySupervisor         *eebus.RecoverySupervisor
@@ -410,10 +410,9 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 					// heartbeats stop arriving, so keep the local heartbeat running for the
 					// lifetime of the bridge.
 					if err := lpcWrapper.StartHeartbeat(""); err != nil {
-						log.Printf("starting LPC heartbeat failed: %v", err)
-					} else {
-						log.Println("Started LPC heartbeat")
+						return fmt.Errorf("starting LPC heartbeat: %w", err)
 					}
+					log.Println("Started LPC heartbeat")
 					return nil
 				},
 				stop: lpcWrapper.StopHeartbeat,
@@ -615,28 +614,51 @@ func (a *Application) Start(ctx context.Context) error {
 	if a.grpcSrv == nil {
 		return errors.New("gRPC server is not configured")
 	}
-	if a.backgroundFailures == nil {
-		a.backgroundFailures = make(chan backgroundFailure, 1)
-	}
 	tx := newLifecycleTransaction()
+	runtimeCtx, cancel := context.WithCancel(ctx)
 	a.lifecycleMu.Lock()
 	if a.stopped {
 		a.lifecycleMu.Unlock()
+		cancel()
 		return errors.New("application is stopped")
 	}
 	if a.lifecycle != nil {
 		a.lifecycleMu.Unlock()
+		cancel()
 		return errors.New("application is already started")
 	}
+	if a.backgroundFailures == nil {
+		a.backgroundFailures = make(chan backgroundFailure, 1)
+	}
 	a.lifecycle = tx
+	a.cancelRuntime = cancel
 	a.lifecycleMu.Unlock()
 	a.grpcSrv.SetHealthy(false)
 
-	runtimeCtx, cancel := context.WithCancel(ctx)
-	a.runtimeMu.Lock()
-	a.cancelRuntime = cancel
-	a.runtimeMu.Unlock()
 	defer a.Stop()
+	if err := a.startComponents(runtimeCtx, tx); err != nil {
+		return err
+	}
+
+	select {
+	case <-runtimeCtx.Done():
+		var sig *signalShutdown
+		if errors.As(context.Cause(ctx), &sig) {
+			log.Printf("Received signal %s", sig.signal)
+		}
+		return nil
+	case failure := <-a.backgroundFailures:
+		log.Printf("Controlled shutdown requested: %s", failure.reason)
+		return &controlledShutdownError{err: failure.err}
+	}
+}
+
+func (a *Application) startComponents(runtimeCtx context.Context, tx *lifecycleTransaction) error {
+	a.startupMu.Lock()
+	defer a.startupMu.Unlock()
+	if err := runtimeCtx.Err(); err != nil {
+		return fmt.Errorf("application startup canceled: %w", err)
+	}
 	if err := a.bridgeSvc.Setup(); err != nil {
 		return fmt.Errorf("setting up EEBUS service: %w", err)
 	}
@@ -649,11 +671,17 @@ func (a *Application) Start(ctx context.Context) error {
 	if err := a.prepareForStart(); err != nil {
 		return err
 	}
+	if err := runtimeCtx.Err(); err != nil {
+		return fmt.Errorf("application startup canceled after composition: %w", err)
+	}
 	if err := a.bridgeSvc.Start(); err != nil {
 		return fmt.Errorf("EEBUS service start: %w", err)
 	}
 	log.Println("EEBUS bridge started")
 	for _, module := range a.modules {
+		if err := runtimeCtx.Err(); err != nil {
+			return fmt.Errorf("application startup canceled before %s module: %w", module.name, err)
+		}
 		if module.start == nil {
 			continue
 		}
@@ -707,19 +735,17 @@ func (a *Application) Start(ctx context.Context) error {
 			return err
 		}
 	}
-	a.grpcSrv.SetHealthy(true)
-
-	select {
-	case <-runtimeCtx.Done():
-		var sig *signalShutdown
-		if errors.As(context.Cause(ctx), &sig) {
-			log.Printf("Received signal %s", sig.signal)
-		}
-		return nil
-	case failure := <-a.backgroundFailures:
-		log.Printf("Controlled shutdown requested: %s", failure.reason)
-		return &controlledShutdownError{err: failure.err}
+	a.lifecycleMu.Lock()
+	if a.stopped || runtimeCtx.Err() != nil {
+		a.lifecycleMu.Unlock()
+		return fmt.Errorf("application startup canceled before serving: %w", context.Canceled)
 	}
+	// This is the atomic startup commit. Stop sets stopped and NOT_SERVING
+	// under the same mutex, so SERVING can never be published after shutdown
+	// has begun.
+	a.grpcSrv.SetHealthy(true)
+	a.lifecycleMu.Unlock()
+	return nil
 }
 
 func (a *Application) startWatchdog(ctx context.Context) bool {
@@ -792,21 +818,21 @@ func (a *Application) reportBackgroundFailure(reason string, err error) {
 // stages are rolled back, in exact reverse startup order.
 func (a *Application) Stop() {
 	a.stopOnce.Do(func() {
+		a.lifecycleMu.Lock()
+		cancel := a.cancelRuntime
+		tx := a.lifecycle
+		a.stopped = true
 		if a.grpcSrv != nil {
 			a.grpcSrv.SetHealthy(false)
 		}
-		a.runtimeMu.Lock()
-		cancel := a.cancelRuntime
-		a.runtimeMu.Unlock()
+		a.lifecycleMu.Unlock()
 		if cancel != nil {
 			cancel()
 		}
 
 		log.Println("Shutting down...")
-		a.lifecycleMu.Lock()
-		tx := a.lifecycle
-		a.stopped = true
-		a.lifecycleMu.Unlock()
+		a.startupMu.Lock()
+		defer a.startupMu.Unlock()
 		if tx != nil {
 			if err := tx.rollback(); err != nil {
 				log.Printf("shutdown completed with errors: %v", err)

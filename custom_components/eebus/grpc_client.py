@@ -58,9 +58,7 @@ class GrpcChannelManager:
         self._lock = asyncio.Lock()
         self._generation = 0
         self._ready_task: asyncio.Task[None] | None = None
-        self._channel_ready_hook: (
-            Callable[[grpc.aio.Channel, int], Coroutine[Any, Any, None]] | None
-        ) = None
+        self._channel_ready_hook: Callable[[grpc.aio.Channel, int], Coroutine[Any, Any, None]] | None = None
 
     def set_channel_ready_hook(
         self,
@@ -71,38 +69,52 @@ class GrpcChannelManager:
 
     async def ensure_channel(self) -> grpc.aio.Channel:
         """Create the channel once and return it to all concurrent callers."""
-        async with self._lock:
-            if self._channel is None:
-                self._channel = create_grpc_channel(
-                    self._host,
-                    self._port,
-                    self._security_mode,
-                    self._tls_ca_certificate,
-                    self._auth_token,
-                )
-                self._generation += 1
-                if self._channel_ready_hook is not None:
-                    self._ready_task = asyncio.create_task(
-                        self._channel_ready_hook(self._channel, self._generation)
+        while True:
+            async with self._lock:
+                if self._channel is None:
+                    self._channel = create_grpc_channel(
+                        self._host,
+                        self._port,
+                        self._security_mode,
+                        self._tls_ca_certificate,
+                        self._auth_token,
                     )
-            channel = self._channel
-            ready_task = self._ready_task
-        if ready_task is not None:
-            try:
-                await ready_task
-            except BaseException:
-                async with self._lock:
-                    if self._channel is channel:
-                        await channel.close(None)
-                        self._channel = None
-                        self._ready_task = None
-                raise
-        return channel
+                    self._generation += 1
+                    if self._channel_ready_hook is not None:
+                        self._ready_task = asyncio.create_task(
+                            self._channel_ready_hook(self._channel, self._generation)
+                        )
+                channel = self._channel
+                ready_task = self._ready_task
+            if ready_task is not None:
+                try:
+                    await asyncio.shield(ready_task)
+                except asyncio.CancelledError:
+                    caller = asyncio.current_task()
+                    if caller is None or caller.cancelling():
+                        # A caller abandoning its acquisition must not cancel
+                        # generation-wide negotiation shared by every device.
+                        raise
+                    # The channel owner invalidated this generation. Reacquire
+                    # the replacement instead of terminating a peer stream.
+                    continue
+                except Exception:
+                    async with self._lock:
+                        if self._channel is channel:
+                            await channel.close(None)
+                            self._channel = None
+                            self._ready_task = None
+                    raise
+            return channel
 
     async def invalidate(self) -> None:
         """Close and discard the current channel, if one exists."""
         async with self._lock:
             if self._channel is not None:
+                ready_task = self._ready_task
+                if ready_task is not None and not ready_task.done():
+                    ready_task.cancel()
+                    await asyncio.gather(ready_task, return_exceptions=True)
                 await self._channel.close(None)
                 self._channel = None
                 self._ready_task = None

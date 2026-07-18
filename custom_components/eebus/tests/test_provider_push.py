@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import grpc
+import pytest
 from grpc.aio import AioRpcError, Metadata
 
 from custom_components.eebus import providers as providers_module
@@ -212,6 +213,44 @@ async def test_provider_manager_stop_invalidates_enabled_providers(monkeypatch):
         assert request.sample.invalid is True
 
 
+async def test_provider_manager_stop_finishes_every_cleanup_when_caller_is_cancelled():
+    """Cancellation is delayed until every worker and invalidation has finished."""
+    manager = ProviderManager(
+        _fake_hass(),
+        "test-ski",
+        AsyncMock(return_value=object()),
+        ProviderMappings(grid_power="sensor.grid", pv_power="sensor.pv"),
+    )
+    first_started = asyncio.Event()
+    release_first = asyncio.Event()
+
+    async def slow_stop():
+        first_started.set()
+        await release_first.wait()
+
+    first = MagicMock(stop=AsyncMock(side_effect=slow_stop))
+    second = MagicMock(stop=AsyncMock())
+    manager._provider_pushers.extend((first, second))
+    manager._async_invalidate_grid_data = AsyncMock()
+    manager._async_invalidate_pv_data = AsyncMock()
+
+    stop = asyncio.create_task(manager.async_stop())
+    await first_started.wait()
+    stop.cancel()
+    await asyncio.sleep(0)
+
+    assert stop.done() is False
+    second.stop.assert_awaited_once_with()
+    release_first.set()
+    with pytest.raises(asyncio.CancelledError):
+        await stop
+
+    first.stop.assert_awaited_once_with()
+    manager._async_invalidate_grid_data.assert_awaited_once_with()
+    manager._async_invalidate_pv_data.assert_awaited_once_with()
+    assert manager._provider_pushers == []
+
+
 async def test_provider_manager_skips_invalidations_for_old_bridge(monkeypatch):
     requests = []
     error = AioRpcError(grpc.StatusCode.UNIMPLEMENTED, Metadata(), Metadata(), details="old bridge")
@@ -243,3 +282,61 @@ async def test_provider_manager_skips_invalidations_for_old_bridge(monkeypatch):
     await manager.async_stop()
 
     assert requests == []
+
+
+@pytest.mark.parametrize(
+    ("invalidate_method", "publish_method", "latch"),
+    [
+        ("_async_invalidate_grid_data", "_async_publish_grid", "grid"),
+        ("_async_invalidate_pv_data", "_async_publish_pv", "PV"),
+        ("_async_invalidate_battery_data", "_async_publish_battery", "battery"),
+    ],
+)
+async def test_failed_provider_invalidation_is_retried_until_committed(
+    invalidate_method, publish_method, latch
+):
+    manager = ProviderManager(
+        _fake_hass(),
+        "test-ski",
+        AsyncMock(return_value=object()),
+        ProviderMappings(),
+        supports_feature=lambda feature: feature
+        == proto_stubs.FeatureId.FEATURE_PROVIDER_SAMPLE_INVALIDATION,
+    )
+    publish = AsyncMock(side_effect=[False, True])
+    setattr(manager, publish_method, publish)
+    invalidate = getattr(manager, invalidate_method)
+
+    await invalidate()
+    assert latch not in manager._provider_invalidated
+    await invalidate()
+    assert latch in manager._provider_invalidated
+    await invalidate()
+
+    assert publish.await_count == 2
+
+
+async def test_provider_invalidation_tracks_each_renegotiated_contract():
+    """Bridge upgrades and downgrades take effect without recreating the manager."""
+    supported = False
+    manager = ProviderManager(
+        _fake_hass(),
+        "test-ski",
+        AsyncMock(return_value=object()),
+        ProviderMappings(),
+        supports_feature=lambda _feature: supported,
+    )
+    publish = AsyncMock(return_value=True)
+    manager._async_publish_grid = publish
+
+    await manager._async_invalidate_grid_data()
+    publish.assert_not_awaited()
+
+    supported = True
+    await manager._async_invalidate_grid_data()
+    publish.assert_awaited_once()
+    manager._provider_invalidated.clear()
+
+    supported = False
+    await manager._async_invalidate_grid_data()
+    assert publish.await_count == 1

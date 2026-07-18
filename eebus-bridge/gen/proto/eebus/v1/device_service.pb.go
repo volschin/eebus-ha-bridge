@@ -1341,6 +1341,7 @@ type DeviceOperationalDiagnostics struct {
 	SnapshotReads                   *SnapshotReadDiagnostics     `protobuf:"bytes,6,opt,name=snapshot_reads,json=snapshotReads,proto3" json:"snapshot_reads,omitempty"`
 	Providers                       []*ProviderSampleDiagnostics `protobuf:"bytes,7,rep,name=providers,proto3" json:"providers,omitempty"`
 	Features                        []FeatureId                  `protobuf:"varint,8,rep,packed,name=features,proto3,enum=eebus.v1.FeatureId" json:"features,omitempty"`
+	ConnectionAgeSeconds            *uint64                      `protobuf:"varint,9,opt,name=connection_age_seconds,json=connectionAgeSeconds,proto3,oneof" json:"connection_age_seconds,omitempty"`
 	unknownFields                   protoimpl.UnknownFields
 	sizeCache                       protoimpl.SizeCache
 }
@@ -1429,6 +1430,13 @@ func (x *DeviceOperationalDiagnostics) GetFeatures() []FeatureId {
 		return x.Features
 	}
 	return nil
+}
+
+func (x *DeviceOperationalDiagnostics) GetConnectionAgeSeconds() uint64 {
+	if x != nil && x.ConnectionAgeSeconds != nil {
+		return *x.ConnectionAgeSeconds
+	}
+	return 0
 }
 
 type DiscoveredDevice struct {
@@ -2511,7 +2519,7 @@ const file_eebus_v1_device_service_proto_rawDesc = "" +
 	"\vobserved_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"observedAt\x12;\n" +
 	"\vvalid_until\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"validUntil\"\xb0\x04\n" +
+	"validUntil\"\x86\x05\n" +
 	"\x1cDeviceOperationalDiagnostics\x12!\n" +
 	"\fredacted_ski\x18\x01 \x01(\tR\vredactedSki\x12<\n" +
 	"\treadiness\x18\x02 \x01(\x0e2\x1e.eebus.v1.DeviceReadinessStateR\treadiness\x129\n" +
@@ -2520,8 +2528,10 @@ const file_eebus_v1_device_service_proto_rawDesc = "" +
 	"#monitoring_last_success_age_seconds\x18\x05 \x01(\x04H\x00R\x1fmonitoringLastSuccessAgeSeconds\x88\x01\x01\x12H\n" +
 	"\x0esnapshot_reads\x18\x06 \x01(\v2!.eebus.v1.SnapshotReadDiagnosticsR\rsnapshotReads\x12A\n" +
 	"\tproviders\x18\a \x03(\v2#.eebus.v1.ProviderSampleDiagnosticsR\tproviders\x12/\n" +
-	"\bfeatures\x18\b \x03(\x0e2\x13.eebus.v1.FeatureIdR\bfeaturesB&\n" +
-	"$_monitoring_last_success_age_seconds\"\x9d\x01\n" +
+	"\bfeatures\x18\b \x03(\x0e2\x13.eebus.v1.FeatureIdR\bfeatures\x129\n" +
+	"\x16connection_age_seconds\x18\t \x01(\x04H\x01R\x14connectionAgeSeconds\x88\x01\x01B&\n" +
+	"$_monitoring_last_success_age_secondsB\x19\n" +
+	"\x17_connection_age_seconds\"\x9d\x01\n" +
 	"\x10DiscoveredDevice\x12\x10\n" +
 	"\x03ski\x18\x01 \x01(\tR\x03ski\x12\x14\n" +
 	"\x05brand\x18\x02 \x01(\tR\x05brand\x12\x14\n" +

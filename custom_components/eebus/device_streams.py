@@ -177,9 +177,19 @@ class DeviceStreams:
         self._handling_consolidated = False
         self._initial_snapshot_received = asyncio.Event()
         self._ski_registered = False
+        self._started = False
+        self._restart_pending = False
+        self._restart_task: asyncio.Task[None] | None = None
 
     def start(self) -> None:
         """Start the consolidated stream, falling back only for old bridges."""
+        if self._started:
+            return
+        self._started = True
+        self._start_selected_profile()
+
+    def _start_selected_profile(self) -> None:
+        """Start the stream profile from the latest negotiated contract."""
 
         async def device_state(channel: grpc.aio.Channel) -> None:
             self._last_revision = None
@@ -250,8 +260,35 @@ class DeviceStreams:
         else:
             start_legacy("device_state")
 
+    def contract_changed(self) -> None:
+        """Re-select the stream profile after channel contract negotiation."""
+        if not self._started:
+            return
+        self._restart_pending = True
+        if self._restart_task is None or self._restart_task.done():
+            self._restart_task = asyncio.create_task(
+                self._restart_after_contract_change(),
+                name=f"eebus_stream_profile_{self._ski}",
+            )
+
+    async def _restart_after_contract_change(self) -> None:
+        """Apply the newest profile, coalescing rapid contract changes."""
+        while self._restart_pending and self._started:
+            self._restart_pending = False
+            await self._manager.stop()
+            await self._legacy_manager.stop()
+            if self._started:
+                self._start_selected_profile()
+
     async def stop(self) -> None:
         """Stop every stream before transport shutdown."""
+        self._started = False
+        self._restart_pending = False
+        restart_task = self._restart_task
+        if restart_task is not None and restart_task is not asyncio.current_task():
+            restart_task.cancel()
+            await asyncio.gather(restart_task, return_exceptions=True)
+        self._restart_task = None
         await self._manager.stop()
         await self._legacy_manager.stop()
 

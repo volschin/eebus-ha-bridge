@@ -130,6 +130,9 @@ func (s *RecoverySupervisor) recover(now time.Time, ski string) {
 		s.logTransition(ski, snapshot)
 		return
 	}
+	if record.Attempts == 0 && record.FirstStaleAt.IsZero() {
+		record.FirstStaleAt = now
+	}
 	record.Attempts++
 	record.LastAttemptAt = now
 	s.transitionLocked(record, RecoveryStateRecovering, now)
@@ -187,17 +190,18 @@ func (s *RecoverySupervisor) reconcileHealthy(now time.Time, device DeviceHealth
 		s.mu.Unlock()
 		return
 	}
-	if record.State == RecoveryStateExhausted {
-		s.mu.Unlock()
-		return
-	}
 	lastAttempt := record.LastAttemptAt
-	retryAfterGrace := record.State == RecoveryStateGracePeriod && !now.Before(record.NextAttemptAt)
+	state := record.State
+	retryAfterGrace := state == RecoveryStateGracePeriod && !now.Before(record.NextAttemptAt)
 	s.mu.Unlock()
 
-	if !lastAttempt.IsZero() && s.registry.MonitoringSuccessSince(ski, lastAttempt) {
+	monitoringRecovered := !lastAttempt.IsZero() && s.registry.MonitoringSuccessSince(ski, lastAttempt)
+	if monitoringRecovered || (lastAttempt.IsZero() && device.MonitoringSuccessOnConnect) {
 		s.mu.Lock()
 		record = s.recordLocked(ski, now)
+		record.Attempts = 0
+		record.FirstStaleAt = time.Time{}
+		record.LastAttemptAt = time.Time{}
 		record.NextAttemptAt = time.Time{}
 		s.transitionLocked(record, RecoveryStateHealthy, now)
 		snapshot := record.RecoverySnapshot
@@ -205,9 +209,21 @@ func (s *RecoverySupervisor) reconcileHealthy(now time.Time, device DeviceHealth
 		s.logTransition(ski, snapshot)
 		return
 	}
+	if state == RecoveryStateExhausted {
+		return
+	}
 	if retryAfterGrace {
 		s.recover(now, ski)
+		return
 	}
+
+	// A reconnect removes the device from the registry's stale set during its
+	// connection grace period. Keep the per-device state explicit until either
+	// a monitoring read succeeds or the supervisor-owned retry becomes due.
+	s.mu.Lock()
+	record = s.recordLocked(ski, now)
+	s.transitionLocked(record, RecoveryStateGracePeriod, now)
+	s.mu.Unlock()
 }
 
 func (s *RecoverySupervisor) restartDecision(health []DeviceHealthSnapshot) RecoveryTickResult {
@@ -274,7 +290,7 @@ func (s *RecoverySupervisor) recordLocked(ski string, now time.Time) *recoveryRe
 	record := s.records[ski]
 	if record == nil {
 		record = &recoveryRecord{RecoverySnapshot: RecoverySnapshot{
-			State: RecoveryStateHealthy, FirstStaleAt: now, LastTransitionAt: now,
+			State: RecoveryStateHealthy, LastTransitionAt: now,
 		}}
 		s.records[ski] = record
 	}
@@ -301,7 +317,11 @@ func (s *RecoverySupervisor) backoff(attempt int) time.Duration {
 }
 
 func (s *RecoverySupervisor) logTransition(ski string, snapshot RecoverySnapshot) {
-	s.logStage(ski, string(snapshot.State), snapshot.Attempts, time.Until(snapshot.NextAttemptAt))
+	retryDelay := time.Duration(0)
+	if !snapshot.NextAttemptAt.IsZero() {
+		retryDelay = snapshot.NextAttemptAt.Sub(snapshot.LastTransitionAt)
+	}
+	s.logStage(ski, string(snapshot.State), snapshot.Attempts, retryDelay)
 }
 
 func (s *RecoverySupervisor) logStage(ski, stage string, attempt int, duration time.Duration) {

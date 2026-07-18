@@ -224,6 +224,10 @@ func (s *DeviceService) GetDeviceDiagnostics(_ context.Context, req *pb.DeviceRe
 		seconds := uint64(max(age/time.Second, 0))
 		result.MonitoringLastSuccessAgeSeconds = &seconds
 	}
+	if health, ok := s.registry.DeviceHealth(ski); ok && health.Connected && !health.ConnectedAt.IsZero() {
+		seconds := uint64(max(now.Sub(health.ConnectedAt)/time.Second, 0))
+		result.ConnectionAgeSeconds = &seconds
+	}
 	if s.snapshot != nil {
 		metrics := s.snapshot.Metrics(ski)
 		result.SnapshotReads = &pb.SnapshotReadDiagnostics{

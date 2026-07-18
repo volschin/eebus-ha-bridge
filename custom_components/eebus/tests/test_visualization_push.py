@@ -189,6 +189,30 @@ async def test_pv_push_invalidates_when_power_unavailable(monkeypatch):
     assert request.sample.invalid is True
 
 
+async def test_pv_invalid_required_sensor_is_latched_until_valid_sample(monkeypatch):
+    states = {"sensor.pv_power": _state("unavailable", "W")}
+    coordinator = _make_coordinator(states, pv_power="sensor.pv_power")
+    requests = []
+
+    class _FakeStub:
+        def __init__(self, _channel):
+            pass
+
+        async def PublishPVData(self, request, timeout=None):  # noqa: N802
+            requests.append(request)
+            return proto_stubs.Empty()
+
+    monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _FakeStub)
+    await coordinator.async_push_pv_data()
+    await coordinator.async_push_pv_data()
+    states["sensor.pv_power"] = _state("500", "W")
+    await coordinator.async_push_pv_data()
+    states["sensor.pv_power"] = _state("unavailable", "W")
+    await coordinator.async_push_pv_data()
+
+    assert [request.sample.invalid for request in requests] == [True, False, True]
+
+
 async def test_battery_push_skips_without_power_entity():
     """No battery power mapped: push is a no-op and never builds a stub."""
     coordinator = _make_coordinator({})
@@ -254,3 +278,27 @@ async def test_battery_push_invalidates_when_power_unavailable(monkeypatch):
     request = captured["request"]
     assert request.HasField("sample") is True
     assert request.sample.invalid is True
+
+
+async def test_battery_invalid_required_sensor_is_latched_until_valid_sample(monkeypatch):
+    states = {"sensor.bat_power": _state("unknown", "W")}
+    coordinator = _make_coordinator(states, battery_power="sensor.bat_power")
+    requests = []
+
+    class _FakeStub:
+        def __init__(self, _channel):
+            pass
+
+        async def PublishBatteryData(self, request, timeout=None):  # noqa: N802
+            requests.append(request)
+            return proto_stubs.Empty()
+
+    monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _FakeStub)
+    await coordinator.async_push_battery_data()
+    await coordinator.async_push_battery_data()
+    states["sensor.bat_power"] = _state("-250", "W")
+    await coordinator.async_push_battery_data()
+    states["sensor.bat_power"] = _state("unknown", "W")
+    await coordinator.async_push_battery_data()
+
+    assert [request.sample.invalid for request in requests] == [True, False, True]

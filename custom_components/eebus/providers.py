@@ -189,8 +189,8 @@ class ProviderManager:
         self._provider_pushers: list[ProviderPublisher] = []
         self._provider_push_failing: dict[str, bool] = {}
         self._provider_invalidated: set[str] = set()
-        self._provider_invalidation_supported: bool | None = None
         self._supports_feature = supports_feature or (lambda _feature: False)
+        self._stop_task: asyncio.Task[None] | None = None
 
     @property
     def grid_push_enabled(self) -> bool:
@@ -313,12 +313,9 @@ class ProviderManager:
 
     async def _async_provider_invalidation_supported(self) -> bool:
         """Return whether the bridge understands sample.invalid provider pushes."""
-        if self._provider_invalidation_supported is not None:
-            return self._provider_invalidation_supported
-        self._provider_invalidation_supported = self._supports_feature(
+        return self._supports_feature(
             int(proto_stubs.FeatureId.FEATURE_PROVIDER_SAMPLE_INVALIDATION)
         )
-        return self._provider_invalidation_supported
 
     async def _async_publish_grid(
         self, label: str, request: proto_stubs.GridData
@@ -368,6 +365,8 @@ class ProviderManager:
         invalidate: Callable[[], Awaitable[None]],
     ) -> None:
         """Start one lifecycle-owning provider push worker."""
+        if self._stop_task is not None:
+            raise RuntimeError("provider manager is stopping")
         pusher = _ProviderPusher(
             self._hass,
             label,
@@ -497,33 +496,33 @@ class ProviderManager:
             return
         if "grid" in self._provider_invalidated:
             return
-        self._provider_invalidated.add("grid")
-        await self._async_publish_grid(
+        if await self._async_publish_grid(
             "grid",
             proto_stubs.GridData(sample=self._sample_meta(invalid=True)),
-        )
+        ):
+            self._provider_invalidated.add("grid")
 
     async def _async_invalidate_pv_data(self) -> None:
         if not await self._async_provider_invalidation_supported():
             return
         if "PV" in self._provider_invalidated:
             return
-        self._provider_invalidated.add("PV")
-        await self._async_publish_pv(
+        if await self._async_publish_pv(
             "PV",
             proto_stubs.PVData(sample=self._sample_meta(invalid=True)),
-        )
+        ):
+            self._provider_invalidated.add("PV")
 
     async def _async_invalidate_battery_data(self) -> None:
         if not await self._async_provider_invalidation_supported():
             return
         if "battery" in self._provider_invalidated:
             return
-        self._provider_invalidated.add("battery")
-        await self._async_publish_battery(
+        if await self._async_publish_battery(
             "battery",
             proto_stubs.BatteryData(sample=self._sample_meta(invalid=True)),
-        )
+        ):
+            self._provider_invalidated.add("battery")
 
     def async_start_grid_push(self) -> None:
         """Track mapped grid sensors and push their values to the bridge."""
@@ -572,17 +571,38 @@ class ProviderManager:
         )
 
     async def async_stop(self, *, invalidate: bool = True) -> None:
-        """Stop all provider push workers."""
-        for pusher in self._provider_pushers:
-            await pusher.stop()
+        """Stop all workers and finish cleanup even if the caller is cancelled."""
+        if self._stop_task is None:
+            self._stop_task = asyncio.create_task(self._async_stop(invalidate=invalidate))
+        try:
+            await asyncio.shield(self._stop_task)
+        except asyncio.CancelledError:
+            # Integration teardown may cancel its caller. The owned workers and
+            # invalidation RPCs still have to finish before cancellation escapes.
+            try:
+                await asyncio.shield(self._stop_task)
+            finally:
+                raise
+
+    async def _async_stop(self, *, invalidate: bool) -> None:
+        """Run the provider cleanup exactly once."""
+        pushers = tuple(self._provider_pushers)
         self._provider_pushers.clear()
+        stop_results = await asyncio.gather(
+            *(pusher.stop() for pusher in pushers), return_exceptions=True
+        )
+        for result in stop_results:
+            if isinstance(result, BaseException):
+                _LOGGER.warning("Failed to stop an EEBUS provider worker: %s", result)
         if not invalidate:
             return
-        for enabled, invalidate_provider in (
-            (self.grid_push_enabled, self._async_invalidate_grid_data),
-            (self.pv_push_enabled, self._async_invalidate_pv_data),
-            (self.battery_push_enabled, self._async_invalidate_battery_data),
-        ):
-            if enabled:
-                with suppress(Exception):
-                    await invalidate_provider()
+        invalidations = [
+            invalidate_provider()
+            for enabled, invalidate_provider in (
+                (self.grid_push_enabled, self._async_invalidate_grid_data),
+                (self.pv_push_enabled, self._async_invalidate_pv_data),
+                (self.battery_push_enabled, self._async_invalidate_battery_data),
+            )
+            if enabled
+        ]
+        await asyncio.gather(*invalidations, return_exceptions=True)

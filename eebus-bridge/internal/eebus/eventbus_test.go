@@ -172,6 +172,12 @@ func TestEventBusSignalsOneResyncAfterSubscriberDrop(t *testing.T) {
 	if got := bus.SubscriberDroppedEvents(ch); got != 1 {
 		t.Fatalf("drops before recovery = %d, want 1", got)
 	}
+	if _, early := bus.TakePendingResync(ch); early {
+		t.Fatal("resync was returned before the overflow burst drained")
+	}
+	for len(ch) > 0 {
+		<-ch
+	}
 	resync, ok := bus.TakePendingResync(ch)
 	if !ok {
 		t.Fatal("pending resync was not returned")
@@ -190,11 +196,7 @@ func TestEventBusSignalsOneResyncAfterSubscriberDrop(t *testing.T) {
 		t.Fatalf("Diagnostics() = %+v, want revision/drop/resync 65/1/1", diagnostics)
 	}
 
-	<-ch // make the subscriber writable again
 	bus.Publish(eebus.Event{SKI: "test-ski", Type: "after-resync"})
-	for len(ch) > 1 {
-		<-ch
-	}
 	event := <-ch
 	if event.Type != "after-resync" || event.Revision != 66 {
 		t.Fatalf("event after resync = %+v, want revision 66", event)

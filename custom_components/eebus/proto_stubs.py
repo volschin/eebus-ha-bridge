@@ -29,6 +29,7 @@ from .generated.eebus.v1.device_service_pb2 import (  # noqa: F401
     DeviceSnapshot,
     DeviceEventType,
     EventAvailability,
+    EventTransportDiagnostics,
     FeatureId,
     ProviderSampleDiagnostics,
     ProviderSampleState,
@@ -43,6 +44,7 @@ from .generated.eebus.v1.device_service_pb2 import (  # noqa: F401
     ServerInfo,
     SnapshotFieldId,
     SnapshotFieldStatus,
+    SnapshotReadDiagnostics,
     SnapshotValueState,
 )
 from .generated.eebus.v1.device_service_pb2_grpc import DeviceServiceStub  # noqa: F401
@@ -156,6 +158,7 @@ __all__ = [
     "DeviceOperationalDiagnostics",
     "DeviceReadinessState",
     "EventAvailability",
+    "EventTransportDiagnostics",
     "FeatureId",
     "DeviceStateDHWEvent",
     "DeviceStateEvent",
@@ -216,6 +219,7 @@ __all__ = [
     "ServiceStatus",
     "SnapshotFieldId",
     "SnapshotFieldStatus",
+    "SnapshotReadDiagnostics",
     "SnapshotValueState",
     "VisualizationServiceStub",
     "WriteFailsafeLimitRequest",

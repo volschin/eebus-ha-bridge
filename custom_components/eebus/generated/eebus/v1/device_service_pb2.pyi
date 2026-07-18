@@ -332,7 +332,7 @@ class ProviderSampleDiagnostics(_message.Message):
     def __init__(self, provider: _Optional[str] = ..., state: _Optional[_Union[ProviderSampleState, str]] = ..., observed_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., valid_until: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
 class DeviceOperationalDiagnostics(_message.Message):
-    __slots__ = ("redacted_ski", "readiness", "recovery", "events", "monitoring_last_success_age_seconds", "snapshot_reads", "providers", "features")
+    __slots__ = ("redacted_ski", "readiness", "recovery", "events", "monitoring_last_success_age_seconds", "snapshot_reads", "providers", "features", "connection_age_seconds")
     REDACTED_SKI_FIELD_NUMBER: _ClassVar[int]
     READINESS_FIELD_NUMBER: _ClassVar[int]
     RECOVERY_FIELD_NUMBER: _ClassVar[int]
@@ -341,6 +341,7 @@ class DeviceOperationalDiagnostics(_message.Message):
     SNAPSHOT_READS_FIELD_NUMBER: _ClassVar[int]
     PROVIDERS_FIELD_NUMBER: _ClassVar[int]
     FEATURES_FIELD_NUMBER: _ClassVar[int]
+    CONNECTION_AGE_SECONDS_FIELD_NUMBER: _ClassVar[int]
     redacted_ski: str
     readiness: DeviceReadinessState
     recovery: RecoveryDiagnostics
@@ -349,7 +350,8 @@ class DeviceOperationalDiagnostics(_message.Message):
     snapshot_reads: SnapshotReadDiagnostics
     providers: _containers.RepeatedCompositeFieldContainer[ProviderSampleDiagnostics]
     features: _containers.RepeatedScalarFieldContainer[FeatureId]
-    def __init__(self, redacted_ski: _Optional[str] = ..., readiness: _Optional[_Union[DeviceReadinessState, str]] = ..., recovery: _Optional[_Union[RecoveryDiagnostics, _Mapping]] = ..., events: _Optional[_Union[EventTransportDiagnostics, _Mapping]] = ..., monitoring_last_success_age_seconds: _Optional[int] = ..., snapshot_reads: _Optional[_Union[SnapshotReadDiagnostics, _Mapping]] = ..., providers: _Optional[_Iterable[_Union[ProviderSampleDiagnostics, _Mapping]]] = ..., features: _Optional[_Iterable[_Union[FeatureId, str]]] = ...) -> None: ...
+    connection_age_seconds: int
+    def __init__(self, redacted_ski: _Optional[str] = ..., readiness: _Optional[_Union[DeviceReadinessState, str]] = ..., recovery: _Optional[_Union[RecoveryDiagnostics, _Mapping]] = ..., events: _Optional[_Union[EventTransportDiagnostics, _Mapping]] = ..., monitoring_last_success_age_seconds: _Optional[int] = ..., snapshot_reads: _Optional[_Union[SnapshotReadDiagnostics, _Mapping]] = ..., providers: _Optional[_Iterable[_Union[ProviderSampleDiagnostics, _Mapping]]] = ..., features: _Optional[_Iterable[_Union[FeatureId, str]]] = ..., connection_age_seconds: _Optional[int] = ...) -> None: ...
 
 class DiscoveredDevice(_message.Message):
     __slots__ = ("ski", "brand", "model", "serial", "device_type", "host")

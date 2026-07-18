@@ -243,12 +243,17 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
                 0.0,
                 (datetime.now(UTC) - timestamp.astimezone(UTC)).total_seconds(),
             )
+        operational = None
+        try:
+            operational = await self._runtime_session.async_operational_diagnostics()
+        except grpc.aio.AioRpcError as err:
+            _LOGGER.debug("Operational bridge diagnostics unavailable: %s", err)
         return SessionDiagnostics(
             bridge_unavailable=self._runtime.status.unavailable,
             last_successful_read_age_seconds=age,
             last_update_success=self.last_update_success,
             streams=self._runtime_session.stream_diagnostics,
-            operational=await self._runtime_session.async_operational_diagnostics(),
+            operational=operational,
         )
 
     async def _async_update_data(self) -> DeviceState:

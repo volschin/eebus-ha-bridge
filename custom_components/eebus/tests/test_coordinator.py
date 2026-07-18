@@ -411,6 +411,7 @@ def test_device_streams_starts_one_consolidated_consumer() -> None:
     streams._manager = MagicMock()
     streams._legacy_manager = MagicMock()
     streams._supports_feature = lambda _feature: True
+    streams._started = False
     streams.start()
     mapping, name = streams._manager.start.call_args.args
     assert list(mapping) == ["device_state"]
@@ -438,6 +439,7 @@ def test_device_streams_selects_legacy_profile_without_probe_rpc() -> None:
     streams._manager = MagicMock()
     streams._legacy_manager = MagicMock()
     streams._supports_feature = MagicMock(return_value=False)
+    streams._started = False
 
     streams.start()
 
@@ -446,6 +448,30 @@ def test_device_streams_selects_legacy_profile_without_probe_rpc() -> None:
     streams._supports_feature.assert_called_once_with(
         proto_stubs.FeatureId.FEATURE_CONSOLIDATED_DEVICE_STREAM
     )
+
+
+async def test_device_streams_reselects_profile_after_contract_change() -> None:
+    """A channel-generation upgrade replaces legacy workers with consolidated."""
+    streams = DeviceStreams.__new__(DeviceStreams)
+    streams._ski = "test-ski"
+    streams._manager = MagicMock(stop=AsyncMock())
+    streams._legacy_manager = MagicMock(stop=AsyncMock())
+    streams._supports_feature = MagicMock(return_value=False)
+    streams._started = True
+    streams._restart_pending = False
+    streams._restart_task = None
+
+    streams.contract_changed()
+    assert streams._restart_task is not None
+    await streams._restart_task
+    streams._legacy_manager.start.assert_called_once()
+
+    streams._supports_feature.return_value = True
+    streams.contract_changed()
+    assert streams._restart_task is not None
+    await streams._restart_task
+    streams._manager.start.assert_called_once()
+    streams._legacy_manager.stop.assert_awaited()
 
 
 def _streams_with(initial: DeviceState) -> tuple[DeviceStateStore, DeviceStreams, MagicMock]:

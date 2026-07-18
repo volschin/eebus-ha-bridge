@@ -755,6 +755,13 @@ Empfohlene Lieferwellen:
 3. RecoverySupervisor und getrennte Readiness aus SPEC4-05 einführen.
 4. Registry-Projektionen und Diagnostik aus SPEC4-10 schrittweise migrieren.
 
+Die verbindliche Startreihenfolge fuer Welle C ist: EEBUS-Setup und
+Composition, EEBUS-Start, fachliche Module (inklusive Heartbeat und Provider),
+gRPC-Listener/Readiness, Monitoring-Watchdog und zuletzt der atomare Wechsel
+auf `SERVING`. Rollback und regulaerer Shutdown laufen ausschliesslich ueber
+das Ledger der erfolgreich gestarteten Stufen in exakt umgekehrter Reihenfolge;
+`NOT_SERVING` wird vor dem Rollback gesetzt.
+
 ### Welle D: Domänencode konsolidieren
 
 1. HVAC-Gemeinsamkeiten aus SPEC4-11 extrahieren.

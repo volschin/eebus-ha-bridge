@@ -105,15 +105,16 @@ func (b *EventBus) Publish(evt Event) {
 	}
 }
 
-// TakePendingResync returns one coalesced resync marker before a scoped
-// subscriber reads more buffered events. A gRPC sender calls this immediately
-// after each successful write; when backpressure clears, the marker is thus
-// delivered without waiting for another domain event to be published.
+// TakePendingResync returns one coalesced resync marker after a scoped
+// subscriber has drained the buffered part of an overflow burst. Waiting for
+// the channel to become empty prevents a concurrently publishing burst from
+// producing a series of partial resync markers; the one returned marker then
+// carries the final revision and total dropped count observed for that burst.
 func (b *EventBus) TakePendingResync(ch chan Event) (Event, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	subscriber, ok := b.subscribers[ch]
-	if !ok || subscriber.ski == "" || subscriber.pendingDropped == 0 {
+	if !ok || subscriber.ski == "" || subscriber.pendingDropped == 0 || len(ch) != 0 {
 		return Event{}, false
 	}
 	event := Event{

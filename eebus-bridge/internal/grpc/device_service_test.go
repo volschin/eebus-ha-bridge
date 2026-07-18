@@ -289,6 +289,9 @@ func TestGetDeviceDiagnosticsIsRedactedAndDeviceScoped(t *testing.T) {
 	if diagnosticsA.Readiness != pb.DeviceReadinessState_DEVICE_READINESS_READY || diagnosticsA.Events.Revision != 1 {
 		t.Fatalf("device A diagnostics = %+v", diagnosticsA)
 	}
+	if diagnosticsA.ConnectionAgeSeconds == nil {
+		t.Fatal("connected device diagnostics omitted connection age")
+	}
 	if diagnosticsB.Readiness != pb.DeviceReadinessState_DEVICE_READINESS_EXHAUSTED || diagnosticsB.Recovery.Attempts != 3 || diagnosticsB.Events.Revision != 2 {
 		t.Fatalf("device B diagnostics = %+v", diagnosticsB)
 	}

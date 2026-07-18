@@ -33,9 +33,20 @@ type fakeBridgeLifecycle struct {
 	unregisters  []string
 	registered   chan struct{}
 	registerOnce sync.Once
+	setupStarted chan struct{}
+	setupRelease chan struct{}
+	setupOnce    sync.Once
 }
 
-func (f *fakeBridgeLifecycle) Setup() error { return f.setupErr }
+func (f *fakeBridgeLifecycle) Setup() error {
+	if f.setupStarted != nil {
+		f.setupOnce.Do(func() { close(f.setupStarted) })
+	}
+	if f.setupRelease != nil {
+		<-f.setupRelease
+	}
+	return f.setupErr
+}
 
 func (f *fakeBridgeLifecycle) Start() error {
 	f.starts.Add(1)
@@ -187,11 +198,12 @@ type fakeHeartbeatLifecycle struct {
 	starts   atomic.Int32
 	stops    atomic.Int32
 	recorder *shutdownRecorder
+	startErr error
 }
 
 func (f *fakeHeartbeatLifecycle) StartHeartbeat(string) error {
 	f.starts.Add(1)
-	return nil
+	return f.startErr
 }
 
 func (f *fakeHeartbeatLifecycle) StopHeartbeat() error {
@@ -388,17 +400,83 @@ func TestApplicationStartGRPCServeFailureTriggersControlledShutdown(t *testing.T
 	assert.Equal(t, int32(1), heartbeat.stops.Load())
 }
 
+func TestApplicationHeartbeatStartFailurePreventsServing(t *testing.T) {
+	heartbeatErr := errors.New("heartbeat unavailable")
+	bridge := &fakeBridgeLifecycle{}
+	grpcServer := &fakeGRPCLifecycle{}
+	heartbeat := &fakeHeartbeatLifecycle{startErr: heartbeatErr}
+	app := newTestApplication(bridge, grpcServer, heartbeat, nil)
+
+	err := app.Start(context.Background())
+
+	require.ErrorIs(t, err, heartbeatErr)
+	assert.Contains(t, err.Error(), "starting heartbeat module")
+	assert.Equal(t, int32(1), heartbeat.starts.Load())
+	assert.Equal(t, int32(0), heartbeat.stops.Load())
+	assert.Equal(t, int32(1), bridge.stops.Load())
+	assert.Equal(t, int32(0), grpcServer.starts.Load())
+	assert.NotContains(t, grpcServer.healthValues(), true)
+}
+
+func TestApplicationStopDuringCompositionCannotRestartEEBUS(t *testing.T) {
+	setupStarted := make(chan struct{})
+	setupRelease := make(chan struct{})
+	bridge := &fakeBridgeLifecycle{setupStarted: setupStarted, setupRelease: setupRelease}
+	grpcServer := &fakeGRPCLifecycle{}
+	heartbeat := &fakeHeartbeatLifecycle{}
+	app := newTestApplication(bridge, grpcServer, heartbeat, nil)
+	result := make(chan error, 1)
+	go func() { result <- app.Start(context.Background()) }()
+
+	select {
+	case <-setupStarted:
+	case <-time.After(time.Second):
+		t.Fatal("application did not enter EEBUS setup")
+	}
+	stopDone := make(chan struct{})
+	go func() {
+		app.Stop()
+		close(stopDone)
+	}()
+	select {
+	case <-stopDone:
+		t.Fatal("Stop returned while startup still owned the composition transaction")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(setupRelease)
+
+	select {
+	case err := <-result:
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("Start did not return after concurrent Stop")
+	}
+	select {
+	case <-stopDone:
+	case <-time.After(time.Second):
+		t.Fatal("concurrent Stop did not finish")
+	}
+	assert.Equal(t, int32(0), bridge.starts.Load())
+	assert.Equal(t, int32(1), bridge.stops.Load())
+	assert.Equal(t, int32(0), heartbeat.starts.Load())
+	assert.Equal(t, int32(0), grpcServer.starts.Load())
+	assert.NotContains(t, grpcServer.healthValues(), true)
+}
+
 func TestApplicationStartRollsBackOnlySuccessfulStagesInReverseOrder(t *testing.T) {
 	tests := []struct {
 		name         string
 		setupErr     error
 		bridgeErr    error
+		module1Err   error
 		module2Err   error
 		grpcErr      error
 		wantRollback []string
 	}{
 		{name: "setup", setupErr: errors.New("setup"), wantRollback: nil},
 		{name: "bridge", bridgeErr: errors.New("bridge"), wantRollback: []string{"bridge"}},
+		{name: "first module", module1Err: errors.New("module"), wantRollback: []string{"bridge"}},
 		{name: "second module", module2Err: errors.New("module"), wantRollback: []string{"module-one", "bridge"}},
 		{name: "grpc", grpcErr: errors.New("grpc"), wantRollback: []string{"grpc", "module-two", "module-one", "bridge"}},
 	}
@@ -413,7 +491,7 @@ func TestApplicationStartRollsBackOnlySuccessfulStagesInReverseOrder(t *testing.
 			app.modules = []applicationModule{
 				{
 					name:  "module-one",
-					start: func() error { return nil },
+					start: func() error { return test.module1Err },
 					stop:  func() error { recorder.add("module-one"); return nil },
 				},
 				{

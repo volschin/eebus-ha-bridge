@@ -195,8 +195,75 @@ func TestRecoverySupervisorMonitoringSuccessEndsRecoveryDeterministically(t *tes
 	supervisor.Tick(now.Add(time.Minute))
 
 	snapshot := supervisor.Snapshot("AA11", now.Add(time.Minute))
-	if snapshot.State != RecoveryStateHealthy || snapshot.Attempts != 1 {
+	if snapshot.State != RecoveryStateHealthy || snapshot.Attempts != 0 {
 		t.Fatalf("snapshot after monitoring success = %+v", snapshot)
+	}
+}
+
+func TestRecoverySupervisorStartsFirstStaleAgeAtFirstStaleEpisode(t *testing.T) {
+	now := time.Unix(100, 0)
+	registry := &recoveryRegistryFake{
+		health: []DeviceHealthSnapshot{{
+			SKI: "AA11", Connected: true, MonitoringSuccessOnConnect: true,
+		}},
+		successAt: make(map[string]time.Time),
+	}
+	supervisor := NewRecoverySupervisor(registry, &recoveryControllerFake{}, recoveryTestConfig())
+	supervisor.Tick(now)
+	if snapshot := supervisor.Snapshot("AA11", now); !snapshot.FirstStaleAt.IsZero() {
+		t.Fatalf("healthy device first stale time = %s, want zero", snapshot.FirstStaleAt)
+	}
+
+	staleAt := now.Add(10 * time.Minute)
+	registry.mu.Lock()
+	registry.stale = []string{"AA11"}
+	registry.health[0].MonitoringSuccessOnConnect = false
+	registry.mu.Unlock()
+	supervisor.Tick(staleAt)
+
+	if got := supervisor.Snapshot("AA11", staleAt).FirstStaleAt; !got.Equal(staleAt) {
+		t.Fatalf("first stale time = %s, want %s", got, staleAt)
+	}
+}
+
+func TestRecoverySupervisorMonitoringSuccessRevivesExhaustedDevice(t *testing.T) {
+	now := time.Unix(100, 0)
+	registry := &recoveryRegistryFake{
+		stale:     []string{"AA11"},
+		health:    []DeviceHealthSnapshot{{SKI: "AA11", Connected: true}},
+		successAt: make(map[string]time.Time),
+	}
+	config := recoveryTestConfig()
+	config.MaxAttempts = 1
+	supervisor := NewRecoverySupervisor(registry, &recoveryControllerFake{}, config)
+	supervisor.Tick(now)
+	supervisor.Tick(now.Add(time.Minute))
+	if state := supervisor.Snapshot("AA11", now).State; state != RecoveryStateExhausted {
+		t.Fatalf("state before recovery read = %s, want exhausted", state)
+	}
+
+	registry.mu.Lock()
+	registry.stale = nil
+	registry.successAt["AA11"] = now.Add(2 * time.Minute)
+	registry.health[0].MonitoringSuccessOnConnect = true
+	registry.health[0].LastMonitoringSuccess = now.Add(2 * time.Minute)
+	registry.mu.Unlock()
+	supervisor.Tick(now.Add(2 * time.Minute))
+
+	snapshot := supervisor.Snapshot("AA11", now.Add(2*time.Minute))
+	if snapshot.State != RecoveryStateHealthy || snapshot.Attempts != 0 || !snapshot.NextAttemptAt.IsZero() {
+		t.Fatalf("snapshot after recovery read = %+v, want healthy", snapshot)
+	}
+
+	registry.mu.Lock()
+	registry.stale = []string{"AA11"}
+	registry.health[0].MonitoringSuccessOnConnect = false
+	registry.mu.Unlock()
+	supervisor.Tick(now.Add(3 * time.Minute))
+
+	snapshot = supervisor.Snapshot("AA11", now.Add(3*time.Minute))
+	if snapshot.State != RecoveryStateGracePeriod || snapshot.Attempts != 1 {
+		t.Fatalf("new stale episode = %+v, want a fresh first recovery attempt", snapshot)
 	}
 }
 

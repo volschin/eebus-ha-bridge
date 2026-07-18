@@ -76,9 +76,9 @@ func NewServerWithSecurity(bind string, port int, enableReflection bool, securit
 	}, nil
 }
 
-// SetHealthy toggles the gRPC health status the Docker HEALTHCHECK probes.
-// Used by the monitoring watchdog to surface a stuck SPINE entity binding
-// before it force-exits the process for a restart.
+// SetHealthy atomically controls both the health-service response and the
+// application-RPC readiness gate. Device-scoped recovery deliberately does
+// not change this process-wide state.
 func (s *Server) SetHealthy(healthy bool) {
 	s.serving.Store(healthy)
 	status := grpc_health_v1.HealthCheckResponse_SERVING

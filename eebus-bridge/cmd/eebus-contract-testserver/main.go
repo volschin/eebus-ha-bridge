@@ -9,13 +9,35 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type fakePayloadSource struct{}
+
+type fakeRecoverySource struct{}
+
+func (fakeRecoverySource) Snapshot(_ string, now time.Time) eebus.RecoverySnapshot {
+	return eebus.RecoverySnapshot{
+		State:            eebus.RecoveryStateHealthy,
+		LastTransitionAt: now.Add(-time.Minute),
+	}
+}
+
+type fakeProviderDiagnostics struct{}
+
+func (fakeProviderDiagnostics) ProviderDiagnostics(now time.Time) []*pb.ProviderSampleDiagnostics {
+	return []*pb.ProviderSampleDiagnostics{{
+		Provider:   "grid",
+		State:      pb.ProviderSampleState_PROVIDER_SAMPLE_STATE_CURRENT,
+		ObservedAt: timestamppb.New(now.Add(-2 * time.Second)),
+		ValidUntil: timestamppb.New(now.Add(time.Minute)),
+	}}
+}
 
 func measurement(id pb.MeasurementId, typ string, value float64, unit string) *pb.MeasurementEntry {
 	return &pb.MeasurementEntry{Id: id.Enum(), Type: typ, Value: value, Unit: unit}
@@ -36,9 +58,17 @@ func (fakePayloadSource) SnapshotMeasurements(ski string) (*pb.MeasurementList, 
 	}}, nil
 }
 
-func (fakePayloadSource) AttachMeasurementPayload(event *pb.MeasurementEvent, _ string, eventType pb.MeasurementEventType) {
+func (fakePayloadSource) AttachMeasurementPayload(event *pb.MeasurementEvent, ski string, eventType pb.MeasurementEventType) {
 	switch eventType {
 	case pb.MeasurementEventType_MEASUREMENT_EVENT_POWER_PER_PHASE_UPDATED:
+		if eebus.NormalizeSKI(ski) == dropDiagnosticsSKI {
+			measurements := make([]*pb.MeasurementEntry, 512)
+			for index := range measurements {
+				measurements[index] = measurement(pb.MeasurementId_MEASUREMENT_ID_POWER_L1, "power_l1", float64(index), "W")
+			}
+			event.Data = &pb.MeasurementEvent_Measurements{Measurements: &pb.MeasurementList{Measurements: measurements}}
+			return
+		}
 		event.Data = &pb.MeasurementEvent_Measurements{Measurements: &pb.MeasurementList{Measurements: []*pb.MeasurementEntry{
 			measurement(pb.MeasurementId_MEASUREMENT_ID_POWER_L1, "power_l1", 100, "W"),
 			measurement(pb.MeasurementId_MEASUREMENT_ID_POWER_L2, "power_l2", 200, "W"),
@@ -97,6 +127,8 @@ type fakeTrust struct {
 	registry *eebus.DeviceRegistry
 }
 
+const dropDiagnosticsSKI = "3333333333333333333333333333333333333333"
+
 func (f fakeTrust) RegisterSKI(ski string) error {
 	f.registry.AddDevice(ski, eebus.DeviceInfo{})
 	f.registry.MarkConnected(ski)
@@ -115,6 +147,14 @@ func (f fakeTrust) RegisterSKI(ski string) error {
 		eebus.EventTypeMGCPConsumerUpdated,
 	} {
 		f.bus.Publish(eebus.Event{SKI: ski, Type: eventType})
+	}
+	if eebus.NormalizeSKI(ski) == dropDiagnosticsSKI {
+		// Flood the already-open cross-language stream faster than its bounded
+		// EventBus channel can drain. This deterministically exercises the
+		// production drop -> one coalesced resync path without a test-only RPC.
+		for range 256 {
+			f.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeMonitoringPowerPerPhaseUpdated})
+		}
 	}
 	return nil
 }
@@ -146,6 +186,7 @@ func main() {
 		bridgegrpc.WithDeviceStatePayloads(bridgegrpc.DeviceStatePayloadSources{
 			Monitoring: payloads, LPC: payloads, DHW: payloads, HVAC: payloads, OHPCF: payloads,
 		}),
+		bridgegrpc.WithOperationalDiagnostics(fakeRecoverySource{}, fakeProviderDiagnostics{}),
 	)
 	server := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterDeviceServiceServer(server.GRPCServer(), service)

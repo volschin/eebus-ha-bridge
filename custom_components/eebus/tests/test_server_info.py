@@ -28,6 +28,7 @@ async def test_new_client_negotiates_new_bridge_and_ignores_unknown_features() -
         features=[
             proto_stubs.FeatureId.FEATURE_CONSOLIDATED_DEVICE_STREAM,
             proto_stubs.FeatureId.FEATURE_PROVIDER_SAMPLE_INVALIDATION,
+            proto_stubs.FeatureId.FEATURE_OPERATIONAL_DIAGNOSTICS,
             999,
         ],
     )
@@ -40,6 +41,7 @@ async def test_new_client_negotiates_new_bridge_and_ignores_unknown_features() -
     assert contract.local_ski == "LOCAL"
     assert contract.legacy is False
     assert contract.supports(proto_stubs.FeatureId.FEATURE_CONSOLIDATED_DEVICE_STREAM)
+    assert contract.supports(proto_stubs.FeatureId.FEATURE_OPERATIONAL_DIAGNOSTICS)
     assert 999 not in contract.features
 
 
@@ -111,6 +113,8 @@ async def test_runtime_renegotiates_contract_on_channel_rebuild() -> None:
         1, 1, "new", frozenset({diagnostics_feature}), "LOCAL"
     )
     reader = AsyncMock(side_effect=[old_contract, new_contract])
+    active_session = MagicMock()
+    runtime._sessions["AABB"] = active_session
 
     with (
         patch(
@@ -125,3 +129,4 @@ async def test_runtime_renegotiates_contract_on_channel_rebuild() -> None:
 
     assert runtime.supports(diagnostics_feature) is True
     assert reader.await_count == 2
+    active_session.streams.contract_changed.assert_called_once_with()
