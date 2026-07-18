@@ -47,6 +47,13 @@ type DeviceRegistry struct {
 	health       deviceHealthStore
 	capabilities deviceCapabilityStore
 	clock        Clock
+
+	// lifecycle serializes operations that span more than one independently
+	// locked projection. The projection locks below remain responsible for
+	// ordinary reads; lifecycle establishes their outer lock order and keeps
+	// late callbacks from recreating an explicitly removed device.
+	lifecycle sync.RWMutex
+	removed   map[string]struct{}
 }
 
 // The registry facade deliberately owns three independently locked
@@ -121,8 +128,14 @@ func NewDeviceRegistryWithClock(clock Clock) *DeviceRegistry {
 			support:           make(map[string]map[Capability]map[string]bool),
 			localCapabilities: make(map[Capability]bool),
 		},
-		clock: clock,
+		clock:   clock,
+		removed: make(map[string]struct{}),
 	}
+}
+
+func (r *DeviceRegistry) removedLocked(ski string) bool {
+	_, removed := r.removed[ski]
+	return removed
 }
 
 // MarkConnected starts a fresh monitoring grace period for a device. The last
@@ -130,6 +143,11 @@ func NewDeviceRegistryWithClock(clock Clock) *DeviceRegistry {
 // connection until RecordMonitoringSuccess is called again.
 func (r *DeviceRegistry) MarkConnected(ski string) {
 	ski = NormalizeSKI(ski)
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
+	if r.removedLocked(ski) {
+		return
+	}
 	r.health.mu.Lock()
 	state := r.health.monitoring[ski]
 	if state.connected {
@@ -150,6 +168,10 @@ func (r *DeviceRegistry) MarkConnected(ski string) {
 
 func (r *DeviceRegistry) MarkTrusted(ski string) {
 	ski = NormalizeSKI(ski)
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
+	// An explicit or remote trust grant starts a new device lifetime.
+	delete(r.removed, ski)
 	r.health.mu.Lock()
 	state := r.health.monitoring[ski]
 	state.trusted = true
@@ -161,6 +183,11 @@ func (r *DeviceRegistry) MarkTrusted(ski string) {
 
 func (r *DeviceRegistry) MarkUntrusted(ski string) {
 	ski = NormalizeSKI(ski)
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
+	if r.removedLocked(ski) {
+		return
+	}
 	r.health.mu.Lock()
 	state := r.health.monitoring[ski]
 	state.connected = false
@@ -176,6 +203,11 @@ func (r *DeviceRegistry) MarkUntrusted(ski string) {
 // devices are ignored so a stray disconnect callback does not create state.
 func (r *DeviceRegistry) MarkDisconnected(ski string) {
 	ski = NormalizeSKI(ski)
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
+	if r.removedLocked(ski) {
+		return
+	}
 	r.health.mu.Lock()
 	state, ok := r.health.monitoring[ski]
 	if !ok || !state.connected {
@@ -208,11 +240,19 @@ func (r *DeviceRegistry) DeviceConnection(ski string) (connected bool, lastTrans
 // match (not a registry cache hit), so a stuck SPINE entity binding after
 // reconnect is actually detected instead of masked by stale cached entities.
 func (r *DeviceRegistry) RecordMonitoringSuccess(ski string) {
+	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
 	r.health.mu.Lock()
 	defer r.health.mu.Unlock()
 
-	ski = NormalizeSKI(ski)
-	state := r.health.monitoring[ski]
+	state, ok := r.health.monitoring[ski]
+	if !ok {
+		return
+	}
 	state.lastMonitoringSuccess = r.clock.Now()
 	state.monitoringSuccessOnConnect = state.connected
 	r.health.monitoring[ski] = state
@@ -324,6 +364,11 @@ func ShortSKI(ski string) string {
 
 func (r *DeviceRegistry) AddDevice(ski string, info DeviceInfo) {
 	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
 	info.SKI = ski
 	r.catalog.mu.Lock()
 	r.catalog.devices[ski] = copyDeviceInfo(info)
@@ -345,6 +390,11 @@ func (r *DeviceRegistry) UpsertObservation(
 		ski = remoteDevice.Ski()
 	}
 	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
 	r.ensureCapabilities(ski)
 
 	r.catalog.mu.Lock()
@@ -391,6 +441,11 @@ func (r *DeviceRegistry) UpsertObservation(
 // previously discovered fields.
 func (r *DeviceRegistry) UpsertDeviceClassification(ski, brand, deviceModel, serial, deviceType string) {
 	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
 	r.catalog.mu.Lock()
 	defer r.catalog.mu.Unlock()
 	info := r.catalog.devices[ski]
@@ -412,6 +467,9 @@ func (r *DeviceRegistry) UpsertDeviceClassification(ski, brand, deviceModel, ser
 
 func (r *DeviceRegistry) RemoveDevice(ski string) {
 	ski = NormalizeSKI(ski)
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
+	r.removed[ski] = struct{}{}
 	r.catalog.mu.Lock()
 	delete(r.catalog.devices, ski)
 	r.catalog.mu.Unlock()
@@ -433,9 +491,14 @@ func (r *DeviceRegistry) RemoveDevice(ski string) {
 // the entities from fresh observations (cf. evcc-io/evcc#29628). No-op when the
 // SKI is unknown.
 func (r *DeviceRegistry) ClearEntities(ski string) {
+	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
 	r.catalog.mu.Lock()
 	defer r.catalog.mu.Unlock()
-	ski = NormalizeSKI(ski)
 	info, ok := r.catalog.devices[ski]
 	if !ok {
 		return
@@ -452,9 +515,14 @@ func (r *DeviceRegistry) RemoveEntityObservation(ski string, removed spineapi.En
 	if removed == nil {
 		return
 	}
+	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
 	r.catalog.mu.Lock()
 	defer r.catalog.mu.Unlock()
-	ski = NormalizeSKI(ski)
 	info, ok := r.catalog.devices[ski]
 	if !ok {
 		return
@@ -487,6 +555,11 @@ func (r *DeviceRegistry) GetDevice(ski string) (DeviceInfo, bool) {
 
 func (r *DeviceRegistry) KnownDevice(ski string) bool {
 	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return false
+	}
 	r.catalog.mu.RLock()
 	_, hasDevice := r.catalog.devices[ski]
 	r.catalog.mu.RUnlock()

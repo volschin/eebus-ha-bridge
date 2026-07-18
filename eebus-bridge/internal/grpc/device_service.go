@@ -177,8 +177,17 @@ func (s *DeviceService) GetDeviceStatus(_ context.Context, req *pb.DeviceRequest
 	if err != nil {
 		return nil, err
 	}
+	if s.registry == nil {
+		return nil, status.Error(codes.NotFound, "device not found for specified ski")
+	}
 
 	connected, lastTransition, known := s.registry.DeviceConnection(ski)
+	// Check lifetime membership after reading health. If unregister ran between
+	// the two reads, the tombstone wins instead of returning an unknown-looking
+	// disconnected status for a removed device.
+	if !s.registry.KnownDevice(ski) {
+		return nil, status.Error(codes.NotFound, "device not found for specified ski")
+	}
 	result := &pb.DeviceStatus{Connected: connected}
 	if known && !lastTransition.IsZero() {
 		result.LastTransition = timestamppb.New(lastTransition)

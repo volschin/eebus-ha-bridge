@@ -202,3 +202,22 @@ func TestEventBusSignalsOneResyncAfterSubscriberDrop(t *testing.T) {
 		t.Fatalf("event after resync = %+v, want revision 66", event)
 	}
 }
+
+func TestEventBusEventuallySignalsResyncWhileSubscriberRemainsBacklogged(t *testing.T) {
+	bus := eebus.NewEventBus()
+	ch, _ := bus.SubscribeWithRevision("test-ski")
+	defer bus.Unsubscribe(ch)
+	for range 65 {
+		bus.Publish(eebus.Event{SKI: "test-ski", Type: "data"})
+	}
+
+	for attempt := 0; attempt < 64; attempt++ {
+		if _, ok := bus.TakePendingResync(ch); ok {
+			t.Fatalf("resync returned before bounded deferral on attempt %d", attempt)
+		}
+	}
+	resync, ok := bus.TakePendingResync(ch)
+	if !ok || resync.Dropped != 1 || len(ch) == 0 {
+		t.Fatalf("backlogged resync = (%+v, %t), buffered=%d", resync, ok, len(ch))
+	}
+}

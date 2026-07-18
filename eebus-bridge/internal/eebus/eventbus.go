@@ -6,10 +6,13 @@ import (
 	"time"
 )
 
+const pendingResyncMaxDeferrals = 64
+
 type eventSubscriber struct {
-	ski            string
-	droppedTotal   uint64
-	pendingDropped uint64
+	ski             string
+	droppedTotal    uint64
+	pendingDropped  uint64
+	resyncDeferrals uint8
 }
 
 // EventBus provides fan-out event distribution to multiple subscribers.
@@ -106,15 +109,18 @@ func (b *EventBus) Publish(evt Event) {
 }
 
 // TakePendingResync returns one coalesced resync marker after a scoped
-// subscriber has drained the buffered part of an overflow burst. Waiting for
-// the channel to become empty prevents a concurrently publishing burst from
-// producing a series of partial resync markers; the one returned marker then
-// carries the final revision and total dropped count observed for that burst.
+// subscriber has drained the buffered part of an overflow burst. It normally
+// waits for an empty channel to avoid partial markers, but caps that deferral so
+// sustained overflow cannot postpone resynchronization indefinitely.
 func (b *EventBus) TakePendingResync(ch chan Event) (Event, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	subscriber, ok := b.subscribers[ch]
-	if !ok || subscriber.ski == "" || subscriber.pendingDropped == 0 || len(ch) != 0 {
+	if !ok || subscriber.ski == "" || subscriber.pendingDropped == 0 {
+		return Event{}, false
+	}
+	if len(ch) != 0 && subscriber.resyncDeferrals < pendingResyncMaxDeferrals {
+		subscriber.resyncDeferrals++
 		return Event{}, false
 	}
 	event := Event{
@@ -125,6 +131,7 @@ func (b *EventBus) TakePendingResync(ch chan Event) (Event, bool) {
 		Dropped:    subscriber.pendingDropped,
 	}
 	subscriber.pendingDropped = 0
+	subscriber.resyncDeferrals = 0
 	b.resyncsByDevice[subscriber.ski]++
 	return event, true
 }

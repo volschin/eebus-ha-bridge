@@ -196,6 +196,21 @@ func TestRegistryRemove(t *testing.T) {
 	}
 }
 
+func TestRegistryExplicitTrustStartsNewLifetimeAfterRemoval(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	reg.AddDevice("ski-123", eebus.DeviceInfo{})
+	reg.RemoveDevice("ski-123")
+	reg.AddDevice("ski-123", eebus.DeviceInfo{Brand: "late callback"})
+	if reg.KnownDevice("ski-123") {
+		t.Fatal("late add started a new device lifetime")
+	}
+
+	reg.MarkTrusted("ski-123")
+	if !reg.KnownDevice("ski-123") {
+		t.Fatal("explicit trust did not start a new device lifetime")
+	}
+}
+
 func TestRegistryClearEntities(t *testing.T) {
 	reg := eebus.NewDeviceRegistry()
 	reg.AddDevice("ski-c", eebus.DeviceInfo{
@@ -371,6 +386,56 @@ func TestRegistryParallelCatalogHealthAndCapabilityProjections(t *testing.T) {
 		}()
 	}
 	wait.Wait()
+}
+
+func TestRegistryConcurrentLifecycleOperationsDoNotResurrectOrMisclassify(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	for iteration := range 100 {
+		ski := fmt.Sprintf("device-%d", iteration)
+		reg.AddDevice(ski, eebus.DeviceInfo{})
+		reg.MarkConnected(ski)
+
+		var wait sync.WaitGroup
+		wait.Add(3)
+		go func() {
+			defer wait.Done()
+			reg.UpsertObservation(ski, nil, nil, "monitoring")
+		}()
+		go func() {
+			defer wait.Done()
+			reg.RecordCapabilityRead(ski, eebus.CapabilityMonitoring, nil)
+		}()
+		go func() {
+			defer wait.Done()
+			reg.RemoveDevice(ski)
+		}()
+		wait.Wait()
+
+		if reg.KnownDevice(ski) {
+			t.Fatalf("iteration %d: concurrent callback resurrected removed SKI", iteration)
+		}
+		if _, ok := reg.DeviceCapabilities(ski); ok {
+			t.Fatalf("iteration %d: concurrent callback recreated capabilities", iteration)
+		}
+	}
+
+	const disconnectedSKI = "capability-race"
+	reg.MarkConnected(disconnectedSKI)
+	var wait sync.WaitGroup
+	wait.Add(2)
+	go func() {
+		defer wait.Done()
+		reg.MarkUntrusted(disconnectedSKI)
+	}()
+	go func() {
+		defer wait.Done()
+		reg.RecordCapabilityRead(disconnectedSKI, eebus.CapabilityMonitoring, nil)
+	}()
+	wait.Wait()
+	entry := capability(t, reg, disconnectedSKI, eebus.CapabilityMonitoring)
+	if entry.Reason != eebus.CapabilityReasonDeviceDisconnected {
+		t.Fatalf("capability race result = %+v, want disconnected", entry)
+	}
 }
 
 func TestRegistryFirstAvailableEntityRequiresOneDevice(t *testing.T) {

@@ -50,8 +50,8 @@ func (c *TrustController) UnregisterSKI(ski string) error {
 	// is cleared explicitly here rather than relying on a callback (cf.
 	// ServiceAutoTrustRemoved in callbacks.go, which handles remote-initiated
 	// revocation).
-	c.registry.RemoveDevice(ski)
 	c.registry.MarkUntrusted(ski)
+	c.registry.RemoveDevice(ski)
 	c.bus.Publish(Event{SKI: ski, Type: EventTypeDeviceTrustRemoved})
 	return nil
 }

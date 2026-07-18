@@ -277,6 +277,7 @@ func TestRecoverySupervisorSnapshotDistinguishesUnknownDisconnectedAndGrace(t *t
 		successAt: make(map[string]time.Time),
 	}
 	supervisor := NewRecoverySupervisor(registry, nil, recoveryTestConfig())
+	supervisor.Tick(now)
 
 	if state := supervisor.Snapshot("missing", now).State; state != RecoveryStateUnknown {
 		t.Fatalf("unknown state = %s", state)
@@ -286,5 +287,8 @@ func TestRecoverySupervisorSnapshotDistinguishesUnknownDisconnectedAndGrace(t *t
 	}
 	if state := supervisor.Snapshot("BB22", now).State; state != RecoveryStateGracePeriod {
 		t.Fatalf("grace state = %s", state)
+	}
+	if next := supervisor.Snapshot("BB22", now).NextAttemptAt; !next.Equal(now.Add(time.Minute)) {
+		t.Fatalf("fresh grace next attempt = %s, want %s", next, now.Add(time.Minute))
 	}
 }

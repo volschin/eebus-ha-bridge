@@ -27,6 +27,26 @@ func TestMeasurementCatalogHasUniqueStableIDsAndCanonicalUnits(t *testing.T) {
 	}
 }
 
+func TestMeasurementCatalogAndSnapshotFieldsCoverSameIDs(t *testing.T) {
+	catalogIDs := make(map[pb.MeasurementId]struct{}, len(measurementCatalog))
+	for _, definition := range measurementCatalog {
+		catalogIDs[definition.id] = struct{}{}
+	}
+	if len(catalogIDs) != len(snapshotMeasurementFields) {
+		t.Fatalf("measurement ID counts differ: catalog=%d snapshot=%d", len(catalogIDs), len(snapshotMeasurementFields))
+	}
+	for id := range catalogIDs {
+		if _, ok := snapshotMeasurementFields[id]; !ok {
+			t.Errorf("measurement ID %s is missing from snapshot fields", id)
+		}
+	}
+	for id := range snapshotMeasurementFields {
+		if _, ok := catalogIDs[id]; !ok {
+			t.Errorf("snapshot measurement ID %s is missing from measurement catalog", id)
+		}
+	}
+}
+
 func TestMeasurementCatalogNormalizesUnitsWithoutRelabelingInvalidValues(t *testing.T) {
 	energy := newMeasurementEntry("energy_consumed", 1500, "Wh", timestamppb.Now())
 	if energy.GetId() != pb.MeasurementId_MEASUREMENT_ID_ENERGY_CONSUMED || energy.GetValue() != 1.5 || energy.GetUnit() != "kWh" {

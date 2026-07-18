@@ -36,6 +36,7 @@ from custom_components.eebus.models import (
 )
 from custom_components.eebus.snapshot import (
     DevicePoller,
+    RE_REGISTER_NOT_FOUND_STREAK,
     SnapshotResult,
     _async_fetch_device_info,
     _async_read_room_heating,
@@ -1395,10 +1396,96 @@ async def test_aggregate_snapshot_path_uses_register_plus_one_read() -> None:
         GetDeviceSnapshot=AsyncMock(return_value=snapshot),
     )
     with patch("custom_components.eebus.snapshot.proto_stubs.device_service_stub", return_value=stub):
-        result = await async_build_device_snapshot(MagicMock(), "DEVICE", ski_registered=False)
+        result = await async_build_device_snapshot(
+            MagicMock(), "DEVICE", ski_registered=False, not_found_streak=0
+        )
     assert result.ski_registered is True
     stub.RegisterRemoteSKI.assert_awaited_once()
     stub.GetDeviceSnapshot.assert_awaited_once()
+
+
+async def test_aggregate_snapshot_not_found_forces_reregistration_after_streak() -> None:
+    not_found = AioRpcError(
+        grpc.StatusCode.NOT_FOUND, Metadata(), Metadata(), details="device missing"
+    )
+    stub = SimpleNamespace(
+        RegisterRemoteSKI=AsyncMock(return_value=proto_stubs.Empty()),
+        GetDeviceSnapshot=AsyncMock(side_effect=not_found),
+    )
+    with (
+        patch("custom_components.eebus.snapshot.proto_stubs.device_service_stub", return_value=stub),
+        pytest.raises(grpc.aio.AioRpcError) as raised,
+    ):
+        await async_build_device_snapshot(
+            MagicMock(),
+            "DEVICE",
+            ski_registered=True,
+            not_found_streak=RE_REGISTER_NOT_FOUND_STREAK - 1,
+        )
+    assert raised.value.code() == grpc.StatusCode.NOT_FOUND
+    stub.RegisterRemoteSKI.assert_awaited_once()
+    assert stub.GetDeviceSnapshot.await_count == 2
+
+
+async def test_aggregate_snapshot_retries_after_forced_reregistration() -> None:
+    not_found = AioRpcError(
+        grpc.StatusCode.NOT_FOUND, Metadata(), Metadata(), details="device missing"
+    )
+    snapshot = proto_stubs.DeviceSnapshot(
+        ski="DEVICE",
+        capabilities=proto_stubs.DeviceCapabilities(ski="DEVICE"),
+    )
+    stub = SimpleNamespace(
+        RegisterRemoteSKI=AsyncMock(return_value=proto_stubs.Empty()),
+        GetDeviceSnapshot=AsyncMock(side_effect=[not_found, snapshot]),
+    )
+    with patch(
+        "custom_components.eebus.snapshot.proto_stubs.device_service_stub",
+        return_value=stub,
+    ):
+        result = await async_build_device_snapshot(
+            MagicMock(),
+            "DEVICE",
+            ski_registered=True,
+            not_found_streak=RE_REGISTER_NOT_FOUND_STREAK - 1,
+        )
+    assert result.ski_registered is True
+    assert result.not_found_streak == 0
+    stub.RegisterRemoteSKI.assert_awaited_once()
+    assert stub.GetDeviceSnapshot.await_count == 2
+
+
+async def test_aggregate_snapshot_poller_preserves_not_found_streak_and_resets_registration() -> None:
+    not_found = AioRpcError(
+        grpc.StatusCode.NOT_FOUND, Metadata(), Metadata(), details="device missing"
+    )
+    stub = SimpleNamespace(
+        RegisterRemoteSKI=AsyncMock(return_value=proto_stubs.Empty()),
+        GetDeviceSnapshot=AsyncMock(side_effect=not_found),
+    )
+    poller = DevicePoller(
+        "DEVICE",
+        AsyncMock(return_value=MagicMock()),
+        DeviceStateStore(),
+        supports_feature=lambda feature: feature
+        == int(proto_stubs.FeatureId.FEATURE_DEVICE_SNAPSHOT),
+    )
+    poller._ski_registered = True
+    with patch("custom_components.eebus.snapshot.proto_stubs.device_service_stub", return_value=stub):
+        for expected_streak in range(1, RE_REGISTER_NOT_FOUND_STREAK):
+            with pytest.raises(grpc.aio.AioRpcError):
+                await poller.poll()
+            poller.reset_after_transport_error(grpc.StatusCode.NOT_FOUND)
+            assert poller._not_found_streak == expected_streak
+            assert poller._ski_registered is False
+
+        with pytest.raises(grpc.aio.AioRpcError):
+            await poller.poll()
+        poller.reset_after_transport_error(grpc.StatusCode.NOT_FOUND)
+
+    assert poller._not_found_streak == 0
+    assert poller._ski_registered is False
+    assert stub.RegisterRemoteSKI.await_count == RE_REGISTER_NOT_FOUND_STREAK
 
 
 async def test_coordinator_reuses_one_lifelong_write_session() -> None:

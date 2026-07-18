@@ -383,6 +383,12 @@ func TestApplicationStartReturnsPartialStartupFailure(t *testing.T) {
 	assert.Equal(t, int32(0), heartbeat.stops.Load())
 }
 
+func TestLPCHeartbeatStartFailureIsNonFatal(t *testing.T) {
+	heartbeat := &fakeHeartbeatLifecycle{startErr: errors.New("heartbeat unavailable")}
+	require.NoError(t, startLPCHeartbeat(heartbeat))
+	assert.Equal(t, int32(1), heartbeat.starts.Load())
+}
+
 func TestApplicationStartGRPCServeFailureTriggersControlledShutdown(t *testing.T) {
 	serveErr := errors.New("serve failed")
 	bridge := &fakeBridgeLifecycle{}
@@ -583,7 +589,7 @@ func TestMonitoringRecoveryDoesNotTouchOtherDevicesOrRunInParallel(t *testing.T)
 	require.True(t, ok)
 	assert.Len(t, other.RemoteEntities, 1)
 	assert.Same(t, otherEntity, other.RemoteEntities[0])
-	assert.Empty(t, grpcServer.healthValues(), "device recovery must not change process health")
+	assert.Equal(t, []bool{false, false}, grpcServer.healthValues())
 }
 
 func TestMonitoringRecoverySuccessfulRebindPreventsRestart(t *testing.T) {
@@ -604,7 +610,7 @@ func TestMonitoringRecoverySuccessfulRebindPreventsRestart(t *testing.T) {
 	assert.Equal(t, []string{"AA11"}, registry.clearValues())
 	assert.Equal(t, []string{"AA11"}, bridge.unregisterValues())
 	assert.Equal(t, []string{"AA11"}, bridge.registerValues())
-	assert.Empty(t, grpcServer.healthValues(), "device recovery must not change process health")
+	assert.Equal(t, []bool{false, true}, grpcServer.healthValues())
 }
 
 func TestMonitoringRecoveryDisconnectedOrGraceDoesNotResetRecovery(t *testing.T) {
@@ -649,7 +655,18 @@ func TestMonitoringRecoveryPersistentFailureEscalatesOnce(t *testing.T) {
 	assert.Len(t, registry.clearValues(), monitoringRecoveryMaxAttempts)
 	assert.Len(t, bridge.unregisterValues(), monitoringRecoveryMaxAttempts)
 	assert.Len(t, bridge.registerValues(), monitoringRecoveryMaxAttempts)
-	assert.Empty(t, grpcServer.healthValues(), "device exhaustion must not change process health")
+	assert.Equal(t, []bool{false, false, false, false, false}, grpcServer.healthValues())
+}
+
+func TestMonitoringWatchdogHealthTracksTrustedDisconnectedDevice(t *testing.T) {
+	bridge := &fakeBridgeLifecycle{}
+	grpcServer := &fakeGRPCLifecycle{}
+	registry := eebus.NewDeviceRegistry()
+	registry.MarkTrusted("AA11")
+	app := newTestApplication(bridge, grpcServer, &fakeHeartbeatLifecycle{}, registry)
+
+	require.False(t, app.handleMonitoringWatchdogTick(time.Unix(100, 0)))
+	assert.Equal(t, []bool{false}, grpcServer.healthValues())
 }
 
 func TestApplicationStartSignalTriggersShutdown(t *testing.T) {

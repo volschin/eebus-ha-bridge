@@ -187,6 +187,9 @@ func (s *RecoverySupervisor) reconcileHealthy(now time.Time, device DeviceHealth
 		}
 		record = s.recordLocked(ski, now)
 		s.transitionLocked(record, state, now)
+		if state == RecoveryStateGracePeriod {
+			record.NextAttemptAt = now.Add(s.config.GracePeriod)
+		}
 		s.mu.Unlock()
 		return
 	}
@@ -223,6 +226,9 @@ func (s *RecoverySupervisor) reconcileHealthy(now time.Time, device DeviceHealth
 	s.mu.Lock()
 	record = s.recordLocked(ski, now)
 	s.transitionLocked(record, RecoveryStateGracePeriod, now)
+	if record.NextAttemptAt.IsZero() {
+		record.NextAttemptAt = now.Add(s.config.GracePeriod)
+	}
 	s.mu.Unlock()
 }
 

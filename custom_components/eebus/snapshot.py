@@ -797,15 +797,38 @@ async def async_build_device_snapshot(
     ski: str,
     *,
     ski_registered: bool,
+    not_found_streak: int,
 ) -> SnapshotResult:
     """Register if necessary, then read the device in one aggregate RPC."""
     stub = proto_stubs.device_service_stub(channel)
     registered = ski_registered
     if not registered:
         registered = await _async_register_remote_ski(stub, ski, force=False, registered=False)
-    snapshot: proto_stubs.DeviceSnapshot = await stub.GetDeviceSnapshot(
-        proto_stubs.DeviceRequest(ski=ski), timeout=RPC_TIMEOUT
-    )
+    try:
+        snapshot: proto_stubs.DeviceSnapshot = await stub.GetDeviceSnapshot(
+            proto_stubs.DeviceRequest(ski=ski), timeout=RPC_TIMEOUT
+        )
+    except grpc.aio.AioRpcError as err:
+        if not _is_not_found(err):
+            raise
+        updated_not_found_streak = not_found_streak + 1
+        if updated_not_found_streak >= RE_REGISTER_NOT_FOUND_STREAK:
+            _LOGGER.warning(
+                "GetDeviceSnapshot returned NOT_FOUND for %s consecutive polls; forcing remote SKI re-registration for %s",
+                updated_not_found_streak,
+                ski,
+            )
+            registered = await _async_register_remote_ski(
+                stub,
+                ski,
+                force=True,
+                registered=registered,
+            )
+            snapshot = await stub.GetDeviceSnapshot(
+                proto_stubs.DeviceRequest(ski=ski), timeout=RPC_TIMEOUT
+            )
+        else:
+            raise
     return SnapshotResult(
         _snapshot_observation_from_proto(snapshot, ski_registered=registered),
         registered,
@@ -848,11 +871,19 @@ class DevicePoller:
         base_revision = self._store.revision
         channel = await self._ensure_channel()
         if self._supports_feature(int(proto_stubs.FeatureId.FEATURE_DEVICE_SNAPSHOT)):
-            result = await async_build_device_snapshot(
-                channel,
-                self._ski,
-                ski_registered=self._ski_registered,
-            )
+            try:
+                result = await async_build_device_snapshot(
+                    channel,
+                    self._ski,
+                    ski_registered=self._ski_registered,
+                    not_found_streak=self._not_found_streak,
+                )
+            except grpc.aio.AioRpcError as err:
+                if _is_not_found(err):
+                    self._not_found_streak += 1
+                    if self._not_found_streak >= RE_REGISTER_NOT_FOUND_STREAK:
+                        self._not_found_streak = 0
+                raise
         else:
             result = await async_build_snapshot(
                 channel,
@@ -868,6 +899,8 @@ class DevicePoller:
         observation = replace(result.observation, base_revision=base_revision)
         return self._store.dispatch(observation)
 
-    def reset_after_transport_error(self) -> None:
+    def reset_after_transport_error(self, status: grpc.StatusCode | None = None) -> None:
         """Reset transport-dependent poll recovery counters."""
-        self._not_found_streak = 0
+        self._ski_registered = False
+        if status != grpc.StatusCode.NOT_FOUND:
+            self._not_found_streak = 0

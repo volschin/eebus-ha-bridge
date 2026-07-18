@@ -409,11 +409,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 					// Controllable systems revert an active LPC limit to its failsafe value when
 					// heartbeats stop arriving, so keep the local heartbeat running for the
 					// lifetime of the bridge.
-					if err := lpcWrapper.StartHeartbeat(""); err != nil {
-						return fmt.Errorf("starting LPC heartbeat: %w", err)
-					}
-					log.Println("Started LPC heartbeat")
-					return nil
+					return startLPCHeartbeat(lpcWrapper)
 				},
 				stop: lpcWrapper.StopHeartbeat,
 			},
@@ -748,6 +744,15 @@ func (a *Application) startComponents(runtimeCtx context.Context, tx *lifecycleT
 	return nil
 }
 
+func startLPCHeartbeat(heartbeat heartbeatLifecycle) error {
+	if err := heartbeat.StartHeartbeat(""); err != nil {
+		log.Printf("Failed to start LPC heartbeat: %v", err)
+		return nil
+	}
+	log.Println("Started LPC heartbeat")
+	return nil
+}
+
 func (a *Application) startWatchdog(ctx context.Context) bool {
 	if a.registry == nil {
 		return false
@@ -794,6 +799,19 @@ func (a *Application) handleMonitoringWatchdogTick(now time.Time) bool {
 		return false
 	}
 	result := a.recoverySupervisor.Tick(now)
+	if a.grpcSrv != nil && a.registry != nil {
+		healthy := true
+		for _, device := range a.registry.ListDeviceHealth() {
+			if device.TrustKnown && !device.Trusted {
+				continue
+			}
+			if !device.Connected || a.recoverySupervisor.Snapshot(device.SKI, now).State != eebus.RecoveryStateHealthy {
+				healthy = false
+				break
+			}
+		}
+		a.grpcSrv.SetHealthy(healthy)
+	}
 	if !result.RestartRequired {
 		return false
 	}

@@ -331,11 +331,40 @@ func TestGetDeviceStatus(t *testing.T) {
 
 	unknownSKI := "782f708ceba5df9adcb9e6787ea911d9fc3ac490"
 	unknown, err := svc.GetDeviceStatus(context.Background(), &pb.DeviceRequest{Ski: unknownSKI})
-	if err != nil {
-		t.Fatalf("GetDeviceStatus(unknown): %v", err)
+	if unknown != nil || status.Code(err) != codes.NotFound {
+		t.Errorf("GetDeviceStatus(unknown) = (%+v, %v), want (nil, NotFound)", unknown, err)
 	}
-	if unknown.Connected || unknown.LastTransition != nil {
-		t.Errorf("GetDeviceStatus(unknown) = %+v, want disconnected without transition timestamp", unknown)
+}
+
+func TestRemovedDeviceStaysGoneAfterLateRegistryCallbacks(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{Brand: "device"})
+	registry.MarkConnected(testValidSKI)
+	registry.RemoveDevice(testValidSKI)
+
+	// Simulate callbacks that were already queued when explicit unpair won the
+	// lifecycle race. None may start a new lifetime without a trust grant.
+	registry.MarkConnected(testValidSKI)
+	registry.RecordMonitoringSuccess(testValidSKI)
+	registry.RecordCapabilitySupport(testValidSKI, eebus.CapabilityMonitoring, true)
+	registry.RecordCapabilityRead(testValidSKI, eebus.CapabilityMonitoring, nil)
+	registry.UpsertObservation(testValidSKI, nil, nil, "monitoring")
+
+	if registry.KnownDevice(testValidSKI) {
+		t.Fatal("late callbacks resurrected removed device")
+	}
+	if _, ok := registry.DeviceHealth(testValidSKI); ok || len(registry.ListDeviceHealth()) != 0 {
+		t.Fatalf("removed device remains in health projection: %+v", registry.ListDeviceHealth())
+	}
+	bus := eebus.NewEventBus()
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false), bus, "local", registry, &recordingTrustController{},
+	)
+	if _, err := svc.GetDeviceStatus(context.Background(), &pb.DeviceRequest{Ski: testValidSKI}); status.Code(err) != codes.NotFound {
+		t.Fatalf("GetDeviceStatus removed code = %v, want NotFound", status.Code(err))
+	}
+	if _, err := svc.GetDeviceDiagnostics(context.Background(), &pb.DeviceRequest{Ski: testValidSKI}); status.Code(err) != codes.NotFound {
+		t.Fatalf("GetDeviceDiagnostics removed code = %v, want NotFound", status.Code(err))
 	}
 }
 

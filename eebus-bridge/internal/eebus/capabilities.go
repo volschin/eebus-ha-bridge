@@ -71,9 +71,15 @@ func (r *DeviceRegistry) SetLocalCapabilityEnabled(capability Capability, enable
 }
 
 func (r *DeviceRegistry) SetCapability(ski string, capability Capability, state CapabilityState, reason CapabilityReason) {
+	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
 	r.capabilities.mu.Lock()
 	defer r.capabilities.mu.Unlock()
-	r.setCapabilityLocked(NormalizeSKI(ski), capability, state, reason)
+	r.setCapabilityLocked(ski, capability, state, reason)
 }
 
 func (r *DeviceRegistry) setCapabilityLocked(ski string, capability Capability, state CapabilityState, reason CapabilityReason) {
@@ -169,6 +175,11 @@ func (r *DeviceRegistry) DeviceCapabilities(ski string) ([]DeviceCapability, boo
 // revokes support until a later support event says otherwise.
 func (r *DeviceRegistry) RecordCapabilitySupport(ski string, capability Capability, advertised bool) {
 	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
 	disconnected := r.deviceDisconnected(ski)
 	r.capabilities.mu.Lock()
 	defer r.capabilities.mu.Unlock()
@@ -185,6 +196,11 @@ func (r *DeviceRegistry) RecordCapabilitySourceSupport(
 	advertised bool,
 ) {
 	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
 	disconnected := r.deviceDisconnected(ski)
 	r.capabilities.mu.Lock()
 	defer r.capabilities.mu.Unlock()
@@ -225,6 +241,11 @@ func (r *DeviceRegistry) recordCapabilitySupportLocked(ski string, capability Ca
 
 func (r *DeviceRegistry) RecordCapabilityRead(ski string, capability Capability, err error) {
 	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
 	disconnected := r.deviceDisconnected(ski)
 	r.capabilities.mu.Lock()
 	defer r.capabilities.mu.Unlock()
@@ -244,6 +265,11 @@ func (r *DeviceRegistry) RecordCapabilityRead(ski string, capability Capability,
 
 func (r *DeviceRegistry) RecordCapabilityEntityNotBound(ski string, capability Capability) {
 	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
 	disconnected := r.deviceDisconnected(ski)
 	r.capabilities.mu.Lock()
 	defer r.capabilities.mu.Unlock()
@@ -261,6 +287,11 @@ func (r *DeviceRegistry) RecordCapabilityEntityNotBound(ski string, capability C
 // not advertise this use case from a device whose entities are not bound yet.
 func (r *DeviceRegistry) RecordCapabilityMissingEntity(ski string, capability Capability) {
 	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
 	disconnected := r.deviceDisconnected(ski)
 	hasEntities := r.deviceHasEntities(ski)
 	r.capabilities.mu.Lock()

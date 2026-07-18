@@ -266,7 +266,7 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
             return state
         except grpc.aio.AioRpcError as err:
             await self._channel_manager.invalidate()
-            self._poller.reset_after_transport_error()
+            self._poller.reset_after_transport_error(err.code())
             if err.code() == grpc.StatusCode.UNAUTHENTICATED:
                 raise ConfigEntryAuthFailed("Bridge authentication failed") from err
             if self._runtime.mark_unavailable():
