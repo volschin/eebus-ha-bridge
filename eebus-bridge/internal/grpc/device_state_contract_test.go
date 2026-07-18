@@ -41,9 +41,10 @@ func (completeDeviceStatePayloads) AttachMeasurementPayload(event *pb.Measuremen
 }
 
 func (completeDeviceStatePayloads) AttachLPCPayload(event *pb.LPCEvent, _ string, eventType pb.LPCEventType) {
-	if eventType == pb.LPCEventType_LPC_EVENT_LIMIT_UPDATED {
+	switch eventType {
+	case pb.LPCEventType_LPC_EVENT_LIMIT_UPDATED:
 		event.Data = &pb.LPCEvent_LimitUpdate{LimitUpdate: &pb.LoadLimit{ValueWatts: 1000}}
-	} else if eventType == pb.LPCEventType_LPC_EVENT_FAILSAFE_UPDATED {
+	case pb.LPCEventType_LPC_EVENT_FAILSAFE_UPDATED:
 		event.Data = &pb.LPCEvent_FailsafeUpdate{FailsafeUpdate: &pb.FailsafeLimit{ValueWatts: 500}}
 	}
 }
