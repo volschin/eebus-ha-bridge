@@ -201,6 +201,7 @@ func TestSubscribeLPCEvents(t *testing.T) {
 
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterLPCServiceServer(srv.GRPCServer(), svc)
+	srv.SetHealthy(true)
 	go srv.Start()
 	t.Cleanup(srv.Stop)
 
@@ -246,6 +247,7 @@ func TestSubscribeLPCEventsHeartbeat(t *testing.T) {
 
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterLPCServiceServer(srv.GRPCServer(), svc)
+	srv.SetHealthy(true)
 	go srv.Start()
 	t.Cleanup(srv.Stop)
 

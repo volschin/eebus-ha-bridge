@@ -7,17 +7,83 @@ import hashlib
 import ipaddress
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
+
+import grpc
+import grpc.aio
 
 from homeassistant.core import HomeAssistant
 
+from . import proto_stubs
 from .device_session import DeviceSession
 from .device_streams import DeviceStreams
-from .grpc_client import GrpcChannelManager
+from .grpc_client import RPC_TIMEOUT, GrpcChannelManager
 from .server_info import BridgeContract, async_read_bridge_contract
 from .ski import normalize_ski
 from .snapshot import DevicePoller
+from .session_diagnostics import (
+    DeviceStreamDiagnostics,
+    OperationalDiagnostics,
+    ProviderSampleProjection,
+    RecoveryProjection,
+)
 from .state import DeviceState, DeviceStateStore
+
+
+def _proto_timestamp(value: Any) -> datetime | None:
+    if value is None or (value.seconds == 0 and value.nanos == 0):
+        return None
+    result = value.ToDatetime(tzinfo=UTC)
+    return result if isinstance(result, datetime) else None
+
+
+def _recovery_from_proto(
+    value: proto_stubs.RecoveryDiagnostics | None,
+) -> RecoveryProjection:
+    if value is None:
+        return RecoveryProjection("DEVICE_READINESS_UNKNOWN", 0, None, None, None, None)
+    return RecoveryProjection(
+        state=proto_stubs.DeviceReadinessState.Name(value.state),
+        attempts=int(value.attempts),
+        first_stale_at=_proto_timestamp(value.first_stale_at),
+        last_attempt_at=_proto_timestamp(value.last_attempt_at),
+        next_attempt_at=_proto_timestamp(value.next_attempt_at),
+        last_transition_at=_proto_timestamp(value.last_transition_at),
+    )
+
+
+def _operational_diagnostics_from_proto(
+    value: proto_stubs.DeviceOperationalDiagnostics,
+) -> OperationalDiagnostics:
+    events = value.events
+    snapshot = value.snapshot_reads
+    return OperationalDiagnostics(
+        redacted_ski=value.redacted_ski,
+        readiness=proto_stubs.DeviceReadinessState.Name(value.readiness),
+        recovery=_recovery_from_proto(value.recovery),
+        event_revision=int(events.revision),
+        dropped_events=int(events.dropped_events),
+        resync_count=int(events.resync_count),
+        unresolved_events=int(events.unresolved_events),
+        monitoring_last_success_age_seconds=(
+            int(value.monitoring_last_success_age_seconds)
+            if value.HasField("monitoring_last_success_age_seconds")
+            else None
+        ),
+        snapshot_duration_milliseconds=int(snapshot.duration_milliseconds),
+        snapshot_last_success=_proto_timestamp(snapshot.last_success),
+        providers=tuple(
+            ProviderSampleProjection(
+                provider=provider.provider,
+                state=proto_stubs.ProviderSampleState.Name(provider.state),
+                observed_at=_proto_timestamp(provider.observed_at),
+                valid_until=_proto_timestamp(provider.valid_until),
+            )
+            for provider in value.providers
+        ),
+        features=tuple(proto_stubs.FeatureId.Name(feature) for feature in value.features),
+    )
 
 
 async def _await_cleanup_task(task: asyncio.Task[None]) -> None:
@@ -93,6 +159,7 @@ class RuntimeDeviceSession:
         request_refresh: Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
         self.ski = normalize_ski(ski)
+        self._runtime = runtime
         self.store = DeviceStateStore(publish_state)
         self.poller = DevicePoller(
             self.ski,
@@ -119,6 +186,30 @@ class RuntimeDeviceSession:
     async def _async_close(self) -> None:
         await self.streams.stop()
 
+    @property
+    def stream_diagnostics(self) -> DeviceStreamDiagnostics:
+        return self.streams.diagnostics()
+
+    async def async_operational_diagnostics(
+        self,
+    ) -> OperationalDiagnostics | None:
+        if not self._runtime.supports(
+            int(proto_stubs.FeatureId.FEATURE_OPERATIONAL_DIAGNOSTICS)
+        ):
+            return None
+        channel = await self._runtime.channel_manager.ensure_channel()
+        try:
+            response = await proto_stubs.device_service_stub(
+                channel
+            ).GetDeviceDiagnostics(
+                proto_stubs.DeviceRequest(ski=self.ski), timeout=RPC_TIMEOUT
+            )
+        except grpc.aio.AioRpcError as err:
+            if err.code() == grpc.StatusCode.UNIMPLEMENTED:
+                return None
+            raise
+        return _operational_diagnostics_from_proto(response)
+
 
 class BridgeRuntime:
     """Own one shared transport and all device sessions for a bridge key."""
@@ -140,16 +231,27 @@ class BridgeRuntime:
         self.status = BridgeStatus()
         self._contract: BridgeContract | None = None
         self._contract_lock = asyncio.Lock()
+        self._contract_generation = 0
+        self.channel_manager.set_channel_ready_hook(self._negotiate_contract)
         self._sessions: dict[str, RuntimeDeviceSession] = {}
         self._close_task: asyncio.Task[None] | None = None
 
     async def ensure_contract(self) -> BridgeContract:
-        """Negotiate and cache ServerInfo once for every shared bridge runtime."""
+        """Return the contract negotiated for the current channel generation."""
+        await self.channel_manager.ensure_channel()
+        contract = self._contract
+        if contract is None:
+            raise RuntimeError("bridge contract negotiation did not complete")
+        return contract
+
+    async def _negotiate_contract(
+        self, channel: grpc.aio.Channel, generation: int
+    ) -> None:
+        contract = await async_read_bridge_contract(channel)
         async with self._contract_lock:
-            if self._contract is None:
-                channel = await self.channel_manager.ensure_channel()
-                self._contract = await async_read_bridge_contract(channel)
-            return self._contract
+            if generation >= self._contract_generation:
+                self._contract = contract
+                self._contract_generation = generation
 
     @property
     def contract(self) -> BridgeContract | None:

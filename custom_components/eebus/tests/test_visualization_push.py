@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.eebus import proto_stubs
 from custom_components.eebus.coordinator import EebusCoordinator
-from custom_components.eebus.providers import SOC_UNIT_TO_PCT, ProviderManager
+from custom_components.eebus.providers import (
+    SOC_UNIT_TO_PCT,
+    ProviderManager,
+    ProviderMappings,
+)
 
 
 def _state(value, unit):
@@ -35,13 +39,15 @@ def _make_coordinator(
         hass,
         coordinator.ski,
         lambda: coordinator._ensure_channel(),
-        pv_power_entity=pv_power,
-        pv_yield_energy_entity=pv_yield,
-        pv_peak_power_entity=pv_peak,
-        battery_power_entity=battery_power,
-        battery_charged_energy_entity=battery_charged,
-        battery_discharged_energy_entity=battery_discharged,
-        battery_soc_entity=battery_soc,
+        ProviderMappings(
+            pv_power=pv_power,
+            pv_yield_energy=pv_yield,
+            pv_peak_power=pv_peak,
+            battery_power=battery_power,
+            battery_charged_energy=battery_charged,
+            battery_discharged_energy=battery_discharged,
+            battery_soc=battery_soc,
+        ),
         supports_feature=lambda feature: feature
         == proto_stubs.FeatureId.FEATURE_PROVIDER_SAMPLE_INVALIDATION,
     )

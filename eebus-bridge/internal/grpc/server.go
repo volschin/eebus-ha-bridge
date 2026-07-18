@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/volschin/eebus-bridge/internal/config"
@@ -22,6 +23,7 @@ import (
 // shutdown (SIGTERM or the RF-06 watchdog) would then hang indefinitely
 // instead of restarting.
 const gracefulStopTimeout = 5 * time.Second
+const maxConcurrentStreams = 64
 
 type Server struct {
 	grpcServer *grpc.Server
@@ -33,6 +35,7 @@ type Server struct {
 	ready      chan struct{}
 	readyOnce  sync.Once
 	startErr   error
+	serving    *atomic.Bool
 }
 
 func NewServer(bind string, port int, enableReflection bool) *Server {
@@ -47,10 +50,12 @@ func NewServerWithSecurity(bind string, port int, enableReflection bool, securit
 	if (security.Mode == "" || security.Mode == config.GRPCSecurityModeLoopback) && !isLoopbackBind(bind) {
 		return nil, fmt.Errorf("gRPC loopback security mode requires a loopback bind, got %q", bind)
 	}
-	serverOptions, err := loadServerSecurity(security)
+	serving := &atomic.Bool{}
+	serverOptions, err := loadServerSecurity(security, serving)
 	if err != nil {
 		return nil, err
 	}
+	serverOptions = append(serverOptions, grpc.MaxConcurrentStreams(maxConcurrentStreams))
 	grpcServer := grpc.NewServer(serverOptions...)
 
 	healthSrv := health.NewServer()
@@ -67,6 +72,7 @@ func NewServerWithSecurity(bind string, port int, enableReflection bool, securit
 		bind:       bind,
 		port:       port,
 		ready:      make(chan struct{}),
+		serving:    serving,
 	}, nil
 }
 
@@ -74,6 +80,7 @@ func NewServerWithSecurity(bind string, port int, enableReflection bool, securit
 // Used by the monitoring watchdog to surface a stuck SPINE entity binding
 // before it force-exits the process for a restart.
 func (s *Server) SetHealthy(healthy bool) {
+	s.serving.Store(healthy)
 	status := grpc_health_v1.HealthCheckResponse_SERVING
 	if !healthy {
 		status = grpc_health_v1.HealthCheckResponse_NOT_SERVING

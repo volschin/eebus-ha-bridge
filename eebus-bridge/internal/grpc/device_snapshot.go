@@ -2,6 +2,8 @@ package grpc
 
 import (
 	"context"
+	"sync"
+	"time"
 
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/eebus"
@@ -33,10 +35,21 @@ type DeviceSnapshotAssembler struct {
 	dhw        DHWPayloadSource
 	hvac       HVACPayloadSource
 	ohpcf      OHPCFPayloadSource
+	recovery   RecoveryDiagnosticsSource
+	metricsMu  sync.RWMutex
+	metrics    map[string]SnapshotReadMetrics
+}
+
+type SnapshotReadMetrics struct {
+	Duration    time.Duration
+	LastSuccess time.Time
 }
 
 func NewDeviceSnapshotAssembler(registry *eebus.DeviceRegistry, sources DeviceStatePayloadSources) *DeviceSnapshotAssembler {
-	assembler := &DeviceSnapshotAssembler{registry: registry, lpc: sources.LPC, dhw: sources.DHW, hvac: sources.HVAC, ohpcf: sources.OHPCF}
+	assembler := &DeviceSnapshotAssembler{
+		registry: registry, lpc: sources.LPC, dhw: sources.DHW, hvac: sources.HVAC, ohpcf: sources.OHPCF,
+		metrics: make(map[string]SnapshotReadMetrics),
+	}
 	assembler.monitoring, _ = sources.Monitoring.(SnapshotMeasurementSource)
 	assembler.heartbeat, _ = sources.LPC.(SnapshotHeartbeatSource)
 	return assembler
@@ -53,6 +66,7 @@ func (a *DeviceSnapshotAssembler) Build(ski string, revision uint64) (*pb.Device
 	if !a.registry.KnownDevice(ski) {
 		return nil, status.Error(codes.NotFound, "device not found for specified ski")
 	}
+	startedAt := time.Now()
 
 	result := &pb.DeviceSnapshot{
 		Ski:           ski,
@@ -66,6 +80,11 @@ func (a *DeviceSnapshotAssembler) Build(ski string, revision uint64) (*pb.Device
 	result.Connection = &pb.DeviceStatus{Connected: connected}
 	if !transition.IsZero() {
 		result.Connection.LastTransition = timestamppb.New(transition)
+	}
+	if a.recovery != nil {
+		recovery := a.recovery.Snapshot(ski, time.Now())
+		result.Connection.Readiness = readinessState(recovery.State)
+		result.Connection.Recovery = recoveryDiagnostics(recovery)
 	}
 	result.ConnectionState = pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_AVAILABLE
 
@@ -155,7 +174,26 @@ func (a *DeviceSnapshotAssembler) Build(ski string, revision uint64) (*pb.Device
 	// describe the same point-in-time result.
 	result.Capabilities = capabilitiesFromRegistry(a.registry, ski)
 	populateSnapshotFieldStates(result, measurementStates)
+	a.recordMetrics(ski, time.Since(startedAt), time.Now().UTC())
 	return result, nil
+}
+
+func (a *DeviceSnapshotAssembler) recordMetrics(ski string, duration time.Duration, success time.Time) {
+	a.metricsMu.Lock()
+	defer a.metricsMu.Unlock()
+	if a.metrics == nil {
+		a.metrics = make(map[string]SnapshotReadMetrics)
+	}
+	a.metrics[eebus.NormalizeSKI(ski)] = SnapshotReadMetrics{Duration: duration, LastSuccess: success}
+}
+
+func (a *DeviceSnapshotAssembler) Metrics(ski string) SnapshotReadMetrics {
+	if a == nil {
+		return SnapshotReadMetrics{}
+	}
+	a.metricsMu.RLock()
+	defer a.metricsMu.RUnlock()
+	return a.metrics[eebus.NormalizeSKI(ski)]
 }
 
 var snapshotMeasurementFields = map[pb.MeasurementId]pb.SnapshotFieldId{

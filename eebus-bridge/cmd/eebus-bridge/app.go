@@ -20,6 +20,7 @@ import (
 	"github.com/volschin/eebus-bridge/internal/eebus"
 	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
 	"github.com/volschin/eebus-bridge/internal/usecases"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // monitoringStaleThreshold bounds how long a connected device may go without a
@@ -34,6 +35,7 @@ const monitoringGracePeriod = 2 * time.Minute
 
 const watchdogInterval = 30 * time.Second
 const monitoringRecoveryMaxAttempts = 3
+const applicationShutdownTimeout = 5 * time.Second
 
 type bridgeLifecycle interface {
 	Setup() error
@@ -56,30 +58,7 @@ type heartbeatLifecycle interface {
 }
 
 type monitoringRegistry interface {
-	StaleDevices(time.Duration, time.Duration) []string
-	MonitoringLastSuccessAge(string) (time.Duration, bool)
-	MonitoringSuccessSince(string, time.Time) bool
-	ClearEntities(string)
-}
-
-type deviceRecoveryStatus string
-
-const (
-	deviceRecoveryHealthy    deviceRecoveryStatus = "healthy"
-	deviceRecoveryStale      deviceRecoveryStatus = "stale"
-	deviceRecoveryInvalidate deviceRecoveryStatus = "invalidate"
-	deviceRecoveryReconnect  deviceRecoveryStatus = "reconnect"
-	deviceRecoveryRecovering deviceRecoveryStatus = "recovering"
-	deviceRecoveryFailed     deviceRecoveryStatus = "failed"
-)
-
-type deviceRecoveryState struct {
-	status           deviceRecoveryStatus
-	attempts         int
-	firstStaleAt     time.Time
-	lastAttemptAt    time.Time
-	recoverAfter     time.Time
-	restartRequested bool
+	eebus.RecoveryRegistry
 }
 
 type backgroundFailure struct {
@@ -94,6 +73,51 @@ type applicationModule struct {
 	registerGRPC     func(*bridgegrpc.Server)
 	start            func() error
 	stop             func() error
+}
+
+type applicationProviderDiagnostics struct {
+	mgcp *usecases.MGCPProvider
+	vapd *usecases.VAPDProvider
+	vabd *usecases.VABDProvider
+}
+
+func (p applicationProviderDiagnostics) ProviderDiagnostics(now time.Time) []*pb.ProviderSampleDiagnostics {
+	result := make([]*pb.ProviderSampleDiagnostics, 0, 3)
+	appendStatus := func(name string, status usecases.ProviderSnapshotDiagnostics) {
+		entry := &pb.ProviderSampleDiagnostics{Provider: name, State: providerSampleState(status.State)}
+		if !status.ObservedAt.IsZero() {
+			entry.ObservedAt = timestamppb.New(status.ObservedAt)
+		}
+		if !status.ValidUntil.IsZero() {
+			entry.ValidUntil = timestamppb.New(status.ValidUntil)
+		}
+		result = append(result, entry)
+	}
+	if p.mgcp != nil {
+		appendStatus("grid", p.mgcp.Diagnostics(now))
+	}
+	if p.vapd != nil {
+		appendStatus("pv", p.vapd.Diagnostics(now))
+	}
+	if p.vabd != nil {
+		appendStatus("battery", p.vabd.Diagnostics(now))
+	}
+	return result
+}
+
+func providerSampleState(state usecases.ProviderSnapshotState) pb.ProviderSampleState {
+	switch state {
+	case usecases.ProviderSnapshotEmpty:
+		return pb.ProviderSampleState_PROVIDER_SAMPLE_STATE_EMPTY
+	case usecases.ProviderSnapshotCurrent:
+		return pb.ProviderSampleState_PROVIDER_SAMPLE_STATE_CURRENT
+	case usecases.ProviderSnapshotExpired:
+		return pb.ProviderSampleState_PROVIDER_SAMPLE_STATE_EXPIRED
+	case usecases.ProviderSnapshotClosed:
+		return pb.ProviderSampleState_PROVIDER_SAMPLE_STATE_CLOSED
+	default:
+		return pb.ProviderSampleState_PROVIDER_SAMPLE_STATE_UNSPECIFIED
+	}
 }
 
 func useCaseRegistrar(bridgeSvc *eebus.BridgeService, modules ...eebusUseCaseRegistration) func() ([]string, error) {
@@ -191,10 +215,13 @@ type Application struct {
 	modules                    []applicationModule
 	backgroundFailures         chan backgroundFailure
 	stopOnce                   sync.Once
+	lifecycleMu                sync.Mutex
+	lifecycle                  *lifecycleTransaction
+	stopped                    bool
 	runtimeMu                  sync.Mutex
 	cancelRuntime              context.CancelFunc
-	recoveryMu                 sync.Mutex
-	deviceRecoveries           map[string]*deviceRecoveryState
+	watchdogWG                 sync.WaitGroup
+	recoverySupervisor         *eebus.RecoverySupervisor
 	prepareMu                  sync.Mutex
 	prepared                   bool
 	registeredUseCases         []string
@@ -260,6 +287,13 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		monitoringWatchdogInterval: watchdogInterval,
 		backgroundFailures:         make(chan backgroundFailure, 1),
 	}
+	app.recoverySupervisor = eebus.NewRecoverySupervisor(registry, bridgeSvc, eebus.RecoveryConfig{
+		StaleThreshold: monitoringStaleThreshold,
+		GracePeriod:    monitoringGracePeriod,
+		BaseBackoff:    monitoringGracePeriod,
+		MaxBackoff:     10 * time.Minute,
+		MaxAttempts:    monitoringRecoveryMaxAttempts,
+	})
 	grpcSrv, err := bridgegrpc.NewServerWithSecurity(
 		cfg.GRPC.Bind,
 		cfg.GRPC.Port,
@@ -295,6 +329,9 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		vabdProvider, err := setupVABDProvider(cfg, bridgeSvc, bus)
 		if err != nil {
 			return err
+		}
+		providerDiagnostics := applicationProviderDiagnostics{
+			mgcp: mgcpProvider, vapd: vapdProvider, vabd: vabdProvider,
 		}
 
 		// OHPCF (heat-pump compressor flexibility) CEM client. On by default; reads
@@ -350,6 +387,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 								HVAC:       hvacService,
 								OHPCF:      ohpcfService,
 							}),
+							bridgegrpc.WithOperationalDiagnostics(app.recoverySupervisor, providerDiagnostics),
 						),
 					)
 				},
@@ -427,7 +465,8 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		}
 		modules = append(modules, newOHPCFModule(bridgeSvc, localEntity, ohpcfWrapper, ohpcfService))
 		modules = append(modules, applicationModule{
-			name: "Providers",
+			name:  "Providers",
+			start: func() error { return nil },
 			registerUseCases: func() ([]string, error) {
 				registrations := make([]eebusUseCaseRegistration, 0, 3)
 				if mgcpProvider != nil {
@@ -458,6 +497,19 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 					log.Printf("Refusing to register provider push services: gRPC bind %q is not secured", cfg.GRPC.Bind)
 				}
 			},
+			stop: func() error {
+				var closeErrors []error
+				if mgcpProvider != nil {
+					closeErrors = append(closeErrors, mgcpProvider.Close())
+				}
+				if vapdProvider != nil {
+					closeErrors = append(closeErrors, vapdProvider.Close())
+				}
+				if vabdProvider != nil {
+					closeErrors = append(closeErrors, vabdProvider.Close())
+				}
+				return errors.Join(closeErrors...)
+			},
 		})
 		app.modules = modules
 
@@ -476,17 +528,13 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	return app, nil
 }
 
-// prepareForStart performs EEBUS setup and completes the local-entity-dependent
-// composition. No heartbeat, watchdog, listener, or provider timer runs before
-// this method is reached from Start.
+// prepareForStart completes local-entity-dependent composition after EEBUS
+// Setup. No heartbeat, watchdog, listener, or provider timer is started here.
 func (a *Application) prepareForStart() error {
 	a.prepareMu.Lock()
 	defer a.prepareMu.Unlock()
 	if a.prepared {
 		return nil
-	}
-	if err := a.bridgeSvc.Setup(); err != nil {
-		return fmt.Errorf("setting up EEBUS service: %w", err)
 	}
 	if a.compose != nil {
 		if err := a.compose(); err != nil {
@@ -570,14 +618,52 @@ func (a *Application) Start(ctx context.Context) error {
 	if a.backgroundFailures == nil {
 		a.backgroundFailures = make(chan backgroundFailure, 1)
 	}
+	tx := newLifecycleTransaction()
+	a.lifecycleMu.Lock()
+	if a.stopped {
+		a.lifecycleMu.Unlock()
+		return errors.New("application is stopped")
+	}
+	if a.lifecycle != nil {
+		a.lifecycleMu.Unlock()
+		return errors.New("application is already started")
+	}
+	a.lifecycle = tx
+	a.lifecycleMu.Unlock()
+	a.grpcSrv.SetHealthy(false)
 
 	runtimeCtx, cancel := context.WithCancel(ctx)
 	a.runtimeMu.Lock()
 	a.cancelRuntime = cancel
 	a.runtimeMu.Unlock()
 	defer a.Stop()
+	if err := a.bridgeSvc.Setup(); err != nil {
+		return fmt.Errorf("setting up EEBUS service: %w", err)
+	}
+	if err := tx.add("EEBUS", func() error {
+		a.bridgeSvc.Shutdown()
+		return nil
+	}); err != nil {
+		return err
+	}
 	if err := a.prepareForStart(); err != nil {
 		return err
+	}
+	if err := a.bridgeSvc.Start(); err != nil {
+		return fmt.Errorf("EEBUS service start: %w", err)
+	}
+	log.Println("EEBUS bridge started")
+	for _, module := range a.modules {
+		if module.start == nil {
+			continue
+		}
+		if err := module.start(); err != nil {
+			return fmt.Errorf("starting %s module: %w", module.name, err)
+		}
+		module := module
+		if err := tx.add(module.name, module.stop); err != nil {
+			return err
+		}
 	}
 
 	go func() {
@@ -596,19 +682,14 @@ func (a *Application) Start(ctx context.Context) error {
 		}
 	}()
 	if err := a.grpcSrv.WaitReady(runtimeCtx); err != nil {
+		a.grpcSrv.Stop()
 		return fmt.Errorf("gRPC server readiness: %w", err)
 	}
-	if err := a.bridgeSvc.Start(); err != nil {
-		return fmt.Errorf("EEBUS service start: %w", err)
-	}
-	log.Println("EEBUS bridge started")
-	for _, module := range a.modules {
-		if module.start == nil {
-			continue
-		}
-		if err := module.start(); err != nil {
-			return fmt.Errorf("starting %s module: %w", module.name, err)
-		}
+	if err := tx.add("gRPC", func() error {
+		a.grpcSrv.Stop()
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// SPIKE: trust a known remote SKI at startup so a test container can complete
@@ -621,7 +702,11 @@ func (a *Application) Start(ctx context.Context) error {
 		log.Println("[DEBUG] EEBUS event debug logging enabled; waiting for incoming callbacks")
 	}
 
-	a.startWatchdog(runtimeCtx)
+	if a.startWatchdog(runtimeCtx) {
+		if err := tx.add("monitoring watchdog", a.waitForWatchdog); err != nil {
+			return err
+		}
+	}
 	a.grpcSrv.SetHealthy(true)
 
 	select {
@@ -637,15 +722,17 @@ func (a *Application) Start(ctx context.Context) error {
 	}
 }
 
-func (a *Application) startWatchdog(ctx context.Context) {
+func (a *Application) startWatchdog(ctx context.Context) bool {
 	if a.registry == nil {
-		return
+		return false
 	}
 	interval := a.monitoringWatchdogInterval
 	if interval <= 0 {
 		interval = watchdogInterval
 	}
+	a.watchdogWG.Add(1)
 	go func() {
+		defer a.watchdogWG.Done()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -659,141 +746,39 @@ func (a *Application) startWatchdog(ctx context.Context) {
 			}
 		}
 	}()
-}
-
-func (a *Application) handleMonitoringWatchdogTick(now time.Time) bool {
-	if a.registry == nil || a.grpcSrv == nil {
-		return false
-	}
-	staleDevices := a.registry.StaleDevices(monitoringStaleThreshold, monitoringGracePeriod)
-	staleSet := make(map[string]struct{}, len(staleDevices))
-	for _, ski := range staleDevices {
-		staleSet[eebus.NormalizeSKI(ski)] = struct{}{}
-	}
-
-	a.recoveryMu.Lock()
-	defer a.recoveryMu.Unlock()
-
-	unhealthy := len(staleDevices) > 0
-	for _, ski := range staleDevices {
-		if a.recoverStaleDeviceLocked(now, ski) {
-			a.grpcSrv.SetHealthy(false)
-			return true
-		}
-	}
-	for ski, recovery := range a.deviceRecoveries {
-		if _, stale := staleSet[ski]; stale {
-			continue
-		}
-		if a.recoverOutstandingDeviceLocked(now, ski, recovery) {
-			a.grpcSrv.SetHealthy(false)
-			return true
-		}
-		if current := a.deviceRecoveries[ski]; current != nil && current.status == deviceRecoveryRecovering {
-			unhealthy = true
-		}
-	}
-	a.grpcSrv.SetHealthy(!unhealthy)
-	return false
-}
-
-func (a *Application) recoverOutstandingDeviceLocked(now time.Time, ski string, recovery *deviceRecoveryState) bool {
-	if recovery.status != deviceRecoveryRecovering {
-		return false
-	}
-	if a.registry.MonitoringSuccessSince(ski, recovery.lastAttemptAt) {
-		a.logRecoveryEvent(ski, deviceRecoveryHealthy, recovery.attempts, now.Sub(recovery.lastAttemptAt))
-		delete(a.deviceRecoveries, ski)
-		return false
-	}
-	if now.Before(recovery.recoverAfter) {
-		return false
-	}
-	return a.recoverStaleDeviceLocked(now, ski)
-}
-
-func (a *Application) recoverStaleDeviceLocked(now time.Time, ski string) bool {
-	if a.deviceRecoveries == nil {
-		a.deviceRecoveries = make(map[string]*deviceRecoveryState)
-	}
-	ski = eebus.NormalizeSKI(ski)
-	recovery := a.deviceRecoveries[ski]
-	if recovery == nil {
-		recovery = &deviceRecoveryState{status: deviceRecoveryHealthy}
-		a.deviceRecoveries[ski] = recovery
-	}
-	if recovery.firstStaleAt.IsZero() {
-		recovery.firstStaleAt = now
-	}
-
-	switch recovery.status {
-	case deviceRecoveryRecovering:
-		if now.Before(recovery.recoverAfter) {
-			return false
-		}
-	case deviceRecoveryFailed:
-		return false
-	}
-
-	if recovery.attempts >= monitoringRecoveryMaxAttempts {
-		return a.failStaleDeviceLocked(now, ski, recovery)
-	}
-
-	attempt := recovery.attempts + 1
-	recovery.status = deviceRecoveryStale
-	a.logRecoveryEvent(ski, deviceRecoveryStale, attempt, now.Sub(recovery.firstStaleAt))
-
-	a.registry.ClearEntities(ski)
-	a.logRecoveryEvent(ski, deviceRecoveryInvalidate, attempt, 0)
-
-	if a.bridgeSvc != nil {
-		a.bridgeSvc.UnregisterRemoteSKI(ski)
-		a.bridgeSvc.RegisterRemoteSKI(ski)
-	}
-	a.logRecoveryEvent(ski, deviceRecoveryReconnect, attempt, 0)
-
-	recovery.status = deviceRecoveryRecovering
-	recovery.attempts = attempt
-	recovery.lastAttemptAt = now
-	recovery.recoverAfter = now.Add(monitoringGracePeriod)
-	a.logRecoveryEvent(ski, deviceRecoveryRecovering, attempt, monitoringGracePeriod)
-	return false
-}
-
-func (a *Application) failStaleDeviceLocked(now time.Time, ski string, recovery *deviceRecoveryState) bool {
-	recovery.status = deviceRecoveryFailed
-	if recovery.restartRequested {
-		return false
-	}
-	recovery.restartRequested = true
-	a.logRecoveryEvent(ski, deviceRecoveryFailed, recovery.attempts, now.Sub(recovery.firstStaleAt))
-
-	lastSuccessAge := "never"
-	if age, ok := a.registry.MonitoringLastSuccessAge(ski); ok {
-		lastSuccessAge = age.Round(time.Second).String()
-	}
-	reason := "monitoring watchdog recovery exhausted"
-	log.Printf(
-		"%s: devices=[%s(last_success_age=%s)] threshold=%s grace_period=%s attempts=%d; requesting restart",
-		reason,
-		eebus.ShortSKI(ski),
-		lastSuccessAge,
-		monitoringStaleThreshold,
-		monitoringGracePeriod,
-		recovery.attempts,
-	)
-	a.reportBackgroundFailure(reason, errors.New(reason))
 	return true
 }
 
-func (a *Application) logRecoveryEvent(ski string, stage deviceRecoveryStatus, attempt int, duration time.Duration) {
-	log.Printf(
-		"monitoring recovery: ski=%s stage=%s attempt=%d duration=%s",
-		eebus.ShortSKI(ski),
-		stage,
-		attempt,
-		duration.Round(time.Second),
-	)
+func (a *Application) waitForWatchdog() error {
+	done := make(chan struct{})
+	go func() {
+		a.watchdogWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-time.After(applicationShutdownTimeout):
+		return errors.New("timed out waiting for monitoring watchdog")
+	}
+}
+
+func (a *Application) handleMonitoringWatchdogTick(now time.Time) bool {
+	if a.recoverySupervisor == nil {
+		return false
+	}
+	result := a.recoverySupervisor.Tick(now)
+	if !result.RestartRequired {
+		return false
+	}
+	reason := "monitoring watchdog recovery exhausted"
+	redacted := make([]string, 0, len(result.ExhaustedSKIs))
+	for _, ski := range result.ExhaustedSKIs {
+		redacted = append(redacted, eebus.ShortSKI(ski))
+	}
+	log.Printf("%s: devices=%v; requesting restart", reason, redacted)
+	a.reportBackgroundFailure(reason, errors.New(reason))
+	return true
 }
 
 func (a *Application) reportBackgroundFailure(reason string, err error) {
@@ -803,8 +788,8 @@ func (a *Application) reportBackgroundFailure(reason string, err error) {
 	}
 }
 
-// Stop is safe to call repeatedly. Its component shutdown order deliberately
-// remains heartbeat, gRPC, then EEBUS.
+// Stop is safe to call repeatedly and concurrently. Only successfully started
+// stages are rolled back, in exact reverse startup order.
 func (a *Application) Stop() {
 	a.stopOnce.Do(func() {
 		if a.grpcSrv != nil {
@@ -818,20 +803,14 @@ func (a *Application) Stop() {
 		}
 
 		log.Println("Shutting down...")
-		for index := len(a.modules) - 1; index >= 0; index-- {
-			module := a.modules[index]
-			if module.stop == nil {
-				continue
+		a.lifecycleMu.Lock()
+		tx := a.lifecycle
+		a.stopped = true
+		a.lifecycleMu.Unlock()
+		if tx != nil {
+			if err := tx.rollback(); err != nil {
+				log.Printf("shutdown completed with errors: %v", err)
 			}
-			if err := module.stop(); err != nil {
-				log.Printf("stopping %s module failed: %v", module.name, err)
-			}
-		}
-		if a.grpcSrv != nil {
-			a.grpcSrv.Stop()
-		}
-		if a.bridgeSvc != nil {
-			a.bridgeSvc.Shutdown()
 		}
 		log.Println("Shutdown complete")
 	})

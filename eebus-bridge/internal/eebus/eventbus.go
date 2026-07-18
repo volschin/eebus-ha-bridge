@@ -17,13 +17,24 @@ type EventBus struct {
 	mu                      sync.RWMutex
 	subscribers             map[chan Event]*eventSubscriber
 	revisions               map[string]uint64
+	droppedByDevice         map[string]uint64
+	resyncsByDevice         map[string]uint64
 	droppedUnresolvedEvents atomic.Uint64
+}
+
+type EventTransportSnapshot struct {
+	Revision         uint64
+	DroppedEvents    uint64
+	ResyncCount      uint64
+	UnresolvedEvents uint64
 }
 
 func NewEventBus() *EventBus {
 	return &EventBus{
-		subscribers: make(map[chan Event]*eventSubscriber),
-		revisions:   make(map[string]uint64),
+		subscribers:     make(map[chan Event]*eventSubscriber),
+		revisions:       make(map[string]uint64),
+		droppedByDevice: make(map[string]uint64),
+		resyncsByDevice: make(map[string]uint64),
 	}
 }
 
@@ -89,6 +100,7 @@ func (b *EventBus) Publish(evt Event) {
 		default:
 			subscriber.droppedTotal++
 			subscriber.pendingDropped++
+			b.droppedByDevice[evt.SKI]++
 		}
 	}
 }
@@ -112,6 +124,7 @@ func (b *EventBus) TakePendingResync(ch chan Event) (Event, bool) {
 		Dropped:    subscriber.pendingDropped,
 	}
 	subscriber.pendingDropped = 0
+	b.resyncsByDevice[subscriber.ski]++
 	return event, true
 }
 
@@ -138,4 +151,18 @@ func (b *EventBus) Revision(ski string) uint64 {
 // because no canonical device SKI was supplied.
 func (b *EventBus) DroppedUnresolvedEvents() uint64 {
 	return b.droppedUnresolvedEvents.Load()
+}
+
+// Diagnostics returns durable device-scoped event transport counters. Unlike
+// SubscriberDroppedEvents it remains meaningful after a stream reconnects.
+func (b *EventBus) Diagnostics(ski string) EventTransportSnapshot {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	ski = NormalizeSKI(ski)
+	return EventTransportSnapshot{
+		Revision:         b.revisions[ski],
+		DroppedEvents:    b.droppedByDevice[ski],
+		ResyncCount:      b.resyncsByDevice[ski],
+		UnresolvedEvents: b.droppedUnresolvedEvents.Load(),
+	}
 }

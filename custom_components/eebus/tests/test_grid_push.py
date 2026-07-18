@@ -9,6 +9,7 @@ from custom_components.eebus.providers import (
     ENERGY_UNIT_TO_WH,
     POWER_UNIT_TO_W,
     ProviderManager,
+    ProviderMappings,
 )
 
 
@@ -29,9 +30,11 @@ def _make_grid_coordinator(states, power=None, feed_in=None, consumed=None):
         hass,
         coordinator.ski,
         lambda: coordinator._ensure_channel(),
-        grid_power_entity=power,
-        grid_feed_in_energy_entity=feed_in,
-        grid_consumption_energy_entity=consumed,
+        ProviderMappings(
+            grid_power=power,
+            grid_feed_in_energy=feed_in,
+            grid_consumption_energy=consumed,
+        ),
         supports_feature=lambda feature: feature
         == proto_stubs.FeatureId.FEATURE_PROVIDER_SAMPLE_INVALIDATION,
     )
@@ -124,3 +127,31 @@ async def test_push_invalidates_when_power_unavailable(monkeypatch):
     request = captured["request"]
     assert request.HasField("sample") is True
     assert request.sample.invalid is True
+
+
+async def test_invalid_required_sensor_is_latched_until_valid_sample(monkeypatch):
+    """One invalid streak emits one invalidation and resets after recovery."""
+    states = {"sensor.power": _state("unavailable", "W")}
+    coordinator = _make_grid_coordinator(states, power="sensor.power")
+    requests = []
+
+    class _FakeStub:
+        def __init__(self, _channel):
+            pass
+
+        async def PublishGridData(self, request, timeout=None):  # noqa: N802
+            requests.append(request)
+            return proto_stubs.Empty()
+
+    monkeypatch.setattr(proto_stubs, "GridServiceStub", _FakeStub)
+    await coordinator.async_push_grid_data()
+    await coordinator.async_push_grid_data()
+    assert len(requests) == 1
+    assert requests[0].sample.invalid is True
+
+    states["sensor.power"] = _state("100", "W")
+    await coordinator.async_push_grid_data()
+    states["sensor.power"] = _state("unavailable", "W")
+    await coordinator.async_push_grid_data()
+
+    assert [request.sample.invalid for request in requests] == [True, False, True]

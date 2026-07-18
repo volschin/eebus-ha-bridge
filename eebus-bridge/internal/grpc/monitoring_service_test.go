@@ -150,6 +150,7 @@ func TestSubscribeMeasurements(t *testing.T) {
 
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterMonitoringServiceServer(srv.GRPCServer(), svc)
+	srv.SetHealthy(true)
 	go srv.Start()
 	t.Cleanup(srv.Stop)
 
@@ -267,6 +268,7 @@ func TestSubscribeMeasurementsIncludesTemperaturePayloads(t *testing.T) {
 
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterMonitoringServiceServer(srv.GRPCServer(), svc)
+	srv.SetHealthy(true)
 	go srv.Start()
 	t.Cleanup(srv.Stop)
 
@@ -372,6 +374,7 @@ func TestSubscribeMeasurementsForwardsDeviceOperatingState(t *testing.T) {
 
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterMonitoringServiceServer(srv.GRPCServer(), svc)
+	srv.SetHealthy(true)
 	go srv.Start()
 	t.Cleanup(srv.Stop)
 

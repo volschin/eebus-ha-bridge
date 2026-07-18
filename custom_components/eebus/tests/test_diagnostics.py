@@ -1,11 +1,16 @@
 """Tests for EEBUS diagnostics."""
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from custom_components.eebus.diagnostics import async_get_config_entry_diagnostics
 from custom_components.eebus.models import CapabilityState
+from custom_components.eebus.session_diagnostics import (
+    DeviceStreamDiagnostics,
+    SessionDiagnostics,
+    StreamWorkerDiagnostics,
+)
 from custom_components.eebus.state import (
     CapabilityKey,
     CapabilityMetadata,
@@ -48,22 +53,21 @@ async def test_diagnostics_output():
         ),
         fresh_fields=frozenset({StateField.POWER_WATTS}),
     )
-    coordinator.last_update_success_time = None
-    coordinator.last_update_success = True
-    coordinator.runtime.status.unavailable = False
-    leaked_ski = "AABBCCDDEEFF00112233445566778899AABBCCDD"
-    coordinator._device_streams.diagnostics.return_value = {
-        "last_device_state_revision": 42,
-        "primary": {"configured": 1, "running": 1, "done": 0},
-        "legacy": {"configured": 0, "running": 0, "done": 0},
-        "nested": {
-            "ski_values": [leaked_ski],
-            leaked_ski: "map-key",
-            "payload": "-----BEGIN CERTIFICATE-----\nsecret-pem\n-----END CERTIFICATE-----",
-            "access_token": "nested-access-token",
-            "api_token": "nested-api-token",
-        },
-    }
+    coordinator.async_session_diagnostics = AsyncMock(
+        return_value=SessionDiagnostics(
+            bridge_unavailable=False,
+            last_successful_read_age_seconds=None,
+            last_update_success=True,
+            streams=DeviceStreamDiagnostics(
+                last_device_state_revision=42,
+                refresh_pending=False,
+                refresh_running=False,
+                primary=StreamWorkerDiagnostics(1, 1, 0, 3),
+                legacy=StreamWorkerDiagnostics(0, 0, 0, 0),
+            ),
+            operational=None,
+        )
+    )
     entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, entry)
@@ -79,10 +83,6 @@ async def test_diagnostics_output():
     assert "diagnostics-secret-ca-material" not in serialized
     assert "diagnostics-secret-private-key" not in serialized
     assert "11223344556677889900AABBCCDDEEFF00112233" not in serialized
-    assert leaked_ski not in serialized
-    assert "secret-pem" not in serialized
-    assert "nested-access-token" not in serialized
-    assert "nested-api-token" not in serialized
     assert result["coordinator_data"]["connection"]["local_ski"] == "112233…2233"
     assert "coordinator_data" in result
     assert result["capabilities"]["lpc"] == "available"
@@ -94,8 +94,5 @@ async def test_diagnostics_output():
         "last_update_success": True,
     }
     assert result["streams"]["last_device_state_revision"] == 42
-    assert result["streams"]["nested"]["ski_values"] == ["AABBCC…CCDD"]
-    assert result["streams"]["nested"]["AABBCC…CCDD"] == "map-key"
-    assert result["streams"]["nested"]["payload"] == "**REDACTED**"
-    assert result["streams"]["nested"]["access_token"] == "**REDACTED**"
-    assert result["streams"]["nested"]["api_token"] == "**REDACTED**"
+    assert result["streams"]["primary"]["reconnects"] == 3
+    assert result["bridge_operational"] is None

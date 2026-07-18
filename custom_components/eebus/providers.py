@@ -7,8 +7,9 @@ import logging
 import math
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Protocol
 
 import grpc
 import grpc.aio
@@ -27,6 +28,7 @@ from homeassistant.helpers.event import (
     async_track_state_change_event,
 )
 
+from . import proto_stubs
 from .grpc_client import (
     RPC_TIMEOUT,
     is_unimplemented as _is_unimplemented,
@@ -54,6 +56,34 @@ PROVIDER_SAMPLE_TTL = timedelta(minutes=2)
 ChannelGetter = Callable[[], Awaitable[grpc.aio.Channel]]
 
 
+@dataclass(frozen=True, slots=True)
+class ProviderMappings:
+    """Immutable sensor mapping input shared by setup and reconfiguration."""
+
+    grid_power: str | None = None
+    grid_feed_in_energy: str | None = None
+    grid_consumption_energy: str | None = None
+    pv_power: str | None = None
+    pv_yield_energy: str | None = None
+    pv_peak_power: str | None = None
+    battery_power: str | None = None
+    battery_charged_energy: str | None = None
+    battery_discharged_energy: str | None = None
+    battery_soc: str | None = None
+
+
+class ProviderPublisher(Protocol):
+    """Typed lifecycle port implemented by every provider worker."""
+
+    def start(self) -> None: ...
+
+    def signal(self) -> None: ...
+
+    async def invalidate(self) -> None: ...
+
+    async def stop(self) -> None: ...
+
+
 class _ProviderPusher:
     """Serialize and coalesce state-triggered pushes for one provider."""
 
@@ -64,12 +94,14 @@ class _ProviderPusher:
         ski: str,
         tracked: tuple[str | None, ...],
         push: Callable[[], Awaitable[None]],
+        invalidate: Callable[[], Awaitable[None]],
     ) -> None:
         self._hass = hass
         self._label = label
         self._ski = ski
         self._entity_ids = [entity_id for entity_id in tracked if entity_id]
         self._push = push
+        self._invalidate = invalidate
         self._dirty = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
         self._unsub: Callable[[], None] | None = None
@@ -110,6 +142,10 @@ class _ProviderPusher:
                 await task
             self._task = None
 
+    async def invalidate(self) -> None:
+        """Publish this provider's coalesced invalidation."""
+        await self._invalidate()
+
     async def _run(self) -> None:
         """Push the freshest state once per coalesced dirty signal."""
         while True:
@@ -131,35 +167,28 @@ class ProviderManager:
         hass: HomeAssistant,
         ski: str,
         channel_getter: ChannelGetter,
+        mappings: ProviderMappings,
         *,
-        grid_power_entity: str | None = None,
-        grid_feed_in_energy_entity: str | None = None,
-        grid_consumption_energy_entity: str | None = None,
-        pv_power_entity: str | None = None,
-        pv_yield_energy_entity: str | None = None,
-        pv_peak_power_entity: str | None = None,
-        battery_power_entity: str | None = None,
-        battery_charged_energy_entity: str | None = None,
-        battery_discharged_energy_entity: str | None = None,
-        battery_soc_entity: str | None = None,
         supports_feature: Callable[[int], bool] | None = None,
     ) -> None:
         """Initialize provider configuration and lifecycle state."""
         self._hass = hass
         self._ski = ski
         self._channel_getter = channel_getter
-        self._grid_power_entity = grid_power_entity
-        self._grid_feed_in_energy_entity = grid_feed_in_energy_entity
-        self._grid_consumption_energy_entity = grid_consumption_energy_entity
-        self._pv_power_entity = pv_power_entity
-        self._pv_yield_energy_entity = pv_yield_energy_entity
-        self._pv_peak_power_entity = pv_peak_power_entity
-        self._battery_power_entity = battery_power_entity
-        self._battery_charged_energy_entity = battery_charged_energy_entity
-        self._battery_discharged_energy_entity = battery_discharged_energy_entity
-        self._battery_soc_entity = battery_soc_entity
-        self._provider_pushers: list[_ProviderPusher] = []
+        self._mappings = mappings
+        self._grid_power_entity = mappings.grid_power
+        self._grid_feed_in_energy_entity = mappings.grid_feed_in_energy
+        self._grid_consumption_energy_entity = mappings.grid_consumption_energy
+        self._pv_power_entity = mappings.pv_power
+        self._pv_yield_energy_entity = mappings.pv_yield_energy
+        self._pv_peak_power_entity = mappings.pv_peak_power
+        self._battery_power_entity = mappings.battery_power
+        self._battery_charged_energy_entity = mappings.battery_charged_energy
+        self._battery_discharged_energy_entity = mappings.battery_discharged_energy
+        self._battery_soc_entity = mappings.battery_soc
+        self._provider_pushers: list[ProviderPublisher] = []
         self._provider_push_failing: dict[str, bool] = {}
+        self._provider_invalidated: set[str] = set()
         self._provider_invalidation_supported: bool | None = None
         self._supports_feature = supports_feature or (lambda _feature: False)
 
@@ -241,21 +270,23 @@ class ProviderManager:
             return None
         return result
 
-    async def _async_publish_provider(self, label: str, stub_factory: str, publish_method: str, request: Any) -> None:
+    async def _async_publish_provider(
+        self,
+        label: str,
+        publish: Callable[[grpc.aio.Channel], Awaitable[object]],
+    ) -> bool:
         """Publish a provider reading to the bridge, quiet when the provider is off.
 
         UNIMPLEMENTED/UNAVAILABLE mean the provider is disabled or the bridge is
         down; skip quietly so a missing provider never spams or fails HA.
         """
         channel = await self._channel_getter()
-        from . import proto_stubs
-
-        stub = getattr(proto_stubs, stub_factory)(channel)
         try:
-            await getattr(stub, publish_method)(request, timeout=RPC_TIMEOUT)
+            await publish(channel)
             if self._provider_push_failing.pop(label, False):
                 _LOGGER.info("%s provider push recovered", label)
-            _LOGGER.debug("Pushed %s data: %s", label, request)
+            _LOGGER.debug("Pushed %s provider data", label)
+            return True
         except grpc.aio.AioRpcError as err:
             if _is_unimplemented(err) or err.code() == grpc.StatusCode.UNAVAILABLE:
                 _LOGGER.debug(
@@ -263,17 +294,16 @@ class ProviderManager:
                     label,
                     _rpc_error_text(err),
                 )
-                return
+                return False
             if self._provider_push_failing.get(label, False):
                 _LOGGER.debug("Failed to push %s data: %s", label, _rpc_error_text(err))
             else:
                 _LOGGER.warning("Failed to push %s data: %s", label, _rpc_error_text(err))
                 self._provider_push_failing[label] = True
+            return False
 
-    def _sample_meta(self, *, invalid: bool = False) -> Any:
+    def _sample_meta(self, *, invalid: bool = False) -> proto_stubs.ProviderSampleMeta:
         """Build provider validity metadata for one complete sample."""
-        from . import proto_stubs
-
         observed_at = datetime.now(UTC)
         return proto_stubs.ProviderSampleMeta(
             observed_at=observed_at,
@@ -285,18 +315,57 @@ class ProviderManager:
         """Return whether the bridge understands sample.invalid provider pushes."""
         if self._provider_invalidation_supported is not None:
             return self._provider_invalidation_supported
-        from . import proto_stubs
-
         self._provider_invalidation_supported = self._supports_feature(
             int(proto_stubs.FeatureId.FEATURE_PROVIDER_SAMPLE_INVALIDATION)
         )
         return self._provider_invalidation_supported
+
+    async def _async_publish_grid(
+        self, label: str, request: proto_stubs.GridData
+    ) -> bool:
+        async def publish(channel: grpc.aio.Channel) -> None:
+            await proto_stubs.grid_service_stub(channel).PublishGridData(
+                request, timeout=RPC_TIMEOUT
+            )
+
+        return await self._async_publish_provider(label, publish)
+
+    async def _async_publish_pv(
+        self, label: str, request: proto_stubs.PVData
+    ) -> bool:
+        async def publish(channel: grpc.aio.Channel) -> None:
+            await proto_stubs.visualization_service_stub(channel).PublishPVData(
+                request, timeout=RPC_TIMEOUT
+            )
+
+        return await self._async_publish_provider(label, publish)
+
+    async def _async_publish_pv_peak(
+        self, label: str, request: proto_stubs.PVPeakPowerData
+    ) -> bool:
+        async def publish(channel: grpc.aio.Channel) -> None:
+            await proto_stubs.visualization_service_stub(
+                channel
+            ).PublishPVPeakPower(request, timeout=RPC_TIMEOUT)
+
+        return await self._async_publish_provider(label, publish)
+
+    async def _async_publish_battery(
+        self, label: str, request: proto_stubs.BatteryData
+    ) -> bool:
+        async def publish(channel: grpc.aio.Channel) -> None:
+            await proto_stubs.visualization_service_stub(channel).PublishBatteryData(
+                request, timeout=RPC_TIMEOUT
+            )
+
+        return await self._async_publish_provider(label, publish)
 
     def _start_provider_push(
         self,
         label: str,
         tracked: tuple[str | None, ...],
         push: Callable[[], Awaitable[None]],
+        invalidate: Callable[[], Awaitable[None]],
     ) -> None:
         """Start one lifecycle-owning provider push worker."""
         pusher = _ProviderPusher(
@@ -305,6 +374,7 @@ class ProviderManager:
             self._ski,
             tracked,
             push,
+            invalidate,
         )
         self._provider_pushers.append(pusher)
         pusher.start()
@@ -335,14 +405,13 @@ class ProviderManager:
             minimum=0,
         )
 
-        from . import proto_stubs
-
         request = proto_stubs.GridData(power_w=power_w, sample=self._sample_meta())
         if feed_in_wh is not None:
             request.feed_in_wh = feed_in_wh
         if consumed_wh is not None:
             request.consumed_wh = consumed_wh
-        await self._async_publish_provider("grid", "grid_service_stub", "PublishGridData", request)
+        if await self._async_publish_grid("grid", request):
+            self._provider_invalidated.discard("grid")
 
     async def async_push_pv_data(self) -> None:
         """Push the mapped PV sensors to the bridge VAPD (display) provider.
@@ -369,17 +438,14 @@ class ProviderManager:
             minimum=0,
         )
 
-        from . import proto_stubs
-
         request = proto_stubs.PVData(power_w=power_w, sample=self._sample_meta())
         if yield_wh is not None:
             request.yield_wh = yield_wh
-        await self._async_publish_provider("PV", "visualization_service_stub", "PublishPVData", request)
+        if await self._async_publish_pv("PV", request):
+            self._provider_invalidated.discard("PV")
         if peak_power_w is not None:
-            await self._async_publish_provider(
+            await self._async_publish_pv_peak(
                 "PV peak",
-                "visualization_service_stub",
-                "PublishPVPeakPower",
                 proto_stubs.PVPeakPowerData(peak_power_w=peak_power_w),
             )
 
@@ -416,8 +482,6 @@ class ProviderManager:
             maximum=100,
         )
 
-        from . import proto_stubs
-
         request = proto_stubs.BatteryData(power_w=power_w, sample=self._sample_meta())
         if charged_wh is not None:
             request.charged_wh = charged_wh
@@ -425,41 +489,39 @@ class ProviderManager:
             request.discharged_wh = discharged_wh
         if soc_pct is not None:
             request.state_of_charge_pct = soc_pct
-        await self._async_publish_provider("battery", "visualization_service_stub", "PublishBatteryData", request)
+        if await self._async_publish_battery("battery", request):
+            self._provider_invalidated.discard("battery")
 
     async def _async_invalidate_grid_data(self) -> None:
-        from . import proto_stubs
-
         if not await self._async_provider_invalidation_supported():
             return
-        await self._async_publish_provider(
+        if "grid" in self._provider_invalidated:
+            return
+        self._provider_invalidated.add("grid")
+        await self._async_publish_grid(
             "grid",
-            "grid_service_stub",
-            "PublishGridData",
             proto_stubs.GridData(sample=self._sample_meta(invalid=True)),
         )
 
     async def _async_invalidate_pv_data(self) -> None:
-        from . import proto_stubs
-
         if not await self._async_provider_invalidation_supported():
             return
-        await self._async_publish_provider(
+        if "PV" in self._provider_invalidated:
+            return
+        self._provider_invalidated.add("PV")
+        await self._async_publish_pv(
             "PV",
-            "visualization_service_stub",
-            "PublishPVData",
             proto_stubs.PVData(sample=self._sample_meta(invalid=True)),
         )
 
     async def _async_invalidate_battery_data(self) -> None:
-        from . import proto_stubs
-
         if not await self._async_provider_invalidation_supported():
             return
-        await self._async_publish_provider(
+        if "battery" in self._provider_invalidated:
+            return
+        self._provider_invalidated.add("battery")
+        await self._async_publish_battery(
             "battery",
-            "visualization_service_stub",
-            "PublishBatteryData",
             proto_stubs.BatteryData(sample=self._sample_meta(invalid=True)),
         )
 
@@ -475,6 +537,7 @@ class ProviderManager:
                 self._grid_consumption_energy_entity,
             ),
             self.async_push_grid_data,
+            self._async_invalidate_grid_data,
         )
 
     def async_start_pv_push(self) -> None:
@@ -489,6 +552,7 @@ class ProviderManager:
                 self._pv_peak_power_entity,
             ),
             self.async_push_pv_data,
+            self._async_invalidate_pv_data,
         )
 
     def async_start_battery_push(self) -> None:
@@ -504,6 +568,7 @@ class ProviderManager:
                 self._battery_soc_entity,
             ),
             self.async_push_battery_data,
+            self._async_invalidate_battery_data,
         )
 
     async def async_stop(self, *, invalidate: bool = True) -> None:

@@ -2,7 +2,9 @@ package eebus_test
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -319,6 +321,56 @@ func TestRegistryListDevices(t *testing.T) {
 			t.Errorf("devices[%d].SKI = %q, want %q", index, devices[index].SKI, want)
 		}
 	}
+}
+
+func TestRegistryReadProjectionsAreDeepCopies(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	reg.AddDevice("AA11", eebus.DeviceInfo{
+		UseCases:       []string{"monitoring"},
+		RemoteEntities: []spineapi.EntityRemoteInterface{nil},
+		Entities: []eebus.EntityInfo{{
+			Address: "1", Features: []string{"Measurement/client"},
+		}},
+	})
+
+	device, ok := reg.GetDevice("AA11")
+	if !ok {
+		t.Fatal("device missing")
+	}
+	device.UseCases[0] = "mutated"
+	device.RemoteEntities[0] = mocks.NewEntityRemoteInterface(t)
+	device.Entities[0].Features[0] = "mutated"
+	listed := reg.ListDevices()
+	listed[0].UseCases[0] = "also-mutated"
+
+	again, _ := reg.GetDevice("AA11")
+	if again.UseCases[0] != "monitoring" || again.RemoteEntities[0] != nil || again.Entities[0].Features[0] != "Measurement/client" {
+		t.Fatalf("mutated read projection changed registry: %+v", again)
+	}
+}
+
+func TestRegistryParallelCatalogHealthAndCapabilityProjections(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	var wait sync.WaitGroup
+	for worker := range 8 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			for iteration := range 100 {
+				ski := fmt.Sprintf("%02d%02d", worker, iteration%4)
+				reg.AddDevice(ski, eebus.DeviceInfo{UseCases: []string{"monitoring"}})
+				reg.UpsertDeviceClassification(ski, "vendor", "model", "serial", "type")
+				reg.MarkConnected(ski)
+				reg.RecordCapabilityRead(ski, eebus.CapabilityMonitoring, nil)
+				reg.GetDevice(ski)
+				reg.ListDevices()
+				reg.ListDeviceHealth()
+				reg.DeviceCapabilities(ski)
+				reg.MarkDisconnected(ski)
+			}
+		}()
+	}
+	wait.Wait()
 }
 
 func TestRegistryFirstAvailableEntityRequiresOneDevice(t *testing.T) {

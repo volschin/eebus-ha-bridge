@@ -28,6 +28,7 @@ from .models import (
 )
 from .ski import normalize_ski
 from .snapshot import _capability_results_from_proto, _snapshot_observation_from_proto
+from .session_diagnostics import DeviceStreamDiagnostics
 from .state import (
     CapabilityKey,
     CapabilityResult,
@@ -263,16 +264,16 @@ class DeviceStreams:
         """Remember successful explicit registration for stream snapshot reduction."""
         self._ski_registered = True
 
-    def diagnostics(self) -> dict[str, object]:
+    def diagnostics(self) -> DeviceStreamDiagnostics:
         """Return redacted stream state for config-entry diagnostics."""
         running_refresh = self._refresh_task is not None and not self._refresh_task.done()
-        return {
-            "last_device_state_revision": self._last_revision,
-            "refresh_pending": self._refresh_pending,
-            "refresh_running": running_refresh,
-            "primary": self._manager.diagnostics(),
-            "legacy": self._legacy_manager.diagnostics(),
-        }
+        return DeviceStreamDiagnostics(
+            last_device_state_revision=self._last_revision,
+            refresh_pending=self._refresh_pending,
+            refresh_running=running_refresh,
+            primary=self._manager.diagnostics(),
+            legacy=self._legacy_manager.diagnostics(),
+        )
 
     def _matches(self, event_ski: str) -> bool:
         return normalize_ski(event_ski) == normalize_ski(self._ski)

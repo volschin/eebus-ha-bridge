@@ -4,6 +4,7 @@ import (
 	"context"
 	"runtime/debug"
 	"sort"
+	"time"
 
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/eebus"
@@ -27,9 +28,19 @@ type DeviceService struct {
 	payloads   DeviceStatePayloadSources
 	serverInfo *pb.ServerInfo
 	snapshot   *DeviceSnapshotAssembler
+	recovery   RecoveryDiagnosticsSource
+	providers  ProviderDiagnosticsSource
 }
 
 type DeviceServiceOption func(*DeviceService)
+
+type RecoveryDiagnosticsSource interface {
+	Snapshot(string, time.Time) eebus.RecoverySnapshot
+}
+
+type ProviderDiagnosticsSource interface {
+	ProviderDiagnostics(time.Time) []*pb.ProviderSampleDiagnostics
+}
 
 type DeviceStatePayloadSources struct {
 	Monitoring MeasurementPayloadSource
@@ -64,6 +75,17 @@ func WithDeviceStatePayloads(sources DeviceStatePayloadSources) DeviceServiceOpt
 	return func(service *DeviceService) {
 		service.payloads = sources
 		service.snapshot = NewDeviceSnapshotAssembler(service.registry, sources)
+		service.snapshot.recovery = service.recovery
+	}
+}
+
+func WithOperationalDiagnostics(recovery RecoveryDiagnosticsSource, providers ProviderDiagnosticsSource) DeviceServiceOption {
+	return func(service *DeviceService) {
+		service.recovery = recovery
+		service.providers = providers
+		if service.snapshot != nil {
+			service.snapshot.recovery = recovery
+		}
 	}
 }
 
@@ -83,6 +105,7 @@ var implementedFeatures = []pb.FeatureId{
 	pb.FeatureId_FEATURE_PROVIDER_SAMPLE_INVALIDATION,
 	pb.FeatureId_FEATURE_DEVICE_SNAPSHOT,
 	pb.FeatureId_FEATURE_TYPED_MEASUREMENTS,
+	pb.FeatureId_FEATURE_OPERATIONAL_DIAGNOSTICS,
 }
 
 func WithServerInfo(info *pb.ServerInfo) DeviceServiceOption {
@@ -160,7 +183,98 @@ func (s *DeviceService) GetDeviceStatus(_ context.Context, req *pb.DeviceRequest
 	if known && !lastTransition.IsZero() {
 		result.LastTransition = timestamppb.New(lastTransition)
 	}
+	if s.recovery != nil {
+		recovery := s.recovery.Snapshot(ski, time.Now())
+		result.Readiness = readinessState(recovery.State)
+		result.Recovery = recoveryDiagnostics(recovery)
+	}
 	return result, nil
+}
+
+func (s *DeviceService) GetDeviceDiagnostics(_ context.Context, req *pb.DeviceRequest) (*pb.DeviceOperationalDiagnostics, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	ski, err := requireExplicitSKI(req.Ski)
+	if err != nil {
+		return nil, err
+	}
+	if s.registry == nil || !s.registry.KnownDevice(ski) {
+		return nil, status.Error(codes.NotFound, "device not found for specified ski")
+	}
+	now := time.Now()
+	recovery := eebus.RecoverySnapshot{State: eebus.RecoveryStateUnknown}
+	if s.recovery != nil {
+		recovery = s.recovery.Snapshot(ski, now)
+	}
+	result := &pb.DeviceOperationalDiagnostics{
+		RedactedSki: eebus.ShortSKI(ski),
+		Readiness:   readinessState(recovery.State),
+		Recovery:    recoveryDiagnostics(recovery),
+		Features:    append([]pb.FeatureId(nil), s.serverInfo.Features...),
+	}
+	if s.bus != nil {
+		events := s.bus.Diagnostics(ski)
+		result.Events = &pb.EventTransportDiagnostics{
+			Revision: events.Revision, DroppedEvents: events.DroppedEvents,
+			ResyncCount: events.ResyncCount, UnresolvedEvents: events.UnresolvedEvents,
+		}
+	}
+	if age, ok := s.registry.MonitoringLastSuccessAge(ski); ok {
+		seconds := uint64(max(age/time.Second, 0))
+		result.MonitoringLastSuccessAgeSeconds = &seconds
+	}
+	if s.snapshot != nil {
+		metrics := s.snapshot.Metrics(ski)
+		result.SnapshotReads = &pb.SnapshotReadDiagnostics{
+			DurationMilliseconds: uint64(max(metrics.Duration/time.Millisecond, 0)),
+		}
+		if !metrics.LastSuccess.IsZero() {
+			result.SnapshotReads.LastSuccess = timestamppb.New(metrics.LastSuccess)
+		}
+	}
+	if s.providers != nil {
+		result.Providers = s.providers.ProviderDiagnostics(now)
+	}
+	return result, nil
+}
+
+func readinessState(state eebus.RecoveryState) pb.DeviceReadinessState {
+	switch state {
+	case eebus.RecoveryStateUntrusted:
+		return pb.DeviceReadinessState_DEVICE_READINESS_UNTRUSTED
+	case eebus.RecoveryStateDisconnected:
+		return pb.DeviceReadinessState_DEVICE_READINESS_DISCONNECTED
+	case eebus.RecoveryStateGracePeriod:
+		return pb.DeviceReadinessState_DEVICE_READINESS_GRACE_PERIOD
+	case eebus.RecoveryStateRecovering:
+		return pb.DeviceReadinessState_DEVICE_READINESS_RECOVERING
+	case eebus.RecoveryStateHealthy:
+		return pb.DeviceReadinessState_DEVICE_READINESS_READY
+	case eebus.RecoveryStateExhausted:
+		return pb.DeviceReadinessState_DEVICE_READINESS_EXHAUSTED
+	default:
+		return pb.DeviceReadinessState_DEVICE_READINESS_UNKNOWN
+	}
+}
+
+func recoveryDiagnostics(snapshot eebus.RecoverySnapshot) *pb.RecoveryDiagnostics {
+	result := &pb.RecoveryDiagnostics{
+		State: readinessState(snapshot.State), Attempts: uint32(snapshot.Attempts), // #nosec G115 -- bounded retry count
+	}
+	if !snapshot.FirstStaleAt.IsZero() {
+		result.FirstStaleAt = timestamppb.New(snapshot.FirstStaleAt)
+	}
+	if !snapshot.LastAttemptAt.IsZero() {
+		result.LastAttemptAt = timestamppb.New(snapshot.LastAttemptAt)
+	}
+	if !snapshot.NextAttemptAt.IsZero() {
+		result.NextAttemptAt = timestamppb.New(snapshot.NextAttemptAt)
+	}
+	if !snapshot.LastTransitionAt.IsZero() {
+		result.LastTransitionAt = timestamppb.New(snapshot.LastTransitionAt)
+	}
+	return result
 }
 
 func (s *DeviceService) GetDeviceCapabilities(_ context.Context, req *pb.DeviceRequest) (*pb.DeviceCapabilities, error) {

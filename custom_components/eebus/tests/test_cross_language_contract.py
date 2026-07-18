@@ -82,6 +82,7 @@ async def test_go_server_to_python_state_contract(go_contract_server: str) -> No
     assert contract.supports(proto_stubs.FeatureId.FEATURE_PROVIDER_SAMPLE_INVALIDATION)
     assert contract.supports(proto_stubs.FeatureId.FEATURE_DEVICE_SNAPSHOT)
     assert contract.supports(proto_stubs.FeatureId.FEATURE_TYPED_MEASUREMENTS)
+    assert contract.supports(proto_stubs.FeatureId.FEATURE_OPERATIONAL_DIAGNOSTICS)
 
     stub = proto_stubs.device_service_stub(channel)
     stream_a = stub.SubscribeDeviceState(proto_stubs.DeviceRequest(ski=SKI_A))

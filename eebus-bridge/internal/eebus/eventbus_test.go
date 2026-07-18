@@ -185,6 +185,10 @@ func TestEventBusSignalsOneResyncAfterSubscriberDrop(t *testing.T) {
 	if got := bus.SubscriberDroppedEvents(ch); got != 1 {
 		t.Fatalf("total drops = %d, want 1", got)
 	}
+	diagnostics := bus.Diagnostics("test-ski")
+	if diagnostics.Revision != 65 || diagnostics.DroppedEvents != 1 || diagnostics.ResyncCount != 1 {
+		t.Fatalf("Diagnostics() = %+v, want revision/drop/resync 65/1/1", diagnostics)
+	}
 
 	<-ch // make the subscriber writable again
 	bus.Publish(eebus.Event{SKI: "test-ski", Type: "after-resync"})

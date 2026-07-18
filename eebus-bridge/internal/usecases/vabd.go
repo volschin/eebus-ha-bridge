@@ -59,10 +59,8 @@ type VABDProvider struct {
 	socID         *model.MeasurementIdType // scenario 4: state of charge (%)
 	debug         bool
 
-	snapshotMu      sync.Mutex
-	snapshot        *BatterySnapshot
-	snapshotVersion uint64
-	expiryTimer     *time.Timer
+	publishMu sync.Mutex
+	snapshots providerSnapshotStore[BatterySnapshot]
 }
 
 // NewVABDProvider builds the provider on the given local battery-system entity
@@ -219,60 +217,76 @@ func (p *VABDProvider) invalidateBatteryMeasurements() error {
 }
 
 func (p *VABDProvider) PublishBatterySnapshot(snapshot BatterySnapshot) error {
-	p.snapshotMu.Lock()
-	defer p.snapshotMu.Unlock()
+	p.publishMu.Lock()
+	defer p.publishMu.Unlock()
+	if p.snapshots.closedState() {
+		return ErrProviderClosed
+	}
 
 	if snapshot.Validity.Invalid {
 		if err := p.invalidateBatteryMeasurements(); err != nil {
 			return err
 		}
-		p.snapshotVersion++
-		stopProviderExpiryTimer(&p.expiryTimer)
-		p.snapshot = nil
-		return nil
+		return p.snapshots.invalidate()
 	}
 	if err := p.publishBatteryMeasurements(snapshot); err != nil {
 		return err
 	}
 	next := snapshot.clone()
-	p.snapshotVersion++
-	p.snapshot = &next
-	version := p.snapshotVersion
-	scheduleProviderExpiryTimer(&p.expiryTimer, snapshot.Validity.ValidUntil, func() {
+	return p.snapshots.commit(next, snapshot.Validity.ValidUntil, func(version uint64) {
 		p.expireBatterySnapshot(version, time.Now())
 	})
-	return nil
 }
 
 func (p *VABDProvider) CurrentBatterySnapshot(now time.Time) (BatterySnapshot, bool) {
-	p.snapshotMu.Lock()
-	defer p.snapshotMu.Unlock()
-
-	if p.snapshot == nil || !p.snapshot.Validity.Current(now) {
-		return BatterySnapshot{}, false
-	}
-	return p.snapshot.clone(), true
+	return p.snapshots.current(
+		now,
+		func(snapshot BatterySnapshot) BatterySnapshot { return snapshot.clone() },
+		func(snapshot BatterySnapshot, at time.Time) bool { return snapshot.Validity.Current(at) },
+	)
 }
 
 func (p *VABDProvider) expireBatterySnapshot(version uint64, now time.Time) {
-	p.snapshotMu.Lock()
-	defer p.snapshotMu.Unlock()
-
-	if p.snapshotVersion != version || p.snapshot == nil || p.snapshot.Validity.Current(now) {
+	p.publishMu.Lock()
+	defer p.publishMu.Unlock()
+	if !p.snapshots.shouldExpire(
+		version,
+		now,
+		func(snapshot BatterySnapshot, at time.Time) bool { return snapshot.Validity.Current(at) },
+	) {
 		return
 	}
 	if err := p.invalidateBatteryMeasurements(); err != nil {
 		log.Printf("[VABD] expiring battery sample failed: %v", err)
 		return
 	}
-	p.snapshotVersion++
-	p.snapshot = nil
-	stopProviderExpiryTimer(&p.expiryTimer)
+	p.snapshots.clearExpired(version)
+}
+
+// Close stops sample expiry and prevents every later EEBUS write.
+func (p *VABDProvider) Close() error {
+	p.publishMu.Lock()
+	defer p.publishMu.Unlock()
+	p.snapshots.close()
+	return nil
+}
+
+func (p *VABDProvider) Diagnostics(now time.Time) ProviderSnapshotDiagnostics {
+	return p.snapshots.diagnostics(now, func(snapshot BatterySnapshot) ProviderValidity { return snapshot.Validity })
+}
+
+func (p *VABDProvider) publishIfOpen(write func() error) error {
+	p.publishMu.Lock()
+	defer p.publishMu.Unlock()
+	if p.snapshots.closedState() {
+		return ErrProviderClosed
+	}
+	return write()
 }
 
 // PublishPower pushes the momentary total battery power (W; scenario 1).
 func (p *VABDProvider) PublishPower(watts float64) error {
-	if err := p.publishMeasurement(p.powerID, watts); err != nil {
+	if err := p.publishIfOpen(func() error { return p.publishMeasurement(p.powerID, watts) }); err != nil {
 		return err
 	}
 	if p.debug {
@@ -283,7 +297,7 @@ func (p *VABDProvider) PublishPower(watts float64) error {
 
 // PublishEnergyCharged pushes the cumulative charged energy in Wh (scenario 2).
 func (p *VABDProvider) PublishEnergyCharged(wh float64) error {
-	if err := p.publishMeasurement(p.chargedID, wh); err != nil {
+	if err := p.publishIfOpen(func() error { return p.publishMeasurement(p.chargedID, wh) }); err != nil {
 		return err
 	}
 	if p.debug {
@@ -294,7 +308,7 @@ func (p *VABDProvider) PublishEnergyCharged(wh float64) error {
 
 // PublishEnergyDischarged pushes the cumulative discharged energy in Wh (scenario 3).
 func (p *VABDProvider) PublishEnergyDischarged(wh float64) error {
-	if err := p.publishMeasurement(p.dischargedID, wh); err != nil {
+	if err := p.publishIfOpen(func() error { return p.publishMeasurement(p.dischargedID, wh) }); err != nil {
 		return err
 	}
 	if p.debug {
@@ -305,7 +319,7 @@ func (p *VABDProvider) PublishEnergyDischarged(wh float64) error {
 
 // PublishStateOfCharge pushes the battery state of charge in percent (scenario 4).
 func (p *VABDProvider) PublishStateOfCharge(pct float64) error {
-	if err := p.publishMeasurement(p.socID, pct); err != nil {
+	if err := p.publishIfOpen(func() error { return p.publishMeasurement(p.socID, pct) }); err != nil {
 		return err
 	}
 	if p.debug {

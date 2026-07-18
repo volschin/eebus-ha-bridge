@@ -29,6 +29,7 @@ func TestIntegrationDeviceServiceRoundTrip(t *testing.T) {
 	pb.RegisterLPCServiceServer(srv.GRPCServer(), lpcSvc)
 	pb.RegisterMonitoringServiceServer(srv.GRPCServer(), monSvc)
 
+	srv.SetHealthy(true)
 	go srv.Start()
 	defer srv.Stop()
 

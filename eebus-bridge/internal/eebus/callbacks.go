@@ -115,12 +115,18 @@ func (c *Callbacks) ServiceAutoTrusted(_ api.ServiceInterface, identity shipapi.
 	if c.debugEvents {
 		log.Printf("[DEBUG] EEBUS callback: service auto-trusted: ski=%s", NormalizeSKI(identity.SKI))
 	}
+	if c.registry != nil {
+		c.registry.MarkTrusted(identity.SKI)
+	}
 }
 
 // ServiceAutoTrustFailed is called when SHIP pairing fails for a device.
 func (c *Callbacks) ServiceAutoTrustFailed(_ api.ServiceInterface, identity shipapi.ServiceIdentity, reason error) {
 	if c.debugEvents {
 		log.Printf("[DEBUG] EEBUS callback: service auto-trust failed: ski=%s reason=%v", NormalizeSKI(identity.SKI), reason)
+	}
+	if c.registry != nil {
+		c.registry.MarkUntrusted(identity.SKI)
 	}
 }
 
@@ -136,7 +142,7 @@ func (c *Callbacks) ServiceAutoTrustRemoved(_ api.ServiceInterface, identity shi
 	}
 
 	if c.registry != nil {
-		c.registry.MarkDisconnected(ski)
+		c.registry.MarkUntrusted(ski)
 		c.registry.ClearEntities(ski)
 	}
 

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 import grpc.aio
 from homeassistant.config_entries import ConfigEntry
@@ -34,12 +35,33 @@ from .const import (
     SECURITY_MODE_LOOPBACK,
 )
 from .coordinator import EebusCoordinator
+from .providers import ProviderMappings
 from .runtime import BridgeRuntimeRegistry
 from .server_info import IncompatibleAPIMajorError
 from .ski import is_valid_ski, normalize_ski
 
 _LOGGER = logging.getLogger(__name__)
 _RUNTIME_REGISTRY = "runtime_registry"
+
+
+def _provider_mappings(options: Mapping[str, Any]) -> ProviderMappings:
+    return ProviderMappings(
+        grid_power=options.get(CONF_GRID_POWER_ENTITY) or None,
+        grid_feed_in_energy=options.get(CONF_GRID_FEED_IN_ENERGY_ENTITY) or None,
+        grid_consumption_energy=options.get(CONF_GRID_CONSUMPTION_ENERGY_ENTITY)
+        or None,
+        pv_power=options.get(CONF_PV_POWER_ENTITY) or None,
+        pv_yield_energy=options.get(CONF_PV_YIELD_ENERGY_ENTITY) or None,
+        pv_peak_power=options.get(CONF_PV_PEAK_POWER_ENTITY) or None,
+        battery_power=options.get(CONF_BATTERY_POWER_ENTITY) or None,
+        battery_charged_energy=options.get(CONF_BATTERY_CHARGED_ENERGY_ENTITY)
+        or None,
+        battery_discharged_energy=options.get(
+            CONF_BATTERY_DISCHARGED_ENERGY_ENTITY
+        )
+        or None,
+        battery_soc=options.get(CONF_BATTERY_SOC_ENTITY) or None,
+    )
 
 if TYPE_CHECKING:
     EebusConfigEntry = ConfigEntry[EebusCoordinator]
@@ -151,16 +173,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> boo
             security_mode=entry.data.get(CONF_SECURITY_MODE, SECURITY_MODE_LOOPBACK),
             tls_ca_certificate=entry.data.get(CONF_TLS_CA_CERTIFICATE),
             auth_token=entry.data.get(CONF_AUTH_TOKEN),
-            grid_power_entity=entry.options.get(CONF_GRID_POWER_ENTITY) or None,
-            grid_feed_in_energy_entity=entry.options.get(CONF_GRID_FEED_IN_ENERGY_ENTITY) or None,
-            grid_consumption_energy_entity=entry.options.get(CONF_GRID_CONSUMPTION_ENERGY_ENTITY) or None,
-            pv_power_entity=entry.options.get(CONF_PV_POWER_ENTITY) or None,
-            pv_yield_energy_entity=entry.options.get(CONF_PV_YIELD_ENERGY_ENTITY) or None,
-            pv_peak_power_entity=entry.options.get(CONF_PV_PEAK_POWER_ENTITY) or None,
-            battery_power_entity=entry.options.get(CONF_BATTERY_POWER_ENTITY) or None,
-            battery_charged_energy_entity=entry.options.get(CONF_BATTERY_CHARGED_ENERGY_ENTITY) or None,
-            battery_discharged_energy_entity=entry.options.get(CONF_BATTERY_DISCHARGED_ENERGY_ENTITY) or None,
-            battery_soc_entity=entry.options.get(CONF_BATTERY_SOC_ENTITY) or None,
+            provider_mappings=_provider_mappings(entry.options),
             runtime=runtime,
         )
         await coordinator.async_initialize()
@@ -270,16 +283,7 @@ async def _async_reload_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> N
             # transport or the per-SKI session at all.
             await registry.release(replacement)
             await coordinator.async_reconfigure_providers(
-                grid_power_entity=entry.options.get(CONF_GRID_POWER_ENTITY) or None,
-                grid_feed_in_energy_entity=entry.options.get(CONF_GRID_FEED_IN_ENERGY_ENTITY) or None,
-                grid_consumption_energy_entity=entry.options.get(CONF_GRID_CONSUMPTION_ENERGY_ENTITY) or None,
-                pv_power_entity=entry.options.get(CONF_PV_POWER_ENTITY) or None,
-                pv_yield_energy_entity=entry.options.get(CONF_PV_YIELD_ENERGY_ENTITY) or None,
-                pv_peak_power_entity=entry.options.get(CONF_PV_PEAK_POWER_ENTITY) or None,
-                battery_power_entity=entry.options.get(CONF_BATTERY_POWER_ENTITY) or None,
-                battery_charged_energy_entity=entry.options.get(CONF_BATTERY_CHARGED_ENERGY_ENTITY) or None,
-                battery_discharged_energy_entity=entry.options.get(CONF_BATTERY_DISCHARGED_ENERGY_ENTITY) or None,
-                battery_soc_entity=entry.options.get(CONF_BATTERY_SOC_ENTITY) or None,
+                _provider_mappings(entry.options)
             )
             return
 
@@ -302,16 +306,7 @@ async def _async_reload_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> N
                 security_mode=entry.data.get(CONF_SECURITY_MODE, SECURITY_MODE_LOOPBACK),
                 tls_ca_certificate=entry.data.get(CONF_TLS_CA_CERTIFICATE),
                 auth_token=entry.data.get(CONF_AUTH_TOKEN),
-                grid_power_entity=entry.options.get(CONF_GRID_POWER_ENTITY) or None,
-                grid_feed_in_energy_entity=entry.options.get(CONF_GRID_FEED_IN_ENERGY_ENTITY) or None,
-                grid_consumption_energy_entity=entry.options.get(CONF_GRID_CONSUMPTION_ENERGY_ENTITY) or None,
-                pv_power_entity=entry.options.get(CONF_PV_POWER_ENTITY) or None,
-                pv_yield_energy_entity=entry.options.get(CONF_PV_YIELD_ENERGY_ENTITY) or None,
-                pv_peak_power_entity=entry.options.get(CONF_PV_PEAK_POWER_ENTITY) or None,
-                battery_power_entity=entry.options.get(CONF_BATTERY_POWER_ENTITY) or None,
-                battery_charged_energy_entity=entry.options.get(CONF_BATTERY_CHARGED_ENERGY_ENTITY) or None,
-                battery_discharged_energy_entity=entry.options.get(CONF_BATTERY_DISCHARGED_ENERGY_ENTITY) or None,
-                battery_soc_entity=entry.options.get(CONF_BATTERY_SOC_ENTITY) or None,
+                provider_mappings=_provider_mappings(entry.options),
             )
         finally:
             # Reconfiguration may be cancelled on either side of its commit point.

@@ -10,7 +10,11 @@ from grpc.aio import AioRpcError, Metadata
 
 from custom_components.eebus import providers as providers_module
 from custom_components.eebus import proto_stubs
-from custom_components.eebus.providers import ProviderManager, _ProviderPusher
+from custom_components.eebus.providers import (
+    ProviderManager,
+    ProviderMappings,
+    _ProviderPusher,
+)
 
 
 def _fake_hass():
@@ -58,7 +62,9 @@ async def test_provider_pusher_coalesces_burst_and_publishes_latest(monkeypatch)
             if len(published) >= 2:
                 drained.set()
 
-    pusher = _ProviderPusher(_fake_hass(), "test", "test-ski", ("sensor.provider",), _push)
+    pusher = _ProviderPusher(
+        _fake_hass(), "test", "test-ski", ("sensor.provider",), _push, _push
+    )
     pusher.start()
     await asyncio.wait_for(first_started.wait(), timeout=1)
 
@@ -93,7 +99,9 @@ async def test_provider_pusher_stop_cancels_in_flight_push(monkeypatch):
         push_started.set()
         await never_release.wait()
 
-    pusher = _ProviderPusher(_fake_hass(), "test", "test-ski", ("sensor.provider",), _push)
+    pusher = _ProviderPusher(
+        _fake_hass(), "test", "test-ski", ("sensor.provider",), _push, _push
+    )
     pusher.start()
     await asyncio.wait_for(push_started.wait(), timeout=1)
     pusher.signal()
@@ -124,19 +132,19 @@ async def test_provider_push_failure_warning_is_rate_limited(monkeypatch, caplog
             if outcome is not None:
                 raise outcome
 
-    manager = ProviderManager(_fake_hass(), "test-ski", AsyncMock(return_value=object()))
-    monkeypatch.setattr(
-        proto_stubs,
-        "test_provider_stub",
-        lambda _channel: _FakeStub(),
-        raising=False,
+    manager = ProviderManager(
+        _fake_hass(), "test-ski", AsyncMock(return_value=object()), ProviderMappings()
     )
+    stub = _FakeStub()
+
+    async def publish(_channel):
+        await stub.Publish(object())
     caplog.set_level(logging.DEBUG, logger=providers_module.__name__)
 
     for _ in range(3):
-        await manager._async_publish_provider("test", "test_provider_stub", "Publish", object())
-    await manager._async_publish_provider("test", "test_provider_stub", "Publish", object())
-    await manager._async_publish_provider("test", "test_provider_stub", "Publish", object())
+        await manager._async_publish_provider("test", publish)
+    await manager._async_publish_provider("test", publish)
+    await manager._async_publish_provider("test", publish)
 
     failure_records = [
         record for record in caplog.records if record.getMessage().startswith("Failed to push test data")
@@ -187,9 +195,11 @@ async def test_provider_manager_stop_invalidates_enabled_providers(monkeypatch):
         _fake_hass(),
         "test-ski",
         AsyncMock(return_value=object()),
-        grid_power_entity="sensor.grid_power",
-        pv_power_entity="sensor.pv_power",
-        battery_power_entity="sensor.battery_power",
+        ProviderMappings(
+            grid_power="sensor.grid_power",
+            pv_power="sensor.pv_power",
+            battery_power="sensor.battery_power",
+        ),
         supports_feature=lambda feature: feature
         == proto_stubs.FeatureId.FEATURE_PROVIDER_SAMPLE_INVALIDATION,
     )
@@ -227,7 +237,7 @@ async def test_provider_manager_skips_invalidations_for_old_bridge(monkeypatch):
         _fake_hass(),
         "test-ski",
         AsyncMock(return_value=object()),
-        grid_power_entity="sensor.grid_power",
+        ProviderMappings(grid_power="sensor.grid_power"),
     )
 
     await manager.async_stop()

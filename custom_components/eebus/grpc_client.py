@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 import grpc
 import grpc.aio
@@ -54,6 +56,18 @@ class GrpcChannelManager:
         self._auth_token = auth_token
         self._channel: grpc.aio.Channel | None = None
         self._lock = asyncio.Lock()
+        self._generation = 0
+        self._ready_task: asyncio.Task[None] | None = None
+        self._channel_ready_hook: (
+            Callable[[grpc.aio.Channel, int], Coroutine[Any, Any, None]] | None
+        ) = None
+
+    def set_channel_ready_hook(
+        self,
+        hook: Callable[[grpc.aio.Channel, int], Coroutine[Any, Any, None]],
+    ) -> None:
+        """Run contract negotiation before exposing each new channel."""
+        self._channel_ready_hook = hook
 
     async def ensure_channel(self) -> grpc.aio.Channel:
         """Create the channel once and return it to all concurrent callers."""
@@ -66,7 +80,24 @@ class GrpcChannelManager:
                     self._tls_ca_certificate,
                     self._auth_token,
                 )
-            return self._channel
+                self._generation += 1
+                if self._channel_ready_hook is not None:
+                    self._ready_task = asyncio.create_task(
+                        self._channel_ready_hook(self._channel, self._generation)
+                    )
+            channel = self._channel
+            ready_task = self._ready_task
+        if ready_task is not None:
+            try:
+                await ready_task
+            except BaseException:
+                async with self._lock:
+                    if self._channel is channel:
+                        await channel.close(None)
+                        self._channel = None
+                        self._ready_task = None
+                raise
+        return channel
 
     async def invalidate(self) -> None:
         """Close and discard the current channel, if one exists."""
@@ -74,6 +105,7 @@ class GrpcChannelManager:
             if self._channel is not None:
                 await self._channel.close(None)
                 self._channel = None
+                self._ready_task = None
 
     async def close(self) -> None:
         """Close the current channel during integration shutdown."""

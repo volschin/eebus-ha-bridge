@@ -52,6 +52,25 @@ class FeatureId(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     FEATURE_DEVICE_SNAPSHOT: _ClassVar[FeatureId]
     FEATURE_PROVIDER_SAMPLE_INVALIDATION: _ClassVar[FeatureId]
     FEATURE_TYPED_MEASUREMENTS: _ClassVar[FeatureId]
+    FEATURE_OPERATIONAL_DIAGNOSTICS: _ClassVar[FeatureId]
+
+class DeviceReadinessState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    DEVICE_READINESS_UNKNOWN: _ClassVar[DeviceReadinessState]
+    DEVICE_READINESS_UNTRUSTED: _ClassVar[DeviceReadinessState]
+    DEVICE_READINESS_DISCONNECTED: _ClassVar[DeviceReadinessState]
+    DEVICE_READINESS_GRACE_PERIOD: _ClassVar[DeviceReadinessState]
+    DEVICE_READINESS_RECOVERING: _ClassVar[DeviceReadinessState]
+    DEVICE_READINESS_READY: _ClassVar[DeviceReadinessState]
+    DEVICE_READINESS_EXHAUSTED: _ClassVar[DeviceReadinessState]
+
+class ProviderSampleState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    PROVIDER_SAMPLE_STATE_UNSPECIFIED: _ClassVar[ProviderSampleState]
+    PROVIDER_SAMPLE_STATE_EMPTY: _ClassVar[ProviderSampleState]
+    PROVIDER_SAMPLE_STATE_CURRENT: _ClassVar[ProviderSampleState]
+    PROVIDER_SAMPLE_STATE_EXPIRED: _ClassVar[ProviderSampleState]
+    PROVIDER_SAMPLE_STATE_CLOSED: _ClassVar[ProviderSampleState]
 
 class SnapshotValueState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -144,6 +163,19 @@ FEATURE_CONSOLIDATED_DEVICE_STREAM: FeatureId
 FEATURE_DEVICE_SNAPSHOT: FeatureId
 FEATURE_PROVIDER_SAMPLE_INVALIDATION: FeatureId
 FEATURE_TYPED_MEASUREMENTS: FeatureId
+FEATURE_OPERATIONAL_DIAGNOSTICS: FeatureId
+DEVICE_READINESS_UNKNOWN: DeviceReadinessState
+DEVICE_READINESS_UNTRUSTED: DeviceReadinessState
+DEVICE_READINESS_DISCONNECTED: DeviceReadinessState
+DEVICE_READINESS_GRACE_PERIOD: DeviceReadinessState
+DEVICE_READINESS_RECOVERING: DeviceReadinessState
+DEVICE_READINESS_READY: DeviceReadinessState
+DEVICE_READINESS_EXHAUSTED: DeviceReadinessState
+PROVIDER_SAMPLE_STATE_UNSPECIFIED: ProviderSampleState
+PROVIDER_SAMPLE_STATE_EMPTY: ProviderSampleState
+PROVIDER_SAMPLE_STATE_CURRENT: ProviderSampleState
+PROVIDER_SAMPLE_STATE_EXPIRED: ProviderSampleState
+PROVIDER_SAMPLE_STATE_CLOSED: ProviderSampleState
 SNAPSHOT_VALUE_STATE_UNKNOWN: SnapshotValueState
 SNAPSHOT_VALUE_STATE_AVAILABLE: SnapshotValueState
 SNAPSHOT_VALUE_STATE_TEMPORARILY_UNAVAILABLE: SnapshotValueState
@@ -240,12 +272,84 @@ class ServerInfo(_message.Message):
     def __init__(self, api_major: _Optional[int] = ..., api_minor: _Optional[int] = ..., bridge_build_version: _Optional[str] = ..., features: _Optional[_Iterable[_Union[FeatureId, str]]] = ..., local_ski: _Optional[str] = ...) -> None: ...
 
 class DeviceStatus(_message.Message):
-    __slots__ = ("connected", "last_transition")
+    __slots__ = ("connected", "last_transition", "readiness", "recovery")
     CONNECTED_FIELD_NUMBER: _ClassVar[int]
     LAST_TRANSITION_FIELD_NUMBER: _ClassVar[int]
+    READINESS_FIELD_NUMBER: _ClassVar[int]
+    RECOVERY_FIELD_NUMBER: _ClassVar[int]
     connected: bool
     last_transition: _timestamp_pb2.Timestamp
-    def __init__(self, connected: bool = ..., last_transition: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+    readiness: DeviceReadinessState
+    recovery: RecoveryDiagnostics
+    def __init__(self, connected: bool = ..., last_transition: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., readiness: _Optional[_Union[DeviceReadinessState, str]] = ..., recovery: _Optional[_Union[RecoveryDiagnostics, _Mapping]] = ...) -> None: ...
+
+class RecoveryDiagnostics(_message.Message):
+    __slots__ = ("state", "attempts", "first_stale_at", "last_attempt_at", "next_attempt_at", "last_transition_at")
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    ATTEMPTS_FIELD_NUMBER: _ClassVar[int]
+    FIRST_STALE_AT_FIELD_NUMBER: _ClassVar[int]
+    LAST_ATTEMPT_AT_FIELD_NUMBER: _ClassVar[int]
+    NEXT_ATTEMPT_AT_FIELD_NUMBER: _ClassVar[int]
+    LAST_TRANSITION_AT_FIELD_NUMBER: _ClassVar[int]
+    state: DeviceReadinessState
+    attempts: int
+    first_stale_at: _timestamp_pb2.Timestamp
+    last_attempt_at: _timestamp_pb2.Timestamp
+    next_attempt_at: _timestamp_pb2.Timestamp
+    last_transition_at: _timestamp_pb2.Timestamp
+    def __init__(self, state: _Optional[_Union[DeviceReadinessState, str]] = ..., attempts: _Optional[int] = ..., first_stale_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., last_attempt_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., next_attempt_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., last_transition_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+
+class EventTransportDiagnostics(_message.Message):
+    __slots__ = ("revision", "dropped_events", "resync_count", "unresolved_events")
+    REVISION_FIELD_NUMBER: _ClassVar[int]
+    DROPPED_EVENTS_FIELD_NUMBER: _ClassVar[int]
+    RESYNC_COUNT_FIELD_NUMBER: _ClassVar[int]
+    UNRESOLVED_EVENTS_FIELD_NUMBER: _ClassVar[int]
+    revision: int
+    dropped_events: int
+    resync_count: int
+    unresolved_events: int
+    def __init__(self, revision: _Optional[int] = ..., dropped_events: _Optional[int] = ..., resync_count: _Optional[int] = ..., unresolved_events: _Optional[int] = ...) -> None: ...
+
+class SnapshotReadDiagnostics(_message.Message):
+    __slots__ = ("duration_milliseconds", "last_success")
+    DURATION_MILLISECONDS_FIELD_NUMBER: _ClassVar[int]
+    LAST_SUCCESS_FIELD_NUMBER: _ClassVar[int]
+    duration_milliseconds: int
+    last_success: _timestamp_pb2.Timestamp
+    def __init__(self, duration_milliseconds: _Optional[int] = ..., last_success: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+
+class ProviderSampleDiagnostics(_message.Message):
+    __slots__ = ("provider", "state", "observed_at", "valid_until")
+    PROVIDER_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    OBSERVED_AT_FIELD_NUMBER: _ClassVar[int]
+    VALID_UNTIL_FIELD_NUMBER: _ClassVar[int]
+    provider: str
+    state: ProviderSampleState
+    observed_at: _timestamp_pb2.Timestamp
+    valid_until: _timestamp_pb2.Timestamp
+    def __init__(self, provider: _Optional[str] = ..., state: _Optional[_Union[ProviderSampleState, str]] = ..., observed_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., valid_until: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+
+class DeviceOperationalDiagnostics(_message.Message):
+    __slots__ = ("redacted_ski", "readiness", "recovery", "events", "monitoring_last_success_age_seconds", "snapshot_reads", "providers", "features")
+    REDACTED_SKI_FIELD_NUMBER: _ClassVar[int]
+    READINESS_FIELD_NUMBER: _ClassVar[int]
+    RECOVERY_FIELD_NUMBER: _ClassVar[int]
+    EVENTS_FIELD_NUMBER: _ClassVar[int]
+    MONITORING_LAST_SUCCESS_AGE_SECONDS_FIELD_NUMBER: _ClassVar[int]
+    SNAPSHOT_READS_FIELD_NUMBER: _ClassVar[int]
+    PROVIDERS_FIELD_NUMBER: _ClassVar[int]
+    FEATURES_FIELD_NUMBER: _ClassVar[int]
+    redacted_ski: str
+    readiness: DeviceReadinessState
+    recovery: RecoveryDiagnostics
+    events: EventTransportDiagnostics
+    monitoring_last_success_age_seconds: int
+    snapshot_reads: SnapshotReadDiagnostics
+    providers: _containers.RepeatedCompositeFieldContainer[ProviderSampleDiagnostics]
+    features: _containers.RepeatedScalarFieldContainer[FeatureId]
+    def __init__(self, redacted_ski: _Optional[str] = ..., readiness: _Optional[_Union[DeviceReadinessState, str]] = ..., recovery: _Optional[_Union[RecoveryDiagnostics, _Mapping]] = ..., events: _Optional[_Union[EventTransportDiagnostics, _Mapping]] = ..., monitoring_last_success_age_seconds: _Optional[int] = ..., snapshot_reads: _Optional[_Union[SnapshotReadDiagnostics, _Mapping]] = ..., providers: _Optional[_Iterable[_Union[ProviderSampleDiagnostics, _Mapping]]] = ..., features: _Optional[_Iterable[_Union[FeatureId, str]]] = ...) -> None: ...
 
 class DiscoveredDevice(_message.Message):
     __slots__ = ("ski", "brand", "model", "serial", "device_type", "host")

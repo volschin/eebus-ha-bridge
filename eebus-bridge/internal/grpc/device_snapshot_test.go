@@ -190,6 +190,7 @@ func TestInitialSnapshotBuffersConcurrentEvent(t *testing.T) {
 	service := snapshotService(bus, registry, payloads)
 	server := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterDeviceServiceServer(server.GRPCServer(), service)
+	server.SetHealthy(true)
 	go server.Start()
 	t.Cleanup(server.Stop)
 	readyContext, readyCancel := context.WithTimeout(context.Background(), time.Second)

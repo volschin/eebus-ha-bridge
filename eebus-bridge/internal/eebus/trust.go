@@ -27,6 +27,9 @@ func (c *TrustController) RegisterSKI(ski string) error {
 		return errors.New("bridge service is required")
 	}
 	c.bridge.RegisterRemoteSKI(ski)
+	if c.registry != nil {
+		c.registry.MarkTrusted(ski)
+	}
 	return nil
 }
 
@@ -48,6 +51,7 @@ func (c *TrustController) UnregisterSKI(ski string) error {
 	// ServiceAutoTrustRemoved in callbacks.go, which handles remote-initiated
 	// revocation).
 	c.registry.RemoveDevice(ski)
+	c.registry.MarkUntrusted(ski)
 	c.bus.Publish(Event{SKI: ski, Type: EventTypeDeviceTrustRemoved})
 	return nil
 }

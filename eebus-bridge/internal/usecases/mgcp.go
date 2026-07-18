@@ -57,10 +57,8 @@ type MGCPProvider struct {
 	consumedID *model.MeasurementIdType // scenario 4: total grid consumed energy (Wh)
 	debug      bool
 
-	snapshotMu      sync.Mutex
-	snapshot        *GridSnapshot
-	snapshotVersion uint64
-	expiryTimer     *time.Timer
+	publishMu sync.Mutex
+	snapshots providerSnapshotStore[GridSnapshot]
 }
 
 // NewMGCPProvider builds the provider on the given local grid-connection-point
@@ -209,61 +207,78 @@ func (p *MGCPProvider) invalidateGridMeasurements() error {
 }
 
 func (p *MGCPProvider) PublishGridSnapshot(snapshot GridSnapshot) error {
-	p.snapshotMu.Lock()
-	defer p.snapshotMu.Unlock()
+	p.publishMu.Lock()
+	defer p.publishMu.Unlock()
+	if p.snapshots.closedState() {
+		return ErrProviderClosed
+	}
 
 	if snapshot.Validity.Invalid {
 		if err := p.invalidateGridMeasurements(); err != nil {
 			return err
 		}
-		p.snapshotVersion++
-		stopProviderExpiryTimer(&p.expiryTimer)
-		p.snapshot = nil
-		return nil
+		return p.snapshots.invalidate()
 	}
 	if err := p.publishGridMeasurements(snapshot); err != nil {
 		return err
 	}
 	next := snapshot.clone()
-	p.snapshotVersion++
-	p.snapshot = &next
-	version := p.snapshotVersion
-	scheduleProviderExpiryTimer(&p.expiryTimer, snapshot.Validity.ValidUntil, func() {
+	return p.snapshots.commit(next, snapshot.Validity.ValidUntil, func(version uint64) {
 		p.expireGridSnapshot(version, time.Now())
 	})
-	return nil
 }
 
 func (p *MGCPProvider) CurrentGridSnapshot(now time.Time) (GridSnapshot, bool) {
-	p.snapshotMu.Lock()
-	defer p.snapshotMu.Unlock()
-
-	if p.snapshot == nil || !p.snapshot.Validity.Current(now) {
-		return GridSnapshot{}, false
-	}
-	return p.snapshot.clone(), true
+	return p.snapshots.current(
+		now,
+		func(snapshot GridSnapshot) GridSnapshot { return snapshot.clone() },
+		func(snapshot GridSnapshot, at time.Time) bool { return snapshot.Validity.Current(at) },
+	)
 }
 
 func (p *MGCPProvider) expireGridSnapshot(version uint64, now time.Time) {
-	p.snapshotMu.Lock()
-	defer p.snapshotMu.Unlock()
-
-	if p.snapshotVersion != version || p.snapshot == nil || p.snapshot.Validity.Current(now) {
+	p.publishMu.Lock()
+	defer p.publishMu.Unlock()
+	if !p.snapshots.shouldExpire(
+		version,
+		now,
+		func(snapshot GridSnapshot, at time.Time) bool { return snapshot.Validity.Current(at) },
+	) {
 		return
 	}
 	if err := p.invalidateGridMeasurements(); err != nil {
 		log.Printf("[MGCP] expiring grid sample failed: %v", err)
 		return
 	}
-	p.snapshotVersion++
-	p.snapshot = nil
-	stopProviderExpiryTimer(&p.expiryTimer)
+	p.snapshots.clearExpired(version)
+}
+
+// Close stops sample expiry and prevents every later EEBUS write. It is safe
+// to call repeatedly and concurrently with publish or expiry.
+func (p *MGCPProvider) Close() error {
+	p.publishMu.Lock()
+	defer p.publishMu.Unlock()
+	p.snapshots.close()
+	return nil
+}
+
+func (p *MGCPProvider) Diagnostics(now time.Time) ProviderSnapshotDiagnostics {
+	return p.snapshots.diagnostics(now, func(snapshot GridSnapshot) ProviderValidity { return snapshot.Validity })
+}
+
+func (p *MGCPProvider) publishIfOpen(write func() error) error {
+	p.publishMu.Lock()
+	defer p.publishMu.Unlock()
+	if p.snapshots.closedState() {
+		return ErrProviderClosed
+	}
+	return write()
 }
 
 // PublishPower pushes the momentary total grid power (W; negative = export/surplus,
 // scenario 2). Returns an error if the provider was not set up.
 func (p *MGCPProvider) PublishPower(watts float64) error {
-	if err := p.publishMeasurement(p.powerID, watts); err != nil {
+	if err := p.publishIfOpen(func() error { return p.publishMeasurement(p.powerID, watts) }); err != nil {
 		return err
 	}
 	if p.debug {
@@ -275,7 +290,7 @@ func (p *MGCPProvider) PublishPower(watts float64) error {
 // PublishEnergyFeedIn pushes the cumulative grid feed-in (export) energy in Wh
 // (scenario 3).
 func (p *MGCPProvider) PublishEnergyFeedIn(wh float64) error {
-	if err := p.publishMeasurement(p.feedInID, wh); err != nil {
+	if err := p.publishIfOpen(func() error { return p.publishMeasurement(p.feedInID, wh) }); err != nil {
 		return err
 	}
 	if p.debug {
@@ -287,7 +302,7 @@ func (p *MGCPProvider) PublishEnergyFeedIn(wh float64) error {
 // PublishEnergyConsumed pushes the cumulative grid consumed (import) energy in Wh
 // (scenario 4).
 func (p *MGCPProvider) PublishEnergyConsumed(wh float64) error {
-	if err := p.publishMeasurement(p.consumedID, wh); err != nil {
+	if err := p.publishIfOpen(func() error { return p.publishMeasurement(p.consumedID, wh) }); err != nil {
 		return err
 	}
 	if p.debug {

@@ -24,6 +24,7 @@ const (
 	DeviceService_GetDeviceStatus_FullMethodName       = "/eebus.v1.DeviceService/GetDeviceStatus"
 	DeviceService_GetDeviceCapabilities_FullMethodName = "/eebus.v1.DeviceService/GetDeviceCapabilities"
 	DeviceService_GetDeviceSnapshot_FullMethodName     = "/eebus.v1.DeviceService/GetDeviceSnapshot"
+	DeviceService_GetDeviceDiagnostics_FullMethodName  = "/eebus.v1.DeviceService/GetDeviceDiagnostics"
 	DeviceService_ListDiscoveredDevices_FullMethodName = "/eebus.v1.DeviceService/ListDiscoveredDevices"
 	DeviceService_RegisterRemoteSKI_FullMethodName     = "/eebus.v1.DeviceService/RegisterRemoteSKI"
 	DeviceService_UnregisterRemoteSKI_FullMethodName   = "/eebus.v1.DeviceService/UnregisterRemoteSKI"
@@ -41,6 +42,7 @@ type DeviceServiceClient interface {
 	GetDeviceStatus(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*DeviceStatus, error)
 	GetDeviceCapabilities(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*DeviceCapabilities, error)
 	GetDeviceSnapshot(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*DeviceSnapshot, error)
+	GetDeviceDiagnostics(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*DeviceOperationalDiagnostics, error)
 	ListDiscoveredDevices(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ListDevicesResponse, error)
 	RegisterRemoteSKI(ctx context.Context, in *RegisterSKIRequest, opts ...grpc.CallOption) (*Empty, error)
 	UnregisterRemoteSKI(ctx context.Context, in *RegisterSKIRequest, opts ...grpc.CallOption) (*Empty, error)
@@ -101,6 +103,16 @@ func (c *deviceServiceClient) GetDeviceSnapshot(ctx context.Context, in *DeviceR
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeviceSnapshot)
 	err := c.cc.Invoke(ctx, DeviceService_GetDeviceSnapshot_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deviceServiceClient) GetDeviceDiagnostics(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*DeviceOperationalDiagnostics, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeviceOperationalDiagnostics)
+	err := c.cc.Invoke(ctx, DeviceService_GetDeviceDiagnostics_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -194,6 +206,7 @@ type DeviceServiceServer interface {
 	GetDeviceStatus(context.Context, *DeviceRequest) (*DeviceStatus, error)
 	GetDeviceCapabilities(context.Context, *DeviceRequest) (*DeviceCapabilities, error)
 	GetDeviceSnapshot(context.Context, *DeviceRequest) (*DeviceSnapshot, error)
+	GetDeviceDiagnostics(context.Context, *DeviceRequest) (*DeviceOperationalDiagnostics, error)
 	ListDiscoveredDevices(context.Context, *Empty) (*ListDevicesResponse, error)
 	RegisterRemoteSKI(context.Context, *RegisterSKIRequest) (*Empty, error)
 	UnregisterRemoteSKI(context.Context, *RegisterSKIRequest) (*Empty, error)
@@ -224,6 +237,9 @@ func (UnimplementedDeviceServiceServer) GetDeviceCapabilities(context.Context, *
 }
 func (UnimplementedDeviceServiceServer) GetDeviceSnapshot(context.Context, *DeviceRequest) (*DeviceSnapshot, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetDeviceSnapshot not implemented")
+}
+func (UnimplementedDeviceServiceServer) GetDeviceDiagnostics(context.Context, *DeviceRequest) (*DeviceOperationalDiagnostics, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDeviceDiagnostics not implemented")
 }
 func (UnimplementedDeviceServiceServer) ListDiscoveredDevices(context.Context, *Empty) (*ListDevicesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListDiscoveredDevices not implemented")
@@ -354,6 +370,24 @@ func _DeviceService_GetDeviceSnapshot_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DeviceService_GetDeviceDiagnostics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeviceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeviceServiceServer).GetDeviceDiagnostics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DeviceService_GetDeviceDiagnostics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeviceServiceServer).GetDeviceDiagnostics(ctx, req.(*DeviceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DeviceService_ListDiscoveredDevices_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(Empty)
 	if err := dec(in); err != nil {
@@ -474,6 +508,10 @@ var DeviceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetDeviceSnapshot",
 			Handler:    _DeviceService_GetDeviceSnapshot_Handler,
+		},
+		{
+			MethodName: "GetDeviceDiagnostics",
+			Handler:    _DeviceService_GetDeviceDiagnostics_Handler,
 		},
 		{
 			MethodName: "ListDiscoveredDevices",

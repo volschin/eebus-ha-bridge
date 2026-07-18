@@ -140,6 +140,7 @@ func main() {
 				pb.FeatureId_FEATURE_PROVIDER_SAMPLE_INVALIDATION,
 				pb.FeatureId_FEATURE_DEVICE_SNAPSHOT,
 				pb.FeatureId_FEATURE_TYPED_MEASUREMENTS,
+				pb.FeatureId_FEATURE_OPERATIONAL_DIAGNOSTICS,
 			},
 		}),
 		bridgegrpc.WithDeviceStatePayloads(bridgegrpc.DeviceStatePayloadSources{

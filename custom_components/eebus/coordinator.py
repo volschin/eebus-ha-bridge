@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import grpc.aio
@@ -17,8 +17,9 @@ from .const import SECURITY_MODE_LOOPBACK
 from .device_session import WriteOutcome
 from . import proto_stubs
 from .grpc_client import RPC_TIMEOUT
-from .providers import ProviderManager
+from .providers import ProviderManager, ProviderMappings
 from .runtime import BridgeRuntime, BridgeRuntimeKey
+from .session_diagnostics import SessionDiagnostics
 from .state import (
     CapabilityKey,
     CapabilityResult,
@@ -44,16 +45,7 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
         security_mode: str = SECURITY_MODE_LOOPBACK,
         tls_ca_certificate: str | None = None,
         auth_token: str | None = None,
-        grid_power_entity: str | None = None,
-        grid_feed_in_energy_entity: str | None = None,
-        grid_consumption_energy_entity: str | None = None,
-        pv_power_entity: str | None = None,
-        pv_yield_energy_entity: str | None = None,
-        pv_peak_power_entity: str | None = None,
-        battery_power_entity: str | None = None,
-        battery_charged_energy_entity: str | None = None,
-        battery_discharged_energy_entity: str | None = None,
-        battery_soc_entity: str | None = None,
+        provider_mappings: ProviderMappings | None = None,
         runtime: BridgeRuntime | None = None,
     ) -> None:
         super().__init__(hass, _LOGGER, name="EEBUS", update_interval=POLL_INTERVAL)
@@ -66,6 +58,7 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
         self._hass_instance = hass
         self._reconfigure_lock = asyncio.Lock()
         self._entry_unloaded = False
+        self._last_successful_read_at: datetime | None = None
         self._runtime_generation: object = object()
         self._owns_runtime = runtime is None
         self._runtime = runtime or BridgeRuntime(
@@ -94,31 +87,13 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
         self._device_streams = self._runtime_session.streams
         self._provider_manager = self._new_provider_manager(
             hass,
-            grid_power_entity,
-            grid_feed_in_energy_entity,
-            grid_consumption_energy_entity,
-            pv_power_entity,
-            pv_yield_energy_entity,
-            pv_peak_power_entity,
-            battery_power_entity,
-            battery_charged_energy_entity,
-            battery_discharged_energy_entity,
-            battery_soc_entity,
+            provider_mappings or ProviderMappings(),
         )
 
     def _new_provider_manager(
         self,
         hass: HomeAssistant,
-        grid_power_entity: str | None,
-        grid_feed_in_energy_entity: str | None,
-        grid_consumption_energy_entity: str | None,
-        pv_power_entity: str | None,
-        pv_yield_energy_entity: str | None,
-        pv_peak_power_entity: str | None,
-        battery_power_entity: str | None,
-        battery_charged_energy_entity: str | None,
-        battery_discharged_energy_entity: str | None,
-        battery_soc_entity: str | None,
+        mappings: ProviderMappings,
         ensure_channel: Callable[[], Awaitable[grpc.aio.Channel]] | None = None,
         supports_feature: Callable[[int], bool] | None = None,
     ) -> ProviderManager:
@@ -126,46 +101,18 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
             hass,
             self.ski,
             ensure_channel or self._ensure_channel,
-            grid_power_entity=grid_power_entity,
-            grid_feed_in_energy_entity=grid_feed_in_energy_entity,
-            grid_consumption_energy_entity=grid_consumption_energy_entity,
-            pv_power_entity=pv_power_entity,
-            pv_yield_energy_entity=pv_yield_energy_entity,
-            pv_peak_power_entity=pv_peak_power_entity,
-            battery_power_entity=battery_power_entity,
-            battery_charged_energy_entity=battery_charged_energy_entity,
-            battery_discharged_energy_entity=battery_discharged_energy_entity,
-            battery_soc_entity=battery_soc_entity,
+            mappings,
             supports_feature=supports_feature or self._runtime.supports,
         )
 
     async def async_reconfigure_providers(
         self,
-        *,
-        grid_power_entity: str | None = None,
-        grid_feed_in_energy_entity: str | None = None,
-        grid_consumption_energy_entity: str | None = None,
-        pv_power_entity: str | None = None,
-        pv_yield_energy_entity: str | None = None,
-        pv_peak_power_entity: str | None = None,
-        battery_power_entity: str | None = None,
-        battery_charged_energy_entity: str | None = None,
-        battery_discharged_energy_entity: str | None = None,
-        battery_soc_entity: str | None = None,
+        mappings: ProviderMappings,
     ) -> None:
         """Atomically replace entry-scoped provider mappings in-place."""
         replacement = self._new_provider_manager(
             self._hass_instance,
-            grid_power_entity,
-            grid_feed_in_energy_entity,
-            grid_consumption_energy_entity,
-            pv_power_entity,
-            pv_yield_energy_entity,
-            pv_peak_power_entity,
-            battery_power_entity,
-            battery_charged_energy_entity,
-            battery_discharged_energy_entity,
-            battery_soc_entity,
+            mappings,
         )
         try:
             replacement.async_start_grid_push()
@@ -190,16 +137,7 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
         security_mode: str,
         tls_ca_certificate: str | None,
         auth_token: str | None,
-        grid_power_entity: str | None = None,
-        grid_feed_in_energy_entity: str | None = None,
-        grid_consumption_energy_entity: str | None = None,
-        pv_power_entity: str | None = None,
-        pv_yield_energy_entity: str | None = None,
-        pv_peak_power_entity: str | None = None,
-        battery_power_entity: str | None = None,
-        battery_charged_energy_entity: str | None = None,
-        battery_discharged_energy_entity: str | None = None,
-        battery_soc_entity: str | None = None,
+        provider_mappings: ProviderMappings,
     ) -> None:
         """Stage and atomically adopt a fully operational replacement runtime."""
         replacement_generation = object()
@@ -213,16 +151,7 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
         try:
             replacement_provider = self._new_provider_manager(
                 self._hass_instance,
-                grid_power_entity,
-                grid_feed_in_energy_entity,
-                grid_consumption_energy_entity,
-                pv_power_entity,
-                pv_yield_energy_entity,
-                pv_peak_power_entity,
-                battery_power_entity,
-                battery_charged_energy_entity,
-                battery_discharged_energy_entity,
-                battery_soc_entity,
+                provider_mappings,
                 runtime.channel_manager.ensure_channel,
                 runtime.supports,
             )
@@ -303,10 +232,30 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
     async def _ensure_channel(self) -> grpc.aio.Channel:
         return await self._channel_manager.ensure_channel()
 
+    async def async_session_diagnostics(self) -> SessionDiagnostics:
+        """Return the public immutable diagnostics projection."""
+        timestamp = self._last_successful_read_at
+        age: float | None = None
+        if isinstance(timestamp, datetime):
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=UTC)
+            age = max(
+                0.0,
+                (datetime.now(UTC) - timestamp.astimezone(UTC)).total_seconds(),
+            )
+        return SessionDiagnostics(
+            bridge_unavailable=self._runtime.status.unavailable,
+            last_successful_read_age_seconds=age,
+            last_update_success=self.last_update_success,
+            streams=self._runtime_session.stream_diagnostics,
+            operational=await self._runtime_session.async_operational_diagnostics(),
+        )
+
     async def _async_update_data(self) -> DeviceState:
         """Ask the poller to reconcile state without overwriting newer events."""
         try:
             state = await self._poller.poll()
+            self._last_successful_read_at = datetime.now(UTC)
             if self._runtime.mark_available():
                 _LOGGER.info("EEBUS bridge connection restored at %s:%s", self.host, self.port)
             return state
@@ -340,6 +289,7 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
             except TimeoutError as err:
                 raise ConfigEntryNotReady("Timed out waiting for the EEBUS initial snapshot") from err
             self._runtime.mark_available()
+            self._last_successful_read_at = datetime.now(UTC)
             return
         await self.async_config_entry_first_refresh()
         self._device_streams.start()

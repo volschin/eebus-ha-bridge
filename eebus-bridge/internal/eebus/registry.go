@@ -43,21 +43,54 @@ func (r EntityResolution) Ambiguous() bool {
 }
 
 type DeviceRegistry struct {
+	catalog      deviceCatalogStore
+	health       deviceHealthStore
+	capabilities deviceCapabilityStore
+	clock        Clock
+}
+
+// The registry facade deliberately owns three independently locked
+// projections. Catalog/entity resolution, connection health and capability
+// state can therefore be read and tested without one process-wide registry
+// mutex or locks spanning calls into other components.
+type deviceCatalogStore struct {
+	mu      sync.RWMutex
+	devices map[string]DeviceInfo
+}
+
+type deviceHealthStore struct {
+	mu         sync.RWMutex
+	monitoring map[string]deviceMonitoringState
+}
+
+type deviceCapabilityStore struct {
 	mu                sync.RWMutex
-	devices           map[string]DeviceInfo
-	monitoring        map[string]deviceMonitoringState
-	capabilities      map[string]map[Capability]DeviceCapability
-	capabilitySupport map[string]map[Capability]map[string]bool
+	entries           map[string]map[Capability]DeviceCapability
+	support           map[string]map[Capability]map[string]bool
 	localCapabilities map[Capability]bool
-	clock             Clock
 }
 
 type deviceMonitoringState struct {
 	connected                  bool
+	trusted                    bool
+	trustKnown                 bool
 	connectedAt                time.Time
 	lastTransitionAt           time.Time
 	lastMonitoringSuccess      time.Time
 	monitoringSuccessOnConnect bool
+}
+
+// DeviceHealthSnapshot is an immutable device-scoped projection used by
+// recovery and diagnostics. It intentionally contains no raw SPINE handles.
+type DeviceHealthSnapshot struct {
+	SKI                        string
+	Connected                  bool
+	Trusted                    bool
+	TrustKnown                 bool
+	ConnectedAt                time.Time
+	LastTransitionAt           time.Time
+	LastMonitoringSuccess      time.Time
+	MonitoringSuccessOnConnect bool
 }
 
 // Clock provides the current time for monitoring-health tracking. Tests can
@@ -81,12 +114,14 @@ func NewDeviceRegistryWithClock(clock Clock) *DeviceRegistry {
 		clock = realClock{}
 	}
 	return &DeviceRegistry{
-		devices:           make(map[string]DeviceInfo),
-		monitoring:        make(map[string]deviceMonitoringState),
-		capabilities:      make(map[string]map[Capability]DeviceCapability),
-		capabilitySupport: make(map[string]map[Capability]map[string]bool),
-		localCapabilities: make(map[Capability]bool),
-		clock:             clock,
+		catalog: deviceCatalogStore{devices: make(map[string]DeviceInfo)},
+		health:  deviceHealthStore{monitoring: make(map[string]deviceMonitoringState)},
+		capabilities: deviceCapabilityStore{
+			entries:           make(map[string]map[Capability]DeviceCapability),
+			support:           make(map[string]map[Capability]map[string]bool),
+			localCapabilities: make(map[Capability]bool),
+		},
+		clock: clock,
 	}
 }
 
@@ -94,57 +129,74 @@ func NewDeviceRegistryWithClock(clock Clock) *DeviceRegistry {
 // success timestamp is retained for diagnostics, but cannot satisfy the new
 // connection until RecordMonitoringSuccess is called again.
 func (r *DeviceRegistry) MarkConnected(ski string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	ski = NormalizeSKI(ski)
-	state := r.monitoring[ski]
+	r.health.mu.Lock()
+	state := r.health.monitoring[ski]
 	if state.connected {
+		r.health.mu.Unlock()
 		return
 	}
 	now := r.clock.Now()
 	state.connected = true
+	state.trusted = true
+	state.trustKnown = true
 	state.connectedAt = now
 	state.lastTransitionAt = now
 	state.monitoringSuccessOnConnect = false
-	r.monitoring[ski] = state
-	entries := r.ensureCapabilitiesLocked(ski)
-	for capability, entry := range entries {
-		if entry.Reason == CapabilityReasonDeviceDisconnected {
-			r.setCapabilityLocked(ski, capability, CapabilityStateUnknown, CapabilityReasonEntityNotBound)
-		}
-	}
+	r.health.monitoring[ski] = state
+	r.health.mu.Unlock()
+	r.markCapabilitiesConnected(ski)
+}
+
+func (r *DeviceRegistry) MarkTrusted(ski string) {
+	ski = NormalizeSKI(ski)
+	r.health.mu.Lock()
+	state := r.health.monitoring[ski]
+	state.trusted = true
+	state.trustKnown = true
+	state.lastTransitionAt = r.clock.Now()
+	r.health.monitoring[ski] = state
+	r.health.mu.Unlock()
+}
+
+func (r *DeviceRegistry) MarkUntrusted(ski string) {
+	ski = NormalizeSKI(ski)
+	r.health.mu.Lock()
+	state := r.health.monitoring[ski]
+	state.connected = false
+	state.trusted = false
+	state.trustKnown = true
+	state.lastTransitionAt = r.clock.Now()
+	r.health.monitoring[ski] = state
+	r.health.mu.Unlock()
+	r.markCapabilitiesDisconnected(ski)
 }
 
 // MarkDisconnected excludes a device from monitoring-health checks. Unknown
 // devices are ignored so a stray disconnect callback does not create state.
 func (r *DeviceRegistry) MarkDisconnected(ski string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	ski = NormalizeSKI(ski)
-	state, ok := r.monitoring[ski]
+	r.health.mu.Lock()
+	state, ok := r.health.monitoring[ski]
 	if !ok || !state.connected {
+		r.health.mu.Unlock()
 		return
 	}
 	state.connected = false
 	state.lastTransitionAt = r.clock.Now()
-	r.monitoring[ski] = state
-	for capability, entry := range r.ensureCapabilitiesLocked(ski) {
-		if entry.State != CapabilityStateUnsupported {
-			r.setCapabilityLocked(ski, capability, CapabilityStateTemporarilyUnavailable, CapabilityReasonDeviceDisconnected)
-		}
-	}
+	r.health.monitoring[ski] = state
+	r.health.mu.Unlock()
+	r.markCapabilitiesDisconnected(ski)
 }
 
 // DeviceConnection returns the current connection state and the time it last
 // changed. A device with no monitoring state is unknown and reads as
 // disconnected.
 func (r *DeviceRegistry) DeviceConnection(ski string) (connected bool, lastTransition time.Time, known bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.health.mu.RLock()
+	defer r.health.mu.RUnlock()
 
-	state, ok := r.monitoring[NormalizeSKI(ski)]
+	state, ok := r.health.monitoring[NormalizeSKI(ski)]
 	if !ok {
 		return false, time.Time{}, false
 	}
@@ -156,26 +208,26 @@ func (r *DeviceRegistry) DeviceConnection(ski string) (connected bool, lastTrans
 // match (not a registry cache hit), so a stuck SPINE entity binding after
 // reconnect is actually detected instead of masked by stale cached entities.
 func (r *DeviceRegistry) RecordMonitoringSuccess(ski string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.health.mu.Lock()
+	defer r.health.mu.Unlock()
 
 	ski = NormalizeSKI(ski)
-	state := r.monitoring[ski]
+	state := r.health.monitoring[ski]
 	state.lastMonitoringSuccess = r.clock.Now()
 	state.monitoringSuccessOnConnect = state.connected
-	r.monitoring[ski] = state
+	r.health.monitoring[ski] = state
 }
 
 // StaleDevices returns connected device SKIs whose grace period has elapsed
 // without a success on the current connection, or whose most recent success
 // on that connection is older than threshold.
 func (r *DeviceRegistry) StaleDevices(threshold, gracePeriod time.Duration) []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.health.mu.RLock()
+	defer r.health.mu.RUnlock()
 
 	now := r.clock.Now()
 	result := make([]string, 0)
-	for ski, state := range r.monitoring {
+	for ski, state := range r.health.monitoring {
 		if !state.connected || now.Sub(state.connectedAt) <= gracePeriod {
 			continue
 		}
@@ -190,10 +242,10 @@ func (r *DeviceRegistry) StaleDevices(threshold, gracePeriod time.Duration) []st
 // MonitoringLastSuccessAge returns the age of a device's latest monitoring
 // success, including one from a previous connection for watchdog diagnostics.
 func (r *DeviceRegistry) MonitoringLastSuccessAge(ski string) (time.Duration, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.health.mu.RLock()
+	defer r.health.mu.RUnlock()
 
-	state, ok := r.monitoring[NormalizeSKI(ski)]
+	state, ok := r.health.monitoring[NormalizeSKI(ski)]
 	if !ok || state.lastMonitoringSuccess.IsZero() {
 		return 0, false
 	}
@@ -207,14 +259,49 @@ func (r *DeviceRegistry) MonitoringLastSuccessAge(ski string) (time.Duration, bo
 // MonitoringSuccessSince reports whether a real monitoring entity resolution
 // happened after the supplied recovery attempt timestamp.
 func (r *DeviceRegistry) MonitoringSuccessSince(ski string, since time.Time) bool {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.health.mu.RLock()
+	defer r.health.mu.RUnlock()
 
-	state, ok := r.monitoring[NormalizeSKI(ski)]
+	state, ok := r.health.monitoring[NormalizeSKI(ski)]
 	if !ok || state.lastMonitoringSuccess.IsZero() {
 		return false
 	}
 	return state.lastMonitoringSuccess.After(since)
+}
+
+func (r *DeviceRegistry) DeviceHealth(ski string) (DeviceHealthSnapshot, bool) {
+	ski = NormalizeSKI(ski)
+	r.health.mu.RLock()
+	defer r.health.mu.RUnlock()
+	state, ok := r.health.monitoring[ski]
+	if !ok {
+		return DeviceHealthSnapshot{}, false
+	}
+	return deviceHealthSnapshot(ski, state), true
+}
+
+func (r *DeviceRegistry) ListDeviceHealth() []DeviceHealthSnapshot {
+	r.health.mu.RLock()
+	defer r.health.mu.RUnlock()
+	result := make([]DeviceHealthSnapshot, 0, len(r.health.monitoring))
+	for ski, state := range r.health.monitoring {
+		result = append(result, deviceHealthSnapshot(ski, state))
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].SKI < result[j].SKI })
+	return result
+}
+
+func deviceHealthSnapshot(ski string, state deviceMonitoringState) DeviceHealthSnapshot {
+	return DeviceHealthSnapshot{
+		SKI:                        ski,
+		Connected:                  state.connected,
+		Trusted:                    state.trusted,
+		TrustKnown:                 state.trustKnown,
+		ConnectedAt:                state.connectedAt,
+		LastTransitionAt:           state.lastTransitionAt,
+		LastMonitoringSuccess:      state.lastMonitoringSuccess,
+		MonitoringSuccessOnConnect: state.monitoringSuccessOnConnect,
+	}
 }
 
 // NormalizeSKI canonicalizes a SKI for use as a registry key: uppercase, with
@@ -236,12 +323,12 @@ func ShortSKI(ski string) string {
 }
 
 func (r *DeviceRegistry) AddDevice(ski string, info DeviceInfo) {
-	r.mu.Lock()
 	ski = NormalizeSKI(ski)
 	info.SKI = ski
-	r.devices[ski] = info
-	r.ensureCapabilitiesLocked(ski)
-	r.mu.Unlock()
+	r.catalog.mu.Lock()
+	r.catalog.devices[ski] = copyDeviceInfo(info)
+	r.catalog.mu.Unlock()
+	r.ensureCapabilities(ski)
 }
 
 func (r *DeviceRegistry) UpsertObservation(
@@ -250,9 +337,6 @@ func (r *DeviceRegistry) UpsertObservation(
 	remoteEntity spineapi.EntityRemoteInterface,
 	useCase string,
 ) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	// A remote (e.g. Bosch/Connect-Key) can report the entity through the
 	// use-case callback with an empty SKI. Fall back to the real remote device
 	// SKI so HA's later WriteConsumptionLimit resolves the entity instead of
@@ -261,9 +345,11 @@ func (r *DeviceRegistry) UpsertObservation(
 		ski = remoteDevice.Ski()
 	}
 	ski = NormalizeSKI(ski)
-	r.ensureCapabilitiesLocked(ski)
+	r.ensureCapabilities(ski)
 
-	info := r.devices[ski]
+	r.catalog.mu.Lock()
+	defer r.catalog.mu.Unlock()
+	info := r.catalog.devices[ski]
 	info.SKI = ski
 
 	if remoteDevice != nil {
@@ -297,18 +383,17 @@ func (r *DeviceRegistry) UpsertObservation(
 		}
 	}
 
-	r.devices[ski] = info
+	r.catalog.devices[ski] = info
 }
 
 // UpsertDeviceClassification stores manufacturer/device-type metadata reported by
 // a remote device. Empty values are ignored so later partial updates never clear
 // previously discovered fields.
 func (r *DeviceRegistry) UpsertDeviceClassification(ski, brand, deviceModel, serial, deviceType string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	ski = NormalizeSKI(ski)
-	info := r.devices[ski]
+	r.catalog.mu.Lock()
+	defer r.catalog.mu.Unlock()
+	info := r.catalog.devices[ski]
 	info.SKI = ski
 	if brand != "" {
 		info.Brand = brand
@@ -322,17 +407,21 @@ func (r *DeviceRegistry) UpsertDeviceClassification(ski, brand, deviceModel, ser
 	if deviceType != "" {
 		info.DeviceType = deviceType
 	}
-	r.devices[ski] = info
+	r.catalog.devices[ski] = info
 }
 
 func (r *DeviceRegistry) RemoveDevice(ski string) {
-	r.mu.Lock()
 	ski = NormalizeSKI(ski)
-	delete(r.devices, ski)
-	delete(r.monitoring, ski)
-	delete(r.capabilities, ski)
-	delete(r.capabilitySupport, ski)
-	r.mu.Unlock()
+	r.catalog.mu.Lock()
+	delete(r.catalog.devices, ski)
+	r.catalog.mu.Unlock()
+	r.health.mu.Lock()
+	delete(r.health.monitoring, ski)
+	r.health.mu.Unlock()
+	r.capabilities.mu.Lock()
+	delete(r.capabilities.entries, ski)
+	delete(r.capabilities.support, ski)
+	r.capabilities.mu.Unlock()
 }
 
 // ClearEntities drops the cached remote-device and remote-entity references for a
@@ -344,17 +433,17 @@ func (r *DeviceRegistry) RemoveDevice(ski string) {
 // the entities from fresh observations (cf. evcc-io/evcc#29628). No-op when the
 // SKI is unknown.
 func (r *DeviceRegistry) ClearEntities(ski string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.catalog.mu.Lock()
+	defer r.catalog.mu.Unlock()
 	ski = NormalizeSKI(ski)
-	info, ok := r.devices[ski]
+	info, ok := r.catalog.devices[ski]
 	if !ok {
 		return
 	}
 	info.RemoteDevice = nil
 	info.RemoteEntities = nil
 	info.Entities = nil
-	r.devices[ski] = info
+	r.catalog.devices[ski] = info
 }
 
 // RemoveEntityObservation drops one entity removed from an upstream use-case
@@ -363,10 +452,10 @@ func (r *DeviceRegistry) RemoveEntityObservation(ski string, removed spineapi.En
 	if removed == nil {
 		return
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.catalog.mu.Lock()
+	defer r.catalog.mu.Unlock()
 	ski = NormalizeSKI(ski)
-	info, ok := r.devices[ski]
+	info, ok := r.catalog.devices[ski]
 	if !ok {
 		return
 	}
@@ -385,32 +474,34 @@ func (r *DeviceRegistry) RemoveEntityObservation(ski string, removed spineapi.En
 		}
 	}
 	info.Entities = entities
-	r.devices[ski] = info
+	r.catalog.devices[ski] = info
 }
 
 func (r *DeviceRegistry) GetDevice(ski string) (DeviceInfo, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.catalog.mu.RLock()
+	defer r.catalog.mu.RUnlock()
 	ski = NormalizeSKI(ski)
-	info, ok := r.devices[ski]
-	return info, ok
+	info, ok := r.catalog.devices[ski]
+	return copyDeviceInfo(info), ok
 }
 
 func (r *DeviceRegistry) KnownDevice(ski string) bool {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
 	ski = NormalizeSKI(ski)
-	_, hasDevice := r.devices[ski]
-	_, hasConnection := r.monitoring[ski]
+	r.catalog.mu.RLock()
+	_, hasDevice := r.catalog.devices[ski]
+	r.catalog.mu.RUnlock()
+	r.health.mu.RLock()
+	_, hasConnection := r.health.monitoring[ski]
+	r.health.mu.RUnlock()
 	return hasDevice || hasConnection
 }
 
 func (r *DeviceRegistry) ListDevices() []DeviceInfo {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	result := make([]DeviceInfo, 0, len(r.devices))
-	for _, info := range r.devices {
-		result = append(result, info)
+	r.catalog.mu.RLock()
+	defer r.catalog.mu.RUnlock()
+	result := make([]DeviceInfo, 0, len(r.catalog.devices))
+	for _, info := range r.catalog.devices {
+		result = append(result, copyDeviceInfo(info))
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return NormalizeSKI(result[i].SKI) < NormalizeSKI(result[j].SKI)
@@ -419,10 +510,10 @@ func (r *DeviceRegistry) ListDevices() []DeviceInfo {
 }
 
 func (r *DeviceRegistry) FirstEntity(ski string) spineapi.EntityRemoteInterface {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.catalog.mu.RLock()
+	defer r.catalog.mu.RUnlock()
 	ski = NormalizeSKI(ski)
-	info, ok := r.devices[ski]
+	info, ok := r.catalog.devices[ski]
 	if !ok || len(info.RemoteEntities) == 0 {
 		return nil
 	}
@@ -433,11 +524,11 @@ func (r *DeviceRegistry) FirstEntity(ski string) spineapi.EntityRemoteInterface 
 // currently has entities. Multiple devices are reported as ambiguous instead
 // of depending on randomized map iteration order.
 func (r *DeviceRegistry) FirstAvailableEntity() EntityResolution {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.catalog.mu.RLock()
+	defer r.catalog.mu.RUnlock()
 	var entity spineapi.EntityRemoteInterface
 	deviceCount := 0
-	for _, info := range r.devices {
+	for _, info := range r.catalog.devices {
 		if len(info.RemoteEntities) > 0 {
 			deviceCount++
 			if entity == nil {
@@ -452,10 +543,10 @@ func (r *DeviceRegistry) FirstAvailableEntity() EntityResolution {
 }
 
 func (r *DeviceRegistry) Entities(ski string) []EntityInfo {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.catalog.mu.RLock()
+	defer r.catalog.mu.RUnlock()
 	ski = NormalizeSKI(ski)
-	info, ok := r.devices[ski]
+	info, ok := r.catalog.devices[ski]
 	if !ok {
 		return nil
 	}
@@ -463,10 +554,10 @@ func (r *DeviceRegistry) Entities(ski string) []EntityInfo {
 }
 
 func (r *DeviceRegistry) FirstEntityForType(ski, entityType string) spineapi.EntityRemoteInterface {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.catalog.mu.RLock()
+	defer r.catalog.mu.RUnlock()
 	ski = NormalizeSKI(ski)
-	info, ok := r.devices[ski]
+	info, ok := r.catalog.devices[ski]
 	if !ok {
 		return nil
 	}
@@ -501,6 +592,13 @@ func copyEntityInfos(in []EntityInfo) []EntityInfo {
 		out[idx].Features = append([]string(nil), entity.Features...)
 	}
 	return out
+}
+
+func copyDeviceInfo(info DeviceInfo) DeviceInfo {
+	info.UseCases = append([]string(nil), info.UseCases...)
+	info.RemoteEntities = append([]spineapi.EntityRemoteInterface(nil), info.RemoteEntities...)
+	info.Entities = copyEntityInfos(info.Entities)
+	return info
 }
 
 func EntityAddressString(addr *model.EntityAddressType) string {

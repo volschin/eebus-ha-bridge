@@ -18,6 +18,7 @@ service DeviceService {
   rpc GetDeviceStatus(DeviceRequest) returns (DeviceStatus);
   rpc GetDeviceCapabilities(DeviceRequest) returns (DeviceCapabilities);
   rpc GetDeviceSnapshot(DeviceRequest) returns (DeviceSnapshot);
+  rpc GetDeviceDiagnostics(DeviceRequest) returns (DeviceOperationalDiagnostics);
   rpc ListDiscoveredDevices(Empty) returns (ListDevicesResponse);
   rpc RegisterRemoteSKI(RegisterSKIRequest) returns (Empty);
   rpc UnregisterRemoteSKI(RegisterSKIRequest) returns (Empty);
@@ -89,11 +90,71 @@ enum FeatureId {
   FEATURE_DEVICE_SNAPSHOT = 3;
   FEATURE_PROVIDER_SAMPLE_INVALIDATION = 4;
   FEATURE_TYPED_MEASUREMENTS = 5;
+  FEATURE_OPERATIONAL_DIAGNOSTICS = 6;
 }
 
 message DeviceStatus {
   bool connected = 1;
   google.protobuf.Timestamp last_transition = 2;
+  DeviceReadinessState readiness = 3;
+  RecoveryDiagnostics recovery = 4;
+}
+
+enum DeviceReadinessState {
+  DEVICE_READINESS_UNKNOWN = 0;
+  DEVICE_READINESS_UNTRUSTED = 1;
+  DEVICE_READINESS_DISCONNECTED = 2;
+  DEVICE_READINESS_GRACE_PERIOD = 3;
+  DEVICE_READINESS_RECOVERING = 4;
+  DEVICE_READINESS_READY = 5;
+  DEVICE_READINESS_EXHAUSTED = 6;
+}
+
+message RecoveryDiagnostics {
+  DeviceReadinessState state = 1;
+  uint32 attempts = 2;
+  google.protobuf.Timestamp first_stale_at = 3;
+  google.protobuf.Timestamp last_attempt_at = 4;
+  google.protobuf.Timestamp next_attempt_at = 5;
+  google.protobuf.Timestamp last_transition_at = 6;
+}
+
+message EventTransportDiagnostics {
+  uint64 revision = 1;
+  uint64 dropped_events = 2;
+  uint64 resync_count = 3;
+  uint64 unresolved_events = 4;
+}
+
+message SnapshotReadDiagnostics {
+  uint64 duration_milliseconds = 1;
+  google.protobuf.Timestamp last_success = 2;
+}
+
+enum ProviderSampleState {
+  PROVIDER_SAMPLE_STATE_UNSPECIFIED = 0;
+  PROVIDER_SAMPLE_STATE_EMPTY = 1;
+  PROVIDER_SAMPLE_STATE_CURRENT = 2;
+  PROVIDER_SAMPLE_STATE_EXPIRED = 3;
+  PROVIDER_SAMPLE_STATE_CLOSED = 4;
+}
+
+message ProviderSampleDiagnostics {
+  string provider = 1;
+  ProviderSampleState state = 2;
+  google.protobuf.Timestamp observed_at = 3;
+  google.protobuf.Timestamp valid_until = 4;
+}
+
+message DeviceOperationalDiagnostics {
+  string redacted_ski = 1;
+  DeviceReadinessState readiness = 2;
+  RecoveryDiagnostics recovery = 3;
+  EventTransportDiagnostics events = 4;
+  optional uint64 monitoring_last_success_age_seconds = 5;
+  SnapshotReadDiagnostics snapshot_reads = 6;
+  repeated ProviderSampleDiagnostics providers = 7;
+  repeated FeatureId features = 8;
 }
 
 message DiscoveredDevice {
