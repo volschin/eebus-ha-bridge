@@ -28,6 +28,7 @@ async def test_new_client_negotiates_new_bridge_and_ignores_unknown_features() -
         features=[
             proto_stubs.FeatureId.FEATURE_CONSOLIDATED_DEVICE_STREAM,
             proto_stubs.FeatureId.FEATURE_PROVIDER_SAMPLE_INVALIDATION,
+            proto_stubs.FeatureId.FEATURE_OPERATIONAL_DIAGNOSTICS,
             999,
         ],
     )
@@ -40,6 +41,7 @@ async def test_new_client_negotiates_new_bridge_and_ignores_unknown_features() -
     assert contract.local_ski == "LOCAL"
     assert contract.legacy is False
     assert contract.supports(proto_stubs.FeatureId.FEATURE_CONSOLIDATED_DEVICE_STREAM)
+    assert contract.supports(proto_stubs.FeatureId.FEATURE_OPERATIONAL_DIAGNOSTICS)
     assert 999 not in contract.features
 
 
@@ -72,7 +74,8 @@ async def test_runtime_caches_contract_across_device_sessions() -> None:
         None,
         None,
     )
-    runtime.channel_manager.ensure_channel = AsyncMock(return_value=MagicMock())
+    channel = MagicMock()
+    channel.close = AsyncMock()
     reader = AsyncMock(
         return_value=BridgeContract(
             1,
@@ -82,9 +85,48 @@ async def test_runtime_caches_contract_across_device_sessions() -> None:
             "LOCAL",
         )
     )
-    with patch("custom_components.eebus.runtime.async_read_bridge_contract", reader):
+    with (
+        patch("custom_components.eebus.grpc_client.create_grpc_channel", return_value=channel),
+        patch("custom_components.eebus.runtime.async_read_bridge_contract", reader),
+    ):
         first = await runtime.ensure_contract()
         second = await runtime.ensure_contract()
 
     assert first is second
     reader.assert_awaited_once()
+
+
+async def test_runtime_renegotiates_contract_on_channel_rebuild() -> None:
+    runtime = BridgeRuntime(
+        BridgeRuntimeKey.from_connection("bridge", 50051, "loopback", None, None),
+        None,
+        None,
+    )
+    channels = [MagicMock(), MagicMock()]
+    for channel in channels:
+        channel.close = AsyncMock()
+    old_contract = BridgeContract(1, 0, "old", frozenset(), "LOCAL")
+    diagnostics_feature = int(
+        proto_stubs.FeatureId.FEATURE_OPERATIONAL_DIAGNOSTICS
+    )
+    new_contract = BridgeContract(
+        1, 1, "new", frozenset({diagnostics_feature}), "LOCAL"
+    )
+    reader = AsyncMock(side_effect=[old_contract, new_contract])
+    active_session = MagicMock()
+    runtime._sessions["AABB"] = active_session
+
+    with (
+        patch(
+            "custom_components.eebus.grpc_client.create_grpc_channel",
+            side_effect=channels,
+        ),
+        patch("custom_components.eebus.runtime.async_read_bridge_contract", reader),
+    ):
+        assert await runtime.ensure_contract() is old_contract
+        await runtime.channel_manager.invalidate()
+        assert await runtime.ensure_contract() is new_contract
+
+    assert runtime.supports(diagnostics_feature) is True
+    assert reader.await_count == 2
+    active_session.streams.contract_changed.assert_called_once_with()

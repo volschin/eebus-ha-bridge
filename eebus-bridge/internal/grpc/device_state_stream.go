@@ -20,6 +20,17 @@ func (s *DeviceService) SubscribeDeviceState(
 		stream.Context(),
 		stream.Send,
 		func(ski string, revision uint64, eventTime time.Time) *pb.DeviceStateEvent {
+			if s.snapshot != nil {
+				if snapshot, err := s.snapshot.Build(ski, revision); err == nil {
+					snapshot.LocalSki = s.localSKI
+					populateSnapshotFieldStates(snapshot)
+					return &pb.DeviceStateEvent{
+						Ski: ski, Revision: revision, EventTime: timestamppb.New(eventTime),
+						Payload:      &pb.DeviceStateEvent_InitialSnapshot{InitialSnapshot: snapshot},
+						Availability: pb.EventAvailability_EVENT_AVAILABILITY_AVAILABLE,
+					}
+				}
+			}
 			return newResyncEnvelope(
 				ski,
 				revision,
@@ -273,7 +284,7 @@ func eventAvailability(available bool) pb.EventAvailability {
 }
 
 func lpcPayloadPresent(event *pb.LPCEvent) bool {
-	return event.GetLimitUpdate() != nil || event.GetFailsafeUpdate() != nil
+	return event.GetLimitUpdate() != nil || event.GetFailsafeUpdate() != nil || event.GetHeartbeatUpdate() != nil
 }
 
 func measurementPayloadPresent(event *pb.MeasurementEvent) bool {

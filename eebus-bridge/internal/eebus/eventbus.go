@@ -6,10 +6,13 @@ import (
 	"time"
 )
 
+const pendingResyncMaxDeferrals = 64
+
 type eventSubscriber struct {
-	ski            string
-	droppedTotal   uint64
-	pendingDropped uint64
+	ski             string
+	droppedTotal    uint64
+	pendingDropped  uint64
+	resyncDeferrals uint8
 }
 
 // EventBus provides fan-out event distribution to multiple subscribers.
@@ -17,13 +20,24 @@ type EventBus struct {
 	mu                      sync.RWMutex
 	subscribers             map[chan Event]*eventSubscriber
 	revisions               map[string]uint64
+	droppedByDevice         map[string]uint64
+	resyncsByDevice         map[string]uint64
 	droppedUnresolvedEvents atomic.Uint64
+}
+
+type EventTransportSnapshot struct {
+	Revision         uint64
+	DroppedEvents    uint64
+	ResyncCount      uint64
+	UnresolvedEvents uint64
 }
 
 func NewEventBus() *EventBus {
 	return &EventBus{
-		subscribers: make(map[chan Event]*eventSubscriber),
-		revisions:   make(map[string]uint64),
+		subscribers:     make(map[chan Event]*eventSubscriber),
+		revisions:       make(map[string]uint64),
+		droppedByDevice: make(map[string]uint64),
+		resyncsByDevice: make(map[string]uint64),
 	}
 }
 
@@ -89,19 +103,24 @@ func (b *EventBus) Publish(evt Event) {
 		default:
 			subscriber.droppedTotal++
 			subscriber.pendingDropped++
+			b.droppedByDevice[evt.SKI]++
 		}
 	}
 }
 
-// TakePendingResync returns one coalesced resync marker before a scoped
-// subscriber reads more buffered events. A gRPC sender calls this immediately
-// after each successful write; when backpressure clears, the marker is thus
-// delivered without waiting for another domain event to be published.
+// TakePendingResync returns one coalesced resync marker after a scoped
+// subscriber has drained the buffered part of an overflow burst. It normally
+// waits for an empty channel to avoid partial markers, but caps that deferral so
+// sustained overflow cannot postpone resynchronization indefinitely.
 func (b *EventBus) TakePendingResync(ch chan Event) (Event, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	subscriber, ok := b.subscribers[ch]
 	if !ok || subscriber.ski == "" || subscriber.pendingDropped == 0 {
+		return Event{}, false
+	}
+	if len(ch) != 0 && subscriber.resyncDeferrals < pendingResyncMaxDeferrals {
+		subscriber.resyncDeferrals++
 		return Event{}, false
 	}
 	event := Event{
@@ -112,6 +131,8 @@ func (b *EventBus) TakePendingResync(ch chan Event) (Event, bool) {
 		Dropped:    subscriber.pendingDropped,
 	}
 	subscriber.pendingDropped = 0
+	subscriber.resyncDeferrals = 0
+	b.resyncsByDevice[subscriber.ski]++
 	return event, true
 }
 
@@ -138,4 +159,18 @@ func (b *EventBus) Revision(ski string) uint64 {
 // because no canonical device SKI was supplied.
 func (b *EventBus) DroppedUnresolvedEvents() uint64 {
 	return b.droppedUnresolvedEvents.Load()
+}
+
+// Diagnostics returns durable device-scoped event transport counters. Unlike
+// SubscriberDroppedEvents it remains meaningful after a stream reconnects.
+func (b *EventBus) Diagnostics(ski string) EventTransportSnapshot {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	ski = NormalizeSKI(ski)
+	return EventTransportSnapshot{
+		Revision:         b.revisions[ski],
+		DroppedEvents:    b.droppedByDevice[ski],
+		ResyncCount:      b.resyncsByDevice[ski],
+		UnresolvedEvents: b.droppedUnresolvedEvents.Load(),
+	}
 }

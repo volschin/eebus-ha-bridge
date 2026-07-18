@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	ucapi "github.com/enbility/eebus-go/usecases/api"
+	spineapi "github.com/enbility/spine-go/api"
+	"github.com/enbility/spine-go/mocks"
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
@@ -15,6 +18,66 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
+
+type fakeLPCController struct {
+	entity spineapi.EntityRemoteInterface
+}
+
+func (f fakeLPCController) CompatibleEntityForScenario(string, uint) eebus.EntityResolution {
+	return eebus.EntityResolution{Entity: f.entity, DeviceCount: 1}
+}
+func (fakeLPCController) ConsumptionLimit(spineapi.EntityRemoteInterface) (ucapi.LoadLimit, error) {
+	return ucapi.LoadLimit{Value: 1200}, nil
+}
+func (fakeLPCController) WriteConsumptionLimit(spineapi.EntityRemoteInterface, ucapi.LoadLimit) error {
+	return nil
+}
+func (fakeLPCController) FailsafeConsumptionActivePowerLimit(spineapi.EntityRemoteInterface) (float64, error) {
+	return 2400, nil
+}
+func (fakeLPCController) WriteFailsafeConsumptionActivePowerLimit(spineapi.EntityRemoteInterface, float64) error {
+	return nil
+}
+func (fakeLPCController) FailsafeDurationMinimum(spineapi.EntityRemoteInterface) (time.Duration, error) {
+	return time.Minute, nil
+}
+func (fakeLPCController) WriteFailsafeDurationMinimum(spineapi.EntityRemoteInterface, time.Duration) error {
+	return nil
+}
+func (fakeLPCController) StartHeartbeat(string) error { return nil }
+func (fakeLPCController) StopHeartbeat() error        { return nil }
+func (fakeLPCController) IsHeartbeatRunning() bool    { return true }
+func (fakeLPCController) IsHeartbeatWithinDuration(spineapi.EntityRemoteInterface) bool {
+	return true
+}
+
+func TestLPCPayloadReadsUpdateCapabilityRegistry(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	controller := fakeLPCController{entity: mocks.NewEntityRemoteInterface(t)}
+	service := bridgegrpc.NewLPCService(
+		nil,
+		eebus.NewEventBus(),
+		registry,
+		bridgegrpc.WithLPCController(controller),
+	)
+	limit := &pb.LPCEvent{}
+	service.AttachLPCPayload(limit, testValidSKI, pb.LPCEventType_LPC_EVENT_LIMIT_UPDATED)
+	failsafe := &pb.LPCEvent{}
+	service.AttachLPCPayload(failsafe, testValidSKI, pb.LPCEventType_LPC_EVENT_FAILSAFE_UPDATED)
+	if limit.GetLimitUpdate() == nil || failsafe.GetFailsafeUpdate() == nil {
+		t.Fatalf("payloads = (%v, %v)", limit, failsafe)
+	}
+	capabilities, _ := registry.DeviceCapabilities(testValidSKI)
+	states := make(map[eebus.Capability]eebus.CapabilityState)
+	for _, capability := range capabilities {
+		states[capability.ID] = capability.State
+	}
+	if states[eebus.CapabilityLPC] != eebus.CapabilityStateAvailable ||
+		states[eebus.CapabilityFailsafe] != eebus.CapabilityStateAvailable {
+		t.Fatalf("LPC capability states = %v", states)
+	}
+}
 
 func TestLPCNumericWriteValidation(t *testing.T) {
 	svc := bridgegrpc.NewLPCService(nil, eebus.NewEventBus(), eebus.NewDeviceRegistry())
@@ -138,6 +201,7 @@ func TestSubscribeLPCEvents(t *testing.T) {
 
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterLPCServiceServer(srv.GRPCServer(), svc)
+	srv.SetHealthy(true)
 	go srv.Start()
 	t.Cleanup(srv.Stop)
 
@@ -172,10 +236,18 @@ func TestSubscribeLPCEvents(t *testing.T) {
 
 func TestSubscribeLPCEventsHeartbeat(t *testing.T) {
 	bus := eebus.NewEventBus()
-	svc := bridgegrpc.NewLPCService(nil, bus, eebus.NewDeviceRegistry())
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	svc := bridgegrpc.NewLPCService(
+		nil,
+		bus,
+		registry,
+		bridgegrpc.WithLPCController(fakeLPCController{entity: mocks.NewEntityRemoteInterface(t)}),
+	)
 
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterLPCServiceServer(srv.GRPCServer(), svc)
+	srv.SetHealthy(true)
 	go srv.Start()
 	t.Cleanup(srv.Stop)
 
@@ -204,6 +276,9 @@ func TestSubscribeLPCEventsHeartbeat(t *testing.T) {
 	}
 	if evt.EventType != pb.LPCEventType_LPC_EVENT_HEARTBEAT_TIMEOUT {
 		t.Errorf("EventType = %v, want LPC_EVENT_HEARTBEAT_TIMEOUT", evt.EventType)
+	}
+	if heartbeat := evt.GetHeartbeatUpdate(); heartbeat == nil || !heartbeat.GetRunning() || !heartbeat.GetWithinDuration() {
+		t.Fatalf("heartbeat payload = %v", heartbeat)
 	}
 }
 

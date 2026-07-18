@@ -38,8 +38,7 @@ async def test_setup_entry():
         patch("custom_components.eebus.er.async_get") as async_get_entity_registry,
     ):
         coordinator = AsyncMock()
-        coordinator.async_config_entry_first_refresh = AsyncMock()
-        coordinator.async_start_streams = MagicMock()
+        coordinator.async_initialize = AsyncMock()
         coordinator.async_start_grid_push = MagicMock()
         coordinator.async_start_pv_push = MagicMock()
         coordinator.async_start_battery_push = MagicMock()
@@ -60,8 +59,7 @@ async def test_setup_entry():
 
         assert result is True
         assert entry.runtime_data == coordinator
-        coordinator.async_config_entry_first_refresh.assert_awaited_once()
-        coordinator.async_start_streams.assert_called_once()
+        coordinator.async_initialize.assert_awaited_once()
         coordinator.async_start_grid_push.assert_called_once()
         coordinator.async_start_pv_push.assert_called_once()
         coordinator.async_start_battery_push.assert_called_once()

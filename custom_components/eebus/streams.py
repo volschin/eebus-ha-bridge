@@ -12,6 +12,7 @@ import grpc.aio
 from homeassistant.core import HomeAssistant
 
 from .grpc_client import GrpcChannelManager, is_unimplemented, rpc_error_text
+from .session_diagnostics import StreamWorkerDiagnostics
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class StreamManager:
         self._sleep = sleep
         self._jitter = jitter
         self._tasks: list[asyncio.Task[None]] = []
+        self._reconnects = 0
 
     def start(
         self,
@@ -64,13 +66,14 @@ class StreamManager:
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
 
-    def diagnostics(self) -> dict[str, int]:
+    def diagnostics(self) -> StreamWorkerDiagnostics:
         """Return non-secret stream lifecycle counters for diagnostics."""
-        return {
-            "configured": len(self._tasks),
-            "running": sum(1 for task in self._tasks if not task.done()),
-            "done": sum(1 for task in self._tasks if task.done()),
-        }
+        return StreamWorkerDiagnostics(
+            configured=len(self._tasks),
+            running=sum(1 for task in self._tasks if not task.done()),
+            done=sum(1 for task in self._tasks if task.done()),
+            reconnects=self._reconnects,
+        )
 
     async def _run_stream(
         self,
@@ -97,6 +100,7 @@ class StreamManager:
                         on_unimplemented(name)
                     return
                 attempt += 1
+                self._reconnects += 1
                 _LOGGER.debug(
                     "EEBUS %s stream ended (%s); scheduling retry",
                     name,
@@ -104,6 +108,7 @@ class StreamManager:
                 )
             except Exception:  # noqa: BLE001
                 attempt += 1
+                self._reconnects += 1
                 _LOGGER.exception("EEBUS %s stream failed; scheduling retry", name)
 
             delay = min(

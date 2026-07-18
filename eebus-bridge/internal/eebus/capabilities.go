@@ -58,10 +58,10 @@ type DeviceCapability struct {
 }
 
 func (r *DeviceRegistry) SetLocalCapabilityEnabled(capability Capability, enabled bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.localCapabilities[capability] = enabled
-	for ski := range r.capabilities {
+	r.capabilities.mu.Lock()
+	defer r.capabilities.mu.Unlock()
+	r.capabilities.localCapabilities[capability] = enabled
+	for ski := range r.capabilities.entries {
 		if enabled {
 			r.setCapabilityLocked(ski, capability, CapabilityStateUnknown, CapabilityReasonUnspecified)
 		} else {
@@ -71,13 +71,19 @@ func (r *DeviceRegistry) SetLocalCapabilityEnabled(capability Capability, enable
 }
 
 func (r *DeviceRegistry) SetCapability(ski string, capability Capability, state CapabilityState, reason CapabilityReason) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.setCapabilityLocked(NormalizeSKI(ski), capability, state, reason)
+	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
+	r.capabilities.mu.Lock()
+	defer r.capabilities.mu.Unlock()
+	r.setCapabilityLocked(ski, capability, state, reason)
 }
 
 func (r *DeviceRegistry) setCapabilityLocked(ski string, capability Capability, state CapabilityState, reason CapabilityReason) {
-	if enabled, ok := r.localCapabilities[capability]; ok && !enabled {
+	if enabled, ok := r.capabilities.localCapabilities[capability]; ok && !enabled {
 		state = CapabilityStateUnsupported
 		reason = CapabilityReasonLocalDisabled
 	}
@@ -90,28 +96,69 @@ func (r *DeviceRegistry) setCapabilityLocked(ski string, capability Capability, 
 }
 
 func (r *DeviceRegistry) ensureCapabilitiesLocked(ski string) map[Capability]DeviceCapability {
-	entries, ok := r.capabilities[ski]
+	entries, ok := r.capabilities.entries[ski]
 	if !ok {
 		entries = make(map[Capability]DeviceCapability, len(AllCapabilities))
 		now := r.clock.Now()
 		for _, capability := range AllCapabilities {
 			state := CapabilityStateUnknown
 			reason := CapabilityReasonUnspecified
-			if enabled, configured := r.localCapabilities[capability]; configured && !enabled {
+			if enabled, configured := r.capabilities.localCapabilities[capability]; configured && !enabled {
 				state = CapabilityStateUnsupported
 				reason = CapabilityReasonLocalDisabled
 			}
 			entries[capability] = DeviceCapability{ID: capability, State: state, Reason: reason, LastChanged: now}
 		}
-		r.capabilities[ski] = entries
+		r.capabilities.entries[ski] = entries
 	}
 	return entries
 }
 
+func (r *DeviceRegistry) ensureCapabilities(ski string) {
+	r.capabilities.mu.Lock()
+	r.ensureCapabilitiesLocked(NormalizeSKI(ski))
+	r.capabilities.mu.Unlock()
+}
+
+func (r *DeviceRegistry) markCapabilitiesConnected(ski string) {
+	r.capabilities.mu.Lock()
+	defer r.capabilities.mu.Unlock()
+	entries := r.ensureCapabilitiesLocked(ski)
+	for capability, entry := range entries {
+		if entry.Reason == CapabilityReasonDeviceDisconnected {
+			r.setCapabilityLocked(ski, capability, CapabilityStateUnknown, CapabilityReasonEntityNotBound)
+		}
+	}
+}
+
+func (r *DeviceRegistry) markCapabilitiesDisconnected(ski string) {
+	r.capabilities.mu.Lock()
+	defer r.capabilities.mu.Unlock()
+	for capability, entry := range r.ensureCapabilitiesLocked(ski) {
+		if entry.State != CapabilityStateUnsupported {
+			r.setCapabilityLocked(ski, capability, CapabilityStateTemporarilyUnavailable, CapabilityReasonDeviceDisconnected)
+		}
+	}
+}
+
+func (r *DeviceRegistry) deviceDisconnected(ski string) bool {
+	r.health.mu.RLock()
+	defer r.health.mu.RUnlock()
+	connection, known := r.health.monitoring[ski]
+	return known && !connection.connected
+}
+
+func (r *DeviceRegistry) deviceHasEntities(ski string) bool {
+	r.catalog.mu.RLock()
+	defer r.catalog.mu.RUnlock()
+	info, known := r.catalog.devices[ski]
+	return known && (len(info.RemoteEntities) > 0 || len(info.Entities) > 0)
+}
+
 func (r *DeviceRegistry) DeviceCapabilities(ski string) ([]DeviceCapability, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	entries, ok := r.capabilities[NormalizeSKI(ski)]
+	r.capabilities.mu.RLock()
+	defer r.capabilities.mu.RUnlock()
+	entries, ok := r.capabilities.entries[NormalizeSKI(ski)]
 	if !ok {
 		return nil, false
 	}
@@ -127,10 +174,16 @@ func (r *DeviceRegistry) DeviceCapabilities(ski string) ([]DeviceCapability, boo
 // with an entity proves remote advertisement; one without an entity explicitly
 // revokes support until a later support event says otherwise.
 func (r *DeviceRegistry) RecordCapabilitySupport(ski string, capability Capability, advertised bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	ski = NormalizeSKI(ski)
-	r.recordCapabilitySupportLocked(ski, capability, advertised)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
+	disconnected := r.deviceDisconnected(ski)
+	r.capabilities.mu.Lock()
+	defer r.capabilities.mu.Unlock()
+	r.recordCapabilitySupportLocked(ski, capability, advertised, disconnected)
 }
 
 // RecordCapabilitySourceSupport combines the support reported by multiple use
@@ -142,13 +195,19 @@ func (r *DeviceRegistry) RecordCapabilitySourceSupport(
 	source string,
 	advertised bool,
 ) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	ski = NormalizeSKI(ski)
-	byCapability, ok := r.capabilitySupport[ski]
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
+	disconnected := r.deviceDisconnected(ski)
+	r.capabilities.mu.Lock()
+	defer r.capabilities.mu.Unlock()
+	byCapability, ok := r.capabilities.support[ski]
 	if !ok {
 		byCapability = make(map[Capability]map[string]bool)
-		r.capabilitySupport[ski] = byCapability
+		r.capabilities.support[ski] = byCapability
 	}
 	sources, ok := byCapability[capability]
 	if !ok {
@@ -158,15 +217,15 @@ func (r *DeviceRegistry) RecordCapabilitySourceSupport(
 	sources[source] = advertised
 	for _, supported := range sources {
 		if supported {
-			r.recordCapabilitySupportLocked(ski, capability, true)
+			r.recordCapabilitySupportLocked(ski, capability, true, disconnected)
 			return
 		}
 	}
-	r.recordCapabilitySupportLocked(ski, capability, false)
+	r.recordCapabilitySupportLocked(ski, capability, false, disconnected)
 }
 
-func (r *DeviceRegistry) recordCapabilitySupportLocked(ski string, capability Capability, advertised bool) {
-	if connection, known := r.monitoring[ski]; known && !connection.connected {
+func (r *DeviceRegistry) recordCapabilitySupportLocked(ski string, capability Capability, advertised, disconnected bool) {
+	if disconnected {
 		current := r.ensureCapabilitiesLocked(ski)[capability]
 		if current.Reason != CapabilityReasonLocalDisabled && current.State != CapabilityStateUnsupported {
 			r.setCapabilityLocked(ski, capability, CapabilityStateTemporarilyUnavailable, CapabilityReasonDeviceDisconnected)
@@ -181,13 +240,19 @@ func (r *DeviceRegistry) recordCapabilitySupportLocked(ski string, capability Ca
 }
 
 func (r *DeviceRegistry) RecordCapabilityRead(ski string, capability Capability, err error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
+	disconnected := r.deviceDisconnected(ski)
+	r.capabilities.mu.Lock()
+	defer r.capabilities.mu.Unlock()
 	if r.ensureCapabilitiesLocked(ski)[capability].State == CapabilityStateUnsupported {
 		return
 	}
-	if connection, known := r.monitoring[ski]; known && !connection.connected {
+	if disconnected {
 		r.setCapabilityLocked(ski, capability, CapabilityStateTemporarilyUnavailable, CapabilityReasonDeviceDisconnected)
 		return
 	}
@@ -199,13 +264,19 @@ func (r *DeviceRegistry) RecordCapabilityRead(ski string, capability Capability,
 }
 
 func (r *DeviceRegistry) RecordCapabilityEntityNotBound(ski string, capability Capability) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
+	disconnected := r.deviceDisconnected(ski)
+	r.capabilities.mu.Lock()
+	defer r.capabilities.mu.Unlock()
 	if r.ensureCapabilitiesLocked(ski)[capability].State == CapabilityStateUnsupported {
 		return
 	}
-	if connection, known := r.monitoring[ski]; known && !connection.connected {
+	if disconnected {
 		r.setCapabilityLocked(ski, capability, CapabilityStateTemporarilyUnavailable, CapabilityReasonDeviceDisconnected)
 		return
 	}
@@ -215,18 +286,24 @@ func (r *DeviceRegistry) RecordCapabilityEntityNotBound(ski string, capability C
 // RecordCapabilityMissingEntity distinguishes a known remote device that does
 // not advertise this use case from a device whose entities are not bound yet.
 func (r *DeviceRegistry) RecordCapabilityMissingEntity(ski string, capability Capability) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
+	disconnected := r.deviceDisconnected(ski)
+	hasEntities := r.deviceHasEntities(ski)
+	r.capabilities.mu.Lock()
+	defer r.capabilities.mu.Unlock()
 	if r.ensureCapabilitiesLocked(ski)[capability].State == CapabilityStateUnsupported {
 		return
 	}
-	if connection, known := r.monitoring[ski]; known && !connection.connected {
+	if disconnected {
 		r.setCapabilityLocked(ski, capability, CapabilityStateTemporarilyUnavailable, CapabilityReasonDeviceDisconnected)
 		return
 	}
-	info, known := r.devices[ski]
-	if known && (len(info.RemoteEntities) > 0 || len(info.Entities) > 0) {
+	if hasEntities {
 		r.setCapabilityLocked(ski, capability, CapabilityStateUnsupported, CapabilityReasonRemoteNotAdvertised)
 		return
 	}

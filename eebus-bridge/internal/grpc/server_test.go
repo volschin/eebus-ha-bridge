@@ -5,10 +5,14 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
+	"github.com/volschin/eebus-bridge/internal/eebus"
 	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 )
 
 func TestServerStartStop(t *testing.T) {
@@ -50,6 +54,49 @@ func TestServerStartStop(t *testing.T) {
 	}
 
 	srv.Stop()
+}
+
+func TestServerReadinessGatesApplicationRPCsButNotHealth(t *testing.T) {
+	bus := eebus.NewEventBus()
+	registry := eebus.NewDeviceRegistry()
+	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
+	pb.RegisterDeviceServiceServer(
+		srv.GRPCServer(),
+		bridgegrpc.NewDeviceService(eebus.NewCallbacks(bus, false), bus, "local", registry, nil),
+	)
+	go func() { _ = srv.Start() }()
+	t.Cleanup(srv.Stop)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := srv.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := grpc.NewClient(srv.Addr(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	health, err := grpc_health_v1.NewHealthClient(conn).Check(ctx, &grpc_health_v1.HealthCheckRequest{})
+	if err != nil || health.Status != grpc_health_v1.HealthCheckResponse_NOT_SERVING {
+		t.Fatalf("pre-commit health = %v, %v", health, err)
+	}
+	client := pb.NewDeviceServiceClient(conn)
+	if _, err := client.GetStatus(ctx, &pb.Empty{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("pre-commit unary error = %v, want unavailable", err)
+	}
+	stream, err := client.SubscribeDeviceEvents(ctx, &pb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Recv(); status.Code(err) != codes.Unavailable {
+		t.Fatalf("pre-commit stream error = %v, want unavailable", err)
+	}
+
+	srv.SetHealthy(true)
+	if _, err := client.GetStatus(ctx, &pb.Empty{}); err != nil {
+		t.Fatalf("post-commit unary: %v", err)
+	}
 }
 
 // TestServerStopReturnsWithOpenStream guards against a regression where Stop

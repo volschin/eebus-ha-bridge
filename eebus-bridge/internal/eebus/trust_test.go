@@ -51,6 +51,21 @@ func TestTrustControllerUnregisterOrderAndCleanup(t *testing.T) {
 	if devices := registry.ListDevices(); len(devices) != 0 {
 		t.Fatalf("ListDevices after UnregisterSKI = %v, want empty", devices)
 	}
+	if registry.KnownDevice(ski) {
+		t.Fatal("KnownDevice remains true after UnregisterSKI")
+	}
+	if _, ok := registry.DeviceHealth(ski); ok || len(registry.ListDeviceHealth()) != 0 {
+		t.Fatalf("health remains after UnregisterSKI: %+v", registry.ListDeviceHealth())
+	}
+
+	// Late capability and observation callbacks queued before unregister must
+	// not recreate any registry projection for the removed lifetime.
+	registry.RecordCapabilityRead(ski, CapabilityMonitoring, nil)
+	registry.RecordCapabilitySupport(ski, CapabilityMonitoring, true)
+	registry.UpsertObservation(ski, nil, nil, "monitoring")
+	if registry.KnownDevice(ski) || len(registry.ListDeviceHealth()) != 0 {
+		t.Fatal("late callbacks resurrected device after UnregisterSKI")
+	}
 
 	select {
 	case event := <-events:

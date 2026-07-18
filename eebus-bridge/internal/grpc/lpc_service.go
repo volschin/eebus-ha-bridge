@@ -15,13 +15,42 @@ import (
 
 type LPCService struct {
 	pb.UnimplementedLPCServiceServer
-	lpc      *usecases.LPCWrapper
+	lpc      lpcController
 	bus      *eebus.EventBus
 	registry *eebus.DeviceRegistry
 }
 
-func NewLPCService(lpc *usecases.LPCWrapper, bus *eebus.EventBus, registry *eebus.DeviceRegistry) *LPCService {
-	return &LPCService{lpc: lpc, bus: bus, registry: registry}
+type lpcController interface {
+	CompatibleEntityForScenario(string, uint) eebus.EntityResolution
+	ConsumptionLimit(spineapi.EntityRemoteInterface) (ucapi.LoadLimit, error)
+	WriteConsumptionLimit(spineapi.EntityRemoteInterface, ucapi.LoadLimit) error
+	FailsafeConsumptionActivePowerLimit(spineapi.EntityRemoteInterface) (float64, error)
+	WriteFailsafeConsumptionActivePowerLimit(spineapi.EntityRemoteInterface, float64) error
+	FailsafeDurationMinimum(spineapi.EntityRemoteInterface) (time.Duration, error)
+	WriteFailsafeDurationMinimum(spineapi.EntityRemoteInterface, time.Duration) error
+	StartHeartbeat(string) error
+	StopHeartbeat() error
+	IsHeartbeatRunning() bool
+	IsHeartbeatWithinDuration(spineapi.EntityRemoteInterface) bool
+}
+
+// LPCServiceOption customizes the LPC adapter at construction time.
+type LPCServiceOption func(*LPCService)
+
+// WithLPCController replaces the production wrapper for deterministic tests.
+func WithLPCController(controller lpcController) LPCServiceOption {
+	return func(service *LPCService) { service.lpc = controller }
+}
+
+func NewLPCService(lpc *usecases.LPCWrapper, bus *eebus.EventBus, registry *eebus.DeviceRegistry, opts ...LPCServiceOption) *LPCService {
+	service := &LPCService{bus: bus, registry: registry}
+	if lpc != nil {
+		service.lpc = lpc
+	}
+	for _, opt := range opts {
+		opt(service)
+	}
+	return service
 }
 
 func (s *LPCService) GetConsumptionLimit(_ context.Context, req *pb.DeviceRequest) (*pb.LoadLimit, error) {
@@ -193,14 +222,18 @@ func (s *LPCService) GetHeartbeatStatus(_ context.Context, req *pb.DeviceRequest
 	if _, err := normalizeReadSKI(req.Ski); err != nil {
 		return nil, err
 	}
+	return s.SnapshotHeartbeat(req.Ski)
+}
+
+func (s *LPCService) SnapshotHeartbeat(ski string) (*pb.HeartbeatStatus, error) {
 	if s.lpc == nil {
 		return nil, status.Error(codes.Unavailable, "LPC use case not initialized")
 	}
-	entity, err := s.resolveCapabilityEntity(req.Ski, eebus.CapabilityHeartbeat)
+	entity, err := s.resolveCapabilityEntity(ski, eebus.CapabilityHeartbeat)
 	if err != nil {
 		return nil, err
 	}
-	s.recordRead(req.Ski, eebus.CapabilityHeartbeat, nil)
+	s.recordRead(ski, eebus.CapabilityHeartbeat, nil)
 	return &pb.HeartbeatStatus{
 		Running:        s.lpc.IsHeartbeatRunning(),
 		WithinDuration: s.lpc.IsHeartbeatWithinDuration(entity),
@@ -234,6 +267,12 @@ func (s *LPCService) attachLPCPayload(event *pb.LPCEvent, ski string, eventType 
 	if s.lpc == nil {
 		return
 	}
+	if eventType == pb.LPCEventType_LPC_EVENT_HEARTBEAT_TIMEOUT {
+		if heartbeat, err := s.SnapshotHeartbeat(ski); err == nil {
+			event.Data = &pb.LPCEvent_HeartbeatUpdate{HeartbeatUpdate: heartbeat}
+		}
+		return
+	}
 	capability := eebus.CapabilityLPC
 	if eventType == pb.LPCEventType_LPC_EVENT_FAILSAFE_UPDATED {
 		capability = eebus.CapabilityFailsafe
@@ -244,12 +283,19 @@ func (s *LPCService) attachLPCPayload(event *pb.LPCEvent, ski string, eventType 
 	}
 	switch eventType {
 	case pb.LPCEventType_LPC_EVENT_LIMIT_UPDATED:
-		if limit, err := s.lpc.ConsumptionLimit(entity); err == nil {
+		limit, readErr := s.lpc.ConsumptionLimit(entity)
+		s.recordRead(ski, capability, readErr)
+		if readErr == nil {
 			event.Data = &pb.LPCEvent_LimitUpdate{LimitUpdate: convertLoadLimit(limit)}
 		}
 	case pb.LPCEventType_LPC_EVENT_FAILSAFE_UPDATED:
 		value, verr := s.lpc.FailsafeConsumptionActivePowerLimit(entity)
 		duration, derr := s.lpc.FailsafeDurationMinimum(entity)
+		readErr := verr
+		if readErr == nil {
+			readErr = derr
+		}
+		s.recordRead(ski, capability, readErr)
 		if verr == nil && derr == nil {
 			event.Data = &pb.LPCEvent_FailsafeUpdate{FailsafeUpdate: &pb.FailsafeLimit{
 				ValueWatts:             value,

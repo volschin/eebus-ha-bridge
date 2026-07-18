@@ -4,6 +4,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import grpc
+import pytest
 from grpc.aio import AioRpcError, Metadata
 
 from custom_components.eebus.grpc_client import (
@@ -71,6 +72,72 @@ async def test_invalidate_racing_ensure_returns_fresh_channel():
     ]
     first.close.assert_awaited_once_with(None)
     second.close.assert_awaited_once_with(None)
+
+
+async def test_cancelled_waiter_does_not_cancel_shared_contract_negotiation():
+    """One abandoned device cannot break the generation used by its peers."""
+    channel = MagicMock()
+    channel.close = AsyncMock()
+    negotiation_started = asyncio.Event()
+    release_negotiation = asyncio.Event()
+
+    async def negotiate(_channel, _generation):
+        negotiation_started.set()
+        await release_negotiation.wait()
+
+    manager = GrpcChannelManager("localhost", 50051, "loopback", None, None)
+    manager.set_channel_ready_hook(negotiate)
+    with patch(
+        "custom_components.eebus.grpc_client.create_grpc_channel",
+        return_value=channel,
+    ):
+        abandoned = asyncio.create_task(manager.ensure_channel())
+        peer = asyncio.create_task(manager.ensure_channel())
+        await negotiation_started.wait()
+
+        abandoned.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await abandoned
+        assert manager._ready_task is not None
+        assert manager._ready_task.cancelled() is False
+        assert peer.done() is False
+
+        release_negotiation.set()
+        assert await peer is channel
+        await manager.close()
+
+
+async def test_invalidation_during_negotiation_moves_all_peers_to_fresh_channel():
+    """Owner invalidation is not misclassified as cancellation of peer streams."""
+    first = MagicMock()
+    first.close = AsyncMock()
+    second = MagicMock()
+    second.close = AsyncMock()
+    first_negotiation_started = asyncio.Event()
+    second_negotiation_finished = asyncio.Event()
+
+    async def negotiate(_channel, generation):
+        if generation == 1:
+            first_negotiation_started.set()
+            await asyncio.Event().wait()
+        second_negotiation_finished.set()
+
+    manager = GrpcChannelManager("localhost", 50051, "loopback", None, None)
+    manager.set_channel_ready_hook(negotiate)
+    with patch(
+        "custom_components.eebus.grpc_client.create_grpc_channel",
+        side_effect=[first, second],
+    ):
+        peers = [asyncio.create_task(manager.ensure_channel()) for _ in range(2)]
+        await first_negotiation_started.wait()
+
+        await manager.invalidate()
+        channels = await asyncio.gather(*peers)
+
+        assert channels == [second, second]
+        assert second_negotiation_finished.is_set()
+        first.close.assert_awaited_once_with(None)
+        await manager.close()
 
 
 def test_rpc_error_helpers():

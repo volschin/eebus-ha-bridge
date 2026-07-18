@@ -23,6 +23,23 @@ type recordingTrustController struct {
 	unregisterErr   error
 }
 
+type diagnosticsRecoverySource map[string]eebus.RecoverySnapshot
+
+func (s diagnosticsRecoverySource) Snapshot(ski string, _ time.Time) eebus.RecoverySnapshot {
+	if snapshot, ok := s[eebus.NormalizeSKI(ski)]; ok {
+		return snapshot
+	}
+	return eebus.RecoverySnapshot{State: eebus.RecoveryStateUnknown}
+}
+
+type diagnosticsProviderSource struct{}
+
+func (diagnosticsProviderSource) ProviderDiagnostics(time.Time) []*pb.ProviderSampleDiagnostics {
+	return []*pb.ProviderSampleDiagnostics{{
+		Provider: "grid", State: pb.ProviderSampleState_PROVIDER_SAMPLE_STATE_CURRENT,
+	}}
+}
+
 func (c *recordingTrustController) RegisterSKI(ski string) error {
 	c.registerCalls = append(c.registerCalls, ski)
 	return c.registerErr
@@ -42,7 +59,7 @@ func setupDeviceTest(t *testing.T) pb.DeviceServiceClient {
 
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterDeviceServiceServer(srv.GRPCServer(), svc)
-
+	srv.SetHealthy(true)
 	go srv.Start()
 	t.Cleanup(srv.Stop)
 
@@ -66,6 +83,7 @@ func setupDeviceStateTest(t *testing.T) (pb.DeviceServiceClient, *eebus.EventBus
 	)
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterDeviceServiceServer(srv.GRPCServer(), svc)
+	srv.SetHealthy(true)
 	go srv.Start()
 	t.Cleanup(srv.Stop)
 	time.Sleep(100 * time.Millisecond)
@@ -158,6 +176,7 @@ func TestSubscribeDeviceStateAttachesBestEffortPayload(t *testing.T) {
 	)
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterDeviceServiceServer(srv.GRPCServer(), svc)
+	srv.SetHealthy(true)
 	go srv.Start()
 	t.Cleanup(srv.Stop)
 	time.Sleep(100 * time.Millisecond)
@@ -225,18 +244,59 @@ func TestGetServerInfoAdvertisesOnlyImplementedFeatures(t *testing.T) {
 		pb.FeatureId_FEATURE_EXPLICIT_CAPABILITIES,
 		pb.FeatureId_FEATURE_CONSOLIDATED_DEVICE_STREAM,
 		pb.FeatureId_FEATURE_PROVIDER_SAMPLE_INVALIDATION,
+		pb.FeatureId_FEATURE_DEVICE_SNAPSHOT,
+		pb.FeatureId_FEATURE_TYPED_MEASUREMENTS,
 	} {
 		if !features[feature] {
 			t.Errorf("implemented feature %s not advertised", feature)
 		}
 	}
-	for _, feature := range []pb.FeatureId{
-		pb.FeatureId_FEATURE_DEVICE_SNAPSHOT,
-		pb.FeatureId_FEATURE_TYPED_MEASUREMENTS,
-	} {
-		if features[feature] {
-			t.Errorf("future feature %s advertised before implementation", feature)
-		}
+}
+
+func TestGetDeviceDiagnosticsIsRedactedAndDeviceScoped(t *testing.T) {
+	const skiA = "0123456789ABCDEF0123456789ABCDEF01234567"
+	const skiB = "89ABCDEF0123456789ABCDEF0123456789ABCDEF"
+	bus := eebus.NewEventBus()
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(skiA, eebus.DeviceInfo{})
+	registry.AddDevice(skiB, eebus.DeviceInfo{})
+	registry.MarkConnected(skiA)
+	registry.MarkConnected(skiB)
+	bus.Publish(eebus.Event{SKI: skiA, Type: eebus.EventTypeMonitoringPowerUpdated})
+	bus.Publish(eebus.Event{SKI: skiB, Type: eebus.EventTypeMonitoringPowerUpdated})
+	bus.Publish(eebus.Event{SKI: skiB, Type: eebus.EventTypeMonitoringPowerUpdated})
+	recovery := diagnosticsRecoverySource{
+		skiA: {State: eebus.RecoveryStateHealthy},
+		skiB: {State: eebus.RecoveryStateExhausted, Attempts: 3},
+	}
+	service := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false), bus, "local", registry, &recordingTrustController{},
+		bridgegrpc.WithDeviceStatePayloads(bridgegrpc.DeviceStatePayloadSources{}),
+		bridgegrpc.WithOperationalDiagnostics(recovery, diagnosticsProviderSource{}),
+	)
+
+	diagnosticsA, err := service.GetDeviceDiagnostics(context.Background(), &pb.DeviceRequest{Ski: skiA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnosticsB, err := service.GetDeviceDiagnostics(context.Background(), &pb.DeviceRequest{Ski: skiB})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diagnosticsA.RedactedSki == skiA || diagnosticsB.RedactedSki == skiB {
+		t.Fatal("diagnostics exposed a full SKI")
+	}
+	if diagnosticsA.Readiness != pb.DeviceReadinessState_DEVICE_READINESS_READY || diagnosticsA.Events.Revision != 1 {
+		t.Fatalf("device A diagnostics = %+v", diagnosticsA)
+	}
+	if diagnosticsA.ConnectionAgeSeconds == nil {
+		t.Fatal("connected device diagnostics omitted connection age")
+	}
+	if diagnosticsB.Readiness != pb.DeviceReadinessState_DEVICE_READINESS_EXHAUSTED || diagnosticsB.Recovery.Attempts != 3 || diagnosticsB.Events.Revision != 2 {
+		t.Fatalf("device B diagnostics = %+v", diagnosticsB)
+	}
+	if len(diagnosticsA.Providers) != 1 || diagnosticsA.Providers[0].Provider != "grid" {
+		t.Fatalf("provider diagnostics = %+v", diagnosticsA.Providers)
 	}
 }
 
@@ -271,11 +331,40 @@ func TestGetDeviceStatus(t *testing.T) {
 
 	unknownSKI := "782f708ceba5df9adcb9e6787ea911d9fc3ac490"
 	unknown, err := svc.GetDeviceStatus(context.Background(), &pb.DeviceRequest{Ski: unknownSKI})
-	if err != nil {
-		t.Fatalf("GetDeviceStatus(unknown): %v", err)
+	if unknown != nil || status.Code(err) != codes.NotFound {
+		t.Errorf("GetDeviceStatus(unknown) = (%+v, %v), want (nil, NotFound)", unknown, err)
 	}
-	if unknown.Connected || unknown.LastTransition != nil {
-		t.Errorf("GetDeviceStatus(unknown) = %+v, want disconnected without transition timestamp", unknown)
+}
+
+func TestRemovedDeviceStaysGoneAfterLateRegistryCallbacks(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{Brand: "device"})
+	registry.MarkConnected(testValidSKI)
+	registry.RemoveDevice(testValidSKI)
+
+	// Simulate callbacks that were already queued when explicit unpair won the
+	// lifecycle race. None may start a new lifetime without a trust grant.
+	registry.MarkConnected(testValidSKI)
+	registry.RecordMonitoringSuccess(testValidSKI)
+	registry.RecordCapabilitySupport(testValidSKI, eebus.CapabilityMonitoring, true)
+	registry.RecordCapabilityRead(testValidSKI, eebus.CapabilityMonitoring, nil)
+	registry.UpsertObservation(testValidSKI, nil, nil, "monitoring")
+
+	if registry.KnownDevice(testValidSKI) {
+		t.Fatal("late callbacks resurrected removed device")
+	}
+	if _, ok := registry.DeviceHealth(testValidSKI); ok || len(registry.ListDeviceHealth()) != 0 {
+		t.Fatalf("removed device remains in health projection: %+v", registry.ListDeviceHealth())
+	}
+	bus := eebus.NewEventBus()
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false), bus, "local", registry, &recordingTrustController{},
+	)
+	if _, err := svc.GetDeviceStatus(context.Background(), &pb.DeviceRequest{Ski: testValidSKI}); status.Code(err) != codes.NotFound {
+		t.Fatalf("GetDeviceStatus removed code = %v, want NotFound", status.Code(err))
+	}
+	if _, err := svc.GetDeviceDiagnostics(context.Background(), &pb.DeviceRequest{Ski: testValidSKI}); status.Code(err) != codes.NotFound {
+		t.Fatalf("GetDeviceDiagnostics removed code = %v, want NotFound", status.Code(err))
 	}
 }
 
@@ -564,6 +653,7 @@ func TestSubscribeDeviceEventsTrustRemoved(t *testing.T) {
 
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
 	pb.RegisterDeviceServiceServer(srv.GRPCServer(), svc)
+	srv.SetHealthy(true)
 	go srv.Start()
 	t.Cleanup(srv.Stop)
 	time.Sleep(100 * time.Millisecond)

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from threading import Lock
 from typing import TYPE_CHECKING, cast
+
+from . import proto_stubs
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import datetime
-
-    from . import proto_stubs
-
 
 class CapabilityState(StrEnum):
     """Availability state for an EEBUS use-case capability."""
@@ -116,27 +116,104 @@ class RoomHeatingValues:
 # coordinator data key consumed by the per-phase / grid / produced-energy
 # sensors. Types not present here (e.g. power_consumption, energy_consumed) are
 # handled by their own dedicated reads.
-FLAT_MEASUREMENT_TYPE_TO_KEY: dict[str, str] = {
-    "power_l1": "power_l1_w",
-    "power_l2": "power_l2_w",
-    "power_l3": "power_l3_w",
-    "current_l1": "current_l1_a",
-    "current_l2": "current_l2_a",
-    "current_l3": "current_l3_a",
-    "voltage_l1": "voltage_l1_v",
-    "voltage_l2": "voltage_l2_v",
-    "voltage_l3": "voltage_l3_v",
-    "frequency": "frequency_hz",
-    "energy_produced": "energy_produced_kwh",
-    "dhw_temperature": "dhw_temperature_c",
-    "room_temperature": "room_temperature_c",
-    "outdoor_temperature": "outdoor_temperature_c",
-    "flow_temperature": "flow_temperature_c",
-    "return_temperature": "return_temperature_c",
-    "compressor_temperature": "compressor_temperature_c",
-    "compressor_power": "compressor_power_w",
+LEGACY_MEASUREMENT_CATALOG: dict[str, tuple[str, str]] = {
+    "power_l1": ("power_l1_w", "W"),
+    "power_l2": ("power_l2_w", "W"),
+    "power_l3": ("power_l3_w", "W"),
+    "current_l1": ("current_l1_a", "A"),
+    "current_l2": ("current_l2_a", "A"),
+    "current_l3": ("current_l3_a", "A"),
+    "voltage_l1": ("voltage_l1_v", "V"),
+    "voltage_l2": ("voltage_l2_v", "V"),
+    "voltage_l3": ("voltage_l3_v", "V"),
+    "frequency": ("frequency_hz", "Hz"),
+    "energy_produced": ("energy_produced_kwh", "kWh"),
+    "dhw_temperature": ("dhw_temperature_c", "degC"),
+    "room_temperature": ("room_temperature_c", "degC"),
+    "outdoor_temperature": ("outdoor_temperature_c", "degC"),
+    "flow_temperature": ("flow_temperature_c", "degC"),
+    "return_temperature": ("return_temperature_c", "degC"),
+    "compressor_temperature": ("compressor_temperature_c", "degC"),
+    "compressor_power": ("compressor_power_w", "W"),
 }
-FLAT_MEASUREMENT_KEYS: tuple[str, ...] = tuple(FLAT_MEASUREMENT_TYPE_TO_KEY.values())
+FLAT_MEASUREMENT_KEYS: tuple[str, ...] = tuple(field for field, _unit in LEGACY_MEASUREMENT_CATALOG.values())
+
+# Single stable-ID mapping for every catalog value consumed by HA. Values are
+# StateField wire values; keeping models independent of state.py avoids a cycle.
+MEASUREMENT_ID_CATALOG: dict[int, tuple[str, str]] = {
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_POWER_CONSUMPTION): ("power_watts", "W"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_ENERGY_CONSUMED): ("energy_consumed_kwh", "kWh"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_POWER_L1): ("power_l1_w", "W"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_POWER_L2): ("power_l2_w", "W"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_POWER_L3): ("power_l3_w", "W"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_CURRENT_L1): ("current_l1_a", "A"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_CURRENT_L2): ("current_l2_a", "A"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_CURRENT_L3): ("current_l3_a", "A"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_VOLTAGE_L1): ("voltage_l1_v", "V"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_VOLTAGE_L2): ("voltage_l2_v", "V"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_VOLTAGE_L3): ("voltage_l3_v", "V"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_FREQUENCY): ("frequency_hz", "Hz"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_ENERGY_PRODUCED): ("energy_produced_kwh", "kWh"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_DHW_TEMPERATURE): ("dhw_temperature_c", "degC"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_ROOM_TEMPERATURE): ("room_temperature_c", "degC"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_OUTDOOR_TEMPERATURE): ("outdoor_temperature_c", "degC"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_FLOW_TEMPERATURE): ("flow_temperature_c", "degC"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_RETURN_TEMPERATURE): ("return_temperature_c", "degC"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_COMPRESSOR_TEMPERATURE): ("compressor_temperature_c", "degC"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_COMPRESSOR_POWER): ("compressor_power_w", "W"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_ENERGY_CONSUMED_HEATING): ("energy_consumed_heating_kwh", "kWh"),
+    int(proto_stubs.MeasurementId.MEASUREMENT_ID_ENERGY_CONSUMED_DHW): ("energy_consumed_dhw_kwh", "kWh"),
+}
+LEGACY_SCOPED_ENERGY_CATALOG: dict[str, str] = {
+    "energy_consumed_heating": "heating",
+    "energy_consumed_dhw": "dhw",
+}
+_MEASUREMENT_DIAGNOSTICS = {
+    "unknown_typed_ids": 0,
+    "invalid_typed_units": 0,
+    "invalid_legacy_units": 0,
+    "extension_strings": 0,
+}
+_MEASUREMENT_DIAGNOSTICS_LOCK = Lock()
+
+
+def measurement_diagnostics() -> dict[str, int]:
+    """Return process-local counters for safely ignored measurement entries."""
+    with _MEASUREMENT_DIAGNOSTICS_LOCK:
+        return dict(_MEASUREMENT_DIAGNOSTICS)
+
+
+def _count_ignored_measurement(key: str) -> None:
+    with _MEASUREMENT_DIAGNOSTICS_LOCK:
+        _MEASUREMENT_DIAGNOSTICS[key] += 1
+
+
+def _measurement_state_field(measurement: proto_stubs.MeasurementEntry) -> str | None:
+    """Prefer a stable ID and use the legacy string only when ID is absent."""
+    has_field = getattr(measurement, "HasField", None)
+    if callable(has_field) and has_field("id"):
+        definition = MEASUREMENT_ID_CATALOG.get(int(measurement.id))
+        if definition is None:
+            _count_ignored_measurement("unknown_typed_ids")
+            return None
+        field, canonical_unit = definition
+        if measurement.unit != canonical_unit:
+            _count_ignored_measurement("invalid_typed_units")
+            return None
+        return field
+    measurement_type = measurement.type.lower().strip()
+    if not measurement_type:
+        return None
+    normalized = measurement_type.replace("-", "_").replace(" ", "_")
+    legacy_definition = LEGACY_MEASUREMENT_CATALOG.get(normalized)
+    if legacy_definition is None:
+        _count_ignored_measurement("extension_strings")
+        return None
+    legacy_field, canonical_unit = legacy_definition
+    if getattr(measurement, "unit", "") != canonical_unit:
+        _count_ignored_measurement("invalid_legacy_units")
+        return None
+    return legacy_field
 
 
 def _dhw_system_function_to_dict(state: proto_stubs.DHWSystemFunctionState) -> DHWSystemFunctionState:
@@ -199,23 +276,31 @@ def _extract_scoped_energy_kwh(
     """Extract Vaillant/EEBUS scoped counters for heating and domestic hot water."""
     result: dict[str, float | None] = {"heating": None, "dhw": None}
     for measurement in measurements:
+        has_field = getattr(measurement, "HasField", None)
+        if callable(has_field) and has_field("id"):
+            definition = MEASUREMENT_ID_CATALOG.get(int(measurement.id))
+            if definition is None or measurement.unit != definition[1]:
+                continue
+            field = definition[0]
+            if field == "energy_consumed_heating_kwh":
+                result["heating"] = measurement.value
+            elif field == "energy_consumed_dhw_kwh":
+                result["dhw"] = measurement.value
+            continue
         measurement_type = str(getattr(measurement, "type", "")).lower().strip()
         if not measurement_type:
             continue
         normalized = measurement_type.replace("-", "_").replace(" ", "_")
+        if getattr(measurement, "unit", "") != "kWh":
+            _count_ignored_measurement("invalid_legacy_units")
+            continue
         value = getattr(measurement, "value", None)
         if value is None:
             continue
 
-        # Vaillant uses separate thermal storage contexts for heating and DHW.
-        if "energy" in normalized and (
-            "domestic_hot_water" in normalized or "hot_water" in normalized or "dhw" in normalized
-        ):
-            result["dhw"] = cast(float, value)
-            continue
-
-        if "energy" in normalized and ("heating" in normalized or "space_heating" in normalized):
-            result["heating"] = cast(float, value)
+        scope = LEGACY_SCOPED_ENERGY_CATALOG.get(normalized)
+        if scope is not None:
+            result[scope] = cast(float, value)
 
     return result
 
@@ -226,11 +311,7 @@ def _extract_flat_measurements(
     """Map per-phase / grid / produced-energy entries to coordinator keys."""
     result: dict[str, float | None] = {}
     for measurement in measurements:
-        measurement_type = str(getattr(measurement, "type", "")).lower().strip()
-        if not measurement_type:
-            continue
-        normalized = measurement_type.replace("-", "_").replace(" ", "_")
-        key = FLAT_MEASUREMENT_TYPE_TO_KEY.get(normalized)
+        key = _measurement_state_field(measurement)
         if key is None:
             continue
         value = getattr(measurement, "value", None)

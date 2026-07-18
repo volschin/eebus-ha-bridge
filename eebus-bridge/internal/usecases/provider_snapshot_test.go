@@ -203,7 +203,7 @@ func TestGridSnapshotExpiryInvalidatesPublishedMeasurementsWithExplicitClock(t *
 		t.Fatalf("PublishGridSnapshot() error = %v", err)
 	}
 
-	provider.expireGridSnapshot(provider.snapshotVersion, observedAt.Add(2*time.Hour))
+	provider.expireGridSnapshot(provider.snapshots.snapshotVersion(), observedAt.Add(2*time.Hour))
 	updates := meas.snapshotUpdates()
 	if len(updates) != 2 || len(updates[0]) != 3 || len(updates[1]) != 3 {
 		t.Fatalf("updates = %+v", updates)
@@ -245,7 +245,7 @@ func TestGridSnapshotExpiryIgnoresSupersededVersion(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("PublishGridSnapshot(old) error = %v", err)
 	}
-	oldVersion := provider.snapshotVersion
+	oldVersion := provider.snapshots.snapshotVersion()
 	if err := provider.PublishGridSnapshot(GridSnapshot{
 		PowerW: 200,
 		Validity: ProviderValidity{
@@ -264,9 +264,9 @@ func TestGridSnapshotExpiryIgnoresSupersededVersion(t *testing.T) {
 	if snapshot, ok := provider.CurrentGridSnapshot(observedAt.Add(90 * time.Minute)); !ok || snapshot.PowerW != 200 {
 		t.Fatalf("CurrentGridSnapshot() = %+v, %v; want new snapshot", snapshot, ok)
 	}
-	provider.snapshotMu.Lock()
-	stopProviderExpiryTimer(&provider.expiryTimer)
-	provider.snapshotMu.Unlock()
+	if err := provider.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
 }
 
 func TestPVSnapshotDoesNotTouchStaticPeakPowerConfiguration(t *testing.T) {
@@ -303,9 +303,9 @@ func TestPVSnapshotDoesNotTouchStaticPeakPowerConfiguration(t *testing.T) {
 	if snapshot, ok := provider.CurrentPVSnapshot(time.Now()); !ok || snapshot.PowerW != 1000 {
 		t.Fatalf("CurrentPVSnapshot() = %+v, %v; want committed live snapshot", snapshot, ok)
 	}
-	provider.snapshotMu.Lock()
-	stopProviderExpiryTimer(&provider.expiryTimer)
-	provider.snapshotMu.Unlock()
+	if err := provider.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
 }
 
 func TestGridSnapshotPublishFailureKeepsPreviousSnapshotAndUsesSingleFullBatch(t *testing.T) {
@@ -320,16 +320,15 @@ func TestGridSnapshotPublishFailureKeepsPreviousSnapshotAndUsesSingleFullBatch(t
 		powerID:    &powerID,
 		feedInID:   &feedInID,
 		consumedID: &consumedID,
-		snapshot: &GridSnapshot{
-			PowerW:   50,
-			FeedInWh: &previousFeedIn,
-			Validity: ProviderValidity{
-				ObservedAt: now,
-				ValidUntil: now.Add(time.Hour),
-			},
-		},
-		snapshotVersion: 1,
 	}
+	provider.snapshots.seed(GridSnapshot{
+		PowerW:   50,
+		FeedInWh: &previousFeedIn,
+		Validity: ProviderValidity{
+			ObservedAt: now,
+			ValidUntil: now.Add(time.Hour),
+		},
+	}, 1)
 	feedIn := 10.0
 	consumed := 20.0
 
@@ -361,16 +360,15 @@ func TestPVSnapshotPublishFailureKeepsPreviousSnapshotAndUsesSingleFullBatch(t *
 		meas:    meas,
 		powerID: &powerID,
 		yieldID: &yieldID,
-		snapshot: &PVSnapshot{
-			PowerW:  50,
-			YieldWh: &previousYield,
-			Validity: ProviderValidity{
-				ObservedAt: now,
-				ValidUntil: now.Add(time.Hour),
-			},
-		},
-		snapshotVersion: 1,
 	}
+	provider.snapshots.seed(PVSnapshot{
+		PowerW:  50,
+		YieldWh: &previousYield,
+		Validity: ProviderValidity{
+			ObservedAt: now,
+			ValidUntil: now.Add(time.Hour),
+		},
+	}, 1)
 	yieldWh := 10.0
 
 	err := provider.PublishPVSnapshot(PVSnapshot{
@@ -404,16 +402,15 @@ func TestBatterySnapshotPublishFailureKeepsPreviousSnapshotAndUsesSingleFullBatc
 		chargedID:    &chargedID,
 		dischargedID: &dischargedID,
 		socID:        &socID,
-		snapshot: &BatterySnapshot{
-			PowerW:           50,
-			StateOfChargePct: &previousSOC,
-			Validity: ProviderValidity{
-				ObservedAt: now,
-				ValidUntil: now.Add(time.Hour),
-			},
-		},
-		snapshotVersion: 1,
 	}
+	provider.snapshots.seed(BatterySnapshot{
+		PowerW:           50,
+		StateOfChargePct: &previousSOC,
+		Validity: ProviderValidity{
+			ObservedAt: now,
+			ValidUntil: now.Add(time.Hour),
+		},
+	}, 1)
 	charged := 10.0
 	discharged := 20.0
 	soc := 90.0
@@ -471,9 +468,9 @@ func TestGridSnapshotCommitAndCurrentAreDeepCopies(t *testing.T) {
 	if !ok || snapshot.FeedInWh == nil || *snapshot.FeedInWh != 10 {
 		t.Fatalf("CurrentGridSnapshot() after return mutation = %+v, %v", snapshot, ok)
 	}
-	provider.snapshotMu.Lock()
-	stopProviderExpiryTimer(&provider.expiryTimer)
-	provider.snapshotMu.Unlock()
+	if err := provider.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
 }
 
 func TestMeasurementDataForIDMarksOmittedFieldsInvalid(t *testing.T) {
@@ -487,6 +484,144 @@ func TestMeasurementDataForIDMarksOmittedFieldsInvalid(t *testing.T) {
 	}
 	if item.Data.ValueType == nil || *item.Data.ValueType != model.MeasurementValueTypeTypeValue {
 		t.Fatalf("ValueType = %v, want value", item.Data.ValueType)
+	}
+}
+
+func TestProviderSnapshotLifecycleContract(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name        string
+		publish     func() error
+		legacyWrite func() error
+		close       func() error
+		updates     func() int
+	}{
+		func() struct {
+			name                        string
+			publish, legacyWrite, close func() error
+			updates                     func() int
+		} {
+			server := &recordingMeasurementServer{}
+			ids := []model.MeasurementIdType{1, 2, 3}
+			provider := &MGCPProvider{meas: server, powerID: &ids[0], feedInID: &ids[1], consumedID: &ids[2]}
+			return struct {
+				name                        string
+				publish, legacyWrite, close func() error
+				updates                     func() int
+			}{
+				"MGCP",
+				func() error {
+					return provider.PublishGridSnapshot(GridSnapshot{PowerW: 1, Validity: ProviderValidity{ObservedAt: now, ValidUntil: now.Add(time.Hour)}})
+				},
+				func() error { return provider.PublishPower(1) }, provider.Close,
+				func() int { return len(server.snapshotUpdates()) },
+			}
+		}(),
+		func() struct {
+			name                        string
+			publish, legacyWrite, close func() error
+			updates                     func() int
+		} {
+			server := &recordingMeasurementServer{}
+			ids := []model.MeasurementIdType{1, 2}
+			provider := &VAPDProvider{meas: server, powerID: &ids[0], yieldID: &ids[1]}
+			return struct {
+				name                        string
+				publish, legacyWrite, close func() error
+				updates                     func() int
+			}{
+				"VAPD",
+				func() error {
+					return provider.PublishPVSnapshot(PVSnapshot{PowerW: 1, Validity: ProviderValidity{ObservedAt: now, ValidUntil: now.Add(time.Hour)}})
+				},
+				func() error { return provider.PublishPower(1) }, provider.Close,
+				func() int { return len(server.snapshotUpdates()) },
+			}
+		}(),
+		func() struct {
+			name                        string
+			publish, legacyWrite, close func() error
+			updates                     func() int
+		} {
+			server := &recordingMeasurementServer{}
+			ids := []model.MeasurementIdType{1, 2, 3, 4}
+			provider := &VABDProvider{meas: server, powerID: &ids[0], chargedID: &ids[1], dischargedID: &ids[2], socID: &ids[3]}
+			return struct {
+				name                        string
+				publish, legacyWrite, close func() error
+				updates                     func() int
+			}{
+				"VABD",
+				func() error {
+					return provider.PublishBatterySnapshot(BatterySnapshot{PowerW: 1, Validity: ProviderValidity{ObservedAt: now, ValidUntil: now.Add(time.Hour)}})
+				},
+				func() error { return provider.PublishPower(1) }, provider.Close,
+				func() int { return len(server.snapshotUpdates()) },
+			}
+		}(),
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.publish(); err != nil {
+				t.Fatalf("publish: %v", err)
+			}
+			if err := test.close(); err != nil {
+				t.Fatalf("close: %v", err)
+			}
+			if err := test.close(); err != nil {
+				t.Fatalf("second close: %v", err)
+			}
+			writesAtClose := test.updates()
+			if err := test.publish(); !errors.Is(err, ErrProviderClosed) {
+				t.Fatalf("snapshot publish after close = %v, want ErrProviderClosed", err)
+			}
+			if err := test.legacyWrite(); !errors.Is(err, ErrProviderClosed) {
+				t.Fatalf("legacy publish after close = %v, want ErrProviderClosed", err)
+			}
+			if writes := test.updates(); writes != writesAtClose {
+				t.Fatalf("writes after close = %d, want %d", writes, writesAtClose)
+			}
+		})
+	}
+}
+
+func TestProviderSnapshotPublishExpireCloseRace(t *testing.T) {
+	server := &recordingMeasurementServer{}
+	ids := []model.MeasurementIdType{1, 2, 3}
+	provider := &MGCPProvider{meas: server, powerID: &ids[0], feedInID: &ids[1], consumedID: &ids[2]}
+	now := time.Now()
+	if err := provider.PublishGridSnapshot(GridSnapshot{
+		PowerW: 1, Validity: ProviderValidity{ObservedAt: now, ValidUntil: now.Add(time.Hour)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	version := provider.snapshots.snapshotVersion()
+
+	var wait sync.WaitGroup
+	wait.Add(3)
+	go func() {
+		defer wait.Done()
+		_ = provider.PublishGridSnapshot(GridSnapshot{
+			PowerW: 2, Validity: ProviderValidity{ObservedAt: now, ValidUntil: now.Add(2 * time.Hour)},
+		})
+	}()
+	go func() {
+		defer wait.Done()
+		provider.expireGridSnapshot(version, now.Add(3*time.Hour))
+	}()
+	go func() {
+		defer wait.Done()
+		_ = provider.Close()
+	}()
+	wait.Wait()
+
+	writesAtClose := len(server.snapshotUpdates())
+	if err := provider.PublishGridSnapshot(GridSnapshot{}); !errors.Is(err, ErrProviderClosed) {
+		t.Fatalf("publish after raced close = %v", err)
+	}
+	if writes := len(server.snapshotUpdates()); writes != writesAtClose {
+		t.Fatalf("post-close writes = %d, want %d", writes, writesAtClose)
 	}
 }
 

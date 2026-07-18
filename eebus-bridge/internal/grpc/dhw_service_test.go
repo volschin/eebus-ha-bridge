@@ -92,6 +92,31 @@ func TestDHWServiceGetAndSet(t *testing.T) {
 	}
 }
 
+func TestDHWPayloadReadUpdatesCapabilityRegistry(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	controller := &fakeDHWController{
+		entity: mocks.NewEntityRemoteInterface(t),
+		state:  usecases.DHWSetpoint{Value: 45},
+	}
+	service := NewDHWService(controller, nil, eebus.NewEventBus(), registry)
+	event := &pb.DHWEvent{}
+	service.AttachDHWPayload(event, testValidSKI)
+	if event.GetSetpoint() == nil {
+		t.Fatal("DHW payload missing")
+	}
+	capabilities, _ := registry.DeviceCapabilities(testValidSKI)
+	for _, capability := range capabilities {
+		if capability.ID == eebus.CapabilityDHW {
+			if capability.State != eebus.CapabilityStateAvailable {
+				t.Fatalf("DHW capability = %+v", capability)
+			}
+			return
+		}
+	}
+	t.Fatal("DHW capability missing")
+}
+
 func TestDHWNeverAdvertisedWithoutSupportCallbackBecomesUnsupported(t *testing.T) {
 	registry := eebus.NewDeviceRegistry()
 	registry.AddDevice(testValidSKI, eebus.DeviceInfo{RemoteEntities: []spineapi.EntityRemoteInterface{nil}})

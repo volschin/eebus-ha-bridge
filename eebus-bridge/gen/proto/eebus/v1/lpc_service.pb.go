@@ -313,6 +313,7 @@ type LPCEvent struct {
 	//
 	//	*LPCEvent_LimitUpdate
 	//	*LPCEvent_FailsafeUpdate
+	//	*LPCEvent_HeartbeatUpdate
 	Data          isLPCEvent_Data `protobuf_oneof:"data"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -387,6 +388,15 @@ func (x *LPCEvent) GetFailsafeUpdate() *FailsafeLimit {
 	return nil
 }
 
+func (x *LPCEvent) GetHeartbeatUpdate() *HeartbeatStatus {
+	if x != nil {
+		if x, ok := x.Data.(*LPCEvent_HeartbeatUpdate); ok {
+			return x.HeartbeatUpdate
+		}
+	}
+	return nil
+}
+
 type isLPCEvent_Data interface {
 	isLPCEvent_Data()
 }
@@ -399,9 +409,15 @@ type LPCEvent_FailsafeUpdate struct {
 	FailsafeUpdate *FailsafeLimit `protobuf:"bytes,4,opt,name=failsafe_update,json=failsafeUpdate,proto3,oneof"`
 }
 
+type LPCEvent_HeartbeatUpdate struct {
+	HeartbeatUpdate *HeartbeatStatus `protobuf:"bytes,5,opt,name=heartbeat_update,json=heartbeatUpdate,proto3,oneof"`
+}
+
 func (*LPCEvent_LimitUpdate) isLPCEvent_Data() {}
 
 func (*LPCEvent_FailsafeUpdate) isLPCEvent_Data() {}
+
+func (*LPCEvent_HeartbeatUpdate) isLPCEvent_Data() {}
 
 var File_eebus_v1_lpc_service_proto protoreflect.FileDescriptor
 
@@ -425,13 +441,14 @@ const file_eebus_v1_lpc_service_proto_rawDesc = "" +
 	"\x18duration_minimum_seconds\x18\x03 \x01(\x03R\x16durationMinimumSeconds\"T\n" +
 	"\x0fHeartbeatStatus\x12\x18\n" +
 	"\arunning\x18\x01 \x01(\bR\arunning\x12'\n" +
-	"\x0fwithin_duration\x18\x02 \x01(\bR\x0ewithinDuration\"\xd9\x01\n" +
+	"\x0fwithin_duration\x18\x02 \x01(\bR\x0ewithinDuration\"\xa1\x02\n" +
 	"\bLPCEvent\x12\x10\n" +
 	"\x03ski\x18\x01 \x01(\tR\x03ski\x125\n" +
 	"\n" +
 	"event_type\x18\x02 \x01(\x0e2\x16.eebus.v1.LPCEventTypeR\teventType\x128\n" +
 	"\flimit_update\x18\x03 \x01(\v2\x13.eebus.v1.LoadLimitH\x00R\vlimitUpdate\x12B\n" +
-	"\x0ffailsafe_update\x18\x04 \x01(\v2\x17.eebus.v1.FailsafeLimitH\x00R\x0efailsafeUpdateB\x06\n" +
+	"\x0ffailsafe_update\x18\x04 \x01(\v2\x17.eebus.v1.FailsafeLimitH\x00R\x0efailsafeUpdate\x12F\n" +
+	"\x10heartbeat_update\x18\x05 \x01(\v2\x19.eebus.v1.HeartbeatStatusH\x00R\x0fheartbeatUpdateB\x06\n" +
 	"\x04data*\x87\x01\n" +
 	"\fLPCEventType\x12\x19\n" +
 	"\x15LPC_EVENT_UNSPECIFIED\x10\x00\x12\x1b\n" +
@@ -478,27 +495,28 @@ var file_eebus_v1_lpc_service_proto_depIdxs = []int32{
 	0,  // 0: eebus.v1.LPCEvent.event_type:type_name -> eebus.v1.LPCEventType
 	6,  // 1: eebus.v1.LPCEvent.limit_update:type_name -> eebus.v1.LoadLimit
 	2,  // 2: eebus.v1.LPCEvent.failsafe_update:type_name -> eebus.v1.FailsafeLimit
-	7,  // 3: eebus.v1.LPCService.GetConsumptionLimit:input_type -> eebus.v1.DeviceRequest
-	1,  // 4: eebus.v1.LPCService.WriteConsumptionLimit:input_type -> eebus.v1.WriteLoadLimitRequest
-	7,  // 5: eebus.v1.LPCService.GetFailsafeLimit:input_type -> eebus.v1.DeviceRequest
-	3,  // 6: eebus.v1.LPCService.WriteFailsafeLimit:input_type -> eebus.v1.WriteFailsafeLimitRequest
-	7,  // 7: eebus.v1.LPCService.StartHeartbeat:input_type -> eebus.v1.DeviceRequest
-	7,  // 8: eebus.v1.LPCService.StopHeartbeat:input_type -> eebus.v1.DeviceRequest
-	7,  // 9: eebus.v1.LPCService.GetHeartbeatStatus:input_type -> eebus.v1.DeviceRequest
-	7,  // 10: eebus.v1.LPCService.SubscribeLPCEvents:input_type -> eebus.v1.DeviceRequest
-	6,  // 11: eebus.v1.LPCService.GetConsumptionLimit:output_type -> eebus.v1.LoadLimit
-	8,  // 12: eebus.v1.LPCService.WriteConsumptionLimit:output_type -> eebus.v1.Empty
-	2,  // 13: eebus.v1.LPCService.GetFailsafeLimit:output_type -> eebus.v1.FailsafeLimit
-	8,  // 14: eebus.v1.LPCService.WriteFailsafeLimit:output_type -> eebus.v1.Empty
-	8,  // 15: eebus.v1.LPCService.StartHeartbeat:output_type -> eebus.v1.Empty
-	8,  // 16: eebus.v1.LPCService.StopHeartbeat:output_type -> eebus.v1.Empty
-	4,  // 17: eebus.v1.LPCService.GetHeartbeatStatus:output_type -> eebus.v1.HeartbeatStatus
-	5,  // 18: eebus.v1.LPCService.SubscribeLPCEvents:output_type -> eebus.v1.LPCEvent
-	11, // [11:19] is the sub-list for method output_type
-	3,  // [3:11] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	4,  // 3: eebus.v1.LPCEvent.heartbeat_update:type_name -> eebus.v1.HeartbeatStatus
+	7,  // 4: eebus.v1.LPCService.GetConsumptionLimit:input_type -> eebus.v1.DeviceRequest
+	1,  // 5: eebus.v1.LPCService.WriteConsumptionLimit:input_type -> eebus.v1.WriteLoadLimitRequest
+	7,  // 6: eebus.v1.LPCService.GetFailsafeLimit:input_type -> eebus.v1.DeviceRequest
+	3,  // 7: eebus.v1.LPCService.WriteFailsafeLimit:input_type -> eebus.v1.WriteFailsafeLimitRequest
+	7,  // 8: eebus.v1.LPCService.StartHeartbeat:input_type -> eebus.v1.DeviceRequest
+	7,  // 9: eebus.v1.LPCService.StopHeartbeat:input_type -> eebus.v1.DeviceRequest
+	7,  // 10: eebus.v1.LPCService.GetHeartbeatStatus:input_type -> eebus.v1.DeviceRequest
+	7,  // 11: eebus.v1.LPCService.SubscribeLPCEvents:input_type -> eebus.v1.DeviceRequest
+	6,  // 12: eebus.v1.LPCService.GetConsumptionLimit:output_type -> eebus.v1.LoadLimit
+	8,  // 13: eebus.v1.LPCService.WriteConsumptionLimit:output_type -> eebus.v1.Empty
+	2,  // 14: eebus.v1.LPCService.GetFailsafeLimit:output_type -> eebus.v1.FailsafeLimit
+	8,  // 15: eebus.v1.LPCService.WriteFailsafeLimit:output_type -> eebus.v1.Empty
+	8,  // 16: eebus.v1.LPCService.StartHeartbeat:output_type -> eebus.v1.Empty
+	8,  // 17: eebus.v1.LPCService.StopHeartbeat:output_type -> eebus.v1.Empty
+	4,  // 18: eebus.v1.LPCService.GetHeartbeatStatus:output_type -> eebus.v1.HeartbeatStatus
+	5,  // 19: eebus.v1.LPCService.SubscribeLPCEvents:output_type -> eebus.v1.LPCEvent
+	12, // [12:20] is the sub-list for method output_type
+	4,  // [4:12] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_eebus_v1_lpc_service_proto_init() }
@@ -510,6 +528,7 @@ func file_eebus_v1_lpc_service_proto_init() {
 	file_eebus_v1_lpc_service_proto_msgTypes[4].OneofWrappers = []any{
 		(*LPCEvent_LimitUpdate)(nil),
 		(*LPCEvent_FailsafeUpdate)(nil),
+		(*LPCEvent_HeartbeatUpdate)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

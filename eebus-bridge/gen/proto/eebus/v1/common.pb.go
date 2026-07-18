@@ -22,6 +22,117 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// MeasurementId is append-only. Known IDs have one canonical unit in the
+// bridge adapter; MEASUREMENT_ID_UNSPECIFIED is reserved for extensions.
+type MeasurementId int32
+
+const (
+	MeasurementId_MEASUREMENT_ID_UNSPECIFIED             MeasurementId = 0
+	MeasurementId_MEASUREMENT_ID_POWER_CONSUMPTION       MeasurementId = 1
+	MeasurementId_MEASUREMENT_ID_ENERGY_CONSUMED         MeasurementId = 2
+	MeasurementId_MEASUREMENT_ID_POWER_L1                MeasurementId = 3
+	MeasurementId_MEASUREMENT_ID_POWER_L2                MeasurementId = 4
+	MeasurementId_MEASUREMENT_ID_POWER_L3                MeasurementId = 5
+	MeasurementId_MEASUREMENT_ID_CURRENT_L1              MeasurementId = 6
+	MeasurementId_MEASUREMENT_ID_CURRENT_L2              MeasurementId = 7
+	MeasurementId_MEASUREMENT_ID_CURRENT_L3              MeasurementId = 8
+	MeasurementId_MEASUREMENT_ID_VOLTAGE_L1              MeasurementId = 9
+	MeasurementId_MEASUREMENT_ID_VOLTAGE_L2              MeasurementId = 10
+	MeasurementId_MEASUREMENT_ID_VOLTAGE_L3              MeasurementId = 11
+	MeasurementId_MEASUREMENT_ID_FREQUENCY               MeasurementId = 12
+	MeasurementId_MEASUREMENT_ID_ENERGY_PRODUCED         MeasurementId = 13
+	MeasurementId_MEASUREMENT_ID_DHW_TEMPERATURE         MeasurementId = 14
+	MeasurementId_MEASUREMENT_ID_ROOM_TEMPERATURE        MeasurementId = 15
+	MeasurementId_MEASUREMENT_ID_OUTDOOR_TEMPERATURE     MeasurementId = 16
+	MeasurementId_MEASUREMENT_ID_FLOW_TEMPERATURE        MeasurementId = 17
+	MeasurementId_MEASUREMENT_ID_RETURN_TEMPERATURE      MeasurementId = 18
+	MeasurementId_MEASUREMENT_ID_COMPRESSOR_TEMPERATURE  MeasurementId = 19
+	MeasurementId_MEASUREMENT_ID_COMPRESSOR_POWER        MeasurementId = 20
+	MeasurementId_MEASUREMENT_ID_ENERGY_CONSUMED_HEATING MeasurementId = 21
+	MeasurementId_MEASUREMENT_ID_ENERGY_CONSUMED_DHW     MeasurementId = 22
+)
+
+// Enum value maps for MeasurementId.
+var (
+	MeasurementId_name = map[int32]string{
+		0:  "MEASUREMENT_ID_UNSPECIFIED",
+		1:  "MEASUREMENT_ID_POWER_CONSUMPTION",
+		2:  "MEASUREMENT_ID_ENERGY_CONSUMED",
+		3:  "MEASUREMENT_ID_POWER_L1",
+		4:  "MEASUREMENT_ID_POWER_L2",
+		5:  "MEASUREMENT_ID_POWER_L3",
+		6:  "MEASUREMENT_ID_CURRENT_L1",
+		7:  "MEASUREMENT_ID_CURRENT_L2",
+		8:  "MEASUREMENT_ID_CURRENT_L3",
+		9:  "MEASUREMENT_ID_VOLTAGE_L1",
+		10: "MEASUREMENT_ID_VOLTAGE_L2",
+		11: "MEASUREMENT_ID_VOLTAGE_L3",
+		12: "MEASUREMENT_ID_FREQUENCY",
+		13: "MEASUREMENT_ID_ENERGY_PRODUCED",
+		14: "MEASUREMENT_ID_DHW_TEMPERATURE",
+		15: "MEASUREMENT_ID_ROOM_TEMPERATURE",
+		16: "MEASUREMENT_ID_OUTDOOR_TEMPERATURE",
+		17: "MEASUREMENT_ID_FLOW_TEMPERATURE",
+		18: "MEASUREMENT_ID_RETURN_TEMPERATURE",
+		19: "MEASUREMENT_ID_COMPRESSOR_TEMPERATURE",
+		20: "MEASUREMENT_ID_COMPRESSOR_POWER",
+		21: "MEASUREMENT_ID_ENERGY_CONSUMED_HEATING",
+		22: "MEASUREMENT_ID_ENERGY_CONSUMED_DHW",
+	}
+	MeasurementId_value = map[string]int32{
+		"MEASUREMENT_ID_UNSPECIFIED":             0,
+		"MEASUREMENT_ID_POWER_CONSUMPTION":       1,
+		"MEASUREMENT_ID_ENERGY_CONSUMED":         2,
+		"MEASUREMENT_ID_POWER_L1":                3,
+		"MEASUREMENT_ID_POWER_L2":                4,
+		"MEASUREMENT_ID_POWER_L3":                5,
+		"MEASUREMENT_ID_CURRENT_L1":              6,
+		"MEASUREMENT_ID_CURRENT_L2":              7,
+		"MEASUREMENT_ID_CURRENT_L3":              8,
+		"MEASUREMENT_ID_VOLTAGE_L1":              9,
+		"MEASUREMENT_ID_VOLTAGE_L2":              10,
+		"MEASUREMENT_ID_VOLTAGE_L3":              11,
+		"MEASUREMENT_ID_FREQUENCY":               12,
+		"MEASUREMENT_ID_ENERGY_PRODUCED":         13,
+		"MEASUREMENT_ID_DHW_TEMPERATURE":         14,
+		"MEASUREMENT_ID_ROOM_TEMPERATURE":        15,
+		"MEASUREMENT_ID_OUTDOOR_TEMPERATURE":     16,
+		"MEASUREMENT_ID_FLOW_TEMPERATURE":        17,
+		"MEASUREMENT_ID_RETURN_TEMPERATURE":      18,
+		"MEASUREMENT_ID_COMPRESSOR_TEMPERATURE":  19,
+		"MEASUREMENT_ID_COMPRESSOR_POWER":        20,
+		"MEASUREMENT_ID_ENERGY_CONSUMED_HEATING": 21,
+		"MEASUREMENT_ID_ENERGY_CONSUMED_DHW":     22,
+	}
+)
+
+func (x MeasurementId) Enum() *MeasurementId {
+	p := new(MeasurementId)
+	*p = x
+	return p
+}
+
+func (x MeasurementId) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MeasurementId) Descriptor() protoreflect.EnumDescriptor {
+	return file_eebus_v1_common_proto_enumTypes[0].Descriptor()
+}
+
+func (MeasurementId) Type() protoreflect.EnumType {
+	return &file_eebus_v1_common_proto_enumTypes[0]
+}
+
+func (x MeasurementId) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MeasurementId.Descriptor instead.
+func (MeasurementId) EnumDescriptor() ([]byte, []int) {
+	return file_eebus_v1_common_proto_rawDescGZIP(), []int{0}
+}
+
 type Empty struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -285,11 +396,14 @@ func (x *PowerMeasurement) GetTimestamp() *timestamppb.Timestamp {
 }
 
 type MeasurementEntry struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
-	Value         float64                `protobuf:"fixed64,2,opt,name=value,proto3" json:"value,omitempty"`
-	Unit          string                 `protobuf:"bytes,3,opt,name=unit,proto3" json:"unit,omitempty"`
-	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Type      string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	Value     float64                `protobuf:"fixed64,2,opt,name=value,proto3" json:"value,omitempty"`
+	Unit      string                 `protobuf:"bytes,3,opt,name=unit,proto3" json:"unit,omitempty"`
+	Timestamp *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	// Stable catalog identifier for product-supported measurements. The legacy
+	// type string remains populated during the v1 compatibility window.
+	Id            *MeasurementId `protobuf:"varint,5,opt,name=id,proto3,enum=eebus.v1.MeasurementId,oneof" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -352,6 +466,13 @@ func (x *MeasurementEntry) GetTimestamp() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *MeasurementEntry) GetId() MeasurementId {
+	if x != nil && x.Id != nil {
+		return *x.Id
+	}
+	return MeasurementId_MEASUREMENT_ID_UNSPECIFIED
+}
+
 var File_eebus_v1_common_proto protoreflect.FileDescriptor
 
 const file_eebus_v1_common_proto_rawDesc = "" +
@@ -374,12 +495,39 @@ const file_eebus_v1_common_proto_rawDesc = "" +
 	"\ris_changeable\x18\x04 \x01(\bR\fisChangeable\"b\n" +
 	"\x10PowerMeasurement\x12\x14\n" +
 	"\x05watts\x18\x01 \x01(\x01R\x05watts\x128\n" +
-	"\ttimestamp\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"\x8a\x01\n" +
+	"\ttimestamp\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"\xbf\x01\n" +
 	"\x10MeasurementEntry\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x01R\x05value\x12\x12\n" +
 	"\x04unit\x18\x03 \x01(\tR\x04unit\x128\n" +
-	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestampB=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3"
+	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12,\n" +
+	"\x02id\x18\x05 \x01(\x0e2\x17.eebus.v1.MeasurementIdH\x00R\x02id\x88\x01\x01B\x05\n" +
+	"\x03_id*\xad\x06\n" +
+	"\rMeasurementId\x12\x1e\n" +
+	"\x1aMEASUREMENT_ID_UNSPECIFIED\x10\x00\x12$\n" +
+	" MEASUREMENT_ID_POWER_CONSUMPTION\x10\x01\x12\"\n" +
+	"\x1eMEASUREMENT_ID_ENERGY_CONSUMED\x10\x02\x12\x1b\n" +
+	"\x17MEASUREMENT_ID_POWER_L1\x10\x03\x12\x1b\n" +
+	"\x17MEASUREMENT_ID_POWER_L2\x10\x04\x12\x1b\n" +
+	"\x17MEASUREMENT_ID_POWER_L3\x10\x05\x12\x1d\n" +
+	"\x19MEASUREMENT_ID_CURRENT_L1\x10\x06\x12\x1d\n" +
+	"\x19MEASUREMENT_ID_CURRENT_L2\x10\a\x12\x1d\n" +
+	"\x19MEASUREMENT_ID_CURRENT_L3\x10\b\x12\x1d\n" +
+	"\x19MEASUREMENT_ID_VOLTAGE_L1\x10\t\x12\x1d\n" +
+	"\x19MEASUREMENT_ID_VOLTAGE_L2\x10\n" +
+	"\x12\x1d\n" +
+	"\x19MEASUREMENT_ID_VOLTAGE_L3\x10\v\x12\x1c\n" +
+	"\x18MEASUREMENT_ID_FREQUENCY\x10\f\x12\"\n" +
+	"\x1eMEASUREMENT_ID_ENERGY_PRODUCED\x10\r\x12\"\n" +
+	"\x1eMEASUREMENT_ID_DHW_TEMPERATURE\x10\x0e\x12#\n" +
+	"\x1fMEASUREMENT_ID_ROOM_TEMPERATURE\x10\x0f\x12&\n" +
+	"\"MEASUREMENT_ID_OUTDOOR_TEMPERATURE\x10\x10\x12#\n" +
+	"\x1fMEASUREMENT_ID_FLOW_TEMPERATURE\x10\x11\x12%\n" +
+	"!MEASUREMENT_ID_RETURN_TEMPERATURE\x10\x12\x12)\n" +
+	"%MEASUREMENT_ID_COMPRESSOR_TEMPERATURE\x10\x13\x12#\n" +
+	"\x1fMEASUREMENT_ID_COMPRESSOR_POWER\x10\x14\x12*\n" +
+	"&MEASUREMENT_ID_ENERGY_CONSUMED_HEATING\x10\x15\x12&\n" +
+	"\"MEASUREMENT_ID_ENERGY_CONSUMED_DHW\x10\x16B=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3"
 
 var (
 	file_eebus_v1_common_proto_rawDescOnce sync.Once
@@ -393,26 +541,29 @@ func file_eebus_v1_common_proto_rawDescGZIP() []byte {
 	return file_eebus_v1_common_proto_rawDescData
 }
 
+var file_eebus_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_eebus_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_eebus_v1_common_proto_goTypes = []any{
-	(*Empty)(nil),                 // 0: eebus.v1.Empty
-	(*ProviderSampleMeta)(nil),    // 1: eebus.v1.ProviderSampleMeta
-	(*DeviceRequest)(nil),         // 2: eebus.v1.DeviceRequest
-	(*LoadLimit)(nil),             // 3: eebus.v1.LoadLimit
-	(*PowerMeasurement)(nil),      // 4: eebus.v1.PowerMeasurement
-	(*MeasurementEntry)(nil),      // 5: eebus.v1.MeasurementEntry
-	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
+	(MeasurementId)(0),            // 0: eebus.v1.MeasurementId
+	(*Empty)(nil),                 // 1: eebus.v1.Empty
+	(*ProviderSampleMeta)(nil),    // 2: eebus.v1.ProviderSampleMeta
+	(*DeviceRequest)(nil),         // 3: eebus.v1.DeviceRequest
+	(*LoadLimit)(nil),             // 4: eebus.v1.LoadLimit
+	(*PowerMeasurement)(nil),      // 5: eebus.v1.PowerMeasurement
+	(*MeasurementEntry)(nil),      // 6: eebus.v1.MeasurementEntry
+	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
 }
 var file_eebus_v1_common_proto_depIdxs = []int32{
-	6, // 0: eebus.v1.ProviderSampleMeta.observed_at:type_name -> google.protobuf.Timestamp
-	6, // 1: eebus.v1.ProviderSampleMeta.valid_until:type_name -> google.protobuf.Timestamp
-	6, // 2: eebus.v1.PowerMeasurement.timestamp:type_name -> google.protobuf.Timestamp
-	6, // 3: eebus.v1.MeasurementEntry.timestamp:type_name -> google.protobuf.Timestamp
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	7, // 0: eebus.v1.ProviderSampleMeta.observed_at:type_name -> google.protobuf.Timestamp
+	7, // 1: eebus.v1.ProviderSampleMeta.valid_until:type_name -> google.protobuf.Timestamp
+	7, // 2: eebus.v1.PowerMeasurement.timestamp:type_name -> google.protobuf.Timestamp
+	7, // 3: eebus.v1.MeasurementEntry.timestamp:type_name -> google.protobuf.Timestamp
+	0, // 4: eebus.v1.MeasurementEntry.id:type_name -> eebus.v1.MeasurementId
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_eebus_v1_common_proto_init() }
@@ -420,18 +571,20 @@ func file_eebus_v1_common_proto_init() {
 	if File_eebus_v1_common_proto != nil {
 		return
 	}
+	file_eebus_v1_common_proto_msgTypes[5].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_eebus_v1_common_proto_rawDesc), len(file_eebus_v1_common_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_eebus_v1_common_proto_goTypes,
 		DependencyIndexes: file_eebus_v1_common_proto_depIdxs,
+		EnumInfos:         file_eebus_v1_common_proto_enumTypes,
 		MessageInfos:      file_eebus_v1_common_proto_msgTypes,
 	}.Build()
 	File_eebus_v1_common_proto = out.File

@@ -22,6 +22,7 @@ import (
 
 type fakeBridgeLifecycle struct {
 	mu           sync.Mutex
+	setupErr     error
 	startErr     error
 	started      chan struct{}
 	startOnce    sync.Once
@@ -32,9 +33,20 @@ type fakeBridgeLifecycle struct {
 	unregisters  []string
 	registered   chan struct{}
 	registerOnce sync.Once
+	setupStarted chan struct{}
+	setupRelease chan struct{}
+	setupOnce    sync.Once
 }
 
-func (f *fakeBridgeLifecycle) Setup() error { return nil }
+func (f *fakeBridgeLifecycle) Setup() error {
+	if f.setupStarted != nil {
+		f.setupOnce.Do(func() { close(f.setupStarted) })
+	}
+	if f.setupRelease != nil {
+		<-f.setupRelease
+	}
+	return f.setupErr
+}
 
 func (f *fakeBridgeLifecycle) Start() error {
 	f.starts.Add(1)
@@ -88,6 +100,9 @@ type fakeGRPCLifecycle struct {
 
 	healthMu sync.Mutex
 	health   []bool
+
+	deviceHealthMu sync.Mutex
+	deviceHealth   []bool
 }
 
 func (f *fakeGRPCLifecycle) Start() error {
@@ -119,6 +134,18 @@ func (f *fakeGRPCLifecycle) SetHealthy(healthy bool) {
 	f.healthMu.Lock()
 	f.health = append(f.health, healthy)
 	f.healthMu.Unlock()
+}
+
+func (f *fakeGRPCLifecycle) SetDeviceHealthy(healthy bool) {
+	f.deviceHealthMu.Lock()
+	f.deviceHealth = append(f.deviceHealth, healthy)
+	f.deviceHealthMu.Unlock()
+}
+
+func (f *fakeGRPCLifecycle) deviceHealthValues() []bool {
+	f.deviceHealthMu.Lock()
+	defer f.deviceHealthMu.Unlock()
+	return append([]bool(nil), f.deviceHealth...)
 }
 
 func (f *fakeGRPCLifecycle) healthValues() []bool {
@@ -173,6 +200,8 @@ func TestProductionCompositionRootIsInertUntilStartAndRegistersAllUseCases(t *te
 	assert.Empty(t, server.Addr(), "NewApplication must not start the gRPC listener")
 	assert.Empty(t, app.registeredUseCases, "NewApplication must not run EEBUS setup")
 
+	require.NoError(t, app.bridgeSvc.Setup())
+	t.Cleanup(app.bridgeSvc.Shutdown)
 	require.NoError(t, app.prepareForStart())
 	assert.ElementsMatch(t, []string{
 		"LPC", "Monitoring", "DHWMonitoring", "MRT", "MOT", "DHWTemperature",
@@ -184,11 +213,12 @@ type fakeHeartbeatLifecycle struct {
 	starts   atomic.Int32
 	stops    atomic.Int32
 	recorder *shutdownRecorder
+	startErr error
 }
 
 func (f *fakeHeartbeatLifecycle) StartHeartbeat(string) error {
 	f.starts.Add(1)
-	return nil
+	return f.startErr
 }
 
 func (f *fakeHeartbeatLifecycle) StopHeartbeat() error {
@@ -250,6 +280,37 @@ func (f *fakeMonitoringRegistry) ClearEntities(ski string) {
 	f.clearCalls = append(f.clearCalls, ski)
 }
 
+func (f *fakeMonitoringRegistry) DeviceHealth(ski string) (eebus.DeviceHealthSnapshot, bool) {
+	ski = eebus.NormalizeSKI(ski)
+	for _, device := range f.ListDeviceHealth() {
+		if device.SKI == ski {
+			return device, true
+		}
+	}
+	return eebus.DeviceHealthSnapshot{}, false
+}
+
+func (f *fakeMonitoringRegistry) ListDeviceHealth() []eebus.DeviceHealthSnapshot {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	seen := make(map[string]struct{})
+	result := make([]eebus.DeviceHealthSnapshot, 0, len(f.stale)+len(f.clearCalls))
+	for _, values := range [][]string{f.stale, f.clearCalls} {
+		for _, ski := range values {
+			ski = eebus.NormalizeSKI(ski)
+			if _, ok := seen[ski]; ok {
+				continue
+			}
+			seen[ski] = struct{}{}
+			result = append(result, eebus.DeviceHealthSnapshot{
+				SKI: ski, Connected: true, MonitoringSuccessOnConnect: f.hasSuccess,
+				LastMonitoringSuccess: f.successAt,
+			})
+		}
+	}
+	return result
+}
+
 func (f *fakeMonitoringRegistry) clearValues() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -298,18 +359,27 @@ func newTestApplication(
 	heartbeat heartbeatLifecycle,
 	registry monitoringRegistry,
 ) *Application {
-	return &Application{
+	app := &Application{
 		cfg:       &config.Config{},
 		bridgeSvc: bridge,
 		grpcSrv:   grpcServer,
 		registry:  registry,
 		modules: []applicationModule{{
-			name: "heartbeat",
-			stop: heartbeat.StopHeartbeat,
+			name:  "heartbeat",
+			start: func() error { return heartbeat.StartHeartbeat("") },
+			stop:  heartbeat.StopHeartbeat,
 		}},
 		monitoringWatchdogInterval: time.Millisecond,
 		backgroundFailures:         make(chan backgroundFailure, 1),
 	}
+	app.recoverySupervisor = eebus.NewRecoverySupervisor(registry, bridge, eebus.RecoveryConfig{
+		StaleThreshold: monitoringStaleThreshold,
+		GracePeriod:    monitoringGracePeriod,
+		BaseBackoff:    monitoringGracePeriod,
+		MaxBackoff:     monitoringGracePeriod,
+		MaxAttempts:    monitoringRecoveryMaxAttempts,
+	})
+	return app
 }
 
 func TestApplicationStartReturnsPartialStartupFailure(t *testing.T) {
@@ -324,8 +394,14 @@ func TestApplicationStartReturnsPartialStartupFailure(t *testing.T) {
 	require.ErrorIs(t, err, startErr)
 	assert.Contains(t, err.Error(), "EEBUS service start")
 	assert.Equal(t, int32(1), bridge.stops.Load())
-	assert.Equal(t, int32(1), grpcServer.stops.Load())
-	assert.Equal(t, int32(1), heartbeat.stops.Load())
+	assert.Equal(t, int32(0), grpcServer.stops.Load())
+	assert.Equal(t, int32(0), heartbeat.stops.Load())
+}
+
+func TestLPCHeartbeatStartFailureIsNonFatal(t *testing.T) {
+	heartbeat := &fakeHeartbeatLifecycle{startErr: errors.New("heartbeat unavailable")}
+	require.NoError(t, startLPCHeartbeat(heartbeat))
+	assert.Equal(t, int32(1), heartbeat.starts.Load())
 }
 
 func TestApplicationStartGRPCServeFailureTriggersControlledShutdown(t *testing.T) {
@@ -343,6 +419,114 @@ func TestApplicationStartGRPCServeFailureTriggersControlledShutdown(t *testing.T
 	assert.Equal(t, int32(1), bridge.stops.Load())
 	assert.Equal(t, int32(1), grpcServer.stops.Load())
 	assert.Equal(t, int32(1), heartbeat.stops.Load())
+}
+
+func TestApplicationHeartbeatStartFailurePreventsServing(t *testing.T) {
+	heartbeatErr := errors.New("heartbeat unavailable")
+	bridge := &fakeBridgeLifecycle{}
+	grpcServer := &fakeGRPCLifecycle{}
+	heartbeat := &fakeHeartbeatLifecycle{startErr: heartbeatErr}
+	app := newTestApplication(bridge, grpcServer, heartbeat, nil)
+
+	err := app.Start(context.Background())
+
+	require.ErrorIs(t, err, heartbeatErr)
+	assert.Contains(t, err.Error(), "starting heartbeat module")
+	assert.Equal(t, int32(1), heartbeat.starts.Load())
+	assert.Equal(t, int32(0), heartbeat.stops.Load())
+	assert.Equal(t, int32(1), bridge.stops.Load())
+	assert.Equal(t, int32(0), grpcServer.starts.Load())
+	assert.NotContains(t, grpcServer.healthValues(), true)
+}
+
+func TestApplicationStopDuringCompositionCannotRestartEEBUS(t *testing.T) {
+	setupStarted := make(chan struct{})
+	setupRelease := make(chan struct{})
+	bridge := &fakeBridgeLifecycle{setupStarted: setupStarted, setupRelease: setupRelease}
+	grpcServer := &fakeGRPCLifecycle{}
+	heartbeat := &fakeHeartbeatLifecycle{}
+	app := newTestApplication(bridge, grpcServer, heartbeat, nil)
+	result := make(chan error, 1)
+	go func() { result <- app.Start(context.Background()) }()
+
+	select {
+	case <-setupStarted:
+	case <-time.After(time.Second):
+		t.Fatal("application did not enter EEBUS setup")
+	}
+	stopDone := make(chan struct{})
+	go func() {
+		app.Stop()
+		close(stopDone)
+	}()
+	select {
+	case <-stopDone:
+		t.Fatal("Stop returned while startup still owned the composition transaction")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(setupRelease)
+
+	select {
+	case err := <-result:
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("Start did not return after concurrent Stop")
+	}
+	select {
+	case <-stopDone:
+	case <-time.After(time.Second):
+		t.Fatal("concurrent Stop did not finish")
+	}
+	assert.Equal(t, int32(0), bridge.starts.Load())
+	assert.Equal(t, int32(1), bridge.stops.Load())
+	assert.Equal(t, int32(0), heartbeat.starts.Load())
+	assert.Equal(t, int32(0), grpcServer.starts.Load())
+	assert.NotContains(t, grpcServer.healthValues(), true)
+}
+
+func TestApplicationStartRollsBackOnlySuccessfulStagesInReverseOrder(t *testing.T) {
+	tests := []struct {
+		name         string
+		setupErr     error
+		bridgeErr    error
+		module1Err   error
+		module2Err   error
+		grpcErr      error
+		wantRollback []string
+	}{
+		{name: "setup", setupErr: errors.New("setup"), wantRollback: nil},
+		{name: "bridge", bridgeErr: errors.New("bridge"), wantRollback: []string{"bridge"}},
+		{name: "first module", module1Err: errors.New("module"), wantRollback: []string{"bridge"}},
+		{name: "second module", module2Err: errors.New("module"), wantRollback: []string{"module-one", "bridge"}},
+		{name: "grpc", grpcErr: errors.New("grpc"), wantRollback: []string{"grpc", "module-two", "module-one", "bridge"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := &shutdownRecorder{}
+			bridge := &fakeBridgeLifecycle{
+				setupErr: test.setupErr, startErr: test.bridgeErr, recorder: recorder,
+			}
+			grpcServer := &fakeGRPCLifecycle{startErr: test.grpcErr, recorder: recorder}
+			app := newTestApplication(bridge, grpcServer, &fakeHeartbeatLifecycle{}, nil)
+			app.modules = []applicationModule{
+				{
+					name:  "module-one",
+					start: func() error { return test.module1Err },
+					stop:  func() error { recorder.add("module-one"); return nil },
+				},
+				{
+					name:  "module-two",
+					start: func() error { return test.module2Err },
+					stop:  func() error { recorder.add("module-two"); return nil },
+				},
+			}
+
+			err := app.Start(context.Background())
+			require.Error(t, err)
+			assert.Equal(t, test.wantRollback, recorder.values())
+		})
+	}
 }
 
 func TestApplicationStartWatchdogStartsDeviceScopedRecovery(t *testing.T) {
@@ -420,7 +604,7 @@ func TestMonitoringRecoveryDoesNotTouchOtherDevicesOrRunInParallel(t *testing.T)
 	require.True(t, ok)
 	assert.Len(t, other.RemoteEntities, 1)
 	assert.Same(t, otherEntity, other.RemoteEntities[0])
-	assert.Equal(t, []bool{false, false}, grpcServer.healthValues())
+	assert.Equal(t, []bool{false, false}, grpcServer.deviceHealthValues())
 }
 
 func TestMonitoringRecoverySuccessfulRebindPreventsRestart(t *testing.T) {
@@ -436,11 +620,12 @@ func TestMonitoringRecoverySuccessfulRebindPreventsRestart(t *testing.T) {
 	require.False(t, app.handleMonitoringWatchdogTick(now.Add(monitoringGracePeriod+time.Second)))
 
 	assert.Empty(t, app.backgroundFailures)
-	assert.Empty(t, app.deviceRecoveries)
+	recovery := app.recoverySupervisor.Snapshot("AA11", now.Add(monitoringGracePeriod+time.Second))
+	assert.Equal(t, eebus.RecoveryStateHealthy, recovery.State)
 	assert.Equal(t, []string{"AA11"}, registry.clearValues())
 	assert.Equal(t, []string{"AA11"}, bridge.unregisterValues())
 	assert.Equal(t, []string{"AA11"}, bridge.registerValues())
-	assert.Equal(t, []bool{false, true}, grpcServer.healthValues())
+	assert.Equal(t, []bool{false, true}, grpcServer.deviceHealthValues())
 }
 
 func TestMonitoringRecoveryDisconnectedOrGraceDoesNotResetRecovery(t *testing.T) {
@@ -458,8 +643,9 @@ func TestMonitoringRecoveryDisconnectedOrGraceDoesNotResetRecovery(t *testing.T)
 	assert.Len(t, registry.clearValues(), 2)
 	assert.Len(t, bridge.unregisterValues(), 2)
 	assert.Len(t, bridge.registerValues(), 2)
-	assert.Equal(t, deviceRecoveryRecovering, app.deviceRecoveries["AA11"].status)
-	assert.Equal(t, 2, app.deviceRecoveries["AA11"].attempts)
+	recovery := app.recoverySupervisor.Snapshot("AA11", now.Add(monitoringGracePeriod+time.Second))
+	assert.Equal(t, eebus.RecoveryStateGracePeriod, recovery.State)
+	assert.Equal(t, 2, recovery.Attempts)
 	assert.Empty(t, app.backgroundFailures)
 }
 
@@ -484,7 +670,18 @@ func TestMonitoringRecoveryPersistentFailureEscalatesOnce(t *testing.T) {
 	assert.Len(t, registry.clearValues(), monitoringRecoveryMaxAttempts)
 	assert.Len(t, bridge.unregisterValues(), monitoringRecoveryMaxAttempts)
 	assert.Len(t, bridge.registerValues(), monitoringRecoveryMaxAttempts)
-	assert.Equal(t, []bool{false, false, false, false, false}, grpcServer.healthValues())
+	assert.Equal(t, []bool{false, false, false, false, false}, grpcServer.deviceHealthValues())
+}
+
+func TestMonitoringWatchdogHealthTracksTrustedDisconnectedDevice(t *testing.T) {
+	bridge := &fakeBridgeLifecycle{}
+	grpcServer := &fakeGRPCLifecycle{}
+	registry := eebus.NewDeviceRegistry()
+	registry.MarkTrusted("AA11")
+	app := newTestApplication(bridge, grpcServer, &fakeHeartbeatLifecycle{}, registry)
+
+	require.False(t, app.handleMonitoringWatchdogTick(time.Unix(100, 0)))
+	assert.Equal(t, []bool{false}, grpcServer.deviceHealthValues())
 }
 
 func TestApplicationStartSignalTriggersShutdown(t *testing.T) {
@@ -512,7 +709,7 @@ func TestApplicationStartSignalTriggersShutdown(t *testing.T) {
 	assert.Equal(t, int32(1), bridge.stops.Load())
 	assert.Equal(t, int32(1), grpcServer.stops.Load())
 	assert.Equal(t, int32(1), heartbeat.stops.Load())
-	assert.Equal(t, []bool{true, false}, grpcServer.healthValues())
+	assert.Equal(t, []bool{false, true, false}, grpcServer.healthValues())
 }
 
 func TestApplicationStopIsIdempotentAndOrdered(t *testing.T) {
@@ -521,13 +718,26 @@ func TestApplicationStopIsIdempotentAndOrdered(t *testing.T) {
 	grpcServer := &fakeGRPCLifecycle{recorder: recorder, release: make(chan struct{})}
 	heartbeat := &fakeHeartbeatLifecycle{recorder: recorder}
 	app := newTestApplication(bridge, grpcServer, heartbeat, nil)
+	tx := newLifecycleTransaction()
+	require.NoError(t, tx.add("bridge", func() error { bridge.Shutdown(); return nil }))
+	require.NoError(t, tx.add("heartbeat", heartbeat.StopHeartbeat))
+	require.NoError(t, tx.add("grpc", func() error { grpcServer.Stop(); return nil }))
+	app.lifecycle = tx
 
 	require.NotPanics(t, func() {
-		app.Stop()
+		var wait sync.WaitGroup
+		for range 16 {
+			wait.Add(1)
+			go func() {
+				defer wait.Done()
+				app.Stop()
+			}()
+		}
+		wait.Wait()
 		app.Stop()
 	})
 
-	assert.Equal(t, []string{"heartbeat", "grpc", "bridge"}, recorder.values())
+	assert.Equal(t, []string{"grpc", "heartbeat", "bridge"}, recorder.values())
 	assert.Equal(t, int32(1), bridge.stops.Load())
 	assert.Equal(t, int32(1), grpcServer.stops.Load())
 	assert.Equal(t, int32(1), heartbeat.stops.Load())

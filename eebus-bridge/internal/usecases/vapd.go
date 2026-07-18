@@ -57,10 +57,8 @@ type VAPDProvider struct {
 	peakID    *model.DeviceConfigurationKeyIdType // scenario 1: nominal peak power (W)
 	debug     bool
 
-	snapshotMu      sync.Mutex
-	snapshot        *PVSnapshot
-	snapshotVersion uint64
-	expiryTimer     *time.Timer
+	publishMu sync.Mutex
+	snapshots providerSnapshotStore[PVSnapshot]
 }
 
 // NewVAPDProvider builds the provider on the given local PV-system entity
@@ -211,60 +209,76 @@ func (p *VAPDProvider) invalidatePVMeasurements() error {
 }
 
 func (p *VAPDProvider) PublishPVSnapshot(snapshot PVSnapshot) error {
-	p.snapshotMu.Lock()
-	defer p.snapshotMu.Unlock()
+	p.publishMu.Lock()
+	defer p.publishMu.Unlock()
+	if p.snapshots.closedState() {
+		return ErrProviderClosed
+	}
 
 	if snapshot.Validity.Invalid {
 		if err := p.invalidatePVMeasurements(); err != nil {
 			return err
 		}
-		p.snapshotVersion++
-		stopProviderExpiryTimer(&p.expiryTimer)
-		p.snapshot = nil
-		return nil
+		return p.snapshots.invalidate()
 	}
 	if err := p.publishPVMeasurements(snapshot); err != nil {
 		return err
 	}
 	next := snapshot.clone()
-	p.snapshotVersion++
-	p.snapshot = &next
-	version := p.snapshotVersion
-	scheduleProviderExpiryTimer(&p.expiryTimer, snapshot.Validity.ValidUntil, func() {
+	return p.snapshots.commit(next, snapshot.Validity.ValidUntil, func(version uint64) {
 		p.expirePVSnapshot(version, time.Now())
 	})
-	return nil
 }
 
 func (p *VAPDProvider) CurrentPVSnapshot(now time.Time) (PVSnapshot, bool) {
-	p.snapshotMu.Lock()
-	defer p.snapshotMu.Unlock()
-
-	if p.snapshot == nil || !p.snapshot.Validity.Current(now) {
-		return PVSnapshot{}, false
-	}
-	return p.snapshot.clone(), true
+	return p.snapshots.current(
+		now,
+		func(snapshot PVSnapshot) PVSnapshot { return snapshot.clone() },
+		func(snapshot PVSnapshot, at time.Time) bool { return snapshot.Validity.Current(at) },
+	)
 }
 
 func (p *VAPDProvider) expirePVSnapshot(version uint64, now time.Time) {
-	p.snapshotMu.Lock()
-	defer p.snapshotMu.Unlock()
-
-	if p.snapshotVersion != version || p.snapshot == nil || p.snapshot.Validity.Current(now) {
+	p.publishMu.Lock()
+	defer p.publishMu.Unlock()
+	if !p.snapshots.shouldExpire(
+		version,
+		now,
+		func(snapshot PVSnapshot, at time.Time) bool { return snapshot.Validity.Current(at) },
+	) {
 		return
 	}
 	if err := p.invalidatePVMeasurements(); err != nil {
 		log.Printf("[VAPD] expiring PV sample failed: %v", err)
 		return
 	}
-	p.snapshotVersion++
-	p.snapshot = nil
-	stopProviderExpiryTimer(&p.expiryTimer)
+	p.snapshots.clearExpired(version)
+}
+
+// Close stops sample expiry and prevents every later EEBUS write.
+func (p *VAPDProvider) Close() error {
+	p.publishMu.Lock()
+	defer p.publishMu.Unlock()
+	p.snapshots.close()
+	return nil
+}
+
+func (p *VAPDProvider) Diagnostics(now time.Time) ProviderSnapshotDiagnostics {
+	return p.snapshots.diagnostics(now, func(snapshot PVSnapshot) ProviderValidity { return snapshot.Validity })
+}
+
+func (p *VAPDProvider) publishIfOpen(write func() error) error {
+	p.publishMu.Lock()
+	defer p.publishMu.Unlock()
+	if p.snapshots.closedState() {
+		return ErrProviderClosed
+	}
+	return write()
 }
 
 // PublishPower pushes the momentary total PV power (W; scenario 2).
 func (p *VAPDProvider) PublishPower(watts float64) error {
-	if err := p.publishMeasurement(p.powerID, watts); err != nil {
+	if err := p.publishIfOpen(func() error { return p.publishMeasurement(p.powerID, watts) }); err != nil {
 		return err
 	}
 	if p.debug {
@@ -275,7 +289,7 @@ func (p *VAPDProvider) PublishPower(watts float64) error {
 
 // PublishYield pushes the cumulative AC yield energy in Wh (scenario 3).
 func (p *VAPDProvider) PublishYield(wh float64) error {
-	if err := p.publishMeasurement(p.yieldID, wh); err != nil {
+	if err := p.publishIfOpen(func() error { return p.publishMeasurement(p.yieldID, wh) }); err != nil {
 		return err
 	}
 	if p.debug {
@@ -286,14 +300,17 @@ func (p *VAPDProvider) PublishYield(wh float64) error {
 
 // PublishPeakPower pushes the nominal peak power of the PV system in W (scenario 1).
 func (p *VAPDProvider) PublishPeakPower(watts float64) error {
-	if p.devConf == nil || p.peakID == nil {
-		return errVAPDNotInitialized
-	}
-	if err := p.devConf.UpdateKeyValueDataForKeyId(model.DeviceConfigurationKeyValueDataType{
-		Value: &model.DeviceConfigurationKeyValueValueType{
-			ScaledNumber: model.NewScaledNumberType(watts),
-		},
-	}, nil, *p.peakID); err != nil {
+	err := p.publishIfOpen(func() error {
+		if p.devConf == nil || p.peakID == nil {
+			return errVAPDNotInitialized
+		}
+		return p.devConf.UpdateKeyValueDataForKeyId(model.DeviceConfigurationKeyValueDataType{
+			Value: &model.DeviceConfigurationKeyValueValueType{
+				ScaledNumber: model.NewScaledNumberType(watts),
+			},
+		}, nil, *p.peakID)
+	})
+	if err != nil {
 		return err
 	}
 	if p.debug {

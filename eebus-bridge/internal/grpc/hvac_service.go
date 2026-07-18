@@ -54,19 +54,23 @@ func (s *HVACService) GetRoomHeating(_ context.Context, req *pb.DeviceRequest) (
 	if _, err := normalizeReadSKI(req.Ski); err != nil {
 		return nil, err
 	}
+	return s.snapshotRoomHeating(req.Ski)
+}
+
+func (s *HVACService) snapshotRoomHeating(ski string) (*pb.RoomHeatingState, error) {
 	state := &pb.RoomHeatingState{}
 	entityResolved := false
 	readSucceeded := false
 	var resolveErr error
 	if s.room != nil {
-		if value, err := s.room.Temperature(req.Ski); err == nil {
+		if value, err := s.room.Temperature(ski); err == nil {
 			state.CurrentTemperatureCelsius = &value
 			readSucceeded = true
 		}
 	}
 	if s.temp != nil {
 		entity, err := resolveCompatibleEntity(
-			req.Ski,
+			ski,
 			"HVACRoom",
 			eebus.CapabilityRoomHeating,
 			s.registry,
@@ -86,7 +90,7 @@ func (s *HVACService) GetRoomHeating(_ context.Context, req *pb.DeviceRequest) (
 	}
 	if s.sysfn != nil {
 		entity, err := resolveCompatibleEntity(
-			req.Ski,
+			ski,
 			"HVACRoom",
 			eebus.CapabilityRoomHeating,
 			s.registry,
@@ -109,18 +113,18 @@ func (s *HVACService) GetRoomHeating(_ context.Context, req *pb.DeviceRequest) (
 			return nil, resolveErr
 		}
 		if s.registry != nil {
-			s.registry.RecordCapabilityMissingEntity(req.Ski, eebus.CapabilityRoomHeating)
+			s.registry.RecordCapabilityMissingEntity(ski, eebus.CapabilityRoomHeating)
 		}
-		return nil, status.Errorf(codes.NotFound, "no compatible HVACRoom found for %s ski", requestedSKIForError(req.Ski))
+		return nil, status.Errorf(codes.NotFound, "no compatible HVACRoom found for %s ski", requestedSKIForError(ski))
 	}
 	if !readSucceeded {
 		if s.registry != nil {
-			s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityRoomHeating, usecases.ErrRoomHeatingDataUnavailable)
+			s.registry.RecordCapabilityRead(ski, eebus.CapabilityRoomHeating, usecases.ErrRoomHeatingDataUnavailable)
 		}
 		return nil, status.Error(codes.Unavailable, "reading room heating: temporarily unavailable")
 	}
 	if s.registry != nil {
-		s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityRoomHeating, nil)
+		s.registry.RecordCapabilityRead(ski, eebus.CapabilityRoomHeating, nil)
 	}
 	return state, nil
 }
@@ -212,7 +216,7 @@ func (s *HVACService) SubscribeRoomHeatingEvents(
 // target field was readable; only the consolidated envelope's availability is
 // derived from that stricter answer.
 func (s *HVACService) attachRoomHeatingPayload(event *pb.RoomHeatingEvent, ski string) bool {
-	state, err := s.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: ski})
+	state, err := s.snapshotRoomHeating(ski)
 	if err != nil {
 		return false
 	}

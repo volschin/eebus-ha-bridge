@@ -1,12 +1,62 @@
 import datetime
 
 from google.protobuf import timestamp_pb2 as _timestamp_pb2
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
 from collections.abc import Mapping as _Mapping
 from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
+
+class MeasurementId(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    MEASUREMENT_ID_UNSPECIFIED: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_POWER_CONSUMPTION: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_ENERGY_CONSUMED: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_POWER_L1: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_POWER_L2: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_POWER_L3: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_CURRENT_L1: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_CURRENT_L2: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_CURRENT_L3: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_VOLTAGE_L1: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_VOLTAGE_L2: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_VOLTAGE_L3: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_FREQUENCY: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_ENERGY_PRODUCED: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_DHW_TEMPERATURE: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_ROOM_TEMPERATURE: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_OUTDOOR_TEMPERATURE: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_FLOW_TEMPERATURE: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_RETURN_TEMPERATURE: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_COMPRESSOR_TEMPERATURE: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_COMPRESSOR_POWER: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_ENERGY_CONSUMED_HEATING: _ClassVar[MeasurementId]
+    MEASUREMENT_ID_ENERGY_CONSUMED_DHW: _ClassVar[MeasurementId]
+MEASUREMENT_ID_UNSPECIFIED: MeasurementId
+MEASUREMENT_ID_POWER_CONSUMPTION: MeasurementId
+MEASUREMENT_ID_ENERGY_CONSUMED: MeasurementId
+MEASUREMENT_ID_POWER_L1: MeasurementId
+MEASUREMENT_ID_POWER_L2: MeasurementId
+MEASUREMENT_ID_POWER_L3: MeasurementId
+MEASUREMENT_ID_CURRENT_L1: MeasurementId
+MEASUREMENT_ID_CURRENT_L2: MeasurementId
+MEASUREMENT_ID_CURRENT_L3: MeasurementId
+MEASUREMENT_ID_VOLTAGE_L1: MeasurementId
+MEASUREMENT_ID_VOLTAGE_L2: MeasurementId
+MEASUREMENT_ID_VOLTAGE_L3: MeasurementId
+MEASUREMENT_ID_FREQUENCY: MeasurementId
+MEASUREMENT_ID_ENERGY_PRODUCED: MeasurementId
+MEASUREMENT_ID_DHW_TEMPERATURE: MeasurementId
+MEASUREMENT_ID_ROOM_TEMPERATURE: MeasurementId
+MEASUREMENT_ID_OUTDOOR_TEMPERATURE: MeasurementId
+MEASUREMENT_ID_FLOW_TEMPERATURE: MeasurementId
+MEASUREMENT_ID_RETURN_TEMPERATURE: MeasurementId
+MEASUREMENT_ID_COMPRESSOR_TEMPERATURE: MeasurementId
+MEASUREMENT_ID_COMPRESSOR_POWER: MeasurementId
+MEASUREMENT_ID_ENERGY_CONSUMED_HEATING: MeasurementId
+MEASUREMENT_ID_ENERGY_CONSUMED_DHW: MeasurementId
 
 class Empty(_message.Message):
     __slots__ = ()
@@ -49,13 +99,15 @@ class PowerMeasurement(_message.Message):
     def __init__(self, watts: _Optional[float] = ..., timestamp: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
 class MeasurementEntry(_message.Message):
-    __slots__ = ("type", "value", "unit", "timestamp")
+    __slots__ = ("type", "value", "unit", "timestamp", "id")
     TYPE_FIELD_NUMBER: _ClassVar[int]
     VALUE_FIELD_NUMBER: _ClassVar[int]
     UNIT_FIELD_NUMBER: _ClassVar[int]
     TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
+    ID_FIELD_NUMBER: _ClassVar[int]
     type: str
     value: float
     unit: str
     timestamp: _timestamp_pb2.Timestamp
-    def __init__(self, type: _Optional[str] = ..., value: _Optional[float] = ..., unit: _Optional[str] = ..., timestamp: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+    id: MeasurementId
+    def __init__(self, type: _Optional[str] = ..., value: _Optional[float] = ..., unit: _Optional[str] = ..., timestamp: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., id: _Optional[_Union[MeasurementId, str]] = ...) -> None: ...

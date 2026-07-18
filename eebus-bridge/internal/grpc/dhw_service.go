@@ -167,7 +167,11 @@ func (s *DHWService) SubscribeDHWSystemFunctionEvents(
 
 func (s *DHWService) attachDHWPayload(event *pb.DHWEvent, ski string) {
 	if entity, err := s.resolveEntity(ski); err == nil {
-		if state, err := s.dhw.State(entity); err == nil {
+		state, readErr := s.dhw.State(entity)
+		if s.registry != nil {
+			s.registry.RecordCapabilityRead(ski, eebus.CapabilityDHW, readErr)
+		}
+		if readErr == nil {
 			event.Setpoint = convertDHWSetpoint(state)
 		}
 	}
@@ -179,7 +183,11 @@ func (s *DHWService) AttachDHWPayload(event *pb.DHWEvent, ski string) {
 
 func (s *DHWService) attachDHWSystemFunctionPayload(event *pb.DHWSystemFunctionEvent, ski string) {
 	if entity, err := s.resolveSysFnEntity(ski); err == nil {
-		if state, err := s.dhwSysFn.State(entity); err == nil {
+		state, readErr := s.dhwSysFn.State(entity)
+		if s.registry != nil {
+			s.registry.RecordCapabilityRead(ski, eebus.CapabilityDHWSystemFunction, readErr)
+		}
+		if readErr == nil {
 			event.State = convertDHWSystemFunctionState(state)
 		}
 	}

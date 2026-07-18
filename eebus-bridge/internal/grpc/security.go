@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync/atomic"
 
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/config"
@@ -32,9 +33,24 @@ func (c bearerTokenCredentials) GetRequestMetadata(context.Context, ...string) (
 
 func (bearerTokenCredentials) RequireTransportSecurity() bool { return true }
 
-func loadServerSecurity(security config.GRPCSecurityConfig) ([]grpcgo.ServerOption, error) {
+func loadServerSecurity(security config.GRPCSecurityConfig, serving *atomic.Bool) ([]grpcgo.ServerOption, error) {
+	readinessUnary := func(ctx context.Context, req any, info *grpcgo.UnaryServerInfo, handler grpcgo.UnaryHandler) (any, error) {
+		if !serving.Load() && !isHealthMethod(info.FullMethod) {
+			return nil, status.Error(codes.Unavailable, "bridge is not ready")
+		}
+		return handler(ctx, req)
+	}
+	readinessStream := func(srv any, stream grpcgo.ServerStream, info *grpcgo.StreamServerInfo, handler grpcgo.StreamHandler) error {
+		if !serving.Load() && !isHealthMethod(info.FullMethod) {
+			return status.Error(codes.Unavailable, "bridge is not ready")
+		}
+		return handler(srv, stream)
+	}
 	if security.Mode == "" || security.Mode == config.GRPCSecurityModeLoopback {
-		return nil, nil
+		return []grpcgo.ServerOption{
+			grpcgo.ChainUnaryInterceptor(readinessUnary),
+			grpcgo.ChainStreamInterceptor(readinessStream),
+		}, nil
 	}
 	if security.Mode != config.GRPCSecurityModeTLSToken {
 		return nil, fmt.Errorf("unsupported gRPC security mode %q", security.Mode)
@@ -64,21 +80,27 @@ func loadServerSecurity(security config.GRPCSecurityConfig) ([]grpcgo.ServerOpti
 		}
 		return nil
 	}
+	authUnary := func(ctx context.Context, req any, _ *grpcgo.UnaryServerInfo, handler grpcgo.UnaryHandler) (any, error) {
+		if err := authenticate(ctx); err != nil {
+			return nil, err
+		}
+		return handler(ctx, req)
+	}
+	authStream := func(srv any, stream grpcgo.ServerStream, _ *grpcgo.StreamServerInfo, handler grpcgo.StreamHandler) error {
+		if err := authenticate(stream.Context()); err != nil {
+			return err
+		}
+		return handler(srv, stream)
+	}
 	return []grpcgo.ServerOption{
 		grpcgo.Creds(credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12})),
-		grpcgo.UnaryInterceptor(func(ctx context.Context, req any, _ *grpcgo.UnaryServerInfo, handler grpcgo.UnaryHandler) (any, error) {
-			if err := authenticate(ctx); err != nil {
-				return nil, err
-			}
-			return handler(ctx, req)
-		}),
-		grpcgo.StreamInterceptor(func(srv any, stream grpcgo.ServerStream, _ *grpcgo.StreamServerInfo, handler grpcgo.StreamHandler) error {
-			if err := authenticate(stream.Context()); err != nil {
-				return err
-			}
-			return handler(srv, stream)
-		}),
+		grpcgo.ChainUnaryInterceptor(authUnary, readinessUnary),
+		grpcgo.ChainStreamInterceptor(authStream, readinessStream),
 	}, nil
+}
+
+func isHealthMethod(fullMethod string) bool {
+	return strings.HasPrefix(fullMethod, "/grpc.health.v1.Health/")
 }
 
 // ClientSecurityConfig is shared by bridge-side clients such as the Docker

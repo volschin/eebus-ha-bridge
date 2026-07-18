@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant
 
 from . import EebusConfigEntry
 from .const import SECURITY_MODE_LOOPBACK
+from .models import measurement_diagnostics
 
 _REDACTED = "**REDACTED**"
 _SECRET_KEYS = {
@@ -31,6 +32,7 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
     coordinator = entry.runtime_data
+    session = await coordinator.async_session_diagnostics()
 
     return {
         "config": {
@@ -45,8 +47,16 @@ async def async_get_config_entry_diagnostics(
         "capabilities": _capabilities(coordinator.data),
         "capability_metadata": _capability_metadata(coordinator.data),
         "fresh_fields": _fresh_fields(coordinator.data),
-        "recovery": _recovery_diagnostics(coordinator),
-        "streams": _stream_diagnostics(coordinator),
+        "recovery": _sanitize(
+            {
+                "bridge_unavailable": session.bridge_unavailable,
+                "last_successful_read_age_seconds": session.last_successful_read_age_seconds,
+                "last_update_success": session.last_update_success,
+            }
+        ),
+        "streams": _sanitize(session.streams),
+        "bridge_operational": _sanitize(session.operational),
+        "measurements": measurement_diagnostics(),
     }
 
 
@@ -63,36 +73,6 @@ def _capability_metadata(data: Any) -> list[dict[str, Any]]:
 def _fresh_fields(data: Any) -> list[str]:
     fields: frozenset[Any] = getattr(data, "fresh_fields", frozenset()) or frozenset()
     return sorted(str(getattr(field, "value", field)) for field in fields)
-
-
-def _recovery_diagnostics(coordinator: Any) -> dict[str, Any]:
-    runtime = getattr(coordinator, "runtime", None)
-    status = getattr(runtime, "status", None)
-    return {
-        "bridge_unavailable": bool(getattr(status, "unavailable", False)),
-        "last_successful_read_age_seconds": _last_successful_read_age_seconds(
-            coordinator
-        ),
-        "last_update_success": getattr(coordinator, "last_update_success", None),
-    }
-
-
-def _last_successful_read_age_seconds(coordinator: Any) -> float | None:
-    timestamp = getattr(coordinator, "last_update_success_time", None)
-    if not isinstance(timestamp, datetime):
-        return None
-    if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=UTC)
-    return max(0.0, (datetime.now(UTC) - timestamp.astimezone(UTC)).total_seconds())
-
-
-def _stream_diagnostics(coordinator: Any) -> dict[str, Any] | None:
-    streams = getattr(coordinator, "_device_streams", None)
-    diagnostics = getattr(streams, "diagnostics", None)
-    if not callable(diagnostics):
-        return None
-    sanitized = _sanitize(diagnostics())
-    return sanitized if isinstance(sanitized, dict) else None
 
 
 def _sanitize(value: Any) -> Any:

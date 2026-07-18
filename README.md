@@ -166,6 +166,12 @@ go run ./cmd/eebus-watch --host eebus-bridge --port 50051 \
   --token-file ./grpc-secrets/token --ski <REMOTE-SKI>
 ```
 
+Der Home-Assistant-Diagnosedownload enthaelt zusaetzlich eine getypte,
+geraetebezogene Betriebsprojektion: Readiness und Recovery-Versuche,
+Eventrevisionen mit Drop-/Resync-Zaehlern, Stream-Reconnects,
+Snapshot-Laufzeit sowie Provider-Freshness. Vollstaendige SKIs, Tokens,
+PEM-Inhalte und private Pfade werden dabei nicht ausgegeben.
+
 ## Einrichtung
 
 1. **Settings** > **Devices & Services** > **Add Integration**

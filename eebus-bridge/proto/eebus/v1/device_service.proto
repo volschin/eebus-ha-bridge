@@ -17,6 +17,8 @@ service DeviceService {
   rpc GetServerInfo(Empty) returns (ServerInfo);
   rpc GetDeviceStatus(DeviceRequest) returns (DeviceStatus);
   rpc GetDeviceCapabilities(DeviceRequest) returns (DeviceCapabilities);
+  rpc GetDeviceSnapshot(DeviceRequest) returns (DeviceSnapshot);
+  rpc GetDeviceDiagnostics(DeviceRequest) returns (DeviceOperationalDiagnostics);
   rpc ListDiscoveredDevices(Empty) returns (ListDevicesResponse);
   rpc RegisterRemoteSKI(RegisterSKIRequest) returns (Empty);
   rpc UnregisterRemoteSKI(RegisterSKIRequest) returns (Empty);
@@ -88,11 +90,72 @@ enum FeatureId {
   FEATURE_DEVICE_SNAPSHOT = 3;
   FEATURE_PROVIDER_SAMPLE_INVALIDATION = 4;
   FEATURE_TYPED_MEASUREMENTS = 5;
+  FEATURE_OPERATIONAL_DIAGNOSTICS = 6;
 }
 
 message DeviceStatus {
   bool connected = 1;
   google.protobuf.Timestamp last_transition = 2;
+  DeviceReadinessState readiness = 3;
+  RecoveryDiagnostics recovery = 4;
+}
+
+enum DeviceReadinessState {
+  DEVICE_READINESS_UNKNOWN = 0;
+  DEVICE_READINESS_UNTRUSTED = 1;
+  DEVICE_READINESS_DISCONNECTED = 2;
+  DEVICE_READINESS_GRACE_PERIOD = 3;
+  DEVICE_READINESS_RECOVERING = 4;
+  DEVICE_READINESS_READY = 5;
+  DEVICE_READINESS_EXHAUSTED = 6;
+}
+
+message RecoveryDiagnostics {
+  DeviceReadinessState state = 1;
+  uint32 attempts = 2;
+  google.protobuf.Timestamp first_stale_at = 3;
+  google.protobuf.Timestamp last_attempt_at = 4;
+  google.protobuf.Timestamp next_attempt_at = 5;
+  google.protobuf.Timestamp last_transition_at = 6;
+}
+
+message EventTransportDiagnostics {
+  uint64 revision = 1;
+  uint64 dropped_events = 2;
+  uint64 resync_count = 3;
+  uint64 unresolved_events = 4;
+}
+
+message SnapshotReadDiagnostics {
+  uint64 duration_milliseconds = 1;
+  google.protobuf.Timestamp last_success = 2;
+}
+
+enum ProviderSampleState {
+  PROVIDER_SAMPLE_STATE_UNSPECIFIED = 0;
+  PROVIDER_SAMPLE_STATE_EMPTY = 1;
+  PROVIDER_SAMPLE_STATE_CURRENT = 2;
+  PROVIDER_SAMPLE_STATE_EXPIRED = 3;
+  PROVIDER_SAMPLE_STATE_CLOSED = 4;
+}
+
+message ProviderSampleDiagnostics {
+  string provider = 1;
+  ProviderSampleState state = 2;
+  google.protobuf.Timestamp observed_at = 3;
+  google.protobuf.Timestamp valid_until = 4;
+}
+
+message DeviceOperationalDiagnostics {
+  string redacted_ski = 1;
+  DeviceReadinessState readiness = 2;
+  RecoveryDiagnostics recovery = 3;
+  EventTransportDiagnostics events = 4;
+  optional uint64 monitoring_last_success_age_seconds = 5;
+  SnapshotReadDiagnostics snapshot_reads = 6;
+  repeated ProviderSampleDiagnostics providers = 7;
+  repeated FeatureId features = 8;
+  optional uint64 connection_age_seconds = 9;
 }
 
 message DiscoveredDevice {
@@ -147,8 +210,98 @@ message DeviceStateEvent {
     OHPCFEvent ohpcf = 9;
     DeviceCapabilities capability = 10;
     ResyncRequired resync_required = 11;
+    DeviceSnapshot initial_snapshot = 13;
   }
   EventAvailability availability = 12;
+}
+
+// SnapshotValueState describes the availability of one independently readable
+// leaf or aggregate without turning partial read failures into RPC failures.
+enum SnapshotValueState {
+  SNAPSHOT_VALUE_STATE_UNKNOWN = 0;
+  SNAPSHOT_VALUE_STATE_AVAILABLE = 1;
+  SNAPSHOT_VALUE_STATE_TEMPORARILY_UNAVAILABLE = 2;
+  SNAPSHOT_VALUE_STATE_UNSUPPORTED = 3;
+}
+
+// SnapshotFieldId is append-only and gives every HA-visible bridge leaf an
+// explicit availability slot without coupling the wire contract to Python
+// attribute names.
+enum SnapshotFieldId {
+  SNAPSHOT_FIELD_UNSPECIFIED = 0;
+  SNAPSHOT_FIELD_CONNECTED = 1;
+  SNAPSHOT_FIELD_LOCAL_SKI = 2;
+  SNAPSHOT_FIELD_DEVICE_INFO = 3;
+  SNAPSHOT_FIELD_DEVICE_OPERATING_STATE = 4;
+  SNAPSHOT_FIELD_POWER_L1 = 5;
+  SNAPSHOT_FIELD_POWER_L2 = 6;
+  SNAPSHOT_FIELD_POWER_L3 = 7;
+  SNAPSHOT_FIELD_CURRENT_L1 = 8;
+  SNAPSHOT_FIELD_CURRENT_L2 = 9;
+  SNAPSHOT_FIELD_CURRENT_L3 = 10;
+  SNAPSHOT_FIELD_VOLTAGE_L1 = 11;
+  SNAPSHOT_FIELD_VOLTAGE_L2 = 12;
+  SNAPSHOT_FIELD_VOLTAGE_L3 = 13;
+  SNAPSHOT_FIELD_FREQUENCY = 14;
+  SNAPSHOT_FIELD_ENERGY_PRODUCED = 15;
+  SNAPSHOT_FIELD_DHW_TEMPERATURE = 16;
+  SNAPSHOT_FIELD_ROOM_TEMPERATURE = 17;
+  SNAPSHOT_FIELD_OUTDOOR_TEMPERATURE = 18;
+  SNAPSHOT_FIELD_FLOW_TEMPERATURE = 19;
+  SNAPSHOT_FIELD_RETURN_TEMPERATURE = 20;
+  SNAPSHOT_FIELD_COMPRESSOR_TEMPERATURE = 21;
+  SNAPSHOT_FIELD_COMPRESSOR_POWER = 22;
+  SNAPSHOT_FIELD_POWER = 23;
+  SNAPSHOT_FIELD_ENERGY_CONSUMED_HEATING = 24;
+  SNAPSHOT_FIELD_ENERGY_CONSUMED_DHW = 25;
+  SNAPSHOT_FIELD_ENERGY_CONSUMED = 26;
+  SNAPSHOT_FIELD_CONSUMPTION_LIMIT = 27;
+  SNAPSHOT_FIELD_FAILSAFE_LIMIT = 28;
+  SNAPSHOT_FIELD_HEARTBEAT_STATUS = 29;
+  SNAPSHOT_FIELD_COMPRESSOR_FLEXIBILITY = 30;
+  SNAPSHOT_FIELD_DHW_SETPOINT = 31;
+  SNAPSHOT_FIELD_DHW_SYSTEM_FUNCTION = 32;
+  SNAPSHOT_FIELD_ROOM_HEATING_SETPOINT = 33;
+  SNAPSHOT_FIELD_ROOM_HEATING_SYSTEM_FUNCTION = 34;
+}
+
+message SnapshotFieldStatus {
+  SnapshotFieldId id = 1;
+  SnapshotValueState state = 2;
+}
+
+// DeviceSnapshot is the device-scoped, point-in-time read model used for both
+// polling and the first envelope of SubscribeDeviceState.
+message DeviceSnapshot {
+  string ski = 1;
+  google.protobuf.Timestamp captured_at = 2;
+  uint64 event_revision = 3;
+  DeviceStatus connection = 4;
+  SnapshotValueState connection_state = 5;
+  PairedDevice classification = 6;
+  SnapshotValueState classification_state = 7;
+  DeviceCapabilities capabilities = 8;
+  repeated MeasurementEntry measurements = 9;
+  SnapshotValueState measurements_state = 10;
+  LoadLimit consumption_limit = 11;
+  SnapshotValueState consumption_limit_state = 12;
+  FailsafeLimit failsafe_limit = 13;
+  SnapshotValueState failsafe_limit_state = 14;
+  HeartbeatStatus heartbeat = 15;
+  SnapshotValueState heartbeat_state = 16;
+  DHWSetpoint dhw_setpoint = 17;
+  SnapshotValueState dhw_setpoint_state = 18;
+  DHWSystemFunctionState dhw_system_function = 19;
+  SnapshotValueState dhw_system_function_state = 20;
+  RoomHeatingState room_heating = 21;
+  SnapshotValueState room_heating_state = 22;
+  CompressorFlexibility compressor_flexibility = 23;
+  SnapshotValueState compressor_flexibility_state = 24;
+  DeviceDiagnosticsData device_diagnostics = 25;
+  SnapshotValueState device_diagnostics_state = 26;
+  string local_ski = 27;
+  // Per-leaf availability refines aggregate section status for partial reads.
+  repeated SnapshotFieldStatus field_states = 28;
 }
 
 // EventAvailability makes an adapter read failure explicit. An update event

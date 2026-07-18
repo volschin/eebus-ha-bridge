@@ -2,7 +2,9 @@ package eebus_test
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -194,6 +196,21 @@ func TestRegistryRemove(t *testing.T) {
 	}
 }
 
+func TestRegistryExplicitTrustStartsNewLifetimeAfterRemoval(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	reg.AddDevice("ski-123", eebus.DeviceInfo{})
+	reg.RemoveDevice("ski-123")
+	reg.AddDevice("ski-123", eebus.DeviceInfo{Brand: "late callback"})
+	if reg.KnownDevice("ski-123") {
+		t.Fatal("late add started a new device lifetime")
+	}
+
+	reg.MarkTrusted("ski-123")
+	if !reg.KnownDevice("ski-123") {
+		t.Fatal("explicit trust did not start a new device lifetime")
+	}
+}
+
 func TestRegistryClearEntities(t *testing.T) {
 	reg := eebus.NewDeviceRegistry()
 	reg.AddDevice("ski-c", eebus.DeviceInfo{
@@ -318,6 +335,106 @@ func TestRegistryListDevices(t *testing.T) {
 		if devices[index].SKI != want {
 			t.Errorf("devices[%d].SKI = %q, want %q", index, devices[index].SKI, want)
 		}
+	}
+}
+
+func TestRegistryReadProjectionsAreDeepCopies(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	reg.AddDevice("AA11", eebus.DeviceInfo{
+		UseCases:       []string{"monitoring"},
+		RemoteEntities: []spineapi.EntityRemoteInterface{nil},
+		Entities: []eebus.EntityInfo{{
+			Address: "1", Features: []string{"Measurement/client"},
+		}},
+	})
+
+	device, ok := reg.GetDevice("AA11")
+	if !ok {
+		t.Fatal("device missing")
+	}
+	device.UseCases[0] = "mutated"
+	device.RemoteEntities[0] = mocks.NewEntityRemoteInterface(t)
+	device.Entities[0].Features[0] = "mutated"
+	listed := reg.ListDevices()
+	listed[0].UseCases[0] = "also-mutated"
+
+	again, _ := reg.GetDevice("AA11")
+	if again.UseCases[0] != "monitoring" || again.RemoteEntities[0] != nil || again.Entities[0].Features[0] != "Measurement/client" {
+		t.Fatalf("mutated read projection changed registry: %+v", again)
+	}
+}
+
+func TestRegistryParallelCatalogHealthAndCapabilityProjections(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	var wait sync.WaitGroup
+	for worker := range 8 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			for iteration := range 100 {
+				ski := fmt.Sprintf("%02d%02d", worker, iteration%4)
+				reg.AddDevice(ski, eebus.DeviceInfo{UseCases: []string{"monitoring"}})
+				reg.UpsertDeviceClassification(ski, "vendor", "model", "serial", "type")
+				reg.MarkConnected(ski)
+				reg.RecordCapabilityRead(ski, eebus.CapabilityMonitoring, nil)
+				reg.GetDevice(ski)
+				reg.ListDevices()
+				reg.ListDeviceHealth()
+				reg.DeviceCapabilities(ski)
+				reg.MarkDisconnected(ski)
+			}
+		}()
+	}
+	wait.Wait()
+}
+
+func TestRegistryConcurrentLifecycleOperationsDoNotResurrectOrMisclassify(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	for iteration := range 100 {
+		ski := fmt.Sprintf("device-%d", iteration)
+		reg.AddDevice(ski, eebus.DeviceInfo{})
+		reg.MarkConnected(ski)
+
+		var wait sync.WaitGroup
+		wait.Add(3)
+		go func() {
+			defer wait.Done()
+			reg.UpsertObservation(ski, nil, nil, "monitoring")
+		}()
+		go func() {
+			defer wait.Done()
+			reg.RecordCapabilityRead(ski, eebus.CapabilityMonitoring, nil)
+		}()
+		go func() {
+			defer wait.Done()
+			reg.RemoveDevice(ski)
+		}()
+		wait.Wait()
+
+		if reg.KnownDevice(ski) {
+			t.Fatalf("iteration %d: concurrent callback resurrected removed SKI", iteration)
+		}
+		if _, ok := reg.DeviceCapabilities(ski); ok {
+			t.Fatalf("iteration %d: concurrent callback recreated capabilities", iteration)
+		}
+	}
+
+	const disconnectedSKI = "capability-race"
+	reg.MarkConnected(disconnectedSKI)
+	var wait sync.WaitGroup
+	wait.Add(2)
+	go func() {
+		defer wait.Done()
+		reg.MarkUntrusted(disconnectedSKI)
+	}()
+	go func() {
+		defer wait.Done()
+		reg.RecordCapabilityRead(disconnectedSKI, eebus.CapabilityMonitoring, nil)
+	}()
+	wait.Wait()
+	entry := capability(t, reg, disconnectedSKI, eebus.CapabilityMonitoring)
+	if entry.Reason != eebus.CapabilityReasonDeviceDisconnected {
+		t.Fatalf("capability race result = %+v, want disconnected", entry)
 	}
 }
 

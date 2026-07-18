@@ -172,6 +172,12 @@ func TestEventBusSignalsOneResyncAfterSubscriberDrop(t *testing.T) {
 	if got := bus.SubscriberDroppedEvents(ch); got != 1 {
 		t.Fatalf("drops before recovery = %d, want 1", got)
 	}
+	if _, early := bus.TakePendingResync(ch); early {
+		t.Fatal("resync was returned before the overflow burst drained")
+	}
+	for len(ch) > 0 {
+		<-ch
+	}
 	resync, ok := bus.TakePendingResync(ch)
 	if !ok {
 		t.Fatal("pending resync was not returned")
@@ -185,14 +191,33 @@ func TestEventBusSignalsOneResyncAfterSubscriberDrop(t *testing.T) {
 	if got := bus.SubscriberDroppedEvents(ch); got != 1 {
 		t.Fatalf("total drops = %d, want 1", got)
 	}
-
-	<-ch // make the subscriber writable again
-	bus.Publish(eebus.Event{SKI: "test-ski", Type: "after-resync"})
-	for len(ch) > 1 {
-		<-ch
+	diagnostics := bus.Diagnostics("test-ski")
+	if diagnostics.Revision != 65 || diagnostics.DroppedEvents != 1 || diagnostics.ResyncCount != 1 {
+		t.Fatalf("Diagnostics() = %+v, want revision/drop/resync 65/1/1", diagnostics)
 	}
+
+	bus.Publish(eebus.Event{SKI: "test-ski", Type: "after-resync"})
 	event := <-ch
 	if event.Type != "after-resync" || event.Revision != 66 {
 		t.Fatalf("event after resync = %+v, want revision 66", event)
+	}
+}
+
+func TestEventBusEventuallySignalsResyncWhileSubscriberRemainsBacklogged(t *testing.T) {
+	bus := eebus.NewEventBus()
+	ch, _ := bus.SubscribeWithRevision("test-ski")
+	defer bus.Unsubscribe(ch)
+	for range 65 {
+		bus.Publish(eebus.Event{SKI: "test-ski", Type: "data"})
+	}
+
+	for attempt := 0; attempt < 64; attempt++ {
+		if _, ok := bus.TakePendingResync(ch); ok {
+			t.Fatalf("resync returned before bounded deferral on attempt %d", attempt)
+		}
+	}
+	resync, ok := bus.TakePendingResync(ch)
+	if !ok || resync.Dropped != 1 || len(ch) == 0 {
+		t.Fatalf("backlogged resync = (%+v, %t), buffered=%d", resync, ok, len(ch))
 	}
 }

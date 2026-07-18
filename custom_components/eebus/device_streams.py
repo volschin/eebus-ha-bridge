@@ -20,13 +20,15 @@ from .models import (
     CompressorFlexibilityState,
     ConsumptionLimitState,
     FailsafeState,
+    HeartbeatState,
     _dhw_system_function_to_dict,
     _extract_flat_measurements,
     _room_heating_from_proto,
     _setpoint_to_dict,
 )
 from .ski import normalize_ski
-from .snapshot import _capability_results_from_proto
+from .snapshot import _capability_results_from_proto, _snapshot_observation_from_proto
+from .session_diagnostics import DeviceStreamDiagnostics
 from .state import (
     CapabilityKey,
     CapabilityResult,
@@ -173,9 +175,21 @@ class DeviceStreams:
         self._last_revision: int | None = None
         self._supports_feature = supports_feature or (lambda _feature: True)
         self._handling_consolidated = False
+        self._initial_snapshot_received = asyncio.Event()
+        self._ski_registered = False
+        self._started = False
+        self._restart_pending = False
+        self._restart_task: asyncio.Task[None] | None = None
 
     def start(self) -> None:
         """Start the consolidated stream, falling back only for old bridges."""
+        if self._started:
+            return
+        self._started = True
+        self._start_selected_profile()
+
+    def _start_selected_profile(self) -> None:
+        """Start the stream profile from the latest negotiated contract."""
 
         async def device_state(channel: grpc.aio.Channel) -> None:
             self._last_revision = None
@@ -246,21 +260,57 @@ class DeviceStreams:
         else:
             start_legacy("device_state")
 
+    def contract_changed(self) -> None:
+        """Re-select the stream profile after channel contract negotiation."""
+        if not self._started:
+            return
+        self._restart_pending = True
+        if self._restart_task is None or self._restart_task.done():
+            self._restart_task = asyncio.create_task(
+                self._restart_after_contract_change(),
+                name=f"eebus_stream_profile_{self._ski}",
+            )
+
+    async def _restart_after_contract_change(self) -> None:
+        """Apply the newest profile, coalescing rapid contract changes."""
+        while self._restart_pending and self._started:
+            self._restart_pending = False
+            await self._manager.stop()
+            await self._legacy_manager.stop()
+            if self._started:
+                self._start_selected_profile()
+
     async def stop(self) -> None:
         """Stop every stream before transport shutdown."""
+        self._started = False
+        self._restart_pending = False
+        restart_task = self._restart_task
+        if restart_task is not None and restart_task is not asyncio.current_task():
+            restart_task.cancel()
+            await asyncio.gather(restart_task, return_exceptions=True)
+        self._restart_task = None
         await self._manager.stop()
         await self._legacy_manager.stop()
 
-    def diagnostics(self) -> dict[str, object]:
+    async def wait_initial_snapshot(self, timeout: float) -> DeviceState:
+        """Wait until the consolidated stream has reduced its initial snapshot."""
+        await asyncio.wait_for(self._initial_snapshot_received.wait(), timeout=timeout)
+        return self._store.state
+
+    def mark_registered(self) -> None:
+        """Remember successful explicit registration for stream snapshot reduction."""
+        self._ski_registered = True
+
+    def diagnostics(self) -> DeviceStreamDiagnostics:
         """Return redacted stream state for config-entry diagnostics."""
         running_refresh = self._refresh_task is not None and not self._refresh_task.done()
-        return {
-            "last_device_state_revision": self._last_revision,
-            "refresh_pending": self._refresh_pending,
-            "refresh_running": running_refresh,
-            "primary": self._manager.diagnostics(),
-            "legacy": self._legacy_manager.diagnostics(),
-        }
+        return DeviceStreamDiagnostics(
+            last_device_state_revision=self._last_revision,
+            refresh_pending=self._refresh_pending,
+            refresh_running=running_refresh,
+            primary=self._manager.diagnostics(),
+            legacy=self._legacy_manager.diagnostics(),
+        )
 
     def _matches(self, event_ski: str) -> bool:
         return normalize_ski(event_ski) == normalize_ski(self._ski)
@@ -295,12 +345,25 @@ class DeviceStreams:
         if previous is not None and revision <= previous:
             return
         self._last_revision = revision
-        if previous is not None and revision != previous + 1:
-            self._refresh()
-
         payload = event.WhichOneof("payload")
-        if payload == "resync_required":
+        revision_gap = previous is not None and revision != previous + 1
+        if revision_gap or payload == "resync_required":
+            # One envelope can report both a revision gap and an explicit drop.
+            # They describe the same recovery need and must schedule one read.
             self._refresh()
+        if payload == "resync_required":
+            return
+        elif payload == "initial_snapshot":
+            self._store.dispatch(
+                _snapshot_observation_from_proto(
+                    event.initial_snapshot,
+                    ski_registered=(
+                        self._ski_registered
+                        or self._store.state.connection.ski_registered
+                    ),
+                )
+            )
+            self._initial_snapshot_received.set()
         elif payload == "capability":
             self._store.dispatch(
                 StateObservation(
@@ -309,7 +372,8 @@ class DeviceStreams:
                 )
             )
         elif payload is None:
-            self._refresh()
+            if not revision_gap:
+                self._refresh()
         else:
             if self._apply_explicit_unavailability(event, payload):
                 return
@@ -512,9 +576,26 @@ class DeviceStreams:
                 )
             )
         elif event.event_type == proto_stubs.LPCEventType.LPC_EVENT_HEARTBEAT_TIMEOUT:
-            self._mark_temporarily_unavailable(
-                frozenset({StateField.HEARTBEAT_STATUS}),
-                CapabilityKey.HEARTBEAT,
+            if not event.HasField("heartbeat_update"):
+                self._mark_temporarily_unavailable(
+                    frozenset({StateField.HEARTBEAT_STATUS}),
+                    CapabilityKey.HEARTBEAT,
+                )
+                return
+            value = event.heartbeat_update
+            self._store.dispatch(
+                StateObservation(
+                    state=DeviceState(
+                        lpc=LPCState(
+                            heartbeat_status=HeartbeatState(
+                                running=value.running,
+                                within_duration=value.within_duration,
+                            )
+                        )
+                    ),
+                    observed_fields=frozenset({StateField.HEARTBEAT_STATUS}),
+                    capability_results=(CapabilityResult(CapabilityKey.HEARTBEAT, None),),
+                )
             )
 
     def handle_measurement_event(self, event: Any) -> None:

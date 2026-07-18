@@ -1,12 +1,16 @@
 """Contract tests for shared bridge runtimes and entry-scoped sessions."""
 
 import asyncio
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import grpc
 import pytest
+from grpc.aio import AioRpcError, Metadata
 
-from custom_components.eebus import _async_reload_entry, async_unload_entry
+from custom_components.eebus import _async_reload_entry, async_unload_entry, proto_stubs
 from custom_components.eebus.coordinator import EebusCoordinator
+from custom_components.eebus.providers import ProviderMappings
 from custom_components.eebus.runtime import (
     BridgeRuntime,
     BridgeRuntimeKey,
@@ -15,6 +19,7 @@ from custom_components.eebus.runtime import (
 )
 from custom_components.eebus.server_info import BridgeContract
 from custom_components.eebus.state import DeviceState, MeasurementsState
+from google.protobuf.timestamp_pb2 import Timestamp
 
 
 @pytest.fixture(autouse=True)
@@ -55,7 +60,10 @@ async def test_same_bridge_entries_share_one_channel_until_last_release() -> Non
     with patch(
         "custom_components.eebus.grpc_client.create_grpc_channel",
         return_value=channel,
-    ) as create_channel:
+    ) as create_channel, patch(
+        "custom_components.eebus.runtime.async_read_bridge_contract",
+        new=AsyncMock(return_value=BridgeContract(1, 0, "test", frozenset(), "LOCAL")),
+    ):
         first = await registry.acquire("Bridge.Local.", 50051, "loopback", None, None)
         second = await registry.acquire("bridge.local", 50051, "loopback", None, None)
         assert first is second
@@ -111,6 +119,94 @@ async def test_runtime_owns_separate_device_sessions_and_shared_status() -> None
     await runtime.release_device_session(first)
     await runtime.release_device_session(second)
     await registry.release(runtime)
+
+
+async def test_device_session_projects_operational_diagnostics_immutably() -> None:
+    feature = int(proto_stubs.FeatureId.FEATURE_OPERATIONAL_DIAGNOSTICS)
+    runtime = BridgeRuntime(
+        BridgeRuntimeKey.from_connection("bridge", 50051, "loopback", None, None),
+        None,
+        None,
+    )
+    runtime._contract = BridgeContract(1, 0, "test", frozenset({feature}), "LOCAL")
+    runtime.channel_manager.ensure_channel = AsyncMock(return_value=MagicMock())
+    observed_at = Timestamp()
+    observed_at.FromDatetime(datetime(2026, 7, 18, 12, 0, tzinfo=UTC))
+    response = proto_stubs.DeviceOperationalDiagnostics(
+        redacted_ski="…AABBCC",
+        readiness=proto_stubs.DeviceReadinessState.DEVICE_READINESS_RECOVERING,
+        recovery=proto_stubs.RecoveryDiagnostics(
+            state=proto_stubs.DeviceReadinessState.DEVICE_READINESS_RECOVERING,
+            attempts=2,
+        ),
+        events=proto_stubs.EventTransportDiagnostics(
+            revision=42,
+            dropped_events=3,
+            resync_count=1,
+            unresolved_events=2,
+        ),
+        connection_age_seconds=31,
+        monitoring_last_success_age_seconds=17,
+        snapshot_reads=proto_stubs.SnapshotReadDiagnostics(
+            duration_milliseconds=23,
+            last_success=observed_at,
+        ),
+        providers=[
+            proto_stubs.ProviderSampleDiagnostics(
+                provider="grid",
+                state=proto_stubs.ProviderSampleState.PROVIDER_SAMPLE_STATE_CURRENT,
+                observed_at=observed_at,
+            )
+        ],
+        features=[proto_stubs.FeatureId.FEATURE_OPERATIONAL_DIAGNOSTICS],
+    )
+    stub = MagicMock(GetDeviceDiagnostics=AsyncMock(return_value=response))
+    session = runtime.create_device_session(MagicMock(), "AA11", MagicMock(), AsyncMock())
+
+    with patch("custom_components.eebus.proto_stubs.device_service_stub", return_value=stub):
+        diagnostics = await session.async_operational_diagnostics()
+
+    assert diagnostics is not None
+    assert diagnostics.redacted_ski == "…AABBCC"
+    assert diagnostics.readiness == "DEVICE_READINESS_RECOVERING"
+    assert diagnostics.recovery.attempts == 2
+    assert diagnostics.event_revision == 42
+    assert diagnostics.dropped_events == 3
+    assert diagnostics.resync_count == 1
+    assert diagnostics.connection_age_seconds == 31
+    assert diagnostics.monitoring_last_success_age_seconds == 17
+    assert diagnostics.snapshot_duration_milliseconds == 23
+    assert diagnostics.snapshot_last_success == datetime(2026, 7, 18, 12, 0, tzinfo=UTC)
+    assert diagnostics.providers[0].provider == "grid"
+    assert diagnostics.features == ("FEATURE_OPERATIONAL_DIAGNOSTICS",)
+    stub.GetDeviceDiagnostics.assert_awaited_once()
+
+    await runtime.release_device_session(session)
+
+
+async def test_session_diagnostics_remain_available_when_operational_rpc_fails() -> None:
+    coordinator = EebusCoordinator.__new__(EebusCoordinator)
+    coordinator._last_successful_read_at = None
+    coordinator.last_update_success = False
+    coordinator._runtime = MagicMock()
+    coordinator._runtime.status.unavailable = True
+    streams = MagicMock()
+    coordinator._runtime_session = MagicMock(stream_diagnostics=streams)
+    coordinator._runtime_session.async_operational_diagnostics = AsyncMock(
+        side_effect=AioRpcError(
+            grpc.StatusCode.UNAVAILABLE,
+            Metadata(),
+            Metadata(),
+            details="bridge unavailable",
+        )
+    )
+
+    diagnostics = await coordinator.async_session_diagnostics()
+
+    assert diagnostics.bridge_unavailable is True
+    assert diagnostics.last_update_success is False
+    assert diagnostics.streams is streams
+    assert diagnostics.operational is None
 
 
 async def test_device_session_close_finishes_stream_stop_when_cancelled() -> None:
@@ -522,7 +618,7 @@ async def test_provider_reconfigure_failure_keeps_previous_manager() -> None:
     coordinator._new_provider_manager = MagicMock(return_value=replacement)
 
     with pytest.raises(RuntimeError, match="start failed"):
-        await coordinator.async_reconfigure_providers()
+        await coordinator.async_reconfigure_providers(ProviderMappings())
 
     assert coordinator._provider_manager is previous
     previous.async_stop.assert_not_awaited()
@@ -591,6 +687,7 @@ async def test_runtime_handover_commits_only_after_replacement_is_started() -> N
         security_mode="tls_token",
         tls_ca_certificate="ca",
         auth_token="token",
+        provider_mappings=ProviderMappings(),
     )
 
     replacement_session.poller.poll.assert_awaited_once_with()
@@ -640,6 +737,7 @@ async def test_runtime_handover_staging_failure_does_not_publish_state() -> None
             security_mode="tls_token",
             tls_ca_certificate="ca",
             auth_token="token",
+            provider_mappings=ProviderMappings(),
         )
 
     assert coordinator.runtime is previous_runtime
@@ -678,6 +776,7 @@ async def test_runtime_handover_ignores_late_previous_session_state() -> None:
         security_mode="loopback",
         tls_ca_certificate=None,
         auth_token=None,
+        provider_mappings=ProviderMappings(),
     )
     coordinator._publish_state.reset_mock()
 

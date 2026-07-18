@@ -91,6 +91,26 @@ func NewMonitoringService(
 	}
 }
 
+// SnapshotDeviceDiagnostics actively reads the remote operating state for
+// snapshot construction (the initial gRPC-stream snapshot and GetDeviceSnapshot
+// polls), unlike attachMeasurementPayload's per-event cache-only read: no
+// SPINE subscription pushes DeviceDiagnosisStateData on its own, so without an
+// active read here the field never populates in the snapshot/stream
+// architecture (cf. the retired legacy GetDeviceDiagnostics poll, which was
+// the only remaining caller of the active OperatingState path before this).
+// Safe to block briefly here: unlike the event send loop, both snapshot call
+// sites run per-request/per-subscribe, not in a hot per-event loop.
+func (s *MonitoringService) SnapshotDeviceDiagnostics(ski string) *pb.DeviceDiagnosticsData {
+	if s.diagnostics == nil {
+		return nil
+	}
+	state, err := s.diagnostics.OperatingState(ski)
+	if err != nil {
+		return nil
+	}
+	return &pb.DeviceDiagnosticsData{OperatingState: state, Timestamp: timestamppb.Now()}
+}
+
 func (s *MonitoringService) GetDeviceDiagnostics(_ context.Context, req *pb.DeviceRequest) (*pb.DeviceDiagnosticsData, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
@@ -182,80 +202,155 @@ func (s *MonitoringService) GetMeasurements(_ context.Context, req *pb.DeviceReq
 	if _, err := normalizeReadSKI(req.Ski); err != nil {
 		return nil, err
 	}
+	return s.snapshotMeasurements(req.Ski)
+}
+
+// SnapshotMeasurements reads the measurement aggregate without a public RPC hop.
+func (s *MonitoringService) SnapshotMeasurements(ski string) (*pb.MeasurementList, error) {
+	if _, err := normalizeReadSKI(ski); err != nil {
+		return nil, err
+	}
+	measurements, _, err := s.snapshotMeasurementsWithStates(ski)
+	return measurements, err
+}
+
+// SnapshotMeasurementsWithStates also returns explicit status for every known leaf.
+func (s *MonitoringService) SnapshotMeasurementsWithStates(ski string) (*pb.MeasurementList, map[pb.MeasurementId]pb.SnapshotValueState, error) {
+	if _, err := normalizeReadSKI(ski); err != nil {
+		return nil, nil, err
+	}
+	return s.snapshotMeasurementsWithStates(ski)
+}
+
+func (s *MonitoringService) snapshotMeasurements(ski string) (*pb.MeasurementList, error) {
+	measurements, _, err := s.snapshotMeasurementsWithStates(ski)
+	return measurements, err
+}
+
+func (s *MonitoringService) snapshotMeasurementsWithStates(ski string) (*pb.MeasurementList, map[pb.MeasurementId]pb.SnapshotValueState, error) {
+	states := make(map[pb.MeasurementId]pb.SnapshotValueState, len(measurementCatalog))
 	if s.monitoring == nil {
-		return nil, status.Error(codes.Unavailable, "monitoring use case not initialized")
+		return nil, states, status.Error(codes.Unavailable, "monitoring use case not initialized")
 	}
 	now := timestamppb.Now()
 	measurements := make([]*pb.MeasurementEntry, 0, 12)
-	resolved := s.resolveForRead(req.Ski)
+	resolved := s.resolveForRead(ski)
 	if status.Code(resolved.err) == codes.FailedPrecondition {
-		return nil, resolved.err
+		return nil, states, resolved.err
+	}
+	readState := func(err error) pb.SnapshotValueState {
+		if err == nil {
+			return pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_AVAILABLE
+		}
+		if status.Code(err) == codes.Unimplemented {
+			return pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_UNSUPPORTED
+		}
+		return pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_TEMPORARILY_UNAVAILABLE
+	}
+	set := func(ids []pb.MeasurementId, err error) {
+		state := readState(err)
+		for _, id := range ids {
+			states[id] = state
+		}
 	}
 
 	if value, err := readMetric("power", resolved, s.monitoring.Power); err == nil {
 		appendMeasurement(&measurements, now, "power_consumption", value, "W")
+		set([]pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_POWER_CONSUMPTION}, nil)
+	} else {
+		set([]pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_POWER_CONSUMPTION}, err)
 	}
 
 	if values, err := readMetric("power-per-phase", resolved, s.monitoring.PowerPerPhase); err == nil {
+		ids := []pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_POWER_L1, pb.MeasurementId_MEASUREMENT_ID_POWER_L2, pb.MeasurementId_MEASUREMENT_ID_POWER_L3}
+		set(ids, status.Error(codes.Unimplemented, "phase absent"))
 		for idx, value := range values {
 			appendMeasurement(&measurements, now, fmt.Sprintf("power_l%d", idx+1), value, "W")
+			if idx < len(ids) {
+				states[ids[idx]] = pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_AVAILABLE
+			}
 		}
+	} else {
+		set([]pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_POWER_L1, pb.MeasurementId_MEASUREMENT_ID_POWER_L2, pb.MeasurementId_MEASUREMENT_ID_POWER_L3}, err)
 	}
 
 	if values, err := readMetric("current-per-phase", resolved, s.monitoring.CurrentPerPhase); err == nil {
+		ids := []pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_CURRENT_L1, pb.MeasurementId_MEASUREMENT_ID_CURRENT_L2, pb.MeasurementId_MEASUREMENT_ID_CURRENT_L3}
+		set(ids, status.Error(codes.Unimplemented, "phase absent"))
 		for idx, value := range values {
 			appendMeasurement(&measurements, now, fmt.Sprintf("current_l%d", idx+1), value, "A")
+			if idx < len(ids) {
+				states[ids[idx]] = pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_AVAILABLE
+			}
 		}
+	} else {
+		set([]pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_CURRENT_L1, pb.MeasurementId_MEASUREMENT_ID_CURRENT_L2, pb.MeasurementId_MEASUREMENT_ID_CURRENT_L3}, err)
 	}
 
 	if values, err := readMetric("voltage-per-phase", resolved, s.monitoring.VoltagePerPhase); err == nil {
+		ids := []pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_VOLTAGE_L1, pb.MeasurementId_MEASUREMENT_ID_VOLTAGE_L2, pb.MeasurementId_MEASUREMENT_ID_VOLTAGE_L3}
+		set(ids, status.Error(codes.Unimplemented, "phase absent"))
 		for idx, value := range values {
 			appendMeasurement(&measurements, now, fmt.Sprintf("voltage_l%d", idx+1), value, "V")
+			if idx < len(ids) {
+				states[ids[idx]] = pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_AVAILABLE
+			}
 		}
+	} else {
+		set([]pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_VOLTAGE_L1, pb.MeasurementId_MEASUREMENT_ID_VOLTAGE_L2, pb.MeasurementId_MEASUREMENT_ID_VOLTAGE_L3}, err)
 	}
 
 	if value, err := readMetric("frequency", resolved, s.monitoring.Frequency); err == nil {
 		appendMeasurement(&measurements, now, "frequency", value, "Hz")
+		set([]pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_FREQUENCY}, nil)
+	} else {
+		set([]pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_FREQUENCY}, err)
 	}
 
 	if value, err := readMetric("energy-consumed", resolved, s.monitoring.EnergyConsumed); err == nil {
 		appendMeasurement(&measurements, now, "energy_consumed", value, "kWh")
+		set([]pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_ENERGY_CONSUMED}, nil)
+	} else {
+		set([]pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_ENERGY_CONSUMED}, err)
 	}
 
 	if value, err := readMetric("energy-produced", resolved, s.monitoring.EnergyProduced); err == nil {
 		appendMeasurement(&measurements, now, "energy_produced", value, "kWh")
+		set([]pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_ENERGY_PRODUCED}, nil)
+	} else {
+		set([]pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_ENERGY_PRODUCED}, err)
 	}
 
-	if s.dhw != nil {
-		if value, err := s.dhw.Temperature(resolved.ski); err == nil {
-			appendMeasurement(&measurements, now, "dhw_temperature", value, "degC")
+	readTemperature := func(reader temperatureReader, measurementType string, id pb.MeasurementId) {
+		if reader == nil {
+			set([]pb.MeasurementId{id}, status.Error(codes.Unimplemented, "temperature reader absent"))
+			return
+		}
+		value, err := reader.Temperature(resolved.ski)
+		set([]pb.MeasurementId{id}, err)
+		if err == nil {
+			appendMeasurement(&measurements, now, measurementType, value, "degC")
 		}
 	}
-	if s.room != nil {
-		if value, err := s.room.Temperature(resolved.ski); err == nil {
-			appendMeasurement(&measurements, now, "room_temperature", value, "degC")
-		}
-	}
-	if s.outdoor != nil {
-		if value, err := s.outdoor.Temperature(resolved.ski); err == nil {
-			appendMeasurement(&measurements, now, "outdoor_temperature", value, "degC")
-		}
-	}
-	if s.flow != nil {
-		if value, err := s.flow.Temperature(resolved.ski); err == nil {
-			appendMeasurement(&measurements, now, "flow_temperature", value, "degC")
-		}
-	}
-	if s.returnTemp != nil {
-		if value, err := s.returnTemp.Temperature(resolved.ski); err == nil {
-			appendMeasurement(&measurements, now, "return_temperature", value, "degC")
-		}
-	}
+	readTemperature(s.dhw, "dhw_temperature", pb.MeasurementId_MEASUREMENT_ID_DHW_TEMPERATURE)
+	readTemperature(s.room, "room_temperature", pb.MeasurementId_MEASUREMENT_ID_ROOM_TEMPERATURE)
+	readTemperature(s.outdoor, "outdoor_temperature", pb.MeasurementId_MEASUREMENT_ID_OUTDOOR_TEMPERATURE)
+	readTemperature(s.flow, "flow_temperature", pb.MeasurementId_MEASUREMENT_ID_FLOW_TEMPERATURE)
+	readTemperature(s.returnTemp, "return_temperature", pb.MeasurementId_MEASUREMENT_ID_RETURN_TEMPERATURE)
 
 	if s.monitoring != nil {
 		values, err := s.monitoring.GenericMeasurements(resolved.ski)
+		genericIDs := []pb.MeasurementId{
+			pb.MeasurementId_MEASUREMENT_ID_COMPRESSOR_TEMPERATURE,
+			pb.MeasurementId_MEASUREMENT_ID_COMPRESSOR_POWER,
+			pb.MeasurementId_MEASUREMENT_ID_ENERGY_CONSUMED_HEATING,
+			pb.MeasurementId_MEASUREMENT_ID_ENERGY_CONSUMED_DHW,
+		}
 		if err != nil {
 			values = nil
+			set(genericIDs, err)
+		} else {
+			set(genericIDs, status.Error(codes.Unimplemented, "generic measurement absent"))
 		}
 		seen := make(map[string]struct{}, len(measurements)+len(values))
 		for _, measurement := range measurements {
@@ -266,23 +361,27 @@ func (s *MonitoringService) GetMeasurements(_ context.Context, req *pb.DeviceReq
 				continue
 			}
 			appendMeasurement(&measurements, now, value.Type, value.Value, value.Unit)
+			entry := measurements[len(measurements)-1]
+			if entry.Id != nil {
+				states[entry.GetId()] = pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_AVAILABLE
+			}
 			seen[value.Type] = struct{}{}
 		}
 	}
 
 	if len(measurements) == 0 {
 		if status.Code(resolved.err) == codes.NotFound {
-			s.recordMonitoringRead(req.Ski, resolved.err)
-			return nil, resolved.err
+			s.recordMonitoringRead(ski, resolved.err)
+			return nil, states, resolved.err
 		}
-		s.recordMonitoringRead(req.Ski, errors.New("all monitoring reads failed"))
-		debugLogf(s.debug, "[DEBUG] Monitoring.GetMeasurements produced no entries: requested_ski=%s", redactedSKIForLog(req.Ski))
-		return nil, status.Error(codes.Unavailable, "monitoring measurements temporarily unavailable")
+		s.recordMonitoringRead(ski, errors.New("all monitoring reads failed"))
+		debugLogf(s.debug, "[DEBUG] Monitoring.GetMeasurements produced no entries: requested_ski=%s", redactedSKIForLog(ski))
+		return nil, states, status.Error(codes.Unavailable, "monitoring measurements temporarily unavailable")
 	}
-	s.recordMonitoringRead(req.Ski, nil)
+	s.recordMonitoringRead(ski, nil)
 
-	debugLogf(s.debug, "[DEBUG] Monitoring.GetMeasurements success: requested_ski=%s entries=%d", redactedSKIForLog(req.Ski), len(measurements))
-	return &pb.MeasurementList{Measurements: measurements}, nil
+	debugLogf(s.debug, "[DEBUG] Monitoring.GetMeasurements success: requested_ski=%s entries=%d", redactedSKIForLog(ski), len(measurements))
+	return &pb.MeasurementList{Measurements: measurements}, states, nil
 }
 
 func (s *MonitoringService) recordMonitoringRead(ski string, err error) {
@@ -422,17 +521,17 @@ func (s *MonitoringService) attachMetricList(
 	now := timestamppb.Now()
 	measurements := make([]*pb.MeasurementEntry, 0, len(values))
 	for index, value := range values {
-		measurements = append(measurements, &pb.MeasurementEntry{
-			Type: fmt.Sprintf("%s%d", typePrefix, index+1), Value: value, Unit: unit, Timestamp: now,
-		})
+		measurements = append(measurements, newMeasurementEntry(
+			fmt.Sprintf("%s%d", typePrefix, index+1), value, unit, now,
+		))
 	}
 	event.Data = &pb.MeasurementEvent_Measurements{Measurements: &pb.MeasurementList{Measurements: measurements}}
 }
 
 func measurementList(measurementType string, value float64, unit string) *pb.MeasurementList {
-	return &pb.MeasurementList{Measurements: []*pb.MeasurementEntry{{
-		Type: measurementType, Value: value, Unit: unit, Timestamp: timestamppb.Now(),
-	}}}
+	return &pb.MeasurementList{Measurements: []*pb.MeasurementEntry{
+		newMeasurementEntry(measurementType, value, unit, timestamppb.Now()),
+	}}
 }
 
 func (s *MonitoringService) attachTemperaturePayload(
@@ -445,12 +544,9 @@ func (s *MonitoringService) attachTemperaturePayload(
 		return
 	}
 	if value, err := reader.Temperature(ski); err == nil {
-		event.Data = &pb.MeasurementEvent_Measurement{Measurement: &pb.MeasurementEntry{
-			Type:      measurementType,
-			Value:     value,
-			Unit:      "degC",
-			Timestamp: timestamppb.Now(),
-		}}
+		event.Data = &pb.MeasurementEvent_Measurement{Measurement: newMeasurementEntry(
+			measurementType, value, "degC", timestamppb.Now(),
+		)}
 	}
 }
 
@@ -529,10 +625,5 @@ func readMetric[T any](label string, r resolvedEntity, read func(spineapi.Entity
 }
 
 func appendMeasurement(measurements *[]*pb.MeasurementEntry, now *timestamppb.Timestamp, measurementType string, value float64, unit string) {
-	*measurements = append(*measurements, &pb.MeasurementEntry{
-		Type:      measurementType,
-		Value:     value,
-		Unit:      unit,
-		Timestamp: now,
-	})
+	*measurements = append(*measurements, newMeasurementEntry(measurementType, value, unit, now))
 }
