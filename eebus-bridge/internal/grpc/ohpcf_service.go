@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	eebusapi "github.com/enbility/eebus-go/api"
@@ -98,7 +99,7 @@ func (s *OHPCFService) GetCompressorFlexibility(_ context.Context, req *pb.Devic
 	if err != nil {
 		return nil, err
 	}
-	flexibility, reads := s.buildFlexibility(entity)
+	flexibility, reads, _ := s.buildFlexibility(entity)
 	if reads == 0 {
 		if s.registry != nil {
 			s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityOHPCF, eebusapi.ErrDataNotAvailable)
@@ -186,14 +187,24 @@ func (s *OHPCFService) attachOHPCFPayload(event *pb.OHPCFEvent, ski string, even
 	if err != nil {
 		return false
 	}
-	flexibility, reads := s.buildFlexibility(entity)
+	flexibility, reads, clears := s.buildFlexibility(entity)
 	if reads == 0 {
+		if s.registry != nil {
+			s.registry.RecordCapabilityRead(ski, eebus.CapabilityOHPCF, eebusapi.ErrDataNotAvailable)
+		}
 		return false
 	}
 	event.Flexibility = flexibility
 	target := ohpcfTargetRead(eventType)
-	required := ohpcfCoreReadMask | target
-	return target != 0 && reads&required == required
+	available := target != 0 && reads&ohpcfCoreReadMask == ohpcfCoreReadMask && (reads|clears)&target == target
+	if s.registry != nil {
+		var readErr error
+		if !available {
+			readErr = eebusapi.ErrDataNotAvailable
+		}
+		s.registry.RecordCapabilityRead(ski, eebus.CapabilityOHPCF, readErr)
+	}
+	return available
 }
 
 func (s *OHPCFService) AttachOHPCFPayload(event *pb.OHPCFEvent, ski string, eventType eebus.EventType) bool {
@@ -226,9 +237,10 @@ func ohpcfTargetRead(eventType eebus.EventType) ohpcfReadMask {
 // buildFlexibility reads the current OHPCF offer/state best-effort. Individual
 // reads return ErrDataInvalid when the compressor advertises no offer yet, so each
 // field is filled only when it reads cleanly; optional power fields are omitted.
-func (s *OHPCFService) buildFlexibility(entity spineapi.EntityRemoteInterface) (*pb.CompressorFlexibility, ohpcfReadMask) {
+func (s *OHPCFService) buildFlexibility(entity spineapi.EntityRemoteInterface) (*pb.CompressorFlexibility, ohpcfReadMask, ohpcfReadMask) {
 	f := &pb.CompressorFlexibility{}
 	var reads ohpcfReadMask
+	var clears ohpcfReadMask
 	if available, err := s.ohpcf.OptionalPowerConsumptionAvailable(entity); err == nil {
 		f.Available = available
 		reads |= ohpcfReadAvailable
@@ -236,10 +248,14 @@ func (s *OHPCFService) buildFlexibility(entity spineapi.EntityRemoteInterface) (
 	if est, err := s.ohpcf.RequestedPowerEstimate(entity); err == nil {
 		f.RequestedPowerEstimateW = &est
 		reads |= ohpcfReadPowerEstimate
+	} else if isOHPCFOptionalAbsent(err) {
+		clears |= ohpcfReadPowerEstimate
 	}
 	if max, err := s.ohpcf.RequestedPowerMax(entity); err == nil {
 		f.RequestedPowerMaxW = &max
 		reads |= ohpcfReadPowerMax
+	} else if isOHPCFOptionalAbsent(err) {
+		clears |= ohpcfReadPowerMax
 	}
 	if stoppable, err := s.ohpcf.ConsumptionIsStoppable(entity); err == nil {
 		f.IsStoppable = stoppable
@@ -264,8 +280,14 @@ func (s *OHPCFService) buildFlexibility(entity spineapi.EntityRemoteInterface) (
 	if start, err := s.ohpcf.ConsumptionStartTime(entity); err == nil {
 		f.StartTime = timestamppb.New(start)
 		reads |= ohpcfReadStartTime
+	} else if isOHPCFOptionalAbsent(err) {
+		clears |= ohpcfReadStartTime
 	}
-	return f, reads
+	return f, reads, clears
+}
+
+func isOHPCFOptionalAbsent(err error) bool {
+	return errors.Is(err, eebusapi.ErrDataInvalid) || errors.Is(err, eebusapi.ErrDataNotAvailable)
 }
 
 func convertCompressorState(st ucapi.CompressorPowerConsumptionStateType) pb.CompressorPowerConsumptionState {

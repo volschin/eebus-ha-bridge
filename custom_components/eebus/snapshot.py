@@ -108,6 +108,42 @@ _CAPABILITY_REASONS = {
     proto_stubs.CapabilityReason.CAPABILITY_REASON_READ_FAILED: "read_failed",
     proto_stubs.CapabilityReason.CAPABILITY_REASON_DEVICE_DISCONNECTED: "device_disconnected",
 }
+_SNAPSHOT_FIELD_TO_STATE_FIELD = {
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_CONNECTED: StateField.CONNECTED,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_LOCAL_SKI: StateField.LOCAL_SKI,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_DEVICE_INFO: StateField.DEVICE_INFO,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_DEVICE_OPERATING_STATE: StateField.DEVICE_OPERATING_STATE,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_POWER_L1: StateField.POWER_L1_W,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_POWER_L2: StateField.POWER_L2_W,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_POWER_L3: StateField.POWER_L3_W,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_CURRENT_L1: StateField.CURRENT_L1_A,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_CURRENT_L2: StateField.CURRENT_L2_A,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_CURRENT_L3: StateField.CURRENT_L3_A,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_VOLTAGE_L1: StateField.VOLTAGE_L1_V,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_VOLTAGE_L2: StateField.VOLTAGE_L2_V,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_VOLTAGE_L3: StateField.VOLTAGE_L3_V,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_FREQUENCY: StateField.FREQUENCY_HZ,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_ENERGY_PRODUCED: StateField.ENERGY_PRODUCED_KWH,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_DHW_TEMPERATURE: StateField.DHW_TEMPERATURE_C,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_ROOM_TEMPERATURE: StateField.ROOM_TEMPERATURE_C,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_OUTDOOR_TEMPERATURE: StateField.OUTDOOR_TEMPERATURE_C,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_FLOW_TEMPERATURE: StateField.FLOW_TEMPERATURE_C,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_RETURN_TEMPERATURE: StateField.RETURN_TEMPERATURE_C,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_COMPRESSOR_TEMPERATURE: StateField.COMPRESSOR_TEMPERATURE_C,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_COMPRESSOR_POWER: StateField.COMPRESSOR_POWER_W,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_POWER: StateField.POWER_WATTS,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_ENERGY_CONSUMED_HEATING: StateField.ENERGY_CONSUMED_HEATING_KWH,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_ENERGY_CONSUMED_DHW: StateField.ENERGY_CONSUMED_DHW_KWH,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_ENERGY_CONSUMED: StateField.ENERGY_CONSUMED_KWH,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_CONSUMPTION_LIMIT: StateField.CONSUMPTION_LIMIT,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_FAILSAFE_LIMIT: StateField.FAILSAFE_LIMIT,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_HEARTBEAT_STATUS: StateField.HEARTBEAT_STATUS,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_COMPRESSOR_FLEXIBILITY: StateField.COMPRESSOR_FLEXIBILITY,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_DHW_SETPOINT: StateField.DHW_SETPOINT,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_DHW_SYSTEM_FUNCTION: StateField.DHW_SYSTEM_FUNCTION,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_ROOM_HEATING_SETPOINT: StateField.ROOM_HEATING_SETPOINT,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_ROOM_HEATING_SYSTEM_FUNCTION: StateField.ROOM_HEATING_SYSTEM_FUNCTION,
+}
 
 
 async def _async_read_capabilities(
@@ -374,8 +410,6 @@ async def async_build_snapshot(
 ) -> SnapshotResult:
     """Read and assemble one complete coordinator snapshot atomically."""
     device_stub = proto_stubs.device_service_stub(channel)
-    status: proto_stubs.ServiceStatus = await device_stub.GetStatus(proto_stubs.Empty())
-
     registered = ski_registered
     if not registered:
         registered = await _async_register_remote_ski(
@@ -385,56 +419,17 @@ async def async_build_snapshot(
             registered=registered,
         )
 
-    if ski == status.local_ski:
-        _LOGGER.warning(
-            "Configured remote SKI %s matches bridge local SKI; monitoring reads will stay empty",
-            ski,
-        )
-
     monitoring_stub = proto_stubs.monitoring_service_stub(channel)
     lpc_stub = proto_stubs.lpc_service_stub(channel)
     request = proto_stubs.DeviceRequest(ski=ski)
-
-    power, measurements, energy, limit, failsafe, heartbeat = await asyncio.gather(
-        _poll_read(
-            "power",
-            cast(_ReadCall[proto_stubs.PowerMeasurement], monitoring_stub.GetPowerConsumption),
-            request,
-            ski,
-        ),
-        _poll_read(
-            "scoped energy",
-            cast(_ReadCall[proto_stubs.MeasurementList], monitoring_stub.GetMeasurements),
-            request,
-            ski,
-        ),
-        _poll_read(
-            "total energy",
-            cast(_ReadCall[proto_stubs.EnergyMeasurement], monitoring_stub.GetEnergyConsumed),
-            request,
-            ski,
-        ),
-        _poll_read(
-            "consumption limit",
-            cast(_ReadCall[proto_stubs.LoadLimit], lpc_stub.GetConsumptionLimit),
-            request,
-            ski,
-        ),
-        _poll_read(
-            "failsafe",
-            cast(_ReadCall[proto_stubs.FailsafeLimit], lpc_stub.GetFailsafeLimit),
-            request,
-            ski,
-        ),
-        _poll_read(
-            "heartbeat",
-            cast(_ReadCall[proto_stubs.HeartbeatStatus], lpc_stub.GetHeartbeatStatus),
-            request,
-            ski,
-        ),
-    )
-
     (
+        status,
+        power,
+        measurements,
+        energy,
+        limit,
+        failsafe,
+        heartbeat,
         device_status,
         device_info,
         compressor,
@@ -442,8 +437,16 @@ async def async_build_snapshot(
         dhw_system_function,
         room_heating,
         diagnostics,
+        explicit_capabilities,
     ) = cast(
         tuple[
+            proto_stubs.ServiceStatus,
+            _ReadResult[proto_stubs.PowerMeasurement],
+            _ReadResult[proto_stubs.MeasurementList],
+            _ReadResult[proto_stubs.EnergyMeasurement],
+            _ReadResult[proto_stubs.LoadLimit],
+            _ReadResult[proto_stubs.FailsafeLimit],
+            _ReadResult[proto_stubs.HeartbeatStatus],
             proto_stubs.DeviceStatus,
             DeviceInfo | None,
             _ReadResult[CompressorFlexibilityState],
@@ -451,8 +454,49 @@ async def async_build_snapshot(
             _ReadResult[DHWSystemFunctionState],
             _ReadResult[RoomHeatingValues],
             _ReadResult[str],
+            tuple[CapabilityResult, ...] | None,
         ],
         await asyncio.gather(
+            cast(
+                Awaitable[proto_stubs.ServiceStatus],
+                device_stub.GetStatus(proto_stubs.Empty(), timeout=RPC_TIMEOUT),
+            ),
+            _poll_read(
+                "power",
+                cast(_ReadCall[proto_stubs.PowerMeasurement], monitoring_stub.GetPowerConsumption),
+                request,
+                ski,
+            ),
+            _poll_read(
+                "scoped energy",
+                cast(_ReadCall[proto_stubs.MeasurementList], monitoring_stub.GetMeasurements),
+                request,
+                ski,
+            ),
+            _poll_read(
+                "total energy",
+                cast(_ReadCall[proto_stubs.EnergyMeasurement], monitoring_stub.GetEnergyConsumed),
+                request,
+                ski,
+            ),
+            _poll_read(
+                "consumption limit",
+                cast(_ReadCall[proto_stubs.LoadLimit], lpc_stub.GetConsumptionLimit),
+                request,
+                ski,
+            ),
+            _poll_read(
+                "failsafe",
+                cast(_ReadCall[proto_stubs.FailsafeLimit], lpc_stub.GetFailsafeLimit),
+                request,
+                ski,
+            ),
+            _poll_read(
+                "heartbeat",
+                cast(_ReadCall[proto_stubs.HeartbeatStatus], lpc_stub.GetHeartbeatStatus),
+                request,
+                ski,
+            ),
             cast(
                 Awaitable[proto_stubs.DeviceStatus],
                 device_stub.GetDeviceStatus(request, timeout=RPC_TIMEOUT),
@@ -463,12 +507,19 @@ async def async_build_snapshot(
             _async_read_dhw_system_function(channel, request, ski),
             _async_read_room_heating(channel, request),
             _async_read_device_diagnostics(channel, request, ski),
+            (
+                _async_read_capabilities(device_stub, request, ski)
+                if supports_explicit_capabilities
+                else asyncio.sleep(0, result=None)
+            ),
         ),
     )
 
-    explicit_capabilities = (
-        await _async_read_capabilities(device_stub, request, ski) if supports_explicit_capabilities else None
-    )
+    if ski == status.local_ski:
+        _LOGGER.warning(
+            "Configured remote SKI %s matches bridge local SKI; monitoring reads will stay empty",
+            ski,
+        )
 
     flat_measurements: dict[str, float | None] = {}
     scoped_energy: dict[str, float | None] = {"heating": None, "dhw": None}
@@ -642,6 +693,126 @@ async def async_build_snapshot(
     )
 
 
+def _snapshot_observation_from_proto(
+    snapshot: proto_stubs.DeviceSnapshot,
+    *,
+    ski_registered: bool,
+) -> StateObservation:
+    """Convert the aggregate bridge read into the same reducer observation as legacy polling."""
+    measurements = _extract_flat_measurements(snapshot.measurements)
+    room_heating = _room_heating_from_proto(snapshot.room_heating) if snapshot.HasField("room_heating") else None
+    if room_heating is not None and room_heating.current_temperature_celsius is not None:
+        measurements["room_temperature_c"] = room_heating.current_temperature_celsius
+
+    device_info: DeviceInfo | None = None
+    if snapshot.HasField("classification"):
+        classification = snapshot.classification
+        candidate = DeviceInfo(
+            manufacturer=classification.brand or None,
+            model=classification.model or None,
+            serial=classification.serial or None,
+            device_type=classification.device_type or None,
+        )
+        if any((candidate.manufacturer, candidate.model, candidate.serial, candidate.device_type)):
+            device_info = candidate
+
+    consumption_limit = None
+    if snapshot.HasField("consumption_limit"):
+        value = snapshot.consumption_limit
+        consumption_limit = ConsumptionLimitState(value.value_watts, value.is_active, value.is_changeable)
+    failsafe_limit = None
+    if snapshot.HasField("failsafe_limit"):
+        value = snapshot.failsafe_limit
+        failsafe_limit = FailsafeState(value.value_watts, value.duration_minimum_seconds)
+    heartbeat = None
+    if snapshot.HasField("heartbeat"):
+        heartbeat = HeartbeatState(snapshot.heartbeat.running, snapshot.heartbeat.within_duration)
+    compressor = None
+    if snapshot.HasField("compressor_flexibility"):
+        value = snapshot.compressor_flexibility
+        compressor = CompressorFlexibilityState(
+            available=value.available,
+            state=proto_stubs.CompressorPowerConsumptionState.Name(value.state),
+            requested_power_estimate_w=(value.requested_power_estimate_w if value.HasField("requested_power_estimate_w") else None),
+            requested_power_max_w=(value.requested_power_max_w if value.HasField("requested_power_max_w") else None),
+            is_pausable=value.is_pausable,
+            is_stoppable=value.is_stoppable,
+            minimal_run_seconds=value.minimal_run_seconds,
+            minimal_pause_seconds=value.minimal_pause_seconds,
+            start_time=value.start_time.ToDatetime(tzinfo=UTC) if value.HasField("start_time") else None,
+        )
+
+    state = DeviceState(
+        connection=ConnectionState(
+            connected=snapshot.connection.connected if snapshot.HasField("connection") else False,
+            local_ski=snapshot.local_ski,
+            ski_registered=ski_registered,
+            device_info=device_info,
+            device_operating_state=(
+                snapshot.device_diagnostics.operating_state or None
+                if snapshot.HasField("device_diagnostics")
+                else None
+            ),
+        ),
+        measurements=replace(MeasurementsState(), **measurements),
+        lpc=LPCState(consumption_limit=consumption_limit, failsafe_limit=failsafe_limit, heartbeat_status=heartbeat),
+        dhw=DHWState(
+            setpoint=_setpoint_to_dict(snapshot.dhw_setpoint) if snapshot.HasField("dhw_setpoint") else None,
+            system_function=(
+                _dhw_system_function_to_dict(snapshot.dhw_system_function)
+                if snapshot.HasField("dhw_system_function")
+                else None
+            ),
+        ),
+        hvac=HVACState(
+            setpoint=room_heating.setpoint if room_heating is not None else None,
+            system_function=room_heating.system_function if room_heating is not None else None,
+        ),
+        ohpcf=OHPCFState(compressor_flexibility=compressor),
+    )
+
+    available = int(proto_stubs.SnapshotValueState.SNAPSHOT_VALUE_STATE_AVAILABLE)
+    observed_fields = {StateField.SKI_REGISTERED}
+    unavailable_fields: set[StateField] = set()
+    for field_status in snapshot.field_states:
+        field = _SNAPSHOT_FIELD_TO_STATE_FIELD.get(field_status.id)
+        if field is None:
+            continue
+        if int(field_status.state) == available:
+            observed_fields.add(field)
+        else:
+            unavailable_fields.add(field)
+
+    return StateObservation(
+        state=state,
+        observed_fields=frozenset(observed_fields),
+        unavailable_fields=frozenset(unavailable_fields),
+        capability_results=_capability_results_from_proto(snapshot.capabilities),
+        explicit_capability_contract=True,
+    )
+
+
+async def async_build_device_snapshot(
+    channel: grpc.aio.Channel,
+    ski: str,
+    *,
+    ski_registered: bool,
+) -> SnapshotResult:
+    """Register if necessary, then read the device in one aggregate RPC."""
+    stub = proto_stubs.device_service_stub(channel)
+    registered = ski_registered
+    if not registered:
+        registered = await _async_register_remote_ski(stub, ski, force=False, registered=False)
+    snapshot: proto_stubs.DeviceSnapshot = await stub.GetDeviceSnapshot(
+        proto_stubs.DeviceRequest(ski=ski), timeout=RPC_TIMEOUT
+    )
+    return SnapshotResult(
+        _snapshot_observation_from_proto(snapshot, ski_registered=registered),
+        registered,
+        0,
+    )
+
+
 class DevicePoller:
     """Poll one device and submit the result to its authoritative store."""
 
@@ -655,22 +826,43 @@ class DevicePoller:
         self._ski = ski
         self._ensure_channel = ensure_channel
         self._store = store
-        self._supports_feature = supports_feature or (lambda _feature: True)
+        self._supports_feature = supports_feature or (lambda _feature: False)
         self._ski_registered = False
         self._not_found_streak = 0
+
+    async def ensure_registered(self) -> None:
+        """Register the remote SKI without performing a device snapshot read."""
+        if self._ski_registered:
+            return
+        channel = await self._ensure_channel()
+        stub = proto_stubs.device_service_stub(channel)
+        self._ski_registered = await _async_register_remote_ski(
+            stub,
+            self._ski,
+            force=False,
+            registered=False,
+        )
 
     async def poll(self) -> DeviceState:
         """Run one atomic poll without overwriting newer stream observations."""
         base_revision = self._store.revision
-        result = await async_build_snapshot(
-            await self._ensure_channel(),
-            self._ski,
-            ski_registered=self._ski_registered,
-            not_found_streak=self._not_found_streak,
-            supports_explicit_capabilities=self._supports_feature(
-                int(proto_stubs.FeatureId.FEATURE_EXPLICIT_CAPABILITIES)
-            ),
-        )
+        channel = await self._ensure_channel()
+        if self._supports_feature(int(proto_stubs.FeatureId.FEATURE_DEVICE_SNAPSHOT)):
+            result = await async_build_device_snapshot(
+                channel,
+                self._ski,
+                ski_registered=self._ski_registered,
+            )
+        else:
+            result = await async_build_snapshot(
+                channel,
+                self._ski,
+                ski_registered=self._ski_registered,
+                not_found_streak=self._not_found_streak,
+                supports_explicit_capabilities=self._supports_feature(
+                    int(proto_stubs.FeatureId.FEATURE_EXPLICIT_CAPABILITIES)
+                ),
+            )
         self._ski_registered = result.ski_registered
         self._not_found_streak = result.not_found_streak
         observation = replace(result.observation, base_revision=base_revision)

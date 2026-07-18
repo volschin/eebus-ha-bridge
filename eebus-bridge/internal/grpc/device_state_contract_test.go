@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	eebusapi "github.com/enbility/eebus-go/api"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
 	spineapi "github.com/enbility/spine-go/api"
 	"github.com/enbility/spine-go/mocks"
@@ -46,6 +47,8 @@ func (completeDeviceStatePayloads) AttachLPCPayload(event *pb.LPCEvent, _ string
 		event.Data = &pb.LPCEvent_LimitUpdate{LimitUpdate: &pb.LoadLimit{ValueWatts: 1000}}
 	case pb.LPCEventType_LPC_EVENT_FAILSAFE_UPDATED:
 		event.Data = &pb.LPCEvent_FailsafeUpdate{FailsafeUpdate: &pb.FailsafeLimit{ValueWatts: 500}}
+	case pb.LPCEventType_LPC_EVENT_HEARTBEAT_TIMEOUT:
+		event.Data = &pb.LPCEvent_HeartbeatUpdate{HeartbeatUpdate: &pb.HeartbeatStatus{Running: true, WithinDuration: true}}
 	}
 }
 
@@ -138,9 +141,6 @@ func TestEveryStateDeltaProducesTypedAvailablePayload(t *testing.T) {
 				SKI: testValidSKI, Type: eventType, Revision: 1, OccurredAt: time.Now(),
 			})
 			wantAvailability := pb.EventAvailability_EVENT_AVAILABILITY_AVAILABLE
-			if eventType == eebus.EventTypeLPCHeartbeatUpdated {
-				wantAvailability = pb.EventAvailability_EVENT_AVAILABILITY_TEMPORARILY_UNAVAILABLE
-			}
 			if event.GetAvailability() != wantAvailability {
 				t.Fatalf("availability = %s, want %s, envelope = %v", event.GetAvailability(), wantAvailability, event)
 			}
@@ -229,6 +229,9 @@ type partialOHPCFController struct {
 	entity       spineapi.EntityRemoteInterface
 	availableErr error
 	stoppableErr error
+	startErr     error
+	estimateErr  error
+	maxErr       error
 }
 
 func (f partialOHPCFController) CompatibleEntity(string) eebus.EntityResolution {
@@ -237,11 +240,11 @@ func (f partialOHPCFController) CompatibleEntity(string) eebus.EntityResolution 
 func (f partialOHPCFController) OptionalPowerConsumptionAvailable(spineapi.EntityRemoteInterface) (bool, error) {
 	return true, f.availableErr
 }
-func (partialOHPCFController) RequestedPowerEstimate(spineapi.EntityRemoteInterface) (float64, error) {
-	return 1000, nil
+func (f partialOHPCFController) RequestedPowerEstimate(spineapi.EntityRemoteInterface) (float64, error) {
+	return 1000, f.estimateErr
 }
-func (partialOHPCFController) RequestedPowerMax(spineapi.EntityRemoteInterface) (float64, error) {
-	return 2000, nil
+func (f partialOHPCFController) RequestedPowerMax(spineapi.EntityRemoteInterface) (float64, error) {
+	return 2000, f.maxErr
 }
 func (f partialOHPCFController) ConsumptionIsStoppable(spineapi.EntityRemoteInterface) (bool, error) {
 	return false, f.stoppableErr
@@ -252,8 +255,8 @@ func (partialOHPCFController) ConsumptionIsPausable(spineapi.EntityRemoteInterfa
 func (partialOHPCFController) ConsumptionState(spineapi.EntityRemoteInterface) (ucapi.CompressorPowerConsumptionStateType, error) {
 	return ucapi.CompressorPowerConsumptionStateRunning, nil
 }
-func (partialOHPCFController) ConsumptionStartTime(spineapi.EntityRemoteInterface) (time.Time, error) {
-	return time.Unix(123, 0), nil
+func (f partialOHPCFController) ConsumptionStartTime(spineapi.EntityRemoteInterface) (time.Time, error) {
+	return time.Unix(123, 0), f.startErr
 }
 func (partialOHPCFController) MinimalRunDuration(spineapi.EntityRemoteInterface) (time.Duration, error) {
 	return time.Minute, nil
@@ -269,6 +272,7 @@ func (partialOHPCFController) Abort(spineapi.EntityRemoteInterface) error       
 func TestOHPCFEnvelopeAvailabilityTracksTheUpdatedField(t *testing.T) {
 	bus := eebus.NewEventBus()
 	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
 	controller := partialOHPCFController{
 		entity:       mocks.NewEntityRemoteInterface(t),
 		stoppableErr: errors.New("stoppable cache miss"),
@@ -326,5 +330,38 @@ func TestOHPCFEnvelopeAvailabilityTracksTheUpdatedField(t *testing.T) {
 		available.GetOhpcf().GetFlexibility().GetStartTime() == nil ||
 		available.GetOhpcf().GetUpdateField() != pb.OHPCFUpdateField_OHPCF_UPDATE_FIELD_START_TIME {
 		t.Fatalf("start-time event = %v", available)
+	}
+	capabilities, _ := registry.DeviceCapabilities(testValidSKI)
+	foundOHPCF := false
+	for _, capability := range capabilities {
+		if capability.ID == eebus.CapabilityOHPCF {
+			foundOHPCF = true
+			if capability.State != eebus.CapabilityStateAvailable {
+				t.Fatalf("OHPCF capability after successful payload read = %+v", capability)
+			}
+		}
+	}
+	if !foundOHPCF {
+		t.Fatal("OHPCF capability missing after successful payload read")
+	}
+
+	clearedController := completeController
+	clearedController.startErr = eebusapi.ErrDataInvalid
+	clearedService := NewDeviceService(
+		nil,
+		bus,
+		"local",
+		registry,
+		nil,
+		WithDeviceStatePayloads(DeviceStatePayloadSources{
+			OHPCF: NewOHPCFService(nil, bus, registry, WithOHPCFController(clearedController)),
+		}),
+	)
+	cleared := clearedService.deviceStateEnvelope(eebus.Event{
+		SKI: testValidSKI, Type: eebus.EventTypeOHPCFConsumptionStartTimeUpdated, OccurredAt: time.Now(),
+	})
+	if cleared.GetAvailability() != pb.EventAvailability_EVENT_AVAILABILITY_AVAILABLE ||
+		cleared.GetOhpcf().GetFlexibility().GetStartTime() != nil {
+		t.Fatalf("cleared start-time event = %v", cleared)
 	}
 }

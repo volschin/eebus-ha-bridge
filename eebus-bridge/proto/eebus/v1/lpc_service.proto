@@ -54,6 +54,7 @@ message LPCEvent {
   oneof data {
     LoadLimit limit_update = 3;
     FailsafeLimit failsafe_update = 4;
+    HeartbeatStatus heartbeat_update = 5;
   }
 }
 

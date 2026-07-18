@@ -778,6 +778,20 @@ dort gefixte Punkte, da sie Spezifikationsentscheidungen statt Bugfixes sind:
    Entscheidung: Blatt-Granularität für OHPCF-Frische (analog zu den
    Per-Phase-Measurements) oder dokumentierte Aggregat-Semantik inklusive
    Clear-Pfad.
+
+   **Entscheidung Welle B:** `COMPRESSOR_FLEXIBILITY` bleibt bewusst ein
+   Aggregat, weil die HA-Entities Angebot, Prozesszustand und Constraints als
+   zusammengehörigen Vertrag konsumieren. Ein typisiertes `update_field`
+   ersetzt nur das betroffene Blatt; bei optionalen Blättern bedeutet fehlende
+   Presence im zielgerichteten Delta explizit `None` und ist damit der
+   Clear-Pfad. Der vollständige Initial-/Recovery-Snapshot ersetzt das gesamte
+   Aggregat und löscht dort ebenfalls nicht mehr vorhandene optionale Werte.
+   Die Aggregat-Frische setzt weiterhin erfolgreiche Kernreads plus den
+   Zielread voraus; ein fehlender Kernread macht das Aggregat vorübergehend
+   unavailable. Eine zusätzliche OHPCF-Blatt-Freshness wird erst mit dem nach
+   Produktionstelemetrie vorgesehenen SPEC4-08-Slice eingeführt, falls reale
+   Flaps dessen Nutzen belegen.
+
 2. **Vertrags- und Stream-Lebenszyklus** (Ziel: SPEC4-02 Folge-Slice, SPEC4-04,
    SPEC4-05): Der `BridgeContract` wird pro `BridgeRuntime` genau einmal
    gelesen und nie neu verhandelt — ein Bridge-Upgrade bei bestehendem Channel
@@ -787,6 +801,12 @@ dort gefixte Punkte, da sie Spezifikationsentscheidungen statt Bugfixes sind:
    gRPC-Health `NOT_SERVING` (heute nur advisory) und ein Heartbeat-Feld im
    konsolidierten Stream, damit Heartbeat-Status nicht bis zu einem
    Poll-Intervall veraltet.
+
+   **Teilauflösung Welle B:** `LPCEvent.heartbeat_update` transportiert den
+   aktuellen `HeartbeatStatus` additiv im konsolidierten Stream; HA wendet ihn
+   ohne Poll an. Vertragsneuverhandlung, Fan-out-/Backpressure-Grenzen und
+   tatsächliches Health-Gating bleiben entsprechend ihrer ursprünglichen
+   Zuordnung in Welle C bzw. einem SPEC4-02-Folgeslice.
 
 ## 7. Globale Definition of Done
 

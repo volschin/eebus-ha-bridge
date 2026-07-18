@@ -55,6 +55,11 @@ class DeviceServiceStub(object):
                 request_serializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
                 response_deserializer=eebus_dot_v1_dot_device__service__pb2.DeviceCapabilities.FromString,
                 _registered_method=True)
+        self.GetDeviceSnapshot = channel.unary_unary(
+                '/eebus.v1.DeviceService/GetDeviceSnapshot',
+                request_serializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
+                response_deserializer=eebus_dot_v1_dot_device__service__pb2.DeviceSnapshot.FromString,
+                _registered_method=True)
         self.ListDiscoveredDevices = channel.unary_unary(
                 '/eebus.v1.DeviceService/ListDiscoveredDevices',
                 request_serializer=eebus_dot_v1_dot_common__pb2.Empty.SerializeToString,
@@ -109,6 +114,12 @@ class DeviceServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def GetDeviceCapabilities(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetDeviceSnapshot(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -172,6 +183,11 @@ def add_DeviceServiceServicer_to_server(servicer, server):
                     servicer.GetDeviceCapabilities,
                     request_deserializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.FromString,
                     response_serializer=eebus_dot_v1_dot_device__service__pb2.DeviceCapabilities.SerializeToString,
+            ),
+            'GetDeviceSnapshot': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetDeviceSnapshot,
+                    request_deserializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.FromString,
+                    response_serializer=eebus_dot_v1_dot_device__service__pb2.DeviceSnapshot.SerializeToString,
             ),
             'ListDiscoveredDevices': grpc.unary_unary_rpc_method_handler(
                     servicer.ListDiscoveredDevices,
@@ -312,6 +328,33 @@ class DeviceService(object):
             '/eebus.v1.DeviceService/GetDeviceCapabilities',
             eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
             eebus_dot_v1_dot_device__service__pb2.DeviceCapabilities.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetDeviceSnapshot(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/eebus.v1.DeviceService/GetDeviceSnapshot',
+            eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
+            eebus_dot_v1_dot_device__service__pb2.DeviceSnapshot.FromString,
             options,
             channel_credentials,
             insecure,

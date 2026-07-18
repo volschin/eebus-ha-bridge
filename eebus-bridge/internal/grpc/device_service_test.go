@@ -225,17 +225,11 @@ func TestGetServerInfoAdvertisesOnlyImplementedFeatures(t *testing.T) {
 		pb.FeatureId_FEATURE_EXPLICIT_CAPABILITIES,
 		pb.FeatureId_FEATURE_CONSOLIDATED_DEVICE_STREAM,
 		pb.FeatureId_FEATURE_PROVIDER_SAMPLE_INVALIDATION,
-	} {
-		if !features[feature] {
-			t.Errorf("implemented feature %s not advertised", feature)
-		}
-	}
-	for _, feature := range []pb.FeatureId{
 		pb.FeatureId_FEATURE_DEVICE_SNAPSHOT,
 		pb.FeatureId_FEATURE_TYPED_MEASUREMENTS,
 	} {
-		if features[feature] {
-			t.Errorf("future feature %s advertised before implementation", feature)
+		if !features[feature] {
+			t.Errorf("implemented feature %s not advertised", feature)
 		}
 	}
 }

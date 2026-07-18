@@ -80,6 +80,8 @@ async def test_go_server_to_python_state_contract(go_contract_server: str) -> No
     assert contract.build_version == "contract-test"
     assert contract.supports(proto_stubs.FeatureId.FEATURE_CONSOLIDATED_DEVICE_STREAM)
     assert contract.supports(proto_stubs.FeatureId.FEATURE_PROVIDER_SAMPLE_INVALIDATION)
+    assert contract.supports(proto_stubs.FeatureId.FEATURE_DEVICE_SNAPSHOT)
+    assert contract.supports(proto_stubs.FeatureId.FEATURE_TYPED_MEASUREMENTS)
 
     stub = proto_stubs.device_service_stub(channel)
     stream_a = stub.SubscribeDeviceState(proto_stubs.DeviceRequest(ski=SKI_A))
@@ -90,8 +92,36 @@ async def test_go_server_to_python_state_contract(go_contract_server: str) -> No
 
     await stub.RegisterRemoteSKI(proto_stubs.RegisterSKIRequest(ski=SKI_A), timeout=5)
     events_a = await _read_events(stream_a, 8)
+    snapshot_a = await stub.GetDeviceSnapshot(proto_stubs.DeviceRequest(ski=SKI_A), timeout=5)
+    assert snapshot_a.event_revision == 8
+    assert snapshot_a.measurements[0].HasField("id")
+    power_status = next(
+        status
+        for status in snapshot_a.field_states
+        if status.id == proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_POWER
+    )
+    assert power_status.state == proto_stubs.SnapshotValueState.SNAPSHOT_VALUE_STATE_AVAILABLE
+    initialized_stream = stub.SubscribeDeviceState(proto_stubs.DeviceRequest(ski=SKI_A))
+    initialized = await asyncio.wait_for(initialized_stream.read(), timeout=5)
+    assert initialized.revision == 8
+    assert initialized.HasField("initial_snapshot")
+    initial_publish = MagicMock()
+    initial_refresh = AsyncMock()
+    initial_consumer = DeviceStreams(
+        MagicMock(), manager, SKI_A, DeviceStateStore(publish=initial_publish), initial_refresh, contract.supports
+    )
+    initial_consumer.handle_device_state_event(initialized)
+    assert initial_consumer._store.state.measurements.power_watts == 600
+    assert initial_consumer._store.state.lpc.heartbeat_status is not None
+    initial_publish.assert_called_once()
+    initial_refresh.assert_not_awaited()
     await stub.RegisterRemoteSKI(proto_stubs.RegisterSKIRequest(ski=SKI_B), timeout=5)
     events_b = await _read_events(stream_b, 8)
+    snapshot_b = await stub.GetDeviceSnapshot(proto_stubs.DeviceRequest(ski=SKI_B), timeout=5)
+    assert snapshot_a.ski == SKI_A.upper()
+    assert snapshot_b.ski == SKI_B.upper()
+    assert snapshot_a.measurements[0].value == 600
+    assert snapshot_b.measurements[0].value == 700
     assert [event.revision for event in events_a] == list(range(1, 9))
     assert [event.revision for event in events_b] == list(range(1, 9))
     assert {event.ski for event in events_a} == {SKI_A.upper()}
@@ -108,8 +138,10 @@ async def test_go_server_to_python_state_contract(go_contract_server: str) -> No
 
     publish = MagicMock()
     refresh = AsyncMock()
+    hass = MagicMock()
+    hass.async_create_task.side_effect = lambda coroutine: coroutine.close()
     streams = DeviceStreams(
-        MagicMock(),
+        hass,
         manager,
         SKI_A,
         DeviceStateStore(publish=publish),

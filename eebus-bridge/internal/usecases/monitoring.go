@@ -292,6 +292,14 @@ func classifyGenericMeasurement(entity eebus.EntityInfo, desc model.MeasurementD
 	if measurementType == string(model.MeasurementTypeTypePower) && entityType == "compressor" {
 		return "compressor_power"
 	}
+	if measurementType == string(model.MeasurementTypeTypeEnergy) {
+		switch entityType {
+		case "dhwcircuit":
+			return "energy_consumed_dhw"
+		case "hvacsystem", "hvacroom":
+			return "energy_consumed_heating"
+		}
+	}
 
 	rawType := measurementType
 	if rawType == "" {

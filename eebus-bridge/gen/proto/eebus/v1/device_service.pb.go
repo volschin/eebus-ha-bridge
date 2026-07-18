@@ -257,6 +257,208 @@ func (FeatureId) EnumDescriptor() ([]byte, []int) {
 	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{3}
 }
 
+// SnapshotValueState describes the availability of one independently readable
+// leaf or aggregate without turning partial read failures into RPC failures.
+type SnapshotValueState int32
+
+const (
+	SnapshotValueState_SNAPSHOT_VALUE_STATE_UNKNOWN                 SnapshotValueState = 0
+	SnapshotValueState_SNAPSHOT_VALUE_STATE_AVAILABLE               SnapshotValueState = 1
+	SnapshotValueState_SNAPSHOT_VALUE_STATE_TEMPORARILY_UNAVAILABLE SnapshotValueState = 2
+	SnapshotValueState_SNAPSHOT_VALUE_STATE_UNSUPPORTED             SnapshotValueState = 3
+)
+
+// Enum value maps for SnapshotValueState.
+var (
+	SnapshotValueState_name = map[int32]string{
+		0: "SNAPSHOT_VALUE_STATE_UNKNOWN",
+		1: "SNAPSHOT_VALUE_STATE_AVAILABLE",
+		2: "SNAPSHOT_VALUE_STATE_TEMPORARILY_UNAVAILABLE",
+		3: "SNAPSHOT_VALUE_STATE_UNSUPPORTED",
+	}
+	SnapshotValueState_value = map[string]int32{
+		"SNAPSHOT_VALUE_STATE_UNKNOWN":                 0,
+		"SNAPSHOT_VALUE_STATE_AVAILABLE":               1,
+		"SNAPSHOT_VALUE_STATE_TEMPORARILY_UNAVAILABLE": 2,
+		"SNAPSHOT_VALUE_STATE_UNSUPPORTED":             3,
+	}
+)
+
+func (x SnapshotValueState) Enum() *SnapshotValueState {
+	p := new(SnapshotValueState)
+	*p = x
+	return p
+}
+
+func (x SnapshotValueState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SnapshotValueState) Descriptor() protoreflect.EnumDescriptor {
+	return file_eebus_v1_device_service_proto_enumTypes[4].Descriptor()
+}
+
+func (SnapshotValueState) Type() protoreflect.EnumType {
+	return &file_eebus_v1_device_service_proto_enumTypes[4]
+}
+
+func (x SnapshotValueState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SnapshotValueState.Descriptor instead.
+func (SnapshotValueState) EnumDescriptor() ([]byte, []int) {
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{4}
+}
+
+// SnapshotFieldId is append-only and gives every HA-visible bridge leaf an
+// explicit availability slot without coupling the wire contract to Python
+// attribute names.
+type SnapshotFieldId int32
+
+const (
+	SnapshotFieldId_SNAPSHOT_FIELD_UNSPECIFIED                  SnapshotFieldId = 0
+	SnapshotFieldId_SNAPSHOT_FIELD_CONNECTED                    SnapshotFieldId = 1
+	SnapshotFieldId_SNAPSHOT_FIELD_LOCAL_SKI                    SnapshotFieldId = 2
+	SnapshotFieldId_SNAPSHOT_FIELD_DEVICE_INFO                  SnapshotFieldId = 3
+	SnapshotFieldId_SNAPSHOT_FIELD_DEVICE_OPERATING_STATE       SnapshotFieldId = 4
+	SnapshotFieldId_SNAPSHOT_FIELD_POWER_L1                     SnapshotFieldId = 5
+	SnapshotFieldId_SNAPSHOT_FIELD_POWER_L2                     SnapshotFieldId = 6
+	SnapshotFieldId_SNAPSHOT_FIELD_POWER_L3                     SnapshotFieldId = 7
+	SnapshotFieldId_SNAPSHOT_FIELD_CURRENT_L1                   SnapshotFieldId = 8
+	SnapshotFieldId_SNAPSHOT_FIELD_CURRENT_L2                   SnapshotFieldId = 9
+	SnapshotFieldId_SNAPSHOT_FIELD_CURRENT_L3                   SnapshotFieldId = 10
+	SnapshotFieldId_SNAPSHOT_FIELD_VOLTAGE_L1                   SnapshotFieldId = 11
+	SnapshotFieldId_SNAPSHOT_FIELD_VOLTAGE_L2                   SnapshotFieldId = 12
+	SnapshotFieldId_SNAPSHOT_FIELD_VOLTAGE_L3                   SnapshotFieldId = 13
+	SnapshotFieldId_SNAPSHOT_FIELD_FREQUENCY                    SnapshotFieldId = 14
+	SnapshotFieldId_SNAPSHOT_FIELD_ENERGY_PRODUCED              SnapshotFieldId = 15
+	SnapshotFieldId_SNAPSHOT_FIELD_DHW_TEMPERATURE              SnapshotFieldId = 16
+	SnapshotFieldId_SNAPSHOT_FIELD_ROOM_TEMPERATURE             SnapshotFieldId = 17
+	SnapshotFieldId_SNAPSHOT_FIELD_OUTDOOR_TEMPERATURE          SnapshotFieldId = 18
+	SnapshotFieldId_SNAPSHOT_FIELD_FLOW_TEMPERATURE             SnapshotFieldId = 19
+	SnapshotFieldId_SNAPSHOT_FIELD_RETURN_TEMPERATURE           SnapshotFieldId = 20
+	SnapshotFieldId_SNAPSHOT_FIELD_COMPRESSOR_TEMPERATURE       SnapshotFieldId = 21
+	SnapshotFieldId_SNAPSHOT_FIELD_COMPRESSOR_POWER             SnapshotFieldId = 22
+	SnapshotFieldId_SNAPSHOT_FIELD_POWER                        SnapshotFieldId = 23
+	SnapshotFieldId_SNAPSHOT_FIELD_ENERGY_CONSUMED_HEATING      SnapshotFieldId = 24
+	SnapshotFieldId_SNAPSHOT_FIELD_ENERGY_CONSUMED_DHW          SnapshotFieldId = 25
+	SnapshotFieldId_SNAPSHOT_FIELD_ENERGY_CONSUMED              SnapshotFieldId = 26
+	SnapshotFieldId_SNAPSHOT_FIELD_CONSUMPTION_LIMIT            SnapshotFieldId = 27
+	SnapshotFieldId_SNAPSHOT_FIELD_FAILSAFE_LIMIT               SnapshotFieldId = 28
+	SnapshotFieldId_SNAPSHOT_FIELD_HEARTBEAT_STATUS             SnapshotFieldId = 29
+	SnapshotFieldId_SNAPSHOT_FIELD_COMPRESSOR_FLEXIBILITY       SnapshotFieldId = 30
+	SnapshotFieldId_SNAPSHOT_FIELD_DHW_SETPOINT                 SnapshotFieldId = 31
+	SnapshotFieldId_SNAPSHOT_FIELD_DHW_SYSTEM_FUNCTION          SnapshotFieldId = 32
+	SnapshotFieldId_SNAPSHOT_FIELD_ROOM_HEATING_SETPOINT        SnapshotFieldId = 33
+	SnapshotFieldId_SNAPSHOT_FIELD_ROOM_HEATING_SYSTEM_FUNCTION SnapshotFieldId = 34
+)
+
+// Enum value maps for SnapshotFieldId.
+var (
+	SnapshotFieldId_name = map[int32]string{
+		0:  "SNAPSHOT_FIELD_UNSPECIFIED",
+		1:  "SNAPSHOT_FIELD_CONNECTED",
+		2:  "SNAPSHOT_FIELD_LOCAL_SKI",
+		3:  "SNAPSHOT_FIELD_DEVICE_INFO",
+		4:  "SNAPSHOT_FIELD_DEVICE_OPERATING_STATE",
+		5:  "SNAPSHOT_FIELD_POWER_L1",
+		6:  "SNAPSHOT_FIELD_POWER_L2",
+		7:  "SNAPSHOT_FIELD_POWER_L3",
+		8:  "SNAPSHOT_FIELD_CURRENT_L1",
+		9:  "SNAPSHOT_FIELD_CURRENT_L2",
+		10: "SNAPSHOT_FIELD_CURRENT_L3",
+		11: "SNAPSHOT_FIELD_VOLTAGE_L1",
+		12: "SNAPSHOT_FIELD_VOLTAGE_L2",
+		13: "SNAPSHOT_FIELD_VOLTAGE_L3",
+		14: "SNAPSHOT_FIELD_FREQUENCY",
+		15: "SNAPSHOT_FIELD_ENERGY_PRODUCED",
+		16: "SNAPSHOT_FIELD_DHW_TEMPERATURE",
+		17: "SNAPSHOT_FIELD_ROOM_TEMPERATURE",
+		18: "SNAPSHOT_FIELD_OUTDOOR_TEMPERATURE",
+		19: "SNAPSHOT_FIELD_FLOW_TEMPERATURE",
+		20: "SNAPSHOT_FIELD_RETURN_TEMPERATURE",
+		21: "SNAPSHOT_FIELD_COMPRESSOR_TEMPERATURE",
+		22: "SNAPSHOT_FIELD_COMPRESSOR_POWER",
+		23: "SNAPSHOT_FIELD_POWER",
+		24: "SNAPSHOT_FIELD_ENERGY_CONSUMED_HEATING",
+		25: "SNAPSHOT_FIELD_ENERGY_CONSUMED_DHW",
+		26: "SNAPSHOT_FIELD_ENERGY_CONSUMED",
+		27: "SNAPSHOT_FIELD_CONSUMPTION_LIMIT",
+		28: "SNAPSHOT_FIELD_FAILSAFE_LIMIT",
+		29: "SNAPSHOT_FIELD_HEARTBEAT_STATUS",
+		30: "SNAPSHOT_FIELD_COMPRESSOR_FLEXIBILITY",
+		31: "SNAPSHOT_FIELD_DHW_SETPOINT",
+		32: "SNAPSHOT_FIELD_DHW_SYSTEM_FUNCTION",
+		33: "SNAPSHOT_FIELD_ROOM_HEATING_SETPOINT",
+		34: "SNAPSHOT_FIELD_ROOM_HEATING_SYSTEM_FUNCTION",
+	}
+	SnapshotFieldId_value = map[string]int32{
+		"SNAPSHOT_FIELD_UNSPECIFIED":                  0,
+		"SNAPSHOT_FIELD_CONNECTED":                    1,
+		"SNAPSHOT_FIELD_LOCAL_SKI":                    2,
+		"SNAPSHOT_FIELD_DEVICE_INFO":                  3,
+		"SNAPSHOT_FIELD_DEVICE_OPERATING_STATE":       4,
+		"SNAPSHOT_FIELD_POWER_L1":                     5,
+		"SNAPSHOT_FIELD_POWER_L2":                     6,
+		"SNAPSHOT_FIELD_POWER_L3":                     7,
+		"SNAPSHOT_FIELD_CURRENT_L1":                   8,
+		"SNAPSHOT_FIELD_CURRENT_L2":                   9,
+		"SNAPSHOT_FIELD_CURRENT_L3":                   10,
+		"SNAPSHOT_FIELD_VOLTAGE_L1":                   11,
+		"SNAPSHOT_FIELD_VOLTAGE_L2":                   12,
+		"SNAPSHOT_FIELD_VOLTAGE_L3":                   13,
+		"SNAPSHOT_FIELD_FREQUENCY":                    14,
+		"SNAPSHOT_FIELD_ENERGY_PRODUCED":              15,
+		"SNAPSHOT_FIELD_DHW_TEMPERATURE":              16,
+		"SNAPSHOT_FIELD_ROOM_TEMPERATURE":             17,
+		"SNAPSHOT_FIELD_OUTDOOR_TEMPERATURE":          18,
+		"SNAPSHOT_FIELD_FLOW_TEMPERATURE":             19,
+		"SNAPSHOT_FIELD_RETURN_TEMPERATURE":           20,
+		"SNAPSHOT_FIELD_COMPRESSOR_TEMPERATURE":       21,
+		"SNAPSHOT_FIELD_COMPRESSOR_POWER":             22,
+		"SNAPSHOT_FIELD_POWER":                        23,
+		"SNAPSHOT_FIELD_ENERGY_CONSUMED_HEATING":      24,
+		"SNAPSHOT_FIELD_ENERGY_CONSUMED_DHW":          25,
+		"SNAPSHOT_FIELD_ENERGY_CONSUMED":              26,
+		"SNAPSHOT_FIELD_CONSUMPTION_LIMIT":            27,
+		"SNAPSHOT_FIELD_FAILSAFE_LIMIT":               28,
+		"SNAPSHOT_FIELD_HEARTBEAT_STATUS":             29,
+		"SNAPSHOT_FIELD_COMPRESSOR_FLEXIBILITY":       30,
+		"SNAPSHOT_FIELD_DHW_SETPOINT":                 31,
+		"SNAPSHOT_FIELD_DHW_SYSTEM_FUNCTION":          32,
+		"SNAPSHOT_FIELD_ROOM_HEATING_SETPOINT":        33,
+		"SNAPSHOT_FIELD_ROOM_HEATING_SYSTEM_FUNCTION": 34,
+	}
+)
+
+func (x SnapshotFieldId) Enum() *SnapshotFieldId {
+	p := new(SnapshotFieldId)
+	*p = x
+	return p
+}
+
+func (x SnapshotFieldId) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SnapshotFieldId) Descriptor() protoreflect.EnumDescriptor {
+	return file_eebus_v1_device_service_proto_enumTypes[5].Descriptor()
+}
+
+func (SnapshotFieldId) Type() protoreflect.EnumType {
+	return &file_eebus_v1_device_service_proto_enumTypes[5]
+}
+
+func (x SnapshotFieldId) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SnapshotFieldId.Descriptor instead.
+func (SnapshotFieldId) EnumDescriptor() ([]byte, []int) {
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{5}
+}
+
 // EventAvailability makes an adapter read failure explicit. An update event
 // with TEMPORARILY_UNAVAILABLE never means that the value was successfully
 // refreshed, even when its domain payload is absent.
@@ -296,11 +498,11 @@ func (x EventAvailability) String() string {
 }
 
 func (EventAvailability) Descriptor() protoreflect.EnumDescriptor {
-	return file_eebus_v1_device_service_proto_enumTypes[4].Descriptor()
+	return file_eebus_v1_device_service_proto_enumTypes[6].Descriptor()
 }
 
 func (EventAvailability) Type() protoreflect.EnumType {
-	return &file_eebus_v1_device_service_proto_enumTypes[4]
+	return &file_eebus_v1_device_service_proto_enumTypes[6]
 }
 
 func (x EventAvailability) Number() protoreflect.EnumNumber {
@@ -309,7 +511,7 @@ func (x EventAvailability) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EventAvailability.Descriptor instead.
 func (EventAvailability) EnumDescriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{4}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{6}
 }
 
 type ResyncReason int32
@@ -348,11 +550,11 @@ func (x ResyncReason) String() string {
 }
 
 func (ResyncReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_eebus_v1_device_service_proto_enumTypes[5].Descriptor()
+	return file_eebus_v1_device_service_proto_enumTypes[7].Descriptor()
 }
 
 func (ResyncReason) Type() protoreflect.EnumType {
-	return &file_eebus_v1_device_service_proto_enumTypes[5]
+	return &file_eebus_v1_device_service_proto_enumTypes[7]
 }
 
 func (x ResyncReason) Number() protoreflect.EnumNumber {
@@ -361,7 +563,7 @@ func (x ResyncReason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ResyncReason.Descriptor instead.
 func (ResyncReason) EnumDescriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{5}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{7}
 }
 
 type DeviceEventType int32
@@ -403,11 +605,11 @@ func (x DeviceEventType) String() string {
 }
 
 func (DeviceEventType) Descriptor() protoreflect.EnumDescriptor {
-	return file_eebus_v1_device_service_proto_enumTypes[6].Descriptor()
+	return file_eebus_v1_device_service_proto_enumTypes[8].Descriptor()
 }
 
 func (DeviceEventType) Type() protoreflect.EnumType {
-	return &file_eebus_v1_device_service_proto_enumTypes[6]
+	return &file_eebus_v1_device_service_proto_enumTypes[8]
 }
 
 func (x DeviceEventType) Number() protoreflect.EnumNumber {
@@ -416,7 +618,7 @@ func (x DeviceEventType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DeviceEventType.Descriptor instead.
 func (DeviceEventType) EnumDescriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{6}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{8}
 }
 
 type DeviceCapability struct {
@@ -1093,6 +1295,7 @@ type DeviceStateEvent struct {
 	//	*DeviceStateEvent_Ohpcf
 	//	*DeviceStateEvent_Capability
 	//	*DeviceStateEvent_ResyncRequired
+	//	*DeviceStateEvent_InitialSnapshot
 	Payload       isDeviceStateEvent_Payload `protobuf_oneof:"payload"`
 	Availability  EventAvailability          `protobuf:"varint,12,opt,name=availability,proto3,enum=eebus.v1.EventAvailability" json:"availability,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1229,6 +1432,15 @@ func (x *DeviceStateEvent) GetResyncRequired() *ResyncRequired {
 	return nil
 }
 
+func (x *DeviceStateEvent) GetInitialSnapshot() *DeviceSnapshot {
+	if x != nil {
+		if x, ok := x.Payload.(*DeviceStateEvent_InitialSnapshot); ok {
+			return x.InitialSnapshot
+		}
+	}
+	return nil
+}
+
 func (x *DeviceStateEvent) GetAvailability() EventAvailability {
 	if x != nil {
 		return x.Availability
@@ -1272,6 +1484,10 @@ type DeviceStateEvent_ResyncRequired struct {
 	ResyncRequired *ResyncRequired `protobuf:"bytes,11,opt,name=resync_required,json=resyncRequired,proto3,oneof"`
 }
 
+type DeviceStateEvent_InitialSnapshot struct {
+	InitialSnapshot *DeviceSnapshot `protobuf:"bytes,13,opt,name=initial_snapshot,json=initialSnapshot,proto3,oneof"`
+}
+
 func (*DeviceStateEvent_Device) isDeviceStateEvent_Payload() {}
 
 func (*DeviceStateEvent_Measurement) isDeviceStateEvent_Payload() {}
@@ -1288,6 +1504,323 @@ func (*DeviceStateEvent_Capability) isDeviceStateEvent_Payload() {}
 
 func (*DeviceStateEvent_ResyncRequired) isDeviceStateEvent_Payload() {}
 
+func (*DeviceStateEvent_InitialSnapshot) isDeviceStateEvent_Payload() {}
+
+type SnapshotFieldStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            SnapshotFieldId        `protobuf:"varint,1,opt,name=id,proto3,enum=eebus.v1.SnapshotFieldId" json:"id,omitempty"`
+	State         SnapshotValueState     `protobuf:"varint,2,opt,name=state,proto3,enum=eebus.v1.SnapshotValueState" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SnapshotFieldStatus) Reset() {
+	*x = SnapshotFieldStatus{}
+	mi := &file_eebus_v1_device_service_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SnapshotFieldStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SnapshotFieldStatus) ProtoMessage() {}
+
+func (x *SnapshotFieldStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_eebus_v1_device_service_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SnapshotFieldStatus.ProtoReflect.Descriptor instead.
+func (*SnapshotFieldStatus) Descriptor() ([]byte, []int) {
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *SnapshotFieldStatus) GetId() SnapshotFieldId {
+	if x != nil {
+		return x.Id
+	}
+	return SnapshotFieldId_SNAPSHOT_FIELD_UNSPECIFIED
+}
+
+func (x *SnapshotFieldStatus) GetState() SnapshotValueState {
+	if x != nil {
+		return x.State
+	}
+	return SnapshotValueState_SNAPSHOT_VALUE_STATE_UNKNOWN
+}
+
+// DeviceSnapshot is the device-scoped, point-in-time read model used for both
+// polling and the first envelope of SubscribeDeviceState.
+type DeviceSnapshot struct {
+	state                      protoimpl.MessageState  `protogen:"open.v1"`
+	Ski                        string                  `protobuf:"bytes,1,opt,name=ski,proto3" json:"ski,omitempty"`
+	CapturedAt                 *timestamppb.Timestamp  `protobuf:"bytes,2,opt,name=captured_at,json=capturedAt,proto3" json:"captured_at,omitempty"`
+	EventRevision              uint64                  `protobuf:"varint,3,opt,name=event_revision,json=eventRevision,proto3" json:"event_revision,omitempty"`
+	Connection                 *DeviceStatus           `protobuf:"bytes,4,opt,name=connection,proto3" json:"connection,omitempty"`
+	ConnectionState            SnapshotValueState      `protobuf:"varint,5,opt,name=connection_state,json=connectionState,proto3,enum=eebus.v1.SnapshotValueState" json:"connection_state,omitempty"`
+	Classification             *PairedDevice           `protobuf:"bytes,6,opt,name=classification,proto3" json:"classification,omitempty"`
+	ClassificationState        SnapshotValueState      `protobuf:"varint,7,opt,name=classification_state,json=classificationState,proto3,enum=eebus.v1.SnapshotValueState" json:"classification_state,omitempty"`
+	Capabilities               *DeviceCapabilities     `protobuf:"bytes,8,opt,name=capabilities,proto3" json:"capabilities,omitempty"`
+	Measurements               []*MeasurementEntry     `protobuf:"bytes,9,rep,name=measurements,proto3" json:"measurements,omitempty"`
+	MeasurementsState          SnapshotValueState      `protobuf:"varint,10,opt,name=measurements_state,json=measurementsState,proto3,enum=eebus.v1.SnapshotValueState" json:"measurements_state,omitempty"`
+	ConsumptionLimit           *LoadLimit              `protobuf:"bytes,11,opt,name=consumption_limit,json=consumptionLimit,proto3" json:"consumption_limit,omitempty"`
+	ConsumptionLimitState      SnapshotValueState      `protobuf:"varint,12,opt,name=consumption_limit_state,json=consumptionLimitState,proto3,enum=eebus.v1.SnapshotValueState" json:"consumption_limit_state,omitempty"`
+	FailsafeLimit              *FailsafeLimit          `protobuf:"bytes,13,opt,name=failsafe_limit,json=failsafeLimit,proto3" json:"failsafe_limit,omitempty"`
+	FailsafeLimitState         SnapshotValueState      `protobuf:"varint,14,opt,name=failsafe_limit_state,json=failsafeLimitState,proto3,enum=eebus.v1.SnapshotValueState" json:"failsafe_limit_state,omitempty"`
+	Heartbeat                  *HeartbeatStatus        `protobuf:"bytes,15,opt,name=heartbeat,proto3" json:"heartbeat,omitempty"`
+	HeartbeatState             SnapshotValueState      `protobuf:"varint,16,opt,name=heartbeat_state,json=heartbeatState,proto3,enum=eebus.v1.SnapshotValueState" json:"heartbeat_state,omitempty"`
+	DhwSetpoint                *DHWSetpoint            `protobuf:"bytes,17,opt,name=dhw_setpoint,json=dhwSetpoint,proto3" json:"dhw_setpoint,omitempty"`
+	DhwSetpointState           SnapshotValueState      `protobuf:"varint,18,opt,name=dhw_setpoint_state,json=dhwSetpointState,proto3,enum=eebus.v1.SnapshotValueState" json:"dhw_setpoint_state,omitempty"`
+	DhwSystemFunction          *DHWSystemFunctionState `protobuf:"bytes,19,opt,name=dhw_system_function,json=dhwSystemFunction,proto3" json:"dhw_system_function,omitempty"`
+	DhwSystemFunctionState     SnapshotValueState      `protobuf:"varint,20,opt,name=dhw_system_function_state,json=dhwSystemFunctionState,proto3,enum=eebus.v1.SnapshotValueState" json:"dhw_system_function_state,omitempty"`
+	RoomHeating                *RoomHeatingState       `protobuf:"bytes,21,opt,name=room_heating,json=roomHeating,proto3" json:"room_heating,omitempty"`
+	RoomHeatingState           SnapshotValueState      `protobuf:"varint,22,opt,name=room_heating_state,json=roomHeatingState,proto3,enum=eebus.v1.SnapshotValueState" json:"room_heating_state,omitempty"`
+	CompressorFlexibility      *CompressorFlexibility  `protobuf:"bytes,23,opt,name=compressor_flexibility,json=compressorFlexibility,proto3" json:"compressor_flexibility,omitempty"`
+	CompressorFlexibilityState SnapshotValueState      `protobuf:"varint,24,opt,name=compressor_flexibility_state,json=compressorFlexibilityState,proto3,enum=eebus.v1.SnapshotValueState" json:"compressor_flexibility_state,omitempty"`
+	DeviceDiagnostics          *DeviceDiagnosticsData  `protobuf:"bytes,25,opt,name=device_diagnostics,json=deviceDiagnostics,proto3" json:"device_diagnostics,omitempty"`
+	DeviceDiagnosticsState     SnapshotValueState      `protobuf:"varint,26,opt,name=device_diagnostics_state,json=deviceDiagnosticsState,proto3,enum=eebus.v1.SnapshotValueState" json:"device_diagnostics_state,omitempty"`
+	LocalSki                   string                  `protobuf:"bytes,27,opt,name=local_ski,json=localSki,proto3" json:"local_ski,omitempty"`
+	// Per-leaf availability refines aggregate section status for partial reads.
+	FieldStates   []*SnapshotFieldStatus `protobuf:"bytes,28,rep,name=field_states,json=fieldStates,proto3" json:"field_states,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceSnapshot) Reset() {
+	*x = DeviceSnapshot{}
+	mi := &file_eebus_v1_device_service_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceSnapshot) ProtoMessage() {}
+
+func (x *DeviceSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_eebus_v1_device_service_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceSnapshot.ProtoReflect.Descriptor instead.
+func (*DeviceSnapshot) Descriptor() ([]byte, []int) {
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *DeviceSnapshot) GetSki() string {
+	if x != nil {
+		return x.Ski
+	}
+	return ""
+}
+
+func (x *DeviceSnapshot) GetCapturedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CapturedAt
+	}
+	return nil
+}
+
+func (x *DeviceSnapshot) GetEventRevision() uint64 {
+	if x != nil {
+		return x.EventRevision
+	}
+	return 0
+}
+
+func (x *DeviceSnapshot) GetConnection() *DeviceStatus {
+	if x != nil {
+		return x.Connection
+	}
+	return nil
+}
+
+func (x *DeviceSnapshot) GetConnectionState() SnapshotValueState {
+	if x != nil {
+		return x.ConnectionState
+	}
+	return SnapshotValueState_SNAPSHOT_VALUE_STATE_UNKNOWN
+}
+
+func (x *DeviceSnapshot) GetClassification() *PairedDevice {
+	if x != nil {
+		return x.Classification
+	}
+	return nil
+}
+
+func (x *DeviceSnapshot) GetClassificationState() SnapshotValueState {
+	if x != nil {
+		return x.ClassificationState
+	}
+	return SnapshotValueState_SNAPSHOT_VALUE_STATE_UNKNOWN
+}
+
+func (x *DeviceSnapshot) GetCapabilities() *DeviceCapabilities {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *DeviceSnapshot) GetMeasurements() []*MeasurementEntry {
+	if x != nil {
+		return x.Measurements
+	}
+	return nil
+}
+
+func (x *DeviceSnapshot) GetMeasurementsState() SnapshotValueState {
+	if x != nil {
+		return x.MeasurementsState
+	}
+	return SnapshotValueState_SNAPSHOT_VALUE_STATE_UNKNOWN
+}
+
+func (x *DeviceSnapshot) GetConsumptionLimit() *LoadLimit {
+	if x != nil {
+		return x.ConsumptionLimit
+	}
+	return nil
+}
+
+func (x *DeviceSnapshot) GetConsumptionLimitState() SnapshotValueState {
+	if x != nil {
+		return x.ConsumptionLimitState
+	}
+	return SnapshotValueState_SNAPSHOT_VALUE_STATE_UNKNOWN
+}
+
+func (x *DeviceSnapshot) GetFailsafeLimit() *FailsafeLimit {
+	if x != nil {
+		return x.FailsafeLimit
+	}
+	return nil
+}
+
+func (x *DeviceSnapshot) GetFailsafeLimitState() SnapshotValueState {
+	if x != nil {
+		return x.FailsafeLimitState
+	}
+	return SnapshotValueState_SNAPSHOT_VALUE_STATE_UNKNOWN
+}
+
+func (x *DeviceSnapshot) GetHeartbeat() *HeartbeatStatus {
+	if x != nil {
+		return x.Heartbeat
+	}
+	return nil
+}
+
+func (x *DeviceSnapshot) GetHeartbeatState() SnapshotValueState {
+	if x != nil {
+		return x.HeartbeatState
+	}
+	return SnapshotValueState_SNAPSHOT_VALUE_STATE_UNKNOWN
+}
+
+func (x *DeviceSnapshot) GetDhwSetpoint() *DHWSetpoint {
+	if x != nil {
+		return x.DhwSetpoint
+	}
+	return nil
+}
+
+func (x *DeviceSnapshot) GetDhwSetpointState() SnapshotValueState {
+	if x != nil {
+		return x.DhwSetpointState
+	}
+	return SnapshotValueState_SNAPSHOT_VALUE_STATE_UNKNOWN
+}
+
+func (x *DeviceSnapshot) GetDhwSystemFunction() *DHWSystemFunctionState {
+	if x != nil {
+		return x.DhwSystemFunction
+	}
+	return nil
+}
+
+func (x *DeviceSnapshot) GetDhwSystemFunctionState() SnapshotValueState {
+	if x != nil {
+		return x.DhwSystemFunctionState
+	}
+	return SnapshotValueState_SNAPSHOT_VALUE_STATE_UNKNOWN
+}
+
+func (x *DeviceSnapshot) GetRoomHeating() *RoomHeatingState {
+	if x != nil {
+		return x.RoomHeating
+	}
+	return nil
+}
+
+func (x *DeviceSnapshot) GetRoomHeatingState() SnapshotValueState {
+	if x != nil {
+		return x.RoomHeatingState
+	}
+	return SnapshotValueState_SNAPSHOT_VALUE_STATE_UNKNOWN
+}
+
+func (x *DeviceSnapshot) GetCompressorFlexibility() *CompressorFlexibility {
+	if x != nil {
+		return x.CompressorFlexibility
+	}
+	return nil
+}
+
+func (x *DeviceSnapshot) GetCompressorFlexibilityState() SnapshotValueState {
+	if x != nil {
+		return x.CompressorFlexibilityState
+	}
+	return SnapshotValueState_SNAPSHOT_VALUE_STATE_UNKNOWN
+}
+
+func (x *DeviceSnapshot) GetDeviceDiagnostics() *DeviceDiagnosticsData {
+	if x != nil {
+		return x.DeviceDiagnostics
+	}
+	return nil
+}
+
+func (x *DeviceSnapshot) GetDeviceDiagnosticsState() SnapshotValueState {
+	if x != nil {
+		return x.DeviceDiagnosticsState
+	}
+	return SnapshotValueState_SNAPSHOT_VALUE_STATE_UNKNOWN
+}
+
+func (x *DeviceSnapshot) GetLocalSki() string {
+	if x != nil {
+		return x.LocalSki
+	}
+	return ""
+}
+
+func (x *DeviceSnapshot) GetFieldStates() []*SnapshotFieldStatus {
+	if x != nil {
+		return x.FieldStates
+	}
+	return nil
+}
+
 type DeviceStateDHWEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
@@ -1301,7 +1834,7 @@ type DeviceStateDHWEvent struct {
 
 func (x *DeviceStateDHWEvent) Reset() {
 	*x = DeviceStateDHWEvent{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[12]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1313,7 +1846,7 @@ func (x *DeviceStateDHWEvent) String() string {
 func (*DeviceStateDHWEvent) ProtoMessage() {}
 
 func (x *DeviceStateDHWEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[12]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1326,7 +1859,7 @@ func (x *DeviceStateDHWEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceStateDHWEvent.ProtoReflect.Descriptor instead.
 func (*DeviceStateDHWEvent) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{12}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *DeviceStateDHWEvent) GetPayload() isDeviceStateDHWEvent_Payload {
@@ -1380,7 +1913,7 @@ type ResyncRequired struct {
 
 func (x *ResyncRequired) Reset() {
 	*x = ResyncRequired{}
-	mi := &file_eebus_v1_device_service_proto_msgTypes[13]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1392,7 +1925,7 @@ func (x *ResyncRequired) String() string {
 func (*ResyncRequired) ProtoMessage() {}
 
 func (x *ResyncRequired) ProtoReflect() protoreflect.Message {
-	mi := &file_eebus_v1_device_service_proto_msgTypes[13]
+	mi := &file_eebus_v1_device_service_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1405,7 +1938,7 @@ func (x *ResyncRequired) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResyncRequired.ProtoReflect.Descriptor instead.
 func (*ResyncRequired) Descriptor() ([]byte, []int) {
-	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{13}
+	return file_eebus_v1_device_service_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ResyncRequired) GetReason() ResyncReason {
@@ -1473,7 +2006,7 @@ const file_eebus_v1_device_service_proto_rawDesc = "" +
 	"\vDeviceEvent\x12\x10\n" +
 	"\x03ski\x18\x01 \x01(\tR\x03ski\x128\n" +
 	"\n" +
-	"event_type\x18\x02 \x01(\x0e2\x19.eebus.v1.DeviceEventTypeR\teventType\"\xf8\x04\n" +
+	"event_type\x18\x02 \x01(\x0e2\x19.eebus.v1.DeviceEventTypeR\teventType\"\xbf\x05\n" +
 	"\x10DeviceStateEvent\x12\x10\n" +
 	"\x03ski\x18\x01 \x01(\tR\x03ski\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\x04R\brevision\x129\n" +
@@ -1489,9 +2022,46 @@ const file_eebus_v1_device_service_proto_rawDesc = "" +
 	"capability\x18\n" +
 	" \x01(\v2\x1c.eebus.v1.DeviceCapabilitiesH\x00R\n" +
 	"capability\x12C\n" +
-	"\x0fresync_required\x18\v \x01(\v2\x18.eebus.v1.ResyncRequiredH\x00R\x0eresyncRequired\x12?\n" +
+	"\x0fresync_required\x18\v \x01(\v2\x18.eebus.v1.ResyncRequiredH\x00R\x0eresyncRequired\x12E\n" +
+	"\x10initial_snapshot\x18\r \x01(\v2\x18.eebus.v1.DeviceSnapshotH\x00R\x0finitialSnapshot\x12?\n" +
 	"\favailability\x18\f \x01(\x0e2\x1b.eebus.v1.EventAvailabilityR\favailabilityB\t\n" +
-	"\apayload\"\xa5\x01\n" +
+	"\apayload\"t\n" +
+	"\x13SnapshotFieldStatus\x12)\n" +
+	"\x02id\x18\x01 \x01(\x0e2\x19.eebus.v1.SnapshotFieldIdR\x02id\x122\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x1c.eebus.v1.SnapshotValueStateR\x05state\"\x8a\x0f\n" +
+	"\x0eDeviceSnapshot\x12\x10\n" +
+	"\x03ski\x18\x01 \x01(\tR\x03ski\x12;\n" +
+	"\vcaptured_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"capturedAt\x12%\n" +
+	"\x0eevent_revision\x18\x03 \x01(\x04R\reventRevision\x126\n" +
+	"\n" +
+	"connection\x18\x04 \x01(\v2\x16.eebus.v1.DeviceStatusR\n" +
+	"connection\x12G\n" +
+	"\x10connection_state\x18\x05 \x01(\x0e2\x1c.eebus.v1.SnapshotValueStateR\x0fconnectionState\x12>\n" +
+	"\x0eclassification\x18\x06 \x01(\v2\x16.eebus.v1.PairedDeviceR\x0eclassification\x12O\n" +
+	"\x14classification_state\x18\a \x01(\x0e2\x1c.eebus.v1.SnapshotValueStateR\x13classificationState\x12@\n" +
+	"\fcapabilities\x18\b \x01(\v2\x1c.eebus.v1.DeviceCapabilitiesR\fcapabilities\x12>\n" +
+	"\fmeasurements\x18\t \x03(\v2\x1a.eebus.v1.MeasurementEntryR\fmeasurements\x12K\n" +
+	"\x12measurements_state\x18\n" +
+	" \x01(\x0e2\x1c.eebus.v1.SnapshotValueStateR\x11measurementsState\x12@\n" +
+	"\x11consumption_limit\x18\v \x01(\v2\x13.eebus.v1.LoadLimitR\x10consumptionLimit\x12T\n" +
+	"\x17consumption_limit_state\x18\f \x01(\x0e2\x1c.eebus.v1.SnapshotValueStateR\x15consumptionLimitState\x12>\n" +
+	"\x0efailsafe_limit\x18\r \x01(\v2\x17.eebus.v1.FailsafeLimitR\rfailsafeLimit\x12N\n" +
+	"\x14failsafe_limit_state\x18\x0e \x01(\x0e2\x1c.eebus.v1.SnapshotValueStateR\x12failsafeLimitState\x127\n" +
+	"\theartbeat\x18\x0f \x01(\v2\x19.eebus.v1.HeartbeatStatusR\theartbeat\x12E\n" +
+	"\x0fheartbeat_state\x18\x10 \x01(\x0e2\x1c.eebus.v1.SnapshotValueStateR\x0eheartbeatState\x128\n" +
+	"\fdhw_setpoint\x18\x11 \x01(\v2\x15.eebus.v1.DHWSetpointR\vdhwSetpoint\x12J\n" +
+	"\x12dhw_setpoint_state\x18\x12 \x01(\x0e2\x1c.eebus.v1.SnapshotValueStateR\x10dhwSetpointState\x12P\n" +
+	"\x13dhw_system_function\x18\x13 \x01(\v2 .eebus.v1.DHWSystemFunctionStateR\x11dhwSystemFunction\x12W\n" +
+	"\x19dhw_system_function_state\x18\x14 \x01(\x0e2\x1c.eebus.v1.SnapshotValueStateR\x16dhwSystemFunctionState\x12=\n" +
+	"\froom_heating\x18\x15 \x01(\v2\x1a.eebus.v1.RoomHeatingStateR\vroomHeating\x12J\n" +
+	"\x12room_heating_state\x18\x16 \x01(\x0e2\x1c.eebus.v1.SnapshotValueStateR\x10roomHeatingState\x12V\n" +
+	"\x16compressor_flexibility\x18\x17 \x01(\v2\x1f.eebus.v1.CompressorFlexibilityR\x15compressorFlexibility\x12^\n" +
+	"\x1ccompressor_flexibility_state\x18\x18 \x01(\x0e2\x1c.eebus.v1.SnapshotValueStateR\x1acompressorFlexibilityState\x12N\n" +
+	"\x12device_diagnostics\x18\x19 \x01(\v2\x1f.eebus.v1.DeviceDiagnosticsDataR\x11deviceDiagnostics\x12V\n" +
+	"\x18device_diagnostics_state\x18\x1a \x01(\x0e2\x1c.eebus.v1.SnapshotValueStateR\x16deviceDiagnosticsState\x12\x1b\n" +
+	"\tlocal_ski\x18\x1b \x01(\tR\blocalSki\x12@\n" +
+	"\ffield_states\x18\x1c \x03(\v2\x1d.eebus.v1.SnapshotFieldStatusR\vfieldStates\"\xa5\x01\n" +
 	"\x13DeviceStateDHWEvent\x126\n" +
 	"\vtemperature\x18\x01 \x01(\v2\x12.eebus.v1.DHWEventH\x00R\vtemperature\x12K\n" +
 	"\x0fsystem_function\x18\x02 \x01(\v2 .eebus.v1.DHWSystemFunctionEventH\x00R\x0esystemFunctionB\t\n" +
@@ -1527,7 +2097,49 @@ const file_eebus_v1_device_service_proto_rawDesc = "" +
 	"\"FEATURE_CONSOLIDATED_DEVICE_STREAM\x10\x02\x12\x1b\n" +
 	"\x17FEATURE_DEVICE_SNAPSHOT\x10\x03\x12(\n" +
 	"$FEATURE_PROVIDER_SAMPLE_INVALIDATION\x10\x04\x12\x1e\n" +
-	"\x1aFEATURE_TYPED_MEASUREMENTS\x10\x05*\xad\x01\n" +
+	"\x1aFEATURE_TYPED_MEASUREMENTS\x10\x05*\xb2\x01\n" +
+	"\x12SnapshotValueState\x12 \n" +
+	"\x1cSNAPSHOT_VALUE_STATE_UNKNOWN\x10\x00\x12\"\n" +
+	"\x1eSNAPSHOT_VALUE_STATE_AVAILABLE\x10\x01\x120\n" +
+	",SNAPSHOT_VALUE_STATE_TEMPORARILY_UNAVAILABLE\x10\x02\x12$\n" +
+	" SNAPSHOT_VALUE_STATE_UNSUPPORTED\x10\x03*\xe7\t\n" +
+	"\x0fSnapshotFieldId\x12\x1e\n" +
+	"\x1aSNAPSHOT_FIELD_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18SNAPSHOT_FIELD_CONNECTED\x10\x01\x12\x1c\n" +
+	"\x18SNAPSHOT_FIELD_LOCAL_SKI\x10\x02\x12\x1e\n" +
+	"\x1aSNAPSHOT_FIELD_DEVICE_INFO\x10\x03\x12)\n" +
+	"%SNAPSHOT_FIELD_DEVICE_OPERATING_STATE\x10\x04\x12\x1b\n" +
+	"\x17SNAPSHOT_FIELD_POWER_L1\x10\x05\x12\x1b\n" +
+	"\x17SNAPSHOT_FIELD_POWER_L2\x10\x06\x12\x1b\n" +
+	"\x17SNAPSHOT_FIELD_POWER_L3\x10\a\x12\x1d\n" +
+	"\x19SNAPSHOT_FIELD_CURRENT_L1\x10\b\x12\x1d\n" +
+	"\x19SNAPSHOT_FIELD_CURRENT_L2\x10\t\x12\x1d\n" +
+	"\x19SNAPSHOT_FIELD_CURRENT_L3\x10\n" +
+	"\x12\x1d\n" +
+	"\x19SNAPSHOT_FIELD_VOLTAGE_L1\x10\v\x12\x1d\n" +
+	"\x19SNAPSHOT_FIELD_VOLTAGE_L2\x10\f\x12\x1d\n" +
+	"\x19SNAPSHOT_FIELD_VOLTAGE_L3\x10\r\x12\x1c\n" +
+	"\x18SNAPSHOT_FIELD_FREQUENCY\x10\x0e\x12\"\n" +
+	"\x1eSNAPSHOT_FIELD_ENERGY_PRODUCED\x10\x0f\x12\"\n" +
+	"\x1eSNAPSHOT_FIELD_DHW_TEMPERATURE\x10\x10\x12#\n" +
+	"\x1fSNAPSHOT_FIELD_ROOM_TEMPERATURE\x10\x11\x12&\n" +
+	"\"SNAPSHOT_FIELD_OUTDOOR_TEMPERATURE\x10\x12\x12#\n" +
+	"\x1fSNAPSHOT_FIELD_FLOW_TEMPERATURE\x10\x13\x12%\n" +
+	"!SNAPSHOT_FIELD_RETURN_TEMPERATURE\x10\x14\x12)\n" +
+	"%SNAPSHOT_FIELD_COMPRESSOR_TEMPERATURE\x10\x15\x12#\n" +
+	"\x1fSNAPSHOT_FIELD_COMPRESSOR_POWER\x10\x16\x12\x18\n" +
+	"\x14SNAPSHOT_FIELD_POWER\x10\x17\x12*\n" +
+	"&SNAPSHOT_FIELD_ENERGY_CONSUMED_HEATING\x10\x18\x12&\n" +
+	"\"SNAPSHOT_FIELD_ENERGY_CONSUMED_DHW\x10\x19\x12\"\n" +
+	"\x1eSNAPSHOT_FIELD_ENERGY_CONSUMED\x10\x1a\x12$\n" +
+	" SNAPSHOT_FIELD_CONSUMPTION_LIMIT\x10\x1b\x12!\n" +
+	"\x1dSNAPSHOT_FIELD_FAILSAFE_LIMIT\x10\x1c\x12#\n" +
+	"\x1fSNAPSHOT_FIELD_HEARTBEAT_STATUS\x10\x1d\x12)\n" +
+	"%SNAPSHOT_FIELD_COMPRESSOR_FLEXIBILITY\x10\x1e\x12\x1f\n" +
+	"\x1bSNAPSHOT_FIELD_DHW_SETPOINT\x10\x1f\x12&\n" +
+	"\"SNAPSHOT_FIELD_DHW_SYSTEM_FUNCTION\x10 \x12(\n" +
+	"$SNAPSHOT_FIELD_ROOM_HEATING_SETPOINT\x10!\x12/\n" +
+	"+SNAPSHOT_FIELD_ROOM_HEATING_SYSTEM_FUNCTION\x10\"*\xad\x01\n" +
 	"\x11EventAvailability\x12\"\n" +
 	"\x1eEVENT_AVAILABILITY_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cEVENT_AVAILABILITY_AVAILABLE\x10\x01\x12.\n" +
@@ -1543,12 +2155,13 @@ const file_eebus_v1_device_service_proto_rawDesc = "" +
 	"\x16DEVICE_EVENT_CONNECTED\x10\x01\x12\x1d\n" +
 	"\x19DEVICE_EVENT_DISCONNECTED\x10\x02\x12\x1e\n" +
 	"\x1aDEVICE_EVENT_TRUST_REMOVED\x10\x03\x12!\n" +
-	"\x1dDEVICE_EVENT_PROVIDER_UPDATED\x10\x042\xc2\x05\n" +
+	"\x1dDEVICE_EVENT_PROVIDER_UPDATED\x10\x042\x8a\x06\n" +
 	"\rDeviceService\x125\n" +
 	"\tGetStatus\x12\x0f.eebus.v1.Empty\x1a\x17.eebus.v1.ServiceStatus\x126\n" +
 	"\rGetServerInfo\x12\x0f.eebus.v1.Empty\x1a\x14.eebus.v1.ServerInfo\x12B\n" +
 	"\x0fGetDeviceStatus\x12\x17.eebus.v1.DeviceRequest\x1a\x16.eebus.v1.DeviceStatus\x12N\n" +
-	"\x15GetDeviceCapabilities\x12\x17.eebus.v1.DeviceRequest\x1a\x1c.eebus.v1.DeviceCapabilities\x12G\n" +
+	"\x15GetDeviceCapabilities\x12\x17.eebus.v1.DeviceRequest\x1a\x1c.eebus.v1.DeviceCapabilities\x12F\n" +
+	"\x11GetDeviceSnapshot\x12\x17.eebus.v1.DeviceRequest\x1a\x18.eebus.v1.DeviceSnapshot\x12G\n" +
 	"\x15ListDiscoveredDevices\x12\x0f.eebus.v1.Empty\x1a\x1d.eebus.v1.ListDevicesResponse\x12B\n" +
 	"\x11RegisterRemoteSKI\x12\x1c.eebus.v1.RegisterSKIRequest\x1a\x0f.eebus.v1.Empty\x12D\n" +
 	"\x13UnregisterRemoteSKI\x12\x1c.eebus.v1.RegisterSKIRequest\x1a\x0f.eebus.v1.Empty\x12I\n" +
@@ -1568,89 +2181,132 @@ func file_eebus_v1_device_service_proto_rawDescGZIP() []byte {
 	return file_eebus_v1_device_service_proto_rawDescData
 }
 
-var file_eebus_v1_device_service_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_eebus_v1_device_service_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_eebus_v1_device_service_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
+var file_eebus_v1_device_service_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_eebus_v1_device_service_proto_goTypes = []any{
 	(CapabilityId)(0),                 // 0: eebus.v1.CapabilityId
 	(CapabilityState)(0),              // 1: eebus.v1.CapabilityState
 	(CapabilityReason)(0),             // 2: eebus.v1.CapabilityReason
 	(FeatureId)(0),                    // 3: eebus.v1.FeatureId
-	(EventAvailability)(0),            // 4: eebus.v1.EventAvailability
-	(ResyncReason)(0),                 // 5: eebus.v1.ResyncReason
-	(DeviceEventType)(0),              // 6: eebus.v1.DeviceEventType
-	(*DeviceCapability)(nil),          // 7: eebus.v1.DeviceCapability
-	(*DeviceCapabilities)(nil),        // 8: eebus.v1.DeviceCapabilities
-	(*ServiceStatus)(nil),             // 9: eebus.v1.ServiceStatus
-	(*ServerInfo)(nil),                // 10: eebus.v1.ServerInfo
-	(*DeviceStatus)(nil),              // 11: eebus.v1.DeviceStatus
-	(*DiscoveredDevice)(nil),          // 12: eebus.v1.DiscoveredDevice
-	(*ListDevicesResponse)(nil),       // 13: eebus.v1.ListDevicesResponse
-	(*RegisterSKIRequest)(nil),        // 14: eebus.v1.RegisterSKIRequest
-	(*PairedDevice)(nil),              // 15: eebus.v1.PairedDevice
-	(*ListPairedDevicesResponse)(nil), // 16: eebus.v1.ListPairedDevicesResponse
-	(*DeviceEvent)(nil),               // 17: eebus.v1.DeviceEvent
-	(*DeviceStateEvent)(nil),          // 18: eebus.v1.DeviceStateEvent
-	(*DeviceStateDHWEvent)(nil),       // 19: eebus.v1.DeviceStateDHWEvent
-	(*ResyncRequired)(nil),            // 20: eebus.v1.ResyncRequired
-	(*timestamppb.Timestamp)(nil),     // 21: google.protobuf.Timestamp
-	(*MeasurementEvent)(nil),          // 22: eebus.v1.MeasurementEvent
-	(*LPCEvent)(nil),                  // 23: eebus.v1.LPCEvent
-	(*RoomHeatingEvent)(nil),          // 24: eebus.v1.RoomHeatingEvent
-	(*OHPCFEvent)(nil),                // 25: eebus.v1.OHPCFEvent
-	(*DHWEvent)(nil),                  // 26: eebus.v1.DHWEvent
-	(*DHWSystemFunctionEvent)(nil),    // 27: eebus.v1.DHWSystemFunctionEvent
-	(*Empty)(nil),                     // 28: eebus.v1.Empty
-	(*DeviceRequest)(nil),             // 29: eebus.v1.DeviceRequest
+	(SnapshotValueState)(0),           // 4: eebus.v1.SnapshotValueState
+	(SnapshotFieldId)(0),              // 5: eebus.v1.SnapshotFieldId
+	(EventAvailability)(0),            // 6: eebus.v1.EventAvailability
+	(ResyncReason)(0),                 // 7: eebus.v1.ResyncReason
+	(DeviceEventType)(0),              // 8: eebus.v1.DeviceEventType
+	(*DeviceCapability)(nil),          // 9: eebus.v1.DeviceCapability
+	(*DeviceCapabilities)(nil),        // 10: eebus.v1.DeviceCapabilities
+	(*ServiceStatus)(nil),             // 11: eebus.v1.ServiceStatus
+	(*ServerInfo)(nil),                // 12: eebus.v1.ServerInfo
+	(*DeviceStatus)(nil),              // 13: eebus.v1.DeviceStatus
+	(*DiscoveredDevice)(nil),          // 14: eebus.v1.DiscoveredDevice
+	(*ListDevicesResponse)(nil),       // 15: eebus.v1.ListDevicesResponse
+	(*RegisterSKIRequest)(nil),        // 16: eebus.v1.RegisterSKIRequest
+	(*PairedDevice)(nil),              // 17: eebus.v1.PairedDevice
+	(*ListPairedDevicesResponse)(nil), // 18: eebus.v1.ListPairedDevicesResponse
+	(*DeviceEvent)(nil),               // 19: eebus.v1.DeviceEvent
+	(*DeviceStateEvent)(nil),          // 20: eebus.v1.DeviceStateEvent
+	(*SnapshotFieldStatus)(nil),       // 21: eebus.v1.SnapshotFieldStatus
+	(*DeviceSnapshot)(nil),            // 22: eebus.v1.DeviceSnapshot
+	(*DeviceStateDHWEvent)(nil),       // 23: eebus.v1.DeviceStateDHWEvent
+	(*ResyncRequired)(nil),            // 24: eebus.v1.ResyncRequired
+	(*timestamppb.Timestamp)(nil),     // 25: google.protobuf.Timestamp
+	(*MeasurementEvent)(nil),          // 26: eebus.v1.MeasurementEvent
+	(*LPCEvent)(nil),                  // 27: eebus.v1.LPCEvent
+	(*RoomHeatingEvent)(nil),          // 28: eebus.v1.RoomHeatingEvent
+	(*OHPCFEvent)(nil),                // 29: eebus.v1.OHPCFEvent
+	(*MeasurementEntry)(nil),          // 30: eebus.v1.MeasurementEntry
+	(*LoadLimit)(nil),                 // 31: eebus.v1.LoadLimit
+	(*FailsafeLimit)(nil),             // 32: eebus.v1.FailsafeLimit
+	(*HeartbeatStatus)(nil),           // 33: eebus.v1.HeartbeatStatus
+	(*DHWSetpoint)(nil),               // 34: eebus.v1.DHWSetpoint
+	(*DHWSystemFunctionState)(nil),    // 35: eebus.v1.DHWSystemFunctionState
+	(*RoomHeatingState)(nil),          // 36: eebus.v1.RoomHeatingState
+	(*CompressorFlexibility)(nil),     // 37: eebus.v1.CompressorFlexibility
+	(*DeviceDiagnosticsData)(nil),     // 38: eebus.v1.DeviceDiagnosticsData
+	(*DHWEvent)(nil),                  // 39: eebus.v1.DHWEvent
+	(*DHWSystemFunctionEvent)(nil),    // 40: eebus.v1.DHWSystemFunctionEvent
+	(*Empty)(nil),                     // 41: eebus.v1.Empty
+	(*DeviceRequest)(nil),             // 42: eebus.v1.DeviceRequest
 }
 var file_eebus_v1_device_service_proto_depIdxs = []int32{
 	0,  // 0: eebus.v1.DeviceCapability.id:type_name -> eebus.v1.CapabilityId
 	1,  // 1: eebus.v1.DeviceCapability.state:type_name -> eebus.v1.CapabilityState
 	2,  // 2: eebus.v1.DeviceCapability.reason:type_name -> eebus.v1.CapabilityReason
-	21, // 3: eebus.v1.DeviceCapability.last_changed:type_name -> google.protobuf.Timestamp
-	7,  // 4: eebus.v1.DeviceCapabilities.capabilities:type_name -> eebus.v1.DeviceCapability
+	25, // 3: eebus.v1.DeviceCapability.last_changed:type_name -> google.protobuf.Timestamp
+	9,  // 4: eebus.v1.DeviceCapabilities.capabilities:type_name -> eebus.v1.DeviceCapability
 	3,  // 5: eebus.v1.ServerInfo.features:type_name -> eebus.v1.FeatureId
-	21, // 6: eebus.v1.DeviceStatus.last_transition:type_name -> google.protobuf.Timestamp
-	12, // 7: eebus.v1.ListDevicesResponse.devices:type_name -> eebus.v1.DiscoveredDevice
-	15, // 8: eebus.v1.ListPairedDevicesResponse.devices:type_name -> eebus.v1.PairedDevice
-	6,  // 9: eebus.v1.DeviceEvent.event_type:type_name -> eebus.v1.DeviceEventType
-	21, // 10: eebus.v1.DeviceStateEvent.event_time:type_name -> google.protobuf.Timestamp
-	17, // 11: eebus.v1.DeviceStateEvent.device:type_name -> eebus.v1.DeviceEvent
-	22, // 12: eebus.v1.DeviceStateEvent.measurement:type_name -> eebus.v1.MeasurementEvent
-	23, // 13: eebus.v1.DeviceStateEvent.lpc:type_name -> eebus.v1.LPCEvent
-	19, // 14: eebus.v1.DeviceStateEvent.dhw:type_name -> eebus.v1.DeviceStateDHWEvent
-	24, // 15: eebus.v1.DeviceStateEvent.hvac:type_name -> eebus.v1.RoomHeatingEvent
-	25, // 16: eebus.v1.DeviceStateEvent.ohpcf:type_name -> eebus.v1.OHPCFEvent
-	8,  // 17: eebus.v1.DeviceStateEvent.capability:type_name -> eebus.v1.DeviceCapabilities
-	20, // 18: eebus.v1.DeviceStateEvent.resync_required:type_name -> eebus.v1.ResyncRequired
-	4,  // 19: eebus.v1.DeviceStateEvent.availability:type_name -> eebus.v1.EventAvailability
-	26, // 20: eebus.v1.DeviceStateDHWEvent.temperature:type_name -> eebus.v1.DHWEvent
-	27, // 21: eebus.v1.DeviceStateDHWEvent.system_function:type_name -> eebus.v1.DHWSystemFunctionEvent
-	5,  // 22: eebus.v1.ResyncRequired.reason:type_name -> eebus.v1.ResyncReason
-	28, // 23: eebus.v1.DeviceService.GetStatus:input_type -> eebus.v1.Empty
-	28, // 24: eebus.v1.DeviceService.GetServerInfo:input_type -> eebus.v1.Empty
-	29, // 25: eebus.v1.DeviceService.GetDeviceStatus:input_type -> eebus.v1.DeviceRequest
-	29, // 26: eebus.v1.DeviceService.GetDeviceCapabilities:input_type -> eebus.v1.DeviceRequest
-	28, // 27: eebus.v1.DeviceService.ListDiscoveredDevices:input_type -> eebus.v1.Empty
-	14, // 28: eebus.v1.DeviceService.RegisterRemoteSKI:input_type -> eebus.v1.RegisterSKIRequest
-	14, // 29: eebus.v1.DeviceService.UnregisterRemoteSKI:input_type -> eebus.v1.RegisterSKIRequest
-	28, // 30: eebus.v1.DeviceService.ListPairedDevices:input_type -> eebus.v1.Empty
-	28, // 31: eebus.v1.DeviceService.SubscribeDeviceEvents:input_type -> eebus.v1.Empty
-	29, // 32: eebus.v1.DeviceService.SubscribeDeviceState:input_type -> eebus.v1.DeviceRequest
-	9,  // 33: eebus.v1.DeviceService.GetStatus:output_type -> eebus.v1.ServiceStatus
-	10, // 34: eebus.v1.DeviceService.GetServerInfo:output_type -> eebus.v1.ServerInfo
-	11, // 35: eebus.v1.DeviceService.GetDeviceStatus:output_type -> eebus.v1.DeviceStatus
-	8,  // 36: eebus.v1.DeviceService.GetDeviceCapabilities:output_type -> eebus.v1.DeviceCapabilities
-	13, // 37: eebus.v1.DeviceService.ListDiscoveredDevices:output_type -> eebus.v1.ListDevicesResponse
-	28, // 38: eebus.v1.DeviceService.RegisterRemoteSKI:output_type -> eebus.v1.Empty
-	28, // 39: eebus.v1.DeviceService.UnregisterRemoteSKI:output_type -> eebus.v1.Empty
-	16, // 40: eebus.v1.DeviceService.ListPairedDevices:output_type -> eebus.v1.ListPairedDevicesResponse
-	17, // 41: eebus.v1.DeviceService.SubscribeDeviceEvents:output_type -> eebus.v1.DeviceEvent
-	18, // 42: eebus.v1.DeviceService.SubscribeDeviceState:output_type -> eebus.v1.DeviceStateEvent
-	33, // [33:43] is the sub-list for method output_type
-	23, // [23:33] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	25, // 6: eebus.v1.DeviceStatus.last_transition:type_name -> google.protobuf.Timestamp
+	14, // 7: eebus.v1.ListDevicesResponse.devices:type_name -> eebus.v1.DiscoveredDevice
+	17, // 8: eebus.v1.ListPairedDevicesResponse.devices:type_name -> eebus.v1.PairedDevice
+	8,  // 9: eebus.v1.DeviceEvent.event_type:type_name -> eebus.v1.DeviceEventType
+	25, // 10: eebus.v1.DeviceStateEvent.event_time:type_name -> google.protobuf.Timestamp
+	19, // 11: eebus.v1.DeviceStateEvent.device:type_name -> eebus.v1.DeviceEvent
+	26, // 12: eebus.v1.DeviceStateEvent.measurement:type_name -> eebus.v1.MeasurementEvent
+	27, // 13: eebus.v1.DeviceStateEvent.lpc:type_name -> eebus.v1.LPCEvent
+	23, // 14: eebus.v1.DeviceStateEvent.dhw:type_name -> eebus.v1.DeviceStateDHWEvent
+	28, // 15: eebus.v1.DeviceStateEvent.hvac:type_name -> eebus.v1.RoomHeatingEvent
+	29, // 16: eebus.v1.DeviceStateEvent.ohpcf:type_name -> eebus.v1.OHPCFEvent
+	10, // 17: eebus.v1.DeviceStateEvent.capability:type_name -> eebus.v1.DeviceCapabilities
+	24, // 18: eebus.v1.DeviceStateEvent.resync_required:type_name -> eebus.v1.ResyncRequired
+	22, // 19: eebus.v1.DeviceStateEvent.initial_snapshot:type_name -> eebus.v1.DeviceSnapshot
+	6,  // 20: eebus.v1.DeviceStateEvent.availability:type_name -> eebus.v1.EventAvailability
+	5,  // 21: eebus.v1.SnapshotFieldStatus.id:type_name -> eebus.v1.SnapshotFieldId
+	4,  // 22: eebus.v1.SnapshotFieldStatus.state:type_name -> eebus.v1.SnapshotValueState
+	25, // 23: eebus.v1.DeviceSnapshot.captured_at:type_name -> google.protobuf.Timestamp
+	13, // 24: eebus.v1.DeviceSnapshot.connection:type_name -> eebus.v1.DeviceStatus
+	4,  // 25: eebus.v1.DeviceSnapshot.connection_state:type_name -> eebus.v1.SnapshotValueState
+	17, // 26: eebus.v1.DeviceSnapshot.classification:type_name -> eebus.v1.PairedDevice
+	4,  // 27: eebus.v1.DeviceSnapshot.classification_state:type_name -> eebus.v1.SnapshotValueState
+	10, // 28: eebus.v1.DeviceSnapshot.capabilities:type_name -> eebus.v1.DeviceCapabilities
+	30, // 29: eebus.v1.DeviceSnapshot.measurements:type_name -> eebus.v1.MeasurementEntry
+	4,  // 30: eebus.v1.DeviceSnapshot.measurements_state:type_name -> eebus.v1.SnapshotValueState
+	31, // 31: eebus.v1.DeviceSnapshot.consumption_limit:type_name -> eebus.v1.LoadLimit
+	4,  // 32: eebus.v1.DeviceSnapshot.consumption_limit_state:type_name -> eebus.v1.SnapshotValueState
+	32, // 33: eebus.v1.DeviceSnapshot.failsafe_limit:type_name -> eebus.v1.FailsafeLimit
+	4,  // 34: eebus.v1.DeviceSnapshot.failsafe_limit_state:type_name -> eebus.v1.SnapshotValueState
+	33, // 35: eebus.v1.DeviceSnapshot.heartbeat:type_name -> eebus.v1.HeartbeatStatus
+	4,  // 36: eebus.v1.DeviceSnapshot.heartbeat_state:type_name -> eebus.v1.SnapshotValueState
+	34, // 37: eebus.v1.DeviceSnapshot.dhw_setpoint:type_name -> eebus.v1.DHWSetpoint
+	4,  // 38: eebus.v1.DeviceSnapshot.dhw_setpoint_state:type_name -> eebus.v1.SnapshotValueState
+	35, // 39: eebus.v1.DeviceSnapshot.dhw_system_function:type_name -> eebus.v1.DHWSystemFunctionState
+	4,  // 40: eebus.v1.DeviceSnapshot.dhw_system_function_state:type_name -> eebus.v1.SnapshotValueState
+	36, // 41: eebus.v1.DeviceSnapshot.room_heating:type_name -> eebus.v1.RoomHeatingState
+	4,  // 42: eebus.v1.DeviceSnapshot.room_heating_state:type_name -> eebus.v1.SnapshotValueState
+	37, // 43: eebus.v1.DeviceSnapshot.compressor_flexibility:type_name -> eebus.v1.CompressorFlexibility
+	4,  // 44: eebus.v1.DeviceSnapshot.compressor_flexibility_state:type_name -> eebus.v1.SnapshotValueState
+	38, // 45: eebus.v1.DeviceSnapshot.device_diagnostics:type_name -> eebus.v1.DeviceDiagnosticsData
+	4,  // 46: eebus.v1.DeviceSnapshot.device_diagnostics_state:type_name -> eebus.v1.SnapshotValueState
+	21, // 47: eebus.v1.DeviceSnapshot.field_states:type_name -> eebus.v1.SnapshotFieldStatus
+	39, // 48: eebus.v1.DeviceStateDHWEvent.temperature:type_name -> eebus.v1.DHWEvent
+	40, // 49: eebus.v1.DeviceStateDHWEvent.system_function:type_name -> eebus.v1.DHWSystemFunctionEvent
+	7,  // 50: eebus.v1.ResyncRequired.reason:type_name -> eebus.v1.ResyncReason
+	41, // 51: eebus.v1.DeviceService.GetStatus:input_type -> eebus.v1.Empty
+	41, // 52: eebus.v1.DeviceService.GetServerInfo:input_type -> eebus.v1.Empty
+	42, // 53: eebus.v1.DeviceService.GetDeviceStatus:input_type -> eebus.v1.DeviceRequest
+	42, // 54: eebus.v1.DeviceService.GetDeviceCapabilities:input_type -> eebus.v1.DeviceRequest
+	42, // 55: eebus.v1.DeviceService.GetDeviceSnapshot:input_type -> eebus.v1.DeviceRequest
+	41, // 56: eebus.v1.DeviceService.ListDiscoveredDevices:input_type -> eebus.v1.Empty
+	16, // 57: eebus.v1.DeviceService.RegisterRemoteSKI:input_type -> eebus.v1.RegisterSKIRequest
+	16, // 58: eebus.v1.DeviceService.UnregisterRemoteSKI:input_type -> eebus.v1.RegisterSKIRequest
+	41, // 59: eebus.v1.DeviceService.ListPairedDevices:input_type -> eebus.v1.Empty
+	41, // 60: eebus.v1.DeviceService.SubscribeDeviceEvents:input_type -> eebus.v1.Empty
+	42, // 61: eebus.v1.DeviceService.SubscribeDeviceState:input_type -> eebus.v1.DeviceRequest
+	11, // 62: eebus.v1.DeviceService.GetStatus:output_type -> eebus.v1.ServiceStatus
+	12, // 63: eebus.v1.DeviceService.GetServerInfo:output_type -> eebus.v1.ServerInfo
+	13, // 64: eebus.v1.DeviceService.GetDeviceStatus:output_type -> eebus.v1.DeviceStatus
+	10, // 65: eebus.v1.DeviceService.GetDeviceCapabilities:output_type -> eebus.v1.DeviceCapabilities
+	22, // 66: eebus.v1.DeviceService.GetDeviceSnapshot:output_type -> eebus.v1.DeviceSnapshot
+	15, // 67: eebus.v1.DeviceService.ListDiscoveredDevices:output_type -> eebus.v1.ListDevicesResponse
+	41, // 68: eebus.v1.DeviceService.RegisterRemoteSKI:output_type -> eebus.v1.Empty
+	41, // 69: eebus.v1.DeviceService.UnregisterRemoteSKI:output_type -> eebus.v1.Empty
+	18, // 70: eebus.v1.DeviceService.ListPairedDevices:output_type -> eebus.v1.ListPairedDevicesResponse
+	19, // 71: eebus.v1.DeviceService.SubscribeDeviceEvents:output_type -> eebus.v1.DeviceEvent
+	20, // 72: eebus.v1.DeviceService.SubscribeDeviceState:output_type -> eebus.v1.DeviceStateEvent
+	62, // [62:73] is the sub-list for method output_type
+	51, // [51:62] is the sub-list for method input_type
+	51, // [51:51] is the sub-list for extension type_name
+	51, // [51:51] is the sub-list for extension extendee
+	0,  // [0:51] is the sub-list for field type_name
 }
 
 func init() { file_eebus_v1_device_service_proto_init() }
@@ -1673,8 +2329,9 @@ func file_eebus_v1_device_service_proto_init() {
 		(*DeviceStateEvent_Ohpcf)(nil),
 		(*DeviceStateEvent_Capability)(nil),
 		(*DeviceStateEvent_ResyncRequired)(nil),
+		(*DeviceStateEvent_InitialSnapshot)(nil),
 	}
-	file_eebus_v1_device_service_proto_msgTypes[12].OneofWrappers = []any{
+	file_eebus_v1_device_service_proto_msgTypes[14].OneofWrappers = []any{
 		(*DeviceStateDHWEvent_Temperature)(nil),
 		(*DeviceStateDHWEvent_SystemFunction)(nil),
 	}
@@ -1683,8 +2340,8 @@ func file_eebus_v1_device_service_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_eebus_v1_device_service_proto_rawDesc), len(file_eebus_v1_device_service_proto_rawDesc)),
-			NumEnums:      7,
-			NumMessages:   14,
+			NumEnums:      9,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -17,23 +17,53 @@ import (
 
 type fakePayloadSource struct{}
 
+func measurement(id pb.MeasurementId, typ string, value float64, unit string) *pb.MeasurementEntry {
+	return &pb.MeasurementEntry{Id: id.Enum(), Type: typ, Value: value, Unit: unit}
+}
+
+func (fakePayloadSource) SnapshotMeasurements(ski string) (*pb.MeasurementList, error) {
+	power := 600.0
+	if eebus.NormalizeSKI(ski) == "2222222222222222222222222222222222222222" {
+		power = 700
+	}
+	return &pb.MeasurementList{Measurements: []*pb.MeasurementEntry{
+		measurement(pb.MeasurementId_MEASUREMENT_ID_POWER_CONSUMPTION, "power_consumption", power, "W"),
+		measurement(pb.MeasurementId_MEASUREMENT_ID_POWER_L1, "power_l1", 100, "W"),
+		measurement(pb.MeasurementId_MEASUREMENT_ID_POWER_L2, "power_l2", 200, "W"),
+		measurement(pb.MeasurementId_MEASUREMENT_ID_POWER_L3, "power_l3", 300, "W"),
+		measurement(pb.MeasurementId_MEASUREMENT_ID_ENERGY_CONSUMED, "energy_consumed", 42, "kWh"),
+		measurement(pb.MeasurementId_MEASUREMENT_ID_ROOM_TEMPERATURE, "room_temperature", 20.5, "degC"),
+	}}, nil
+}
+
 func (fakePayloadSource) AttachMeasurementPayload(event *pb.MeasurementEvent, _ string, eventType pb.MeasurementEventType) {
 	switch eventType {
 	case pb.MeasurementEventType_MEASUREMENT_EVENT_POWER_PER_PHASE_UPDATED:
 		event.Data = &pb.MeasurementEvent_Measurements{Measurements: &pb.MeasurementList{Measurements: []*pb.MeasurementEntry{
-			{Type: "power_l1", Value: 100, Unit: "W"},
-			{Type: "power_l2", Value: 200, Unit: "W"},
-			{Type: "power_l3", Value: 300, Unit: "W"},
+			measurement(pb.MeasurementId_MEASUREMENT_ID_POWER_L1, "power_l1", 100, "W"),
+			measurement(pb.MeasurementId_MEASUREMENT_ID_POWER_L2, "power_l2", 200, "W"),
+			measurement(pb.MeasurementId_MEASUREMENT_ID_POWER_L3, "power_l3", 300, "W"),
 		}}}
 	default:
 		event.Data = &pb.MeasurementEvent_Power{Power: &pb.PowerMeasurement{Watts: 600}}
 	}
 }
 
-func (fakePayloadSource) AttachLPCPayload(event *pb.LPCEvent, _ string, _ pb.LPCEventType) {
-	event.Data = &pb.LPCEvent_LimitUpdate{LimitUpdate: &pb.LoadLimit{
-		ValueWatts: 4200, IsActive: true, IsChangeable: true,
-	}}
+func (fakePayloadSource) AttachLPCPayload(event *pb.LPCEvent, _ string, eventType pb.LPCEventType) {
+	switch eventType {
+	case pb.LPCEventType_LPC_EVENT_LIMIT_UPDATED:
+		event.Data = &pb.LPCEvent_LimitUpdate{LimitUpdate: &pb.LoadLimit{
+			ValueWatts: 4200, IsActive: true, IsChangeable: true,
+		}}
+	case pb.LPCEventType_LPC_EVENT_FAILSAFE_UPDATED:
+		event.Data = &pb.LPCEvent_FailsafeUpdate{FailsafeUpdate: &pb.FailsafeLimit{ValueWatts: 5000}}
+	case pb.LPCEventType_LPC_EVENT_HEARTBEAT_TIMEOUT:
+		event.Data = &pb.LPCEvent_HeartbeatUpdate{HeartbeatUpdate: &pb.HeartbeatStatus{Running: true, WithinDuration: true}}
+	}
+}
+
+func (fakePayloadSource) SnapshotHeartbeat(string) (*pb.HeartbeatStatus, error) {
+	return &pb.HeartbeatStatus{Running: true, WithinDuration: true}, nil
 }
 
 func (fakePayloadSource) AttachDHWPayload(event *pb.DHWEvent, _ string) {
@@ -108,6 +138,8 @@ func main() {
 				pb.FeatureId_FEATURE_EXPLICIT_CAPABILITIES,
 				pb.FeatureId_FEATURE_CONSOLIDATED_DEVICE_STREAM,
 				pb.FeatureId_FEATURE_PROVIDER_SAMPLE_INVALIDATION,
+				pb.FeatureId_FEATURE_DEVICE_SNAPSHOT,
+				pb.FeatureId_FEATURE_TYPED_MEASUREMENTS,
 			},
 		}),
 		bridgegrpc.WithDeviceStatePayloads(bridgegrpc.DeviceStatePayloadSources{

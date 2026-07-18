@@ -163,8 +163,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> boo
             battery_soc_entity=entry.options.get(CONF_BATTERY_SOC_ENTITY) or None,
             runtime=runtime,
         )
-        await coordinator.async_config_entry_first_refresh()
-        coordinator.async_start_streams()
+        await coordinator.async_initialize()
         coordinator.async_start_grid_push()
         coordinator.async_start_pv_push()
         coordinator.async_start_battery_push()

@@ -117,7 +117,13 @@ func TestTLSTokenSecuresUnaryWriteStreamAndHealth(t *testing.T) {
 		t.Fatal(err)
 	}
 	bus := eebus.NewEventBus()
-	device := NewDeviceService(eebus.NewCallbacks(bus, false), bus, "local-ski", eebus.NewDeviceRegistry(), acceptingTrustController{})
+	registry := eebus.NewDeviceRegistry()
+	const remoteSKI = "0123456789abcdef0123456789abcdef01234567"
+	registry.AddDevice(remoteSKI, eebus.DeviceInfo{})
+	device := NewDeviceService(
+		eebus.NewCallbacks(bus, false), bus, "local-ski", registry, acceptingTrustController{},
+		WithDeviceStatePayloads(DeviceStatePayloadSources{}),
+	)
 	pb.RegisterDeviceServiceServer(srv.GRPCServer(), device)
 	pb.RegisterLPCServiceServer(srv.GRPCServer(), acceptingLPCService{})
 	startErr := make(chan error, 1)
@@ -142,9 +148,18 @@ func TestTLSTokenSecuresUnaryWriteStreamAndHealth(t *testing.T) {
 	if _, err := dc.GetServerInfo(ctx, &pb.Empty{}); err != nil {
 		t.Fatalf("secured server info: %v", err)
 	}
-	const remoteSKI = "0123456789abcdef0123456789abcdef01234567"
 	if _, err := dc.RegisterRemoteSKI(ctx, &pb.RegisterSKIRequest{Ski: remoteSKI}); err != nil {
 		t.Fatalf("RegisterRemoteSKI: %v", err)
+	}
+	if _, err := dc.GetDeviceSnapshot(ctx, &pb.DeviceRequest{Ski: remoteSKI}); err != nil {
+		t.Fatalf("secured device snapshot: %v", err)
+	}
+	stateStream, err := dc.SubscribeDeviceState(ctx, &pb.DeviceRequest{Ski: remoteSKI})
+	if err != nil {
+		t.Fatalf("secured device-state stream: %v", err)
+	}
+	if initial, recvErr := stateStream.Recv(); recvErr != nil || initial.GetInitialSnapshot() == nil {
+		t.Fatalf("secured device-state initial snapshot = (%v, %v)", initial, recvErr)
 	}
 	if _, err := pb.NewLPCServiceClient(valid).WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{
 		Ski: remoteSKI, ValueWatts: 2500, IsActive: true,
@@ -197,6 +212,16 @@ func TestTLSTokenSecuresUnaryWriteStreamAndHealth(t *testing.T) {
 			}
 			if _, err := client.GetServerInfo(unauthorizedCtx, &pb.Empty{}); status.Code(err) != codes.Unauthenticated {
 				t.Fatalf("server info code = %s, want Unauthenticated", status.Code(err))
+			}
+			if _, err := client.GetDeviceSnapshot(unauthorizedCtx, &pb.DeviceRequest{Ski: remoteSKI}); status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("device snapshot code = %s, want Unauthenticated", status.Code(err))
+			}
+			stateStream, err := client.SubscribeDeviceState(unauthorizedCtx, &pb.DeviceRequest{Ski: remoteSKI})
+			if err == nil {
+				_, err = stateStream.Recv()
+			}
+			if status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("device-state stream code = %s, want Unauthenticated", status.Code(err))
 			}
 			stream, err := client.SubscribeDeviceEvents(unauthorizedCtx, &pb.Empty{})
 			if err == nil {

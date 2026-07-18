@@ -20,13 +20,14 @@ from .models import (
     CompressorFlexibilityState,
     ConsumptionLimitState,
     FailsafeState,
+    HeartbeatState,
     _dhw_system_function_to_dict,
     _extract_flat_measurements,
     _room_heating_from_proto,
     _setpoint_to_dict,
 )
 from .ski import normalize_ski
-from .snapshot import _capability_results_from_proto
+from .snapshot import _capability_results_from_proto, _snapshot_observation_from_proto
 from .state import (
     CapabilityKey,
     CapabilityResult,
@@ -173,6 +174,8 @@ class DeviceStreams:
         self._last_revision: int | None = None
         self._supports_feature = supports_feature or (lambda _feature: True)
         self._handling_consolidated = False
+        self._initial_snapshot_received = asyncio.Event()
+        self._ski_registered = False
 
     def start(self) -> None:
         """Start the consolidated stream, falling back only for old bridges."""
@@ -251,6 +254,15 @@ class DeviceStreams:
         await self._manager.stop()
         await self._legacy_manager.stop()
 
+    async def wait_initial_snapshot(self, timeout: float) -> DeviceState:
+        """Wait until the consolidated stream has reduced its initial snapshot."""
+        await asyncio.wait_for(self._initial_snapshot_received.wait(), timeout=timeout)
+        return self._store.state
+
+    def mark_registered(self) -> None:
+        """Remember successful explicit registration for stream snapshot reduction."""
+        self._ski_registered = True
+
     def diagnostics(self) -> dict[str, object]:
         """Return redacted stream state for config-entry diagnostics."""
         running_refresh = self._refresh_task is not None and not self._refresh_task.done()
@@ -295,12 +307,25 @@ class DeviceStreams:
         if previous is not None and revision <= previous:
             return
         self._last_revision = revision
-        if previous is not None and revision != previous + 1:
-            self._refresh()
-
         payload = event.WhichOneof("payload")
-        if payload == "resync_required":
+        revision_gap = previous is not None and revision != previous + 1
+        if revision_gap or payload == "resync_required":
+            # One envelope can report both a revision gap and an explicit drop.
+            # They describe the same recovery need and must schedule one read.
             self._refresh()
+        if payload == "resync_required":
+            return
+        elif payload == "initial_snapshot":
+            self._store.dispatch(
+                _snapshot_observation_from_proto(
+                    event.initial_snapshot,
+                    ski_registered=(
+                        self._ski_registered
+                        or self._store.state.connection.ski_registered
+                    ),
+                )
+            )
+            self._initial_snapshot_received.set()
         elif payload == "capability":
             self._store.dispatch(
                 StateObservation(
@@ -309,7 +334,8 @@ class DeviceStreams:
                 )
             )
         elif payload is None:
-            self._refresh()
+            if not revision_gap:
+                self._refresh()
         else:
             if self._apply_explicit_unavailability(event, payload):
                 return
@@ -512,9 +538,26 @@ class DeviceStreams:
                 )
             )
         elif event.event_type == proto_stubs.LPCEventType.LPC_EVENT_HEARTBEAT_TIMEOUT:
-            self._mark_temporarily_unavailable(
-                frozenset({StateField.HEARTBEAT_STATUS}),
-                CapabilityKey.HEARTBEAT,
+            if not event.HasField("heartbeat_update"):
+                self._mark_temporarily_unavailable(
+                    frozenset({StateField.HEARTBEAT_STATUS}),
+                    CapabilityKey.HEARTBEAT,
+                )
+                return
+            value = event.heartbeat_update
+            self._store.dispatch(
+                StateObservation(
+                    state=DeviceState(
+                        lpc=LPCState(
+                            heartbeat_status=HeartbeatState(
+                                running=value.running,
+                                within_duration=value.within_duration,
+                            )
+                        )
+                    ),
+                    observed_fields=frozenset({StateField.HEARTBEAT_STATUS}),
+                    capability_results=(CapabilityResult(CapabilityKey.HEARTBEAT, None),),
+                )
             )
 
     def handle_measurement_event(self, event: Any) -> None:

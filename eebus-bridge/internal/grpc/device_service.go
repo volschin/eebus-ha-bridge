@@ -26,6 +26,7 @@ type DeviceService struct {
 	trust      TrustController
 	payloads   DeviceStatePayloadSources
 	serverInfo *pb.ServerInfo
+	snapshot   *DeviceSnapshotAssembler
 }
 
 type DeviceServiceOption func(*DeviceService)
@@ -62,6 +63,7 @@ type OHPCFPayloadSource interface {
 func WithDeviceStatePayloads(sources DeviceStatePayloadSources) DeviceServiceOption {
 	return func(service *DeviceService) {
 		service.payloads = sources
+		service.snapshot = NewDeviceSnapshotAssembler(service.registry, sources)
 	}
 }
 
@@ -79,6 +81,8 @@ var implementedFeatures = []pb.FeatureId{
 	pb.FeatureId_FEATURE_EXPLICIT_CAPABILITIES,
 	pb.FeatureId_FEATURE_CONSOLIDATED_DEVICE_STREAM,
 	pb.FeatureId_FEATURE_PROVIDER_SAMPLE_INVALIDATION,
+	pb.FeatureId_FEATURE_DEVICE_SNAPSHOT,
+	pb.FeatureId_FEATURE_TYPED_MEASUREMENTS,
 }
 
 func WithServerInfo(info *pb.ServerInfo) DeviceServiceOption {
@@ -180,20 +184,7 @@ func (s *DeviceService) deviceCapabilities(ski string) *pb.DeviceCapabilities {
 	if s.registry == nil {
 		return &pb.DeviceCapabilities{Ski: ski}
 	}
-	entries, _ := s.registry.DeviceCapabilities(ski)
-	capabilities := make([]*pb.DeviceCapability, 0, len(entries))
-	for _, entry := range entries {
-		capability := &pb.DeviceCapability{
-			Id:     capabilityID(entry.ID),
-			State:  capabilityState(entry.State),
-			Reason: capabilityReason(entry.Reason),
-		}
-		if !entry.LastChanged.IsZero() {
-			capability.LastChanged = timestamppb.New(entry.LastChanged)
-		}
-		capabilities = append(capabilities, capability)
-	}
-	return &pb.DeviceCapabilities{Ski: ski, Capabilities: capabilities}
+	return capabilitiesFromRegistry(s.registry, ski)
 }
 
 func capabilityID(value eebus.Capability) pb.CapabilityId {

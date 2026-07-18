@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant
 
 from . import EebusConfigEntry
 from .const import SECURITY_MODE_LOOPBACK
+from .models import measurement_diagnostics
 
 _REDACTED = "**REDACTED**"
 _SECRET_KEYS = {
@@ -47,6 +48,7 @@ async def async_get_config_entry_diagnostics(
         "fresh_fields": _fresh_fields(coordinator.data),
         "recovery": _recovery_diagnostics(coordinator),
         "streams": _stream_diagnostics(coordinator),
+        "measurements": measurement_diagnostics(),
     }
 
 

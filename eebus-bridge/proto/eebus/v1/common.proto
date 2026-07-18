@@ -37,4 +37,35 @@ message MeasurementEntry {
   double value = 2;
   string unit = 3;
   google.protobuf.Timestamp timestamp = 4;
+  // Stable catalog identifier for product-supported measurements. The legacy
+  // type string remains populated during the v1 compatibility window.
+  optional MeasurementId id = 5;
+}
+
+// MeasurementId is append-only. Known IDs have one canonical unit in the
+// bridge adapter; MEASUREMENT_ID_UNSPECIFIED is reserved for extensions.
+enum MeasurementId {
+  MEASUREMENT_ID_UNSPECIFIED = 0;
+  MEASUREMENT_ID_POWER_CONSUMPTION = 1;
+  MEASUREMENT_ID_ENERGY_CONSUMED = 2;
+  MEASUREMENT_ID_POWER_L1 = 3;
+  MEASUREMENT_ID_POWER_L2 = 4;
+  MEASUREMENT_ID_POWER_L3 = 5;
+  MEASUREMENT_ID_CURRENT_L1 = 6;
+  MEASUREMENT_ID_CURRENT_L2 = 7;
+  MEASUREMENT_ID_CURRENT_L3 = 8;
+  MEASUREMENT_ID_VOLTAGE_L1 = 9;
+  MEASUREMENT_ID_VOLTAGE_L2 = 10;
+  MEASUREMENT_ID_VOLTAGE_L3 = 11;
+  MEASUREMENT_ID_FREQUENCY = 12;
+  MEASUREMENT_ID_ENERGY_PRODUCED = 13;
+  MEASUREMENT_ID_DHW_TEMPERATURE = 14;
+  MEASUREMENT_ID_ROOM_TEMPERATURE = 15;
+  MEASUREMENT_ID_OUTDOOR_TEMPERATURE = 16;
+  MEASUREMENT_ID_FLOW_TEMPERATURE = 17;
+  MEASUREMENT_ID_RETURN_TEMPERATURE = 18;
+  MEASUREMENT_ID_COMPRESSOR_TEMPERATURE = 19;
+  MEASUREMENT_ID_COMPRESSOR_POWER = 20;
+  MEASUREMENT_ID_ENERGY_CONSUMED_HEATING = 21;
+  MEASUREMENT_ID_ENERGY_CONSUMED_DHW = 22;
 }

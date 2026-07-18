@@ -2,6 +2,7 @@ package grpc_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -34,6 +35,7 @@ type fakeDeviceOperatingStateReader struct {
 type fakeMonitoringReader struct {
 	entity          spineapi.EntityRemoteInterface
 	compatibleCalls int
+	powerPhaseErr   error
 }
 
 func (f *fakeMonitoringReader) CompatibleEntity(string) eebus.EntityResolution {
@@ -45,8 +47,8 @@ func (*fakeMonitoringReader) Power(spineapi.EntityRemoteInterface) (float64, err
 	return 600, nil
 }
 
-func (*fakeMonitoringReader) PowerPerPhase(spineapi.EntityRemoteInterface) ([]float64, error) {
-	return []float64{100, 200, 300}, nil
+func (f *fakeMonitoringReader) PowerPerPhase(spineapi.EntityRemoteInterface) ([]float64, error) {
+	return []float64{100, 200, 300}, f.powerPhaseErr
 }
 
 func (*fakeMonitoringReader) EnergyConsumed(spineapi.EntityRemoteInterface) (float64, error) {
@@ -81,20 +83,45 @@ func (f fakeDeviceOperatingStateReader) CachedOperatingState(string) (string, er
 	return f.value, f.err
 }
 
+func TestSnapshotMeasurementsClassifiesPartialReadFailuresPerLeaf(t *testing.T) {
+	reader := &fakeMonitoringReader{
+		entity:        mocks.NewEntityRemoteInterface(t),
+		powerPhaseErr: errors.New("phase cache temporarily unavailable"),
+	}
+	svc := bridgegrpc.NewMonitoringService(reader, bridgegrpc.MonitoringReaders{}, eebus.NewEventBus(), eebus.NewDeviceRegistry())
+	measurements, states, err := svc.SnapshotMeasurementsWithStates(testValidSKI)
+	if err != nil || len(measurements.GetMeasurements()) == 0 {
+		t.Fatalf("partial snapshot = (%v, %v)", measurements, err)
+	}
+	if states[pb.MeasurementId_MEASUREMENT_ID_POWER_CONSUMPTION] != pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_AVAILABLE {
+		t.Fatalf("power state = %s", states[pb.MeasurementId_MEASUREMENT_ID_POWER_CONSUMPTION])
+	}
+	for _, id := range []pb.MeasurementId{
+		pb.MeasurementId_MEASUREMENT_ID_POWER_L1,
+		pb.MeasurementId_MEASUREMENT_ID_POWER_L2,
+		pb.MeasurementId_MEASUREMENT_ID_POWER_L3,
+	} {
+		if states[id] != pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_TEMPORARILY_UNAVAILABLE {
+			t.Fatalf("%s state = %s", id, states[id])
+		}
+	}
+}
+
 func TestAttachMeasurementPayloadConvertsEveryDetailDomainOnce(t *testing.T) {
 	reader := &fakeMonitoringReader{entity: mocks.NewEntityRemoteInterface(t)}
 	svc := bridgegrpc.NewMonitoringService(reader, bridgegrpc.MonitoringReaders{}, eebus.NewEventBus(), eebus.NewDeviceRegistry())
 	tests := []struct {
 		eventType pb.MeasurementEventType
 		types     []string
+		ids       []pb.MeasurementId
 		values    []float64
 		unit      string
 	}{
-		{pb.MeasurementEventType_MEASUREMENT_EVENT_POWER_PER_PHASE_UPDATED, []string{"power_l1", "power_l2", "power_l3"}, []float64{100, 200, 300}, "W"},
-		{pb.MeasurementEventType_MEASUREMENT_EVENT_CURRENT_PER_PHASE_UPDATED, []string{"current_l1", "current_l2", "current_l3"}, []float64{1, 2, 3}, "A"},
-		{pb.MeasurementEventType_MEASUREMENT_EVENT_VOLTAGE_PER_PHASE_UPDATED, []string{"voltage_l1", "voltage_l2", "voltage_l3"}, []float64{230, 231, 232}, "V"},
-		{pb.MeasurementEventType_MEASUREMENT_EVENT_FREQUENCY_UPDATED, []string{"frequency"}, []float64{50}, "Hz"},
-		{pb.MeasurementEventType_MEASUREMENT_EVENT_ENERGY_PRODUCED_UPDATED, []string{"energy_produced"}, []float64{12}, "kWh"},
+		{pb.MeasurementEventType_MEASUREMENT_EVENT_POWER_PER_PHASE_UPDATED, []string{"power_l1", "power_l2", "power_l3"}, []pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_POWER_L1, pb.MeasurementId_MEASUREMENT_ID_POWER_L2, pb.MeasurementId_MEASUREMENT_ID_POWER_L3}, []float64{100, 200, 300}, "W"},
+		{pb.MeasurementEventType_MEASUREMENT_EVENT_CURRENT_PER_PHASE_UPDATED, []string{"current_l1", "current_l2", "current_l3"}, []pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_CURRENT_L1, pb.MeasurementId_MEASUREMENT_ID_CURRENT_L2, pb.MeasurementId_MEASUREMENT_ID_CURRENT_L3}, []float64{1, 2, 3}, "A"},
+		{pb.MeasurementEventType_MEASUREMENT_EVENT_VOLTAGE_PER_PHASE_UPDATED, []string{"voltage_l1", "voltage_l2", "voltage_l3"}, []pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_VOLTAGE_L1, pb.MeasurementId_MEASUREMENT_ID_VOLTAGE_L2, pb.MeasurementId_MEASUREMENT_ID_VOLTAGE_L3}, []float64{230, 231, 232}, "V"},
+		{pb.MeasurementEventType_MEASUREMENT_EVENT_FREQUENCY_UPDATED, []string{"frequency"}, []pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_FREQUENCY}, []float64{50}, "Hz"},
+		{pb.MeasurementEventType_MEASUREMENT_EVENT_ENERGY_PRODUCED_UPDATED, []string{"energy_produced"}, []pb.MeasurementId{pb.MeasurementId_MEASUREMENT_ID_ENERGY_PRODUCED}, []float64{12}, "kWh"},
 	}
 	for _, test := range tests {
 		t.Run(test.eventType.String(), func(t *testing.T) {
@@ -106,7 +133,7 @@ func TestAttachMeasurementPayloadConvertsEveryDetailDomainOnce(t *testing.T) {
 				t.Fatalf("measurements = %+v", measurements)
 			}
 			for index, measurement := range measurements {
-				if measurement.GetType() != test.types[index] || measurement.GetValue() != test.values[index] || measurement.GetUnit() != test.unit {
+				if measurement.GetType() != test.types[index] || measurement.GetId() != test.ids[index] || measurement.GetValue() != test.values[index] || measurement.GetUnit() != test.unit {
 					t.Fatalf("measurement[%d] = %+v", index, measurement)
 				}
 			}
@@ -178,17 +205,18 @@ func TestGetMeasurementsIncludesTemperatureUseCases(t *testing.T) {
 	}
 	want := []struct {
 		typ   string
+		id    pb.MeasurementId
 		value float64
 	}{
-		{typ: "dhw_temperature", value: 48.5},
-		{typ: "room_temperature", value: 21.25},
-		{typ: "outdoor_temperature", value: 7.75},
-		{typ: "flow_temperature", value: 42.5},
-		{typ: "return_temperature", value: 37.25},
+		{typ: "dhw_temperature", id: pb.MeasurementId_MEASUREMENT_ID_DHW_TEMPERATURE, value: 48.5},
+		{typ: "room_temperature", id: pb.MeasurementId_MEASUREMENT_ID_ROOM_TEMPERATURE, value: 21.25},
+		{typ: "outdoor_temperature", id: pb.MeasurementId_MEASUREMENT_ID_OUTDOOR_TEMPERATURE, value: 7.75},
+		{typ: "flow_temperature", id: pb.MeasurementId_MEASUREMENT_ID_FLOW_TEMPERATURE, value: 42.5},
+		{typ: "return_temperature", id: pb.MeasurementId_MEASUREMENT_ID_RETURN_TEMPERATURE, value: 37.25},
 	}
 	for index, expected := range want {
 		measurement := result.Measurements[index]
-		if measurement.Type != expected.typ || measurement.Value != expected.value || measurement.Unit != "degC" {
+		if measurement.Type != expected.typ || measurement.GetId() != expected.id || measurement.Value != expected.value || measurement.Unit != "degC" {
 			t.Fatalf("measurement[%d] = %+v, want type=%s value=%g unit=degC", index, measurement, expected.typ, expected.value)
 		}
 	}

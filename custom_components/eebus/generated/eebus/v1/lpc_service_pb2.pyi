@@ -57,13 +57,15 @@ class HeartbeatStatus(_message.Message):
     def __init__(self, running: bool = ..., within_duration: bool = ...) -> None: ...
 
 class LPCEvent(_message.Message):
-    __slots__ = ("ski", "event_type", "limit_update", "failsafe_update")
+    __slots__ = ("ski", "event_type", "limit_update", "failsafe_update", "heartbeat_update")
     SKI_FIELD_NUMBER: _ClassVar[int]
     EVENT_TYPE_FIELD_NUMBER: _ClassVar[int]
     LIMIT_UPDATE_FIELD_NUMBER: _ClassVar[int]
     FAILSAFE_UPDATE_FIELD_NUMBER: _ClassVar[int]
+    HEARTBEAT_UPDATE_FIELD_NUMBER: _ClassVar[int]
     ski: str
     event_type: LPCEventType
     limit_update: _common_pb2.LoadLimit
     failsafe_update: FailsafeLimit
-    def __init__(self, ski: _Optional[str] = ..., event_type: _Optional[_Union[LPCEventType, str]] = ..., limit_update: _Optional[_Union[_common_pb2.LoadLimit, _Mapping]] = ..., failsafe_update: _Optional[_Union[FailsafeLimit, _Mapping]] = ...) -> None: ...
+    heartbeat_update: HeartbeatStatus
+    def __init__(self, ski: _Optional[str] = ..., event_type: _Optional[_Union[LPCEventType, str]] = ..., limit_update: _Optional[_Union[_common_pb2.LoadLimit, _Mapping]] = ..., failsafe_update: _Optional[_Union[FailsafeLimit, _Mapping]] = ..., heartbeat_update: _Optional[_Union[HeartbeatStatus, _Mapping]] = ...) -> None: ...

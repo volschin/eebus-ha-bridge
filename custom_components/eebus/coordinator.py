@@ -6,15 +6,17 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import grpc.aio
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, ServiceValidationError
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, ServiceValidationError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import SECURITY_MODE_LOOPBACK
 from .device_session import WriteOutcome
+from . import proto_stubs
+from .grpc_client import RPC_TIMEOUT
 from .providers import ProviderManager
 from .runtime import BridgeRuntime, BridgeRuntimeKey
 from .state import (
@@ -23,9 +25,6 @@ from .state import (
     DeviceState,
     StateObservation,
 )
-
-if TYPE_CHECKING:
-    from . import proto_stubs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -227,8 +226,20 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
                 runtime.channel_manager.ensure_channel,
                 runtime.supports,
             )
-            await replacement_session.poller.poll()
-            replacement_session.streams.start()
+            consolidated = runtime.supports(
+                int(proto_stubs.FeatureId.FEATURE_CONSOLIDATED_DEVICE_STREAM)
+            ) is True
+            snapshots = runtime.supports(
+                int(proto_stubs.FeatureId.FEATURE_DEVICE_SNAPSHOT)
+            ) is True
+            if consolidated and snapshots:
+                await replacement_session.poller.ensure_registered()
+                replacement_session.streams.mark_registered()
+                replacement_session.streams.start()
+                await replacement_session.streams.wait_initial_snapshot(RPC_TIMEOUT)
+            else:
+                await replacement_session.poller.poll()
+                replacement_session.streams.start()
             replacement_provider.async_start_grid_push()
             replacement_provider.async_start_pv_push()
             replacement_provider.async_start_battery_push()
@@ -307,6 +318,31 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
             if self._runtime.mark_unavailable():
                 _LOGGER.warning("EEBUS bridge unavailable at %s:%s: %s", self.host, self.port, err)
             raise UpdateFailed(f"gRPC error: {err}") from err
+
+    async def async_initialize(self) -> None:
+        """Perform one contract-appropriate initial synchronization."""
+        consolidated = self._runtime.supports(
+            int(proto_stubs.FeatureId.FEATURE_CONSOLIDATED_DEVICE_STREAM)
+        ) is True
+        snapshots = self._runtime.supports(
+            int(proto_stubs.FeatureId.FEATURE_DEVICE_SNAPSHOT)
+        ) is True
+        if consolidated and snapshots:
+            try:
+                await self._poller.ensure_registered()
+                self._device_streams.mark_registered()
+                self._device_streams.start()
+                await self._device_streams.wait_initial_snapshot(RPC_TIMEOUT)
+            except grpc.aio.AioRpcError as err:
+                if err.code() == grpc.StatusCode.UNAUTHENTICATED:
+                    raise ConfigEntryAuthFailed("Bridge authentication failed") from err
+                raise ConfigEntryNotReady(f"Initial EEBUS synchronization failed: {err.code().name}") from err
+            except TimeoutError as err:
+                raise ConfigEntryNotReady("Timed out waiting for the EEBUS initial snapshot") from err
+            self._runtime.mark_available()
+            return
+        await self.async_config_entry_first_refresh()
+        self._device_streams.start()
 
     def _finish_write(self, outcome: WriteOutcome, capability: CapabilityKey) -> None:
         """Reduce write capability status and surface classified failures."""
