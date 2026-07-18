@@ -205,6 +205,41 @@ func TestGetStatus(t *testing.T) {
 	}
 }
 
+func TestGetServerInfoAdvertisesOnlyImplementedFeatures(t *testing.T) {
+	client := setupDeviceTest(t)
+	info, err := client.GetServerInfo(context.Background(), &pb.Empty{})
+	if err != nil {
+		t.Fatalf("GetServerInfo: %v", err)
+	}
+	if info.GetApiMajor() != bridgegrpc.APIMajor || info.GetApiMinor() != bridgegrpc.APIMinor {
+		t.Fatalf("API version = %d.%d", info.GetApiMajor(), info.GetApiMinor())
+	}
+	if info.GetBridgeBuildVersion() == "" || info.GetLocalSki() != "test-local-ski" {
+		t.Fatalf("server info = %v", info)
+	}
+	features := make(map[pb.FeatureId]bool, len(info.GetFeatures()))
+	for _, feature := range info.GetFeatures() {
+		features[feature] = true
+	}
+	for _, feature := range []pb.FeatureId{
+		pb.FeatureId_FEATURE_EXPLICIT_CAPABILITIES,
+		pb.FeatureId_FEATURE_CONSOLIDATED_DEVICE_STREAM,
+		pb.FeatureId_FEATURE_PROVIDER_SAMPLE_INVALIDATION,
+	} {
+		if !features[feature] {
+			t.Errorf("implemented feature %s not advertised", feature)
+		}
+	}
+	for _, feature := range []pb.FeatureId{
+		pb.FeatureId_FEATURE_DEVICE_SNAPSHOT,
+		pb.FeatureId_FEATURE_TYPED_MEASUREMENTS,
+	} {
+		if features[feature] {
+			t.Errorf("future feature %s advertised before implementation", feature)
+		}
+	}
+}
+
 func TestGetDeviceStatus(t *testing.T) {
 	bus := eebus.NewEventBus()
 	registry := eebus.NewDeviceRegistry()

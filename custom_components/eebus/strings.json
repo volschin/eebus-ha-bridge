@@ -57,6 +57,7 @@
       "tls_trust": "TLS trust failed. Check that the CA certificate matches the bridge certificate.",
       "invalid_auth": "Authentication failed. Check the bridge token.",
       "incompatible_grpc_endpoint": "The endpoint answered gRPC but does not expose the EEBUS bridge API.",
+      "incompatible_api_version": "The EEBUS bridge API major version is incompatible with this integration.",
       "invalid_ski": "Enter a valid 40-character hexadecimal SKI.",
       "required": "This field is required for TLS + token mode.",
       "ski_is_local": "That is the bridge's own SKI. Enter the heat pump's SKI instead."

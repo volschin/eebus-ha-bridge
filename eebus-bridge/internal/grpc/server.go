@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sync"
@@ -29,6 +30,9 @@ type Server struct {
 	bind       string
 	port       int
 	mu         sync.RWMutex
+	ready      chan struct{}
+	readyOnce  sync.Once
+	startErr   error
 }
 
 func NewServer(bind string, port int, enableReflection bool) *Server {
@@ -51,7 +55,7 @@ func NewServerWithSecurity(bind string, port int, enableReflection bool, securit
 
 	healthSrv := health.NewServer()
 	grpc_health_v1.RegisterHealthServer(grpcServer, healthSrv)
-	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
 
 	if enableReflection {
 		reflection.Register(grpcServer)
@@ -62,6 +66,7 @@ func NewServerWithSecurity(bind string, port int, enableReflection bool, securit
 		healthSrv:  healthSrv,
 		bind:       bind,
 		port:       port,
+		ready:      make(chan struct{}),
 	}, nil
 }
 
@@ -83,12 +88,35 @@ func (s *Server) GRPCServer() *grpc.Server {
 func (s *Server) Start() error {
 	lis, err := net.Listen("tcp", net.JoinHostPort(s.bind, fmt.Sprintf("%d", s.port)))
 	if err != nil {
+		s.mu.Lock()
+		s.startErr = err
+		s.mu.Unlock()
+		s.readyOnce.Do(func() { close(s.ready) })
 		return fmt.Errorf("listen: %w", err)
 	}
 	s.mu.Lock()
 	s.listener = lis
 	s.mu.Unlock()
+	s.readyOnce.Do(func() { close(s.ready) })
 	return s.grpcServer.Serve(lis)
+}
+
+// WaitReady reports whether Start acquired its listener. It lets the
+// application keep health NOT_SERVING until the complete startup path has
+// succeeded without using sleeps as a readiness contract.
+func (s *Server) WaitReady(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.ready:
+		s.mu.RLock()
+		err := s.startErr
+		s.mu.RUnlock()
+		if err != nil {
+			return fmt.Errorf("listen: %w", err)
+		}
+		return nil
+	}
 }
 
 func (s *Server) Addr() string {

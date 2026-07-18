@@ -179,6 +179,14 @@ func (w *OHPCFWrapper) ConsumptionState(entity spineapi.EntityRemoteInterface) (
 	return w.uc.PowerConsumptionProcessState(entity)
 }
 
+// ConsumptionStartTime returns the scheduled start of the optional process.
+func (w *OHPCFWrapper) ConsumptionStartTime(entity spineapi.EntityRemoteInterface) (time.Time, error) {
+	if w.uc == nil {
+		return time.Time{}, errOHPCFNotInitialized
+	}
+	return w.uc.PowerConsumptionProcessStartTime(entity)
+}
+
 // MinimalRunDuration returns the minimum run duration the CEM must honour.
 func (w *OHPCFWrapper) MinimalRunDuration(entity spineapi.EntityRemoteInterface) (time.Duration, error) {
 	if w.uc == nil {

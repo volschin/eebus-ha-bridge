@@ -15,6 +15,7 @@ from custom_components.eebus.coordinator import EebusCoordinator, POLL_INTERVAL
 from custom_components.eebus.device_streams import DeviceStreams
 from custom_components.eebus.generated.eebus.v1 import (
     device_service_pb2,
+    dhw_service_pb2,
     hvac_service_pb2,
     lpc_service_pb2,
     monitoring_service_pb2,
@@ -117,6 +118,25 @@ async def test_poll_event_race_keeps_newer_stream_value() -> None:
     assert state.measurements.power_watts == 2000.0
 
 
+async def test_poller_selects_legacy_capability_path_from_negotiated_contract() -> None:
+    captured: dict[str, object] = {}
+
+    async def build(*_args, **kwargs):
+        captured.update(kwargs)
+        return SnapshotResult(StateObservation(), False, 0)
+
+    poller = DevicePoller(
+        "device-ski",
+        AsyncMock(return_value=MagicMock()),
+        DeviceStateStore(),
+        lambda feature: feature != proto_stubs.FeatureId.FEATURE_EXPLICIT_CAPABILITIES,
+    )
+    with patch("custom_components.eebus.snapshot.async_build_snapshot", side_effect=build):
+        await poller.poll()
+
+    assert captured["supports_explicit_capabilities"] is False
+
+
 async def test_partial_room_heating_poll_and_stream_clear_the_same_fields() -> None:
     """Both protobuf paths interpret an equivalent partial aggregate identically."""
     payload = hvac_service_pb2.RoomHeatingState(current_temperature_celsius=22.0)
@@ -204,10 +224,12 @@ async def test_lpc_only_not_found_does_not_force_reregistration(monkeypatch) -> 
         "device-ski",
         ski_registered=True,
         not_found_streak=3,
+        supports_explicit_capabilities=False,
     )
 
     assert result.not_found_streak == 0
     device_stub.RegisterRemoteSKI.assert_not_awaited()
+    device_stub.GetDeviceCapabilities.assert_not_awaited()
 
 
 def test_start_streams_delegates_to_device_stream_component() -> None:
@@ -222,6 +244,7 @@ def test_device_streams_starts_one_consolidated_consumer() -> None:
     streams._ski = "test-ski"
     streams._manager = MagicMock()
     streams._legacy_manager = MagicMock()
+    streams._supports_feature = lambda _feature: True
     streams.start()
     mapping, name = streams._manager.start.call_args.args
     assert list(mapping) == ["device_state"]
@@ -241,6 +264,22 @@ def test_device_streams_starts_one_consolidated_consumer() -> None:
         "room_heating_events",
     ]
     assert legacy_name == "eebus_{name}_test-ski"
+
+
+def test_device_streams_selects_legacy_profile_without_probe_rpc() -> None:
+    streams = DeviceStreams.__new__(DeviceStreams)
+    streams._ski = "test-ski"
+    streams._manager = MagicMock()
+    streams._legacy_manager = MagicMock()
+    streams._supports_feature = MagicMock(return_value=False)
+
+    streams.start()
+
+    streams._manager.start.assert_not_called()
+    streams._legacy_manager.start.assert_called_once()
+    streams._supports_feature.assert_called_once_with(
+        proto_stubs.FeatureId.FEATURE_CONSOLIDATED_DEVICE_STREAM
+    )
 
 
 def _streams_with(initial: DeviceState) -> tuple[DeviceStateStore, DeviceStreams, MagicMock]:
@@ -298,6 +337,382 @@ def test_consolidated_capability_payload_is_explicit_truth() -> None:
 
     assert store.state.explicit_capability_contract is True
     assert store.state.capabilities.dhw == CapabilityState.UNSUPPORTED
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "measurement": monitoring_service_pb2.MeasurementEvent(
+                ski="device-ski",
+                event_type=monitoring_service_pb2.MEASUREMENT_EVENT_POWER_UPDATED,
+                power=proto_stubs.PowerMeasurement(watts=1250),
+            )
+        },
+        {
+            "lpc": lpc_service_pb2.LPCEvent(
+                ski="device-ski",
+                event_type=lpc_service_pb2.LPC_EVENT_LIMIT_UPDATED,
+                limit_update=proto_stubs.LoadLimit(value_watts=3000, is_active=True),
+            )
+        },
+        {
+            "dhw": device_service_pb2.DeviceStateDHWEvent(
+                temperature=dhw_service_pb2.DHWEvent(
+                    ski="device-ski",
+                    event_type=dhw_service_pb2.DHW_EVENT_SETPOINT_UPDATED,
+                    setpoint=dhw_service_pb2.DHWSetpoint(value_celsius=50),
+                )
+            )
+        },
+        {
+            "hvac": hvac_service_pb2.RoomHeatingEvent(
+                ski="device-ski",
+                event_type=hvac_service_pb2.ROOM_HEATING_EVENT_CURRENT_TEMPERATURE_UPDATED,
+                state=hvac_service_pb2.RoomHeatingState(current_temperature_celsius=21),
+            )
+        },
+        {
+            "ohpcf": ohpcf_service_pb2.OHPCFEvent(
+                ski="device-ski",
+                event_type=ohpcf_service_pb2.OHPCF_EVENT_STATE_UPDATED,
+                flexibility=ohpcf_service_pb2.CompressorFlexibility(available=True),
+            )
+        },
+    ],
+)
+def test_complete_consolidated_domain_delta_publishes_once_without_refresh(payload: dict[str, object]) -> None:
+    publish = MagicMock()
+    store = DeviceStateStore(publish=publish)
+    hass = MagicMock()
+    streams = DeviceStreams(hass, MagicMock(), "device-ski", store, AsyncMock())
+
+    streams.handle_device_state_event(
+        device_service_pb2.DeviceStateEvent(
+            ski="device-ski",
+            revision=1,
+            availability=device_service_pb2.EVENT_AVAILABILITY_AVAILABLE,
+            **payload,
+        )
+    )
+
+    publish.assert_called_once()
+    hass.async_create_task.assert_not_called()
+
+
+def test_detail_measurements_publish_atomically_without_refresh() -> None:
+    publish = MagicMock()
+    store = DeviceStateStore(publish=publish)
+    hass = MagicMock()
+    streams = DeviceStreams(hass, MagicMock(), "device-ski", store, AsyncMock())
+    measurement = monitoring_service_pb2.MeasurementEvent(
+        ski="device-ski",
+        # New clients consume the additive list; old consolidated-stream clients
+        # see UNSPECIFIED and retain their established poll fallback.
+        event_type=monitoring_service_pb2.MEASUREMENT_EVENT_UNSPECIFIED,
+        measurements=monitoring_service_pb2.MeasurementList(
+            measurements=[
+                proto_stubs.MeasurementEntry(type="power_l1", value=100),
+                proto_stubs.MeasurementEntry(type="power_l2", value=200),
+                proto_stubs.MeasurementEntry(type="power_l3", value=300),
+            ]
+        ),
+    )
+
+    streams.handle_device_state_event(
+        device_service_pb2.DeviceStateEvent(
+            ski="device-ski",
+            revision=1,
+            availability=device_service_pb2.EVENT_AVAILABILITY_AVAILABLE,
+            measurement=measurement,
+        )
+    )
+
+    assert store.state.measurements.power_l1_w == 100
+    assert store.state.measurements.power_l2_w == 200
+    assert store.state.measurements.power_l3_w == 300
+    publish.assert_called_once()
+    hass.async_create_task.assert_not_called()
+
+
+def test_consolidated_device_connected_event_triggers_reconciliation_poll() -> None:
+    store = DeviceStateStore()
+    hass = MagicMock()
+    hass.async_create_task.side_effect = lambda coroutine: coroutine.close()
+    streams = DeviceStreams(hass, MagicMock(), "device-ski", store, AsyncMock())
+
+    streams.handle_device_state_event(
+        device_service_pb2.DeviceStateEvent(
+            ski="device-ski",
+            revision=1,
+            availability=device_service_pb2.EVENT_AVAILABILITY_AVAILABLE,
+            device=device_service_pb2.DeviceEvent(
+                ski="device-ski",
+                event_type=device_service_pb2.DEVICE_EVENT_CONNECTED,
+            ),
+        )
+    )
+
+    assert store.state.connection.connected is True
+    hass.async_create_task.assert_called_once()
+
+
+def test_consolidated_provider_acknowledgement_does_not_poll() -> None:
+    store = DeviceStateStore()
+    hass = MagicMock()
+    streams = DeviceStreams(hass, MagicMock(), "device-ski", store, AsyncMock())
+
+    streams.handle_device_state_event(
+        device_service_pb2.DeviceStateEvent(
+            ski="device-ski",
+            revision=1,
+            availability=device_service_pb2.EVENT_AVAILABILITY_AVAILABLE,
+            device=device_service_pb2.DeviceEvent(
+                ski="device-ski",
+                event_type=device_service_pb2.DEVICE_EVENT_PROVIDER_UPDATED,
+            ),
+        )
+    )
+
+    hass.async_create_task.assert_not_called()
+
+
+def test_unclassified_consolidated_measurement_falls_back_to_poll() -> None:
+    store = DeviceStateStore()
+    hass = MagicMock()
+    hass.async_create_task.side_effect = lambda coroutine: coroutine.close()
+    streams = DeviceStreams(hass, MagicMock(), "device-ski", store, AsyncMock())
+
+    streams.handle_device_state_event(
+        device_service_pb2.DeviceStateEvent(
+            ski="device-ski",
+            revision=1,
+            availability=device_service_pb2.EVENT_AVAILABILITY_AVAILABLE,
+            measurement=monitoring_service_pb2.MeasurementEvent(
+                ski="device-ski",
+                event_type=monitoring_service_pb2.MEASUREMENT_EVENT_UNSPECIFIED,
+            ),
+        )
+    )
+
+    hass.async_create_task.assert_called_once()
+
+
+def test_partial_phase_list_marks_absent_phase_unavailable() -> None:
+    initial = DeviceState(
+        measurements=MeasurementsState(power_l1_w=1, power_l2_w=2, power_l3_w=3),
+        fresh_fields=frozenset({StateField.POWER_L1_W, StateField.POWER_L2_W, StateField.POWER_L3_W}),
+    )
+    store = DeviceStateStore(initial=initial)
+    hass = MagicMock()
+    streams = DeviceStreams(hass, MagicMock(), "device-ski", store, AsyncMock())
+
+    streams.handle_device_state_event(
+        device_service_pb2.DeviceStateEvent(
+            ski="device-ski",
+            revision=1,
+            availability=device_service_pb2.EVENT_AVAILABILITY_AVAILABLE,
+            measurement=monitoring_service_pb2.MeasurementEvent(
+                ski="device-ski",
+                event_type=monitoring_service_pb2.MEASUREMENT_EVENT_UNSPECIFIED,
+                update_field=monitoring_service_pb2.MEASUREMENT_UPDATE_FIELD_POWER_PER_PHASE,
+                measurements=monitoring_service_pb2.MeasurementList(
+                    measurements=[
+                        proto_stubs.MeasurementEntry(type="power_l1", value=100),
+                        proto_stubs.MeasurementEntry(type="power_l2", value=200),
+                    ]
+                ),
+            ),
+        )
+    )
+
+    assert store.state.measurements.power_l1_w == 100
+    assert store.state.measurements.power_l2_w == 200
+    assert store.state.measurements.power_l3_w == 3
+    assert StateField.POWER_L2_W in store.state.fresh_fields
+    assert StateField.POWER_L3_W not in store.state.fresh_fields
+    hass.async_create_task.assert_not_called()
+
+
+def test_payloadless_consolidated_update_is_unavailable_without_legacy_poll() -> None:
+    initial = DeviceState(
+        measurements=MeasurementsState(power_watts=1200),
+        fresh_fields=frozenset({StateField.POWER_WATTS}),
+    )
+    publish = MagicMock()
+    store = DeviceStateStore(publish=publish, initial=initial)
+    hass = MagicMock()
+    streams = DeviceStreams(hass, MagicMock(), "device-ski", store, AsyncMock())
+
+    streams.handle_device_state_event(
+        device_service_pb2.DeviceStateEvent(
+            ski="device-ski",
+            revision=1,
+            availability=device_service_pb2.EVENT_AVAILABILITY_TEMPORARILY_UNAVAILABLE,
+            measurement=monitoring_service_pb2.MeasurementEvent(
+                ski="device-ski",
+                event_type=monitoring_service_pb2.MEASUREMENT_EVENT_POWER_UPDATED,
+            ),
+        )
+    )
+
+    assert store.state.measurements.power_watts == 1200
+    assert StateField.POWER_WATTS not in store.state.fresh_fields
+    publish.assert_called_once()
+    hass.async_create_task.assert_not_called()
+
+
+def test_explicit_unavailability_rejects_stale_payload_data() -> None:
+    initial = DeviceState(
+        measurements=MeasurementsState(power_watts=1200),
+        fresh_fields=frozenset({StateField.POWER_WATTS}),
+    )
+    store = DeviceStateStore(initial=initial)
+    hass = MagicMock()
+    streams = DeviceStreams(hass, MagicMock(), "device-ski", store, AsyncMock())
+
+    streams.handle_device_state_event(
+        device_service_pb2.DeviceStateEvent(
+            ski="device-ski",
+            revision=1,
+            availability=device_service_pb2.EVENT_AVAILABILITY_TEMPORARILY_UNAVAILABLE,
+            measurement=monitoring_service_pb2.MeasurementEvent(
+                ski="device-ski",
+                event_type=monitoring_service_pb2.MEASUREMENT_EVENT_POWER_UPDATED,
+                power=proto_stubs.PowerMeasurement(watts=9999),
+            ),
+        )
+    )
+
+    assert store.state.measurements.power_watts == 1200
+    assert StateField.POWER_WATTS not in store.state.fresh_fields
+    hass.async_create_task.assert_not_called()
+
+
+def test_missing_detail_measurement_uses_explicit_target_without_polling() -> None:
+    initial = DeviceState(
+        measurements=MeasurementsState(power_l1_w=100, power_l2_w=200, power_l3_w=300),
+        fresh_fields=frozenset({StateField.POWER_L1_W, StateField.POWER_L2_W, StateField.POWER_L3_W}),
+    )
+    store = DeviceStateStore(initial=initial)
+    hass = MagicMock()
+    streams = DeviceStreams(hass, MagicMock(), "device-ski", store, AsyncMock())
+
+    streams.handle_device_state_event(
+        device_service_pb2.DeviceStateEvent(
+            ski="device-ski",
+            revision=1,
+            availability=device_service_pb2.EVENT_AVAILABILITY_TEMPORARILY_UNAVAILABLE,
+            measurement=monitoring_service_pb2.MeasurementEvent(
+                ski="device-ski",
+                event_type=monitoring_service_pb2.MEASUREMENT_EVENT_UNSPECIFIED,
+                update_field=monitoring_service_pb2.MEASUREMENT_UPDATE_FIELD_POWER_PER_PHASE,
+            ),
+        )
+    )
+
+    assert store.state.measurements.power_l1_w == 100
+    assert not {
+        StateField.POWER_L1_W,
+        StateField.POWER_L2_W,
+        StateField.POWER_L3_W,
+    }.intersection(store.state.fresh_fields)
+    hass.async_create_task.assert_not_called()
+
+
+def test_explicit_unsupported_is_distinct_from_temporary_unavailability() -> None:
+    initial = DeviceState(
+        lpc=LPCState(consumption_limit=ConsumptionLimitState(3000, True, True)),
+        capabilities=CapabilitiesState(lpc=CapabilityState.AVAILABLE),
+        fresh_fields=frozenset({StateField.CONSUMPTION_LIMIT}),
+    )
+    store = DeviceStateStore(initial=initial)
+    streams = DeviceStreams(MagicMock(), MagicMock(), "device-ski", store, AsyncMock())
+
+    streams.handle_device_state_event(
+        device_service_pb2.DeviceStateEvent(
+            ski="device-ski",
+            revision=1,
+            availability=device_service_pb2.EVENT_AVAILABILITY_UNSUPPORTED,
+            lpc=lpc_service_pb2.LPCEvent(
+                ski="device-ski",
+                event_type=lpc_service_pb2.LPC_EVENT_LIMIT_UPDATED,
+                limit_update=proto_stubs.LoadLimit(value_watts=9999),
+            ),
+        )
+    )
+
+    assert store.state.lpc.consumption_limit is None
+    assert store.state.capabilities.lpc == CapabilityState.UNSUPPORTED
+    assert StateField.CONSUMPTION_LIMIT not in store.state.fresh_fields
+
+
+def test_ohpcf_partial_delta_preserves_unrelated_aggregate_fields() -> None:
+    current = CompressorFlexibilityState(
+        True,
+        "COMPRESSOR_STATE_RUNNING",
+        1000,
+        2000,
+        True,
+        True,
+        600,
+        300,
+    )
+    store = DeviceStateStore(
+        initial=DeviceState(
+            ohpcf=OHPCFState(compressor_flexibility=current),
+            fresh_fields=frozenset({StateField.COMPRESSOR_FLEXIBILITY}),
+        )
+    )
+    streams = DeviceStreams(MagicMock(), MagicMock(), "device-ski", store, AsyncMock())
+
+    streams.handle_device_state_event(
+        device_service_pb2.DeviceStateEvent(
+            ski="device-ski",
+            revision=1,
+            availability=device_service_pb2.EVENT_AVAILABILITY_AVAILABLE,
+            ohpcf=ohpcf_service_pb2.OHPCFEvent(
+                ski="device-ski",
+                event_type=ohpcf_service_pb2.OHPCF_EVENT_DATA_UPDATED,
+                update_field=ohpcf_service_pb2.OHPCF_UPDATE_FIELD_STOPPABLE,
+                flexibility=ohpcf_service_pb2.CompressorFlexibility(is_stoppable=False),
+            ),
+        )
+    )
+
+    assert store.state.ohpcf.compressor_flexibility == CompressorFlexibilityState(
+        True,
+        "COMPRESSOR_STATE_RUNNING",
+        1000,
+        2000,
+        True,
+        False,
+        600,
+        300,
+    )
+
+    streams.handle_device_state_event(
+        device_service_pb2.DeviceStateEvent(
+            ski="device-ski",
+            revision=2,
+            availability=device_service_pb2.EVENT_AVAILABILITY_AVAILABLE,
+            ohpcf=ohpcf_service_pb2.OHPCFEvent(
+                ski="device-ski",
+                event_type=ohpcf_service_pb2.OHPCF_EVENT_STATE_UPDATED,
+                update_field=ohpcf_service_pb2.OHPCF_UPDATE_FIELD_STATE,
+                flexibility=ohpcf_service_pb2.CompressorFlexibility(
+                    available=False,
+                    state=ohpcf_service_pb2.COMPRESSOR_STATE_COMPLETED,
+                ),
+            ),
+        )
+    )
+    merged = store.state.ohpcf.compressor_flexibility
+    assert merged is not None
+    assert merged.available is False
+    assert merged.state == "COMPRESSOR_STATE_COMPLETED"
+    assert merged.requested_power_estimate_w == 1000
+    assert merged.minimal_run_seconds == 600
 
 
 async def test_refresh_requests_are_coalesced_until_completion() -> None:

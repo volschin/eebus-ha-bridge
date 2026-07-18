@@ -121,6 +121,7 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
         battery_discharged_energy_entity: str | None,
         battery_soc_entity: str | None,
         ensure_channel: Callable[[], Awaitable[grpc.aio.Channel]] | None = None,
+        supports_feature: Callable[[int], bool] | None = None,
     ) -> ProviderManager:
         return ProviderManager(
             hass,
@@ -136,6 +137,7 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
             battery_charged_energy_entity=battery_charged_energy_entity,
             battery_discharged_energy_entity=battery_discharged_energy_entity,
             battery_soc_entity=battery_soc_entity,
+            supports_feature=supports_feature or self._runtime.supports,
         )
 
     async def async_reconfigure_providers(
@@ -223,6 +225,7 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
                 battery_discharged_energy_entity,
                 battery_soc_entity,
                 runtime.channel_manager.ensure_channel,
+                runtime.supports,
             )
             await replacement_session.poller.poll()
             replacement_session.streams.start()

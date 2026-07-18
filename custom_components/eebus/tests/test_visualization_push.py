@@ -42,19 +42,10 @@ def _make_coordinator(
         battery_charged_energy_entity=battery_charged,
         battery_discharged_energy_entity=battery_discharged,
         battery_soc_entity=battery_soc,
+        supports_feature=lambda feature: feature
+        == proto_stubs.FeatureId.FEATURE_PROVIDER_SAMPLE_INVALIDATION,
     )
     return coordinator
-
-
-def _patch_new_bridge_probe(monkeypatch):
-    class _DeviceStub:
-        def __init__(self, _channel):
-            pass
-
-        async def GetDeviceCapabilities(self, request, timeout=None):  # noqa: N802
-            return proto_stubs.DeviceCapabilities(ski=request.ski)
-
-    monkeypatch.setattr(proto_stubs, "DeviceServiceStub", _DeviceStub)
 
 
 def test_read_sensor_value_normalizes_soc_percentage():
@@ -124,8 +115,6 @@ async def test_pv_push_publishes_power_and_optional_fields(monkeypatch):
             return proto_stubs.Empty()
 
     monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _FakeStub)
-    _patch_new_bridge_probe(monkeypatch)
-
     await coordinator.async_push_pv_data()
 
     request = captured["request"]
@@ -187,8 +176,6 @@ async def test_pv_push_invalidates_when_power_unavailable(monkeypatch):
             return proto_stubs.Empty()
 
     monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _FakeStub)
-    _patch_new_bridge_probe(monkeypatch)
-
     await coordinator.async_push_pv_data()
 
     request = captured["request"]
@@ -227,8 +214,6 @@ async def test_battery_push_publishes_power_and_optional_fields(monkeypatch):
             return proto_stubs.Empty()
 
     monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _FakeStub)
-    _patch_new_bridge_probe(monkeypatch)
-
     await coordinator.async_push_battery_data()
 
     request = captured["request"]
@@ -258,8 +243,6 @@ async def test_battery_push_invalidates_when_power_unavailable(monkeypatch):
             return proto_stubs.Empty()
 
     monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _FakeStub)
-    _patch_new_bridge_probe(monkeypatch)
-
     await coordinator.async_push_battery_data()
 
     request = captured["request"]

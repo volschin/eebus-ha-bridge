@@ -8,11 +8,24 @@ import pytest
 from custom_components.eebus import _async_reload_entry, async_unload_entry
 from custom_components.eebus.coordinator import EebusCoordinator
 from custom_components.eebus.runtime import (
+    BridgeRuntime,
     BridgeRuntimeKey,
     BridgeRuntimeRegistry,
     canonical_bridge_host,
 )
+from custom_components.eebus.server_info import BridgeContract
 from custom_components.eebus.state import DeviceState, MeasurementsState
+
+
+@pytest.fixture(autouse=True)
+def _runtime_contract_is_already_negotiated(monkeypatch) -> None:
+    async def ensure_contract(runtime: BridgeRuntime) -> BridgeContract:
+        if runtime.contract is None:
+            runtime._contract = BridgeContract(1, 0, "test", frozenset(), "LOCAL")
+        assert runtime.contract is not None
+        return runtime.contract
+
+    monkeypatch.setattr(BridgeRuntime, "ensure_contract", ensure_contract)
 
 
 def test_runtime_key_is_canonical_and_contains_only_credential_hashes() -> None:

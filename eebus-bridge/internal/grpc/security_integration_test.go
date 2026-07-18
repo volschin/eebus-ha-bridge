@@ -124,6 +124,7 @@ func TestTLSTokenSecuresUnaryWriteStreamAndHealth(t *testing.T) {
 	go func() { startErr <- srv.Start() }()
 	defer srv.Stop()
 	addr := waitForServer(t, srv, startErr)
+	srv.SetHealthy(true)
 
 	valid, err := NewClient(addr, ClientSecurityConfig{
 		Mode: config.GRPCSecurityModeTLSToken, CACertFile: certFile, TokenFile: tokenFile,
@@ -137,6 +138,9 @@ func TestTLSTokenSecuresUnaryWriteStreamAndHealth(t *testing.T) {
 	dc := pb.NewDeviceServiceClient(valid)
 	if _, err := dc.GetStatus(ctx, &pb.Empty{}); err != nil {
 		t.Fatalf("secured read: %v", err)
+	}
+	if _, err := dc.GetServerInfo(ctx, &pb.Empty{}); err != nil {
+		t.Fatalf("secured server info: %v", err)
 	}
 	const remoteSKI = "0123456789abcdef0123456789abcdef01234567"
 	if _, err := dc.RegisterRemoteSKI(ctx, &pb.RegisterSKIRequest{Ski: remoteSKI}); err != nil {
@@ -190,6 +194,9 @@ func TestTLSTokenSecuresUnaryWriteStreamAndHealth(t *testing.T) {
 			client := pb.NewDeviceServiceClient(conn)
 			if _, err := client.GetStatus(unauthorizedCtx, &pb.Empty{}); status.Code(err) != codes.Unauthenticated {
 				t.Fatalf("unary code = %s, want Unauthenticated", status.Code(err))
+			}
+			if _, err := client.GetServerInfo(unauthorizedCtx, &pb.Empty{}); status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("server info code = %s, want Unauthenticated", status.Code(err))
 			}
 			stream, err := client.SubscribeDeviceEvents(unauthorizedCtx, &pb.Empty{})
 			if err == nil {

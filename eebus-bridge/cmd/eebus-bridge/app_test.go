@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -32,6 +33,8 @@ type fakeBridgeLifecycle struct {
 	registered   chan struct{}
 	registerOnce sync.Once
 }
+
+func (f *fakeBridgeLifecycle) Setup() error { return nil }
 
 func (f *fakeBridgeLifecycle) Start() error {
 	f.starts.Add(1)
@@ -98,6 +101,10 @@ func (f *fakeGRPCLifecycle) Start() error {
 	return nil
 }
 
+func (f *fakeGRPCLifecycle) WaitReady(context.Context) error {
+	return f.startErr
+}
+
 func (f *fakeGRPCLifecycle) Stop() {
 	f.stops.Add(1)
 	if f.recorder != nil {
@@ -122,7 +129,12 @@ func (f *fakeGRPCLifecycle) healthValues() []bool {
 
 func TestOHPCFModuleRegistersGRPCServiceWhenDisabled(t *testing.T) {
 	srv := bridgegrpc.NewServer("127.0.0.1", 0, false)
-	module := newOHPCFModule(nil, nil, nil, eebus.NewEventBus(), eebus.NewDeviceRegistry())
+	module := newOHPCFModule(
+		nil,
+		nil,
+		nil,
+		bridgegrpc.NewOHPCFService(nil, eebus.NewEventBus(), eebus.NewDeviceRegistry()),
+	)
 
 	require.NoError(t, module.setup())
 	names, err := module.registerUseCases()
@@ -131,6 +143,41 @@ func TestOHPCFModuleRegistersGRPCServiceWhenDisabled(t *testing.T) {
 
 	module.registerGRPC(srv)
 	assert.Contains(t, srv.GRPCServer().GetServiceInfo(), "eebus.v1.OHPCFService")
+}
+
+func TestProductionCompositionRootIsInertUntilStartAndRegistersAllUseCases(t *testing.T) {
+	autoGenerate := true
+	ohpcfEnabled := true
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	eebusPort := listener.Addr().(*net.TCPAddr).Port
+	require.NoError(t, listener.Close())
+	cfg := &config.Config{
+		GRPC: config.GRPCConfig{
+			Bind: "127.0.0.1", Port: 0,
+			Security: config.GRPCSecurityConfig{Mode: config.GRPCSecurityModeLoopback},
+		},
+		EEBUS: config.EEBUSConfig{
+			Port: eebusPort, Vendor: "test", Brand: "test", Model: "test", Serial: "test",
+		},
+		Certificates: config.CertificatesConfig{AutoGenerate: &autoGenerate, StoragePath: t.TempDir()},
+		OHPCF:        config.OHPCFConfig{Enabled: &ohpcfEnabled},
+	}
+
+	app, err := NewApplication(cfg)
+	require.NoError(t, err)
+	t.Cleanup(app.Stop)
+	require.False(t, app.prepared)
+	server, ok := app.grpcSrv.(*bridgegrpc.Server)
+	require.True(t, ok)
+	assert.Empty(t, server.Addr(), "NewApplication must not start the gRPC listener")
+	assert.Empty(t, app.registeredUseCases, "NewApplication must not run EEBUS setup")
+
+	require.NoError(t, app.prepareForStart())
+	assert.ElementsMatch(t, []string{
+		"LPC", "Monitoring", "DHWMonitoring", "MRT", "MOT", "DHWTemperature",
+		"DHWSystemFunction", "RoomHeatingTemperature", "RoomHeatingSystemFunction", "OHPCF",
+	}, app.registeredUseCases)
 }
 
 type fakeHeartbeatLifecycle struct {
@@ -292,8 +339,7 @@ func TestApplicationStartGRPCServeFailureTriggersControlledShutdown(t *testing.T
 
 	require.Error(t, err)
 	require.ErrorIs(t, err, serveErr)
-	var controlled *controlledShutdownError
-	assert.ErrorAs(t, err, &controlled)
+	assert.Contains(t, err.Error(), "gRPC server readiness")
 	assert.Equal(t, int32(1), bridge.stops.Load())
 	assert.Equal(t, int32(1), grpcServer.stops.Load())
 	assert.Equal(t, int32(1), heartbeat.stops.Load())
@@ -466,6 +512,7 @@ func TestApplicationStartSignalTriggersShutdown(t *testing.T) {
 	assert.Equal(t, int32(1), bridge.stops.Load())
 	assert.Equal(t, int32(1), grpcServer.stops.Load())
 	assert.Equal(t, int32(1), heartbeat.stops.Load())
+	assert.Equal(t, []bool{true, false}, grpcServer.healthValues())
 }
 
 func TestApplicationStopIsIdempotentAndOrdered(t *testing.T) {

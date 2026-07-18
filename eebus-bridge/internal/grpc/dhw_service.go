@@ -173,12 +173,20 @@ func (s *DHWService) attachDHWPayload(event *pb.DHWEvent, ski string) {
 	}
 }
 
+func (s *DHWService) AttachDHWPayload(event *pb.DHWEvent, ski string) {
+	s.attachDHWPayload(event, ski)
+}
+
 func (s *DHWService) attachDHWSystemFunctionPayload(event *pb.DHWSystemFunctionEvent, ski string) {
 	if entity, err := s.resolveSysFnEntity(ski); err == nil {
 		if state, err := s.dhwSysFn.State(entity); err == nil {
 			event.State = convertDHWSystemFunctionState(state)
 		}
 	}
+}
+
+func (s *DHWService) AttachDHWSystemFunctionPayload(event *pb.DHWSystemFunctionEvent, ski string) {
+	s.attachDHWSystemFunctionPayload(event, ski)
 }
 
 func (s *DHWService) resolveEntity(ski string) (spineapi.EntityRemoteInterface, error) {

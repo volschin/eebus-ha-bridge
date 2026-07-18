@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
+from datetime import UTC
 from typing import Generic, Protocol, TypeVar, cast
 
 import grpc
@@ -281,6 +282,7 @@ async def _async_read_compressor_flexibility(
         is_stoppable=flex.is_stoppable,
         minimal_run_seconds=flex.minimal_run_seconds,
         minimal_pause_seconds=flex.minimal_pause_seconds,
+        start_time=flex.start_time.ToDatetime(tzinfo=UTC) if flex.HasField("start_time") else None,
     )
     return _ReadResult(value)
 
@@ -368,6 +370,7 @@ async def async_build_snapshot(
     *,
     ski_registered: bool,
     not_found_streak: int,
+    supports_explicit_capabilities: bool = True,
 ) -> SnapshotResult:
     """Read and assemble one complete coordinator snapshot atomically."""
     device_stub = proto_stubs.device_service_stub(channel)
@@ -463,7 +466,9 @@ async def async_build_snapshot(
         ),
     )
 
-    explicit_capabilities = await _async_read_capabilities(device_stub, request, ski)
+    explicit_capabilities = (
+        await _async_read_capabilities(device_stub, request, ski) if supports_explicit_capabilities else None
+    )
 
     flat_measurements: dict[str, float | None] = {}
     scoped_energy: dict[str, float | None] = {"heating": None, "dhw": None}
@@ -645,10 +650,12 @@ class DevicePoller:
         ski: str,
         ensure_channel: Callable[[], Awaitable[grpc.aio.Channel]],
         store: DeviceStateStore,
+        supports_feature: Callable[[int], bool] | None = None,
     ) -> None:
         self._ski = ski
         self._ensure_channel = ensure_channel
         self._store = store
+        self._supports_feature = supports_feature or (lambda _feature: True)
         self._ski_registered = False
         self._not_found_streak = 0
 
@@ -660,6 +667,9 @@ class DevicePoller:
             self._ski,
             ski_registered=self._ski_registered,
             not_found_streak=self._not_found_streak,
+            supports_explicit_capabilities=self._supports_feature(
+                int(proto_stubs.FeatureId.FEATURE_EXPLICIT_CAPABILITIES)
+            ),
         )
         self._ski_registered = result.ski_registered
         self._not_found_streak = result.not_found_streak

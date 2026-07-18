@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections.abc import Callable, Coroutine
 from dataclasses import replace
+from datetime import UTC
 from functools import lru_cache
 from typing import Any
 
@@ -15,10 +16,12 @@ from homeassistant.core import HomeAssistant
 from . import proto_stubs
 from .grpc_client import GrpcChannelManager
 from .models import (
+    CapabilityState,
     CompressorFlexibilityState,
     ConsumptionLimitState,
     FailsafeState,
     _dhw_system_function_to_dict,
+    _extract_flat_measurements,
     _room_heating_from_proto,
     _setpoint_to_dict,
 )
@@ -96,6 +99,57 @@ def _measurement_event_map() -> tuple[dict[int, tuple[str, str, StateField]], di
     return value_events, support_events
 
 
+@lru_cache(maxsize=1)
+def _availability_field_maps() -> tuple[
+    dict[int, StateField],
+    dict[int, frozenset[StateField]],
+    dict[int, frozenset[StateField]],
+]:
+    """Build the consolidated-delta invalidation tables once protobufs are importable."""
+    heating_event = proto_stubs.RoomHeatingEventType
+    hvac_fields = {
+        int(heating_event.ROOM_HEATING_EVENT_CURRENT_TEMPERATURE_UPDATED): StateField.ROOM_TEMPERATURE_C,
+        int(heating_event.ROOM_HEATING_EVENT_SETPOINT_UPDATED): StateField.ROOM_HEATING_SETPOINT,
+        int(heating_event.ROOM_HEATING_EVENT_SYSTEM_FUNCTION_UPDATED): StateField.ROOM_HEATING_SYSTEM_FUNCTION,
+    }
+    power_phases = frozenset({StateField.POWER_L1_W, StateField.POWER_L2_W, StateField.POWER_L3_W})
+    current_phases = frozenset({StateField.CURRENT_L1_A, StateField.CURRENT_L2_A, StateField.CURRENT_L3_A})
+    voltage_phases = frozenset({StateField.VOLTAGE_L1_V, StateField.VOLTAGE_L2_V, StateField.VOLTAGE_L3_V})
+    energy_produced = frozenset({StateField.ENERGY_PRODUCED_KWH})
+    frequency = frozenset({StateField.FREQUENCY_HZ})
+    detail = proto_stubs.MeasurementUpdateField
+    detail_fields = {
+        int(detail.MEASUREMENT_UPDATE_FIELD_POWER_PER_PHASE): power_phases,
+        int(detail.MEASUREMENT_UPDATE_FIELD_ENERGY_PRODUCED): energy_produced,
+        int(detail.MEASUREMENT_UPDATE_FIELD_CURRENT_PER_PHASE): current_phases,
+        int(detail.MEASUREMENT_UPDATE_FIELD_VOLTAGE_PER_PHASE): voltage_phases,
+        int(detail.MEASUREMENT_UPDATE_FIELD_FREQUENCY): frequency,
+    }
+    measurement_event = proto_stubs.MeasurementEventType
+    measurement_fields = {
+        int(measurement_event.MEASUREMENT_EVENT_POWER_UPDATED): frozenset({StateField.POWER_WATTS}),
+        int(measurement_event.MEASUREMENT_EVENT_ENERGY_UPDATED): frozenset({StateField.ENERGY_CONSUMED_KWH}),
+        int(measurement_event.MEASUREMENT_EVENT_POWER_PER_PHASE_UPDATED): power_phases,
+        int(measurement_event.MEASUREMENT_EVENT_ENERGY_PRODUCED_UPDATED): energy_produced,
+        int(measurement_event.MEASUREMENT_EVENT_CURRENT_PER_PHASE_UPDATED): current_phases,
+        int(measurement_event.MEASUREMENT_EVENT_VOLTAGE_PER_PHASE_UPDATED): voltage_phases,
+        int(measurement_event.MEASUREMENT_EVENT_FREQUENCY_UPDATED): frequency,
+        int(measurement_event.MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED): frozenset({StateField.DHW_TEMPERATURE_C}),
+        int(measurement_event.MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED): frozenset({StateField.ROOM_TEMPERATURE_C}),
+        int(measurement_event.MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED): frozenset(
+            {StateField.OUTDOOR_TEMPERATURE_C}
+        ),
+        int(measurement_event.MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED): frozenset({StateField.FLOW_TEMPERATURE_C}),
+        int(measurement_event.MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED): frozenset(
+            {StateField.RETURN_TEMPERATURE_C}
+        ),
+        int(measurement_event.MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED): frozenset(
+            {StateField.DEVICE_OPERATING_STATE}
+        ),
+    }
+    return hvac_fields, detail_fields, measurement_fields
+
+
 class DeviceStreams:
     """Own all legacy device streams and reduce their events through one store."""
 
@@ -106,6 +160,7 @@ class DeviceStreams:
         ski: str,
         store: DeviceStateStore,
         request_refresh: Callable[[], Coroutine[Any, Any, None]],
+        supports_feature: Callable[[int], bool] | None = None,
     ) -> None:
         self._hass = hass
         self._ski = ski
@@ -116,6 +171,8 @@ class DeviceStreams:
         self._refresh_task: asyncio.Task[None] | None = None
         self._refresh_pending = False
         self._last_revision: int | None = None
+        self._supports_feature = supports_feature or (lambda _feature: True)
+        self._handling_consolidated = False
 
     def start(self) -> None:
         """Start the consolidated stream, falling back only for old bridges."""
@@ -180,11 +237,14 @@ class DeviceStreams:
         def start_legacy(_name: str) -> None:
             self._legacy_manager.start(legacy_streams, f"eebus_{{name}}_{self._ski}")
 
-        self._manager.start(
-            {"device_state": device_state},
-            f"eebus_{{name}}_{self._ski}",
-            on_unimplemented=start_legacy,
-        )
+        if self._supports_feature(int(proto_stubs.FeatureId.FEATURE_CONSOLIDATED_DEVICE_STREAM)):
+            self._manager.start(
+                {"device_state": device_state},
+                f"eebus_{{name}}_{self._ski}",
+                on_unimplemented=start_legacy,
+            )
+        else:
+            start_legacy("device_state")
 
     async def stop(self) -> None:
         """Stop every stream before transport shutdown."""
@@ -206,6 +266,8 @@ class DeviceStreams:
         return normalize_ski(event_ski) == normalize_ski(self._ski)
 
     def _refresh(self) -> None:
+        if self._handling_consolidated:
+            return
         running = getattr(self, "_refresh_task", None)
         if running is not None and not running.done():
             self._refresh_pending = True
@@ -246,11 +308,88 @@ class DeviceStreams:
                     explicit_capability_contract=True,
                 )
             )
+        elif payload is None:
             self._refresh()
-        elif payload == "device":
+        else:
+            if self._apply_explicit_unavailability(event, payload):
+                return
+            if payload == "device":
+                # Connection transitions invalidate every other payload domain,
+                # which only the reconciliation poll inside handle_device_event
+                # can re-establish — never suppress it with the stream guard.
+                self._apply_device_state_payload(event, payload)
+                return
+            self._handling_consolidated = True
+            try:
+                self._apply_device_state_payload(event, payload)
+            finally:
+                self._handling_consolidated = False
+
+    def _apply_explicit_unavailability(self, event: Any, payload: str) -> bool:
+        """Apply an authoritative unavailable/unsupported envelope without using stale payload data."""
+        availability = int(event.availability)
+        temporary = int(proto_stubs.EventAvailability.EVENT_AVAILABILITY_TEMPORARILY_UNAVAILABLE)
+        unsupported = int(proto_stubs.EventAvailability.EVENT_AVAILABILITY_UNSUPPORTED)
+        if availability not in (temporary, unsupported):
+            return False
+        fields, capability = self._availability_target(event, payload)
+        if not fields:
+            return False
+        capability_results: tuple[CapabilityResult, ...] = ()
+        if capability is not None:
+            state = CapabilityState.UNSUPPORTED if availability == unsupported else CapabilityState.TEMPORARILY_UNAVAILABLE
+            capability_results = (CapabilityResult(capability, None, explicit_state=state),)
+        self._store.dispatch(
+            StateObservation(
+                unavailable_fields=fields,
+                capability_results=capability_results,
+            )
+        )
+        return True
+
+    @staticmethod
+    def _availability_target(event: Any, payload: str) -> tuple[frozenset[StateField], CapabilityKey | None]:
+        """Resolve the exact state leaves invalidated by one consolidated delta."""
+        if payload == "device":
+            return frozenset({StateField.CONNECTED}), None
+        if payload == "lpc":
+            event_type = int(event.lpc.event_type)
+            if event_type == int(proto_stubs.LPCEventType.LPC_EVENT_LIMIT_UPDATED):
+                return frozenset({StateField.CONSUMPTION_LIMIT}), CapabilityKey.LPC
+            if event_type == int(proto_stubs.LPCEventType.LPC_EVENT_FAILSAFE_UPDATED):
+                return frozenset({StateField.FAILSAFE_LIMIT}), CapabilityKey.FAILSAFE
+            if event_type == int(proto_stubs.LPCEventType.LPC_EVENT_HEARTBEAT_TIMEOUT):
+                return frozenset({StateField.HEARTBEAT_STATUS}), CapabilityKey.HEARTBEAT
+        if payload == "dhw":
+            if event.dhw.WhichOneof("payload") == "system_function":
+                return frozenset({StateField.DHW_SYSTEM_FUNCTION}), CapabilityKey.DHW_SYSTEM_FUNCTION
+            return frozenset({StateField.DHW_SETPOINT}), CapabilityKey.DHW
+        if payload == "hvac":
+            hvac_fields, _, _ = _availability_field_maps()
+            field = hvac_fields.get(int(event.hvac.event_type))
+            return (frozenset({field}) if field is not None else frozenset()), CapabilityKey.ROOM_HEATING
+        if payload == "ohpcf":
+            return frozenset({StateField.COMPRESSOR_FLEXIBILITY}), CapabilityKey.OHPCF
+        if payload == "measurement":
+            _, detail_fields, measurement_fields = _availability_field_maps()
+            update_field = int(event.measurement.update_field)
+            if update_field in detail_fields:
+                return detail_fields[update_field], None
+            return measurement_fields.get(int(event.measurement.event_type), frozenset()), None
+        return frozenset(), None
+
+    def _apply_device_state_payload(self, event: Any, payload: str) -> None:
+        """Apply one explicitly classified consolidated payload without polling."""
+        if payload == "device":
             self.handle_device_event(event.device)
         elif payload == "measurement":
-            if event.measurement.event_type == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_UNSPECIFIED:
+            if (
+                event.measurement.event_type == proto_stubs.MeasurementEventType.MEASUREMENT_EVENT_UNSPECIFIED
+                and not event.measurement.HasField("measurements")
+            ):
+                # Unclassifiable delta: the documented fallback is a poll, so
+                # the stream guard must not swallow it.
+                self._handling_consolidated = False
                 self._refresh()
             else:
                 self.handle_measurement_event(event.measurement)
@@ -388,6 +527,24 @@ class DeviceStreams:
             self._mark_temporarily_unavailable(frozenset({support_field}))
             return
         spec = value_events.get(event.event_type)
+        if event.HasField("measurements"):
+            values = _extract_flat_measurements(event.measurements.measurements)
+            observed = frozenset(StateField(key) for key in values)
+            if not observed:
+                return
+            _, detail_fields, measurement_fields = _availability_field_maps()
+            group = detail_fields.get(int(event.update_field)) or measurement_fields.get(
+                int(event.event_type), frozenset()
+            )
+            state = DeviceState(measurements=replace(MeasurementsState(), **values))
+            self._store.dispatch(
+                StateObservation(
+                    state=state,
+                    observed_fields=observed,
+                    unavailable_fields=group - observed,
+                )
+            )
+            return
         if spec is None:
             return
         payload, attribute, field_name = spec
@@ -422,7 +579,7 @@ class DeviceStreams:
             )
             return
         flex = event.flexibility
-        value = CompressorFlexibilityState(
+        incoming = CompressorFlexibilityState(
             available=flex.available,
             state=proto_stubs.CompressorPowerConsumptionState.Name(flex.state),
             requested_power_estimate_w=(
@@ -433,7 +590,29 @@ class DeviceStreams:
             is_stoppable=flex.is_stoppable,
             minimal_run_seconds=flex.minimal_run_seconds,
             minimal_pause_seconds=flex.minimal_pause_seconds,
+            start_time=flex.start_time.ToDatetime(tzinfo=UTC) if flex.HasField("start_time") else None,
         )
+        value = incoming
+        current = self._store.state.ohpcf.compressor_flexibility
+        field = int(event.update_field)
+        if current is not None:
+            update_field = proto_stubs.OHPCFUpdateField
+            if field == int(update_field.OHPCF_UPDATE_FIELD_STATE):
+                value = replace(current, available=incoming.available, state=incoming.state)
+            elif field == int(update_field.OHPCF_UPDATE_FIELD_STOPPABLE):
+                value = replace(current, is_stoppable=incoming.is_stoppable)
+            elif field == int(update_field.OHPCF_UPDATE_FIELD_PAUSABLE):
+                value = replace(current, is_pausable=incoming.is_pausable)
+            elif field == int(update_field.OHPCF_UPDATE_FIELD_START_TIME):
+                value = replace(current, start_time=incoming.start_time)
+            elif field == int(update_field.OHPCF_UPDATE_FIELD_REQUESTED_POWER_ESTIMATE):
+                value = replace(current, requested_power_estimate_w=incoming.requested_power_estimate_w)
+            elif field == int(update_field.OHPCF_UPDATE_FIELD_REQUESTED_POWER_MAX):
+                value = replace(current, requested_power_max_w=incoming.requested_power_max_w)
+            elif field == int(update_field.OHPCF_UPDATE_FIELD_MINIMAL_RUN_DURATION):
+                value = replace(current, minimal_run_seconds=incoming.minimal_run_seconds)
+            elif field == int(update_field.OHPCF_UPDATE_FIELD_MINIMAL_PAUSE_DURATION):
+                value = replace(current, minimal_pause_seconds=incoming.minimal_pause_seconds)
         self._store.dispatch(
             StateObservation(
                 state=DeviceState(ohpcf=OHPCFState(compressor_flexibility=value)),

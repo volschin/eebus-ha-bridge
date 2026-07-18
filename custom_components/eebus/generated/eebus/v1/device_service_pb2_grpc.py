@@ -40,6 +40,11 @@ class DeviceServiceStub(object):
                 request_serializer=eebus_dot_v1_dot_common__pb2.Empty.SerializeToString,
                 response_deserializer=eebus_dot_v1_dot_device__service__pb2.ServiceStatus.FromString,
                 _registered_method=True)
+        self.GetServerInfo = channel.unary_unary(
+                '/eebus.v1.DeviceService/GetServerInfo',
+                request_serializer=eebus_dot_v1_dot_common__pb2.Empty.SerializeToString,
+                response_deserializer=eebus_dot_v1_dot_device__service__pb2.ServerInfo.FromString,
+                _registered_method=True)
         self.GetDeviceStatus = channel.unary_unary(
                 '/eebus.v1.DeviceService/GetDeviceStatus',
                 request_serializer=eebus_dot_v1_dot_common__pb2.DeviceRequest.SerializeToString,
@@ -86,6 +91,12 @@ class DeviceServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def GetStatus(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetServerInfo(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -146,6 +157,11 @@ def add_DeviceServiceServicer_to_server(servicer, server):
                     servicer.GetStatus,
                     request_deserializer=eebus_dot_v1_dot_common__pb2.Empty.FromString,
                     response_serializer=eebus_dot_v1_dot_device__service__pb2.ServiceStatus.SerializeToString,
+            ),
+            'GetServerInfo': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetServerInfo,
+                    request_deserializer=eebus_dot_v1_dot_common__pb2.Empty.FromString,
+                    response_serializer=eebus_dot_v1_dot_device__service__pb2.ServerInfo.SerializeToString,
             ),
             'GetDeviceStatus': grpc.unary_unary_rpc_method_handler(
                     servicer.GetDeviceStatus,
@@ -215,6 +231,33 @@ class DeviceService(object):
             '/eebus.v1.DeviceService/GetStatus',
             eebus_dot_v1_dot_common__pb2.Empty.SerializeToString,
             eebus_dot_v1_dot_device__service__pb2.ServiceStatus.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetServerInfo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/eebus.v1.DeviceService/GetServerInfo',
+            eebus_dot_v1_dot_common__pb2.Empty.SerializeToString,
+            eebus_dot_v1_dot_device__service__pb2.ServerInfo.FromString,
             options,
             channel_credentials,
             insecure,

@@ -57,6 +57,7 @@
       "tls_trust": "TLS-Vertrauen fehlgeschlagen. Bitte prüfen, ob das CA-Zertifikat zum Bridge-Zertifikat passt.",
       "invalid_auth": "Authentifizierung fehlgeschlagen. Bitte das Bridge-Token prüfen.",
       "incompatible_grpc_endpoint": "Der Endpunkt antwortet per gRPC, stellt aber nicht die EEBUS-Bridge-API bereit.",
+      "incompatible_api_version": "Die Hauptversion der EEBUS-Bridge-API ist mit dieser Integration nicht kompatibel.",
       "invalid_ski": "Bitte eine gültige hexadezimale SKI mit 40 Zeichen eingeben.",
       "required": "Dieses Feld ist für den Modus TLS + Token erforderlich.",
       "ski_is_local": "Das ist die eigene SKI der Bridge. Bitte die SKI der Wärmepumpe eingeben."
