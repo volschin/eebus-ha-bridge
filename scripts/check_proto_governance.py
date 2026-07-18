@@ -15,6 +15,7 @@ REQUIRED_V1_RPCS = {
         "SubscribeLPCEvents": "stream",
     },
     "DeviceService": {
+        "GetServerInfo": "unary",
         "GetDeviceCapabilities": "unary",
         "SubscribeDeviceState": "stream",
         "SubscribeDeviceEvents": "stream",

@@ -207,10 +207,29 @@ func (s *HVACService) SubscribeRoomHeatingEvents(
 	})
 }
 
-func (s *HVACService) attachRoomHeatingPayload(event *pb.RoomHeatingEvent, ski string) {
-	if state, err := s.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: ski}); err == nil {
-		event.State = state
+// attachRoomHeatingPayload keeps the legacy-stream contract (attach whatever
+// partial aggregate reads cleanly) and reports whether the event's specific
+// target field was readable; only the consolidated envelope's availability is
+// derived from that stricter answer.
+func (s *HVACService) attachRoomHeatingPayload(event *pb.RoomHeatingEvent, ski string) bool {
+	state, err := s.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: ski})
+	if err != nil {
+		return false
 	}
+	event.State = state
+	switch event.GetEventType() {
+	case pb.RoomHeatingEventType_ROOM_HEATING_EVENT_CURRENT_TEMPERATURE_UPDATED:
+		return state.CurrentTemperatureCelsius != nil
+	case pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SETPOINT_UPDATED:
+		return state.Setpoint != nil
+	case pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SYSTEM_FUNCTION_UPDATED:
+		return state.SystemFunction != nil
+	}
+	return false
+}
+
+func (s *HVACService) AttachRoomHeatingPayload(event *pb.RoomHeatingEvent, ski string) bool {
+	return s.attachRoomHeatingPayload(event, ski)
 }
 
 func convertRoomHeatingSetpoint(state usecases.RoomHeatingSetpoint) *pb.RoomHeatingSetpoint {

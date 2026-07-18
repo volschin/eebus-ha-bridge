@@ -26,6 +26,7 @@ from custom_components.eebus.const import (
     DOMAIN,
     SECURITY_MODE_TLS_TOKEN,
 )
+from custom_components.eebus.server_info import IncompatibleAPIMajorError
 
 
 def test_config_flow_domain():
@@ -309,6 +310,7 @@ async def test_probe_classifies_grpc_errors():
         )
 
     stub = MagicMock()
+    stub.GetServerInfo = get_status
     stub.GetStatus = get_status
     with (
         patch(
@@ -320,6 +322,24 @@ async def test_probe_classifies_grpc_errors():
         result = await flow._async_probe_bridge("localhost", 50051)
 
     assert result.error == "incompatible_grpc_endpoint"
+
+
+async def test_probe_rejects_only_incompatible_api_major() -> None:
+    flow = EebusConfigFlow()
+    flow._security_mode = "loopback"
+    channel = MagicMock()
+    channel.close = AsyncMock()
+    with (
+        patch("custom_components.eebus.config_flow.create_grpc_channel", return_value=channel),
+        patch(
+            "custom_components.eebus.config_flow.async_read_bridge_contract",
+            AsyncMock(side_effect=IncompatibleAPIMajorError(2)),
+        ),
+    ):
+        result = await flow._async_probe_bridge("localhost", 50051)
+
+    assert result.error == "incompatible_api_version"
+    channel.close.assert_awaited_once_with(None)
 
 
 async def test_options_flow_strips_empty_selections():

@@ -32,19 +32,10 @@ def _make_grid_coordinator(states, power=None, feed_in=None, consumed=None):
         grid_power_entity=power,
         grid_feed_in_energy_entity=feed_in,
         grid_consumption_energy_entity=consumed,
+        supports_feature=lambda feature: feature
+        == proto_stubs.FeatureId.FEATURE_PROVIDER_SAMPLE_INVALIDATION,
     )
     return coordinator
-
-
-def _patch_new_bridge_probe(monkeypatch):
-    class _DeviceStub:
-        def __init__(self, _channel):
-            pass
-
-        async def GetDeviceCapabilities(self, request, timeout=None):  # noqa: N802
-            return proto_stubs.DeviceCapabilities(ski=request.ski)
-
-    monkeypatch.setattr(proto_stubs, "DeviceServiceStub", _DeviceStub)
 
 
 def test_read_sensor_value_normalizes_power_units():
@@ -100,8 +91,6 @@ async def test_push_publishes_power_and_optional_energy(monkeypatch):
             return proto_stubs.Empty()
 
     monkeypatch.setattr(proto_stubs, "GridServiceStub", _FakeStub)
-    _patch_new_bridge_probe(monkeypatch)
-
     await coordinator.async_push_grid_data()
 
     request = captured["request"]
@@ -130,8 +119,6 @@ async def test_push_invalidates_when_power_unavailable(monkeypatch):
             return proto_stubs.Empty()
 
     monkeypatch.setattr(proto_stubs, "GridServiceStub", _FakeStub)
-    _patch_new_bridge_probe(monkeypatch)
-
     await coordinator.async_push_grid_data()
 
     request = captured["request"]

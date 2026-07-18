@@ -53,6 +53,7 @@ from .const import (
     SECURITY_MODE_TLS_TOKEN,
 )
 from .security import create_grpc_channel
+from .server_info import IncompatibleAPIMajorError, async_read_bridge_contract
 from .ski import is_valid_ski, normalize_ski
 
 _LOGGER = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ ERROR_CANNOT_CONNECT = "cannot_connect"
 ERROR_TLS_TRUST = "tls_trust"
 ERROR_INVALID_AUTH = "invalid_auth"
 ERROR_INCOMPATIBLE_GRPC = "incompatible_grpc_endpoint"
+ERROR_INCOMPATIBLE_API = "incompatible_api_version"
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,13 +198,11 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
             _LOGGER.debug("Invalid EEBUS bridge security settings: %s", err)
             return BridgeProbeResult(error=ERROR_CANNOT_CONNECT)
         try:
-            from . import proto_stubs
-
-            stub = proto_stubs.device_service_stub(channel)
-            status = await stub.GetStatus(
-                proto_stubs.Empty(), timeout=CONFIG_RPC_TIMEOUT
-            )
-            return BridgeProbeResult(local_ski=str(status.local_ski))
+            contract = await async_read_bridge_contract(channel, timeout=CONFIG_RPC_TIMEOUT)
+            return BridgeProbeResult(local_ski=contract.local_ski)
+        except IncompatibleAPIMajorError as err:
+            _LOGGER.debug("Incompatible EEBUS bridge API at %s:%s: %s", host, port, err)
+            return BridgeProbeResult(error=ERROR_INCOMPATIBLE_API)
         except grpc.aio.AioRpcError as err:
             error = _classify_probe_error(err)
             _LOGGER.debug(

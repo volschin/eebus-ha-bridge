@@ -25,6 +25,10 @@ type failingTemperatureReader struct{ err error }
 
 func (f failingTemperatureReader) Temperature(string) (float64, error) { return 0, f.err }
 
+type fixedTemperatureReader struct{ value float64 }
+
+func (f fixedTemperatureReader) Temperature(string) (float64, error) { return f.value, nil }
+
 func (f *fakeRoomHeatingTemp) CompatibleEntity(ski string) eebus.EntityResolution {
 	if f.entities == nil {
 		return eebus.EntityResolution{Entity: f.entity, DeviceCount: 1}
@@ -132,6 +136,25 @@ func TestHVACAggregateAllPartReadsFailedIsUnavailable(t *testing.T) {
 		}
 	}
 	t.Fatal("room heating capability missing")
+}
+
+func TestHVACPayloadAvailabilityUsesTheEventSpecificField(t *testing.T) {
+	entity := mocks.NewEntityRemoteInterface(t)
+	temp := &fakeRoomHeatingTemp{entity: entity, err: usecases.ErrRoomHeatingDataUnavailable}
+	svc := NewHVACService(temp, nil, fixedTemperatureReader{value: 22}, nil)
+
+	setpoint := &pb.RoomHeatingEvent{Ski: testValidSKI, EventType: pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SETPOINT_UPDATED}
+	if svc.AttachRoomHeatingPayload(setpoint, testValidSKI) {
+		t.Fatalf("partial state incorrectly satisfies setpoint event: %+v", setpoint)
+	}
+	if setpoint.GetState() == nil {
+		t.Fatalf("legacy-stream clients must keep the partial aggregate: %+v", setpoint)
+	}
+
+	current := &pb.RoomHeatingEvent{Ski: testValidSKI, EventType: pb.RoomHeatingEventType_ROOM_HEATING_EVENT_CURRENT_TEMPERATURE_UPDATED}
+	if !svc.AttachRoomHeatingPayload(current, testValidSKI) {
+		t.Fatalf("current-temperature target should be available: %+v", current)
+	}
 }
 
 func TestHVACServiceSetRoomHeatingTemperatureRequiresSKI(t *testing.T) {

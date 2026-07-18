@@ -44,11 +44,28 @@ class CapabilityReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     CAPABILITY_REASON_READ_FAILED: _ClassVar[CapabilityReason]
     CAPABILITY_REASON_DEVICE_DISCONNECTED: _ClassVar[CapabilityReason]
 
+class FeatureId(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    FEATURE_UNSPECIFIED: _ClassVar[FeatureId]
+    FEATURE_EXPLICIT_CAPABILITIES: _ClassVar[FeatureId]
+    FEATURE_CONSOLIDATED_DEVICE_STREAM: _ClassVar[FeatureId]
+    FEATURE_DEVICE_SNAPSHOT: _ClassVar[FeatureId]
+    FEATURE_PROVIDER_SAMPLE_INVALIDATION: _ClassVar[FeatureId]
+    FEATURE_TYPED_MEASUREMENTS: _ClassVar[FeatureId]
+
+class EventAvailability(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    EVENT_AVAILABILITY_UNSPECIFIED: _ClassVar[EventAvailability]
+    EVENT_AVAILABILITY_AVAILABLE: _ClassVar[EventAvailability]
+    EVENT_AVAILABILITY_TEMPORARILY_UNAVAILABLE: _ClassVar[EventAvailability]
+    EVENT_AVAILABILITY_UNSUPPORTED: _ClassVar[EventAvailability]
+
 class ResyncReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     RESYNC_REASON_UNSPECIFIED: _ClassVar[ResyncReason]
     RESYNC_REASON_INITIAL_STATE_REQUIRED: _ClassVar[ResyncReason]
     RESYNC_REASON_EVENT_DROPPED: _ClassVar[ResyncReason]
+    RESYNC_REASON_UNCLASSIFIED_EVENT: _ClassVar[ResyncReason]
 
 class DeviceEventType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -76,9 +93,20 @@ CAPABILITY_REASON_REMOTE_NOT_ADVERTISED: CapabilityReason
 CAPABILITY_REASON_ENTITY_NOT_BOUND: CapabilityReason
 CAPABILITY_REASON_READ_FAILED: CapabilityReason
 CAPABILITY_REASON_DEVICE_DISCONNECTED: CapabilityReason
+FEATURE_UNSPECIFIED: FeatureId
+FEATURE_EXPLICIT_CAPABILITIES: FeatureId
+FEATURE_CONSOLIDATED_DEVICE_STREAM: FeatureId
+FEATURE_DEVICE_SNAPSHOT: FeatureId
+FEATURE_PROVIDER_SAMPLE_INVALIDATION: FeatureId
+FEATURE_TYPED_MEASUREMENTS: FeatureId
+EVENT_AVAILABILITY_UNSPECIFIED: EventAvailability
+EVENT_AVAILABILITY_AVAILABLE: EventAvailability
+EVENT_AVAILABILITY_TEMPORARILY_UNAVAILABLE: EventAvailability
+EVENT_AVAILABILITY_UNSUPPORTED: EventAvailability
 RESYNC_REASON_UNSPECIFIED: ResyncReason
 RESYNC_REASON_INITIAL_STATE_REQUIRED: ResyncReason
 RESYNC_REASON_EVENT_DROPPED: ResyncReason
+RESYNC_REASON_UNCLASSIFIED_EVENT: ResyncReason
 DEVICE_EVENT_UNSPECIFIED: DeviceEventType
 DEVICE_EVENT_CONNECTED: DeviceEventType
 DEVICE_EVENT_DISCONNECTED: DeviceEventType
@@ -112,6 +140,20 @@ class ServiceStatus(_message.Message):
     running: bool
     local_ski: str
     def __init__(self, running: bool = ..., local_ski: _Optional[str] = ...) -> None: ...
+
+class ServerInfo(_message.Message):
+    __slots__ = ("api_major", "api_minor", "bridge_build_version", "features", "local_ski")
+    API_MAJOR_FIELD_NUMBER: _ClassVar[int]
+    API_MINOR_FIELD_NUMBER: _ClassVar[int]
+    BRIDGE_BUILD_VERSION_FIELD_NUMBER: _ClassVar[int]
+    FEATURES_FIELD_NUMBER: _ClassVar[int]
+    LOCAL_SKI_FIELD_NUMBER: _ClassVar[int]
+    api_major: int
+    api_minor: int
+    bridge_build_version: str
+    features: _containers.RepeatedScalarFieldContainer[FeatureId]
+    local_ski: str
+    def __init__(self, api_major: _Optional[int] = ..., api_minor: _Optional[int] = ..., bridge_build_version: _Optional[str] = ..., features: _Optional[_Iterable[_Union[FeatureId, str]]] = ..., local_ski: _Optional[str] = ...) -> None: ...
 
 class DeviceStatus(_message.Message):
     __slots__ = ("connected", "last_transition")
@@ -180,7 +222,7 @@ class DeviceEvent(_message.Message):
     def __init__(self, ski: _Optional[str] = ..., event_type: _Optional[_Union[DeviceEventType, str]] = ...) -> None: ...
 
 class DeviceStateEvent(_message.Message):
-    __slots__ = ("ski", "revision", "event_time", "device", "measurement", "lpc", "dhw", "hvac", "ohpcf", "capability", "resync_required")
+    __slots__ = ("ski", "revision", "event_time", "device", "measurement", "lpc", "dhw", "hvac", "ohpcf", "capability", "resync_required", "availability")
     SKI_FIELD_NUMBER: _ClassVar[int]
     REVISION_FIELD_NUMBER: _ClassVar[int]
     EVENT_TIME_FIELD_NUMBER: _ClassVar[int]
@@ -192,6 +234,7 @@ class DeviceStateEvent(_message.Message):
     OHPCF_FIELD_NUMBER: _ClassVar[int]
     CAPABILITY_FIELD_NUMBER: _ClassVar[int]
     RESYNC_REQUIRED_FIELD_NUMBER: _ClassVar[int]
+    AVAILABILITY_FIELD_NUMBER: _ClassVar[int]
     ski: str
     revision: int
     event_time: _timestamp_pb2.Timestamp
@@ -203,7 +246,8 @@ class DeviceStateEvent(_message.Message):
     ohpcf: _ohpcf_service_pb2.OHPCFEvent
     capability: DeviceCapabilities
     resync_required: ResyncRequired
-    def __init__(self, ski: _Optional[str] = ..., revision: _Optional[int] = ..., event_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., device: _Optional[_Union[DeviceEvent, _Mapping]] = ..., measurement: _Optional[_Union[_monitoring_service_pb2.MeasurementEvent, _Mapping]] = ..., lpc: _Optional[_Union[_lpc_service_pb2.LPCEvent, _Mapping]] = ..., dhw: _Optional[_Union[DeviceStateDHWEvent, _Mapping]] = ..., hvac: _Optional[_Union[_hvac_service_pb2.RoomHeatingEvent, _Mapping]] = ..., ohpcf: _Optional[_Union[_ohpcf_service_pb2.OHPCFEvent, _Mapping]] = ..., capability: _Optional[_Union[DeviceCapabilities, _Mapping]] = ..., resync_required: _Optional[_Union[ResyncRequired, _Mapping]] = ...) -> None: ...
+    availability: EventAvailability
+    def __init__(self, ski: _Optional[str] = ..., revision: _Optional[int] = ..., event_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., device: _Optional[_Union[DeviceEvent, _Mapping]] = ..., measurement: _Optional[_Union[_monitoring_service_pb2.MeasurementEvent, _Mapping]] = ..., lpc: _Optional[_Union[_lpc_service_pb2.LPCEvent, _Mapping]] = ..., dhw: _Optional[_Union[DeviceStateDHWEvent, _Mapping]] = ..., hvac: _Optional[_Union[_hvac_service_pb2.RoomHeatingEvent, _Mapping]] = ..., ohpcf: _Optional[_Union[_ohpcf_service_pb2.OHPCFEvent, _Mapping]] = ..., capability: _Optional[_Union[DeviceCapabilities, _Mapping]] = ..., resync_required: _Optional[_Union[ResyncRequired, _Mapping]] = ..., availability: _Optional[_Union[EventAvailability, str]] = ...) -> None: ...
 
 class DeviceStateDHWEvent(_message.Message):
     __slots__ = ("temperature", "system_function")

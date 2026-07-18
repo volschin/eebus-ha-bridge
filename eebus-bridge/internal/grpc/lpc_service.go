@@ -259,6 +259,10 @@ func (s *LPCService) attachLPCPayload(event *pb.LPCEvent, ski string, eventType 
 	}
 }
 
+func (s *LPCService) AttachLPCPayload(event *pb.LPCEvent, ski string, eventType pb.LPCEventType) {
+	s.attachLPCPayload(event, ski, eventType)
+}
+
 func convertLoadLimit(l ucapi.LoadLimit) *pb.LoadLimit {
 	return &pb.LoadLimit{
 		ValueWatts:      l.Value,

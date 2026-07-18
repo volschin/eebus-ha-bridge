@@ -193,6 +193,73 @@ func (OHPCFEventType) EnumDescriptor() ([]byte, []int) {
 	return file_eebus_v1_ohpcf_service_proto_rawDescGZIP(), []int{2}
 }
 
+type OHPCFUpdateField int32
+
+const (
+	OHPCFUpdateField_OHPCF_UPDATE_FIELD_UNSPECIFIED              OHPCFUpdateField = 0
+	OHPCFUpdateField_OHPCF_UPDATE_FIELD_STATE                    OHPCFUpdateField = 1
+	OHPCFUpdateField_OHPCF_UPDATE_FIELD_STOPPABLE                OHPCFUpdateField = 2
+	OHPCFUpdateField_OHPCF_UPDATE_FIELD_PAUSABLE                 OHPCFUpdateField = 3
+	OHPCFUpdateField_OHPCF_UPDATE_FIELD_START_TIME               OHPCFUpdateField = 4
+	OHPCFUpdateField_OHPCF_UPDATE_FIELD_REQUESTED_POWER_ESTIMATE OHPCFUpdateField = 5
+	OHPCFUpdateField_OHPCF_UPDATE_FIELD_REQUESTED_POWER_MAX      OHPCFUpdateField = 6
+	OHPCFUpdateField_OHPCF_UPDATE_FIELD_MINIMAL_RUN_DURATION     OHPCFUpdateField = 7
+	OHPCFUpdateField_OHPCF_UPDATE_FIELD_MINIMAL_PAUSE_DURATION   OHPCFUpdateField = 8
+)
+
+// Enum value maps for OHPCFUpdateField.
+var (
+	OHPCFUpdateField_name = map[int32]string{
+		0: "OHPCF_UPDATE_FIELD_UNSPECIFIED",
+		1: "OHPCF_UPDATE_FIELD_STATE",
+		2: "OHPCF_UPDATE_FIELD_STOPPABLE",
+		3: "OHPCF_UPDATE_FIELD_PAUSABLE",
+		4: "OHPCF_UPDATE_FIELD_START_TIME",
+		5: "OHPCF_UPDATE_FIELD_REQUESTED_POWER_ESTIMATE",
+		6: "OHPCF_UPDATE_FIELD_REQUESTED_POWER_MAX",
+		7: "OHPCF_UPDATE_FIELD_MINIMAL_RUN_DURATION",
+		8: "OHPCF_UPDATE_FIELD_MINIMAL_PAUSE_DURATION",
+	}
+	OHPCFUpdateField_value = map[string]int32{
+		"OHPCF_UPDATE_FIELD_UNSPECIFIED":              0,
+		"OHPCF_UPDATE_FIELD_STATE":                    1,
+		"OHPCF_UPDATE_FIELD_STOPPABLE":                2,
+		"OHPCF_UPDATE_FIELD_PAUSABLE":                 3,
+		"OHPCF_UPDATE_FIELD_START_TIME":               4,
+		"OHPCF_UPDATE_FIELD_REQUESTED_POWER_ESTIMATE": 5,
+		"OHPCF_UPDATE_FIELD_REQUESTED_POWER_MAX":      6,
+		"OHPCF_UPDATE_FIELD_MINIMAL_RUN_DURATION":     7,
+		"OHPCF_UPDATE_FIELD_MINIMAL_PAUSE_DURATION":   8,
+	}
+)
+
+func (x OHPCFUpdateField) Enum() *OHPCFUpdateField {
+	p := new(OHPCFUpdateField)
+	*p = x
+	return p
+}
+
+func (x OHPCFUpdateField) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (OHPCFUpdateField) Descriptor() protoreflect.EnumDescriptor {
+	return file_eebus_v1_ohpcf_service_proto_enumTypes[3].Descriptor()
+}
+
+func (OHPCFUpdateField) Type() protoreflect.EnumType {
+	return &file_eebus_v1_ohpcf_service_proto_enumTypes[3]
+}
+
+func (x OHPCFUpdateField) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use OHPCFUpdateField.Descriptor instead.
+func (OHPCFUpdateField) EnumDescriptor() ([]byte, []int) {
+	return file_eebus_v1_ohpcf_service_proto_rawDescGZIP(), []int{3}
+}
+
 type CompressorFlexibility struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Whether the compressor currently advertises an optional power consumption
@@ -206,8 +273,9 @@ type CompressorFlexibility struct {
 	IsPausable         bool                            `protobuf:"varint,5,opt,name=is_pausable,json=isPausable,proto3" json:"is_pausable,omitempty"`
 	State              CompressorPowerConsumptionState `protobuf:"varint,6,opt,name=state,proto3,enum=eebus.v1.CompressorPowerConsumptionState" json:"state,omitempty"`
 	// Minimal run / pause durations the CEM must honour once it acts.
-	MinimalRunSeconds   int64 `protobuf:"varint,7,opt,name=minimal_run_seconds,json=minimalRunSeconds,proto3" json:"minimal_run_seconds,omitempty"`
-	MinimalPauseSeconds int64 `protobuf:"varint,8,opt,name=minimal_pause_seconds,json=minimalPauseSeconds,proto3" json:"minimal_pause_seconds,omitempty"`
+	MinimalRunSeconds   int64                  `protobuf:"varint,7,opt,name=minimal_run_seconds,json=minimalRunSeconds,proto3" json:"minimal_run_seconds,omitempty"`
+	MinimalPauseSeconds int64                  `protobuf:"varint,8,opt,name=minimal_pause_seconds,json=minimalPauseSeconds,proto3" json:"minimal_pause_seconds,omitempty"`
+	StartTime           *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=start_time,json=startTime,proto3,oneof" json:"start_time,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -298,6 +366,13 @@ func (x *CompressorFlexibility) GetMinimalPauseSeconds() int64 {
 	return 0
 }
 
+func (x *CompressorFlexibility) GetStartTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartTime
+	}
+	return nil
+}
+
 type ControlCompressorRequest struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Ski    string                 `protobuf:"bytes,1,opt,name=ski,proto3" json:"ski,omitempty"`
@@ -364,6 +439,7 @@ type OHPCFEvent struct {
 	Ski           string                 `protobuf:"bytes,1,opt,name=ski,proto3" json:"ski,omitempty"`
 	EventType     OHPCFEventType         `protobuf:"varint,2,opt,name=event_type,json=eventType,proto3,enum=eebus.v1.OHPCFEventType" json:"event_type,omitempty"`
 	Flexibility   *CompressorFlexibility `protobuf:"bytes,3,opt,name=flexibility,proto3" json:"flexibility,omitempty"`
+	UpdateField   OHPCFUpdateField       `protobuf:"varint,4,opt,name=update_field,json=updateField,proto3,enum=eebus.v1.OHPCFUpdateField" json:"update_field,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -419,11 +495,18 @@ func (x *OHPCFEvent) GetFlexibility() *CompressorFlexibility {
 	return nil
 }
 
+func (x *OHPCFEvent) GetUpdateField() OHPCFUpdateField {
+	if x != nil {
+		return x.UpdateField
+	}
+	return OHPCFUpdateField_OHPCF_UPDATE_FIELD_UNSPECIFIED
+}
+
 var File_eebus_v1_ohpcf_service_proto protoreflect.FileDescriptor
 
 const file_eebus_v1_ohpcf_service_proto_rawDesc = "" +
 	"\n" +
-	"\x1ceebus/v1/ohpcf_service.proto\x12\beebus.v1\x1a\x15eebus/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd1\x03\n" +
+	"\x1ceebus/v1/ohpcf_service.proto\x12\beebus.v1\x1a\x15eebus/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa0\x04\n" +
 	"\x15CompressorFlexibility\x12\x1c\n" +
 	"\tavailable\x18\x01 \x01(\bR\tavailable\x12@\n" +
 	"\x1arequested_power_estimate_w\x18\x02 \x01(\x01H\x00R\x17requestedPowerEstimateW\x88\x01\x01\x126\n" +
@@ -433,20 +516,24 @@ const file_eebus_v1_ohpcf_service_proto_rawDesc = "" +
 	"isPausable\x12?\n" +
 	"\x05state\x18\x06 \x01(\x0e2).eebus.v1.CompressorPowerConsumptionStateR\x05state\x12.\n" +
 	"\x13minimal_run_seconds\x18\a \x01(\x03R\x11minimalRunSeconds\x122\n" +
-	"\x15minimal_pause_seconds\x18\b \x01(\x03R\x13minimalPauseSecondsB\x1d\n" +
+	"\x15minimal_pause_seconds\x18\b \x01(\x03R\x13minimalPauseSeconds\x12>\n" +
+	"\n" +
+	"start_time\x18\t \x01(\v2\x1a.google.protobuf.TimestampH\x02R\tstartTime\x88\x01\x01B\x1d\n" +
 	"\x1b_requested_power_estimate_wB\x18\n" +
-	"\x16_requested_power_max_w\"\x96\x01\n" +
+	"\x16_requested_power_max_wB\r\n" +
+	"\v_start_time\"\x96\x01\n" +
 	"\x18ControlCompressorRequest\x12\x10\n" +
 	"\x03ski\x18\x01 \x01(\tR\x03ski\x12-\n" +
 	"\x06action\x18\x02 \x01(\x0e2\x15.eebus.v1.OHPCFActionR\x06action\x129\n" +
 	"\n" +
-	"start_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime\"\x9a\x01\n" +
+	"start_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime\"\xd9\x01\n" +
 	"\n" +
 	"OHPCFEvent\x12\x10\n" +
 	"\x03ski\x18\x01 \x01(\tR\x03ski\x127\n" +
 	"\n" +
 	"event_type\x18\x02 \x01(\x0e2\x18.eebus.v1.OHPCFEventTypeR\teventType\x12A\n" +
-	"\vflexibility\x18\x03 \x01(\v2\x1f.eebus.v1.CompressorFlexibilityR\vflexibility*\xfc\x01\n" +
+	"\vflexibility\x18\x03 \x01(\v2\x1f.eebus.v1.CompressorFlexibilityR\vflexibility\x12=\n" +
+	"\fupdate_field\x18\x04 \x01(\x0e2\x1a.eebus.v1.OHPCFUpdateFieldR\vupdateField*\xfc\x01\n" +
 	"\x1fCompressorPowerConsumptionState\x12 \n" +
 	"\x1cCOMPRESSOR_STATE_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aCOMPRESSOR_STATE_AVAILABLE\x10\x01\x12\x1e\n" +
@@ -465,7 +552,17 @@ const file_eebus_v1_ohpcf_service_proto_rawDesc = "" +
 	"\x17OHPCF_EVENT_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bOHPCF_EVENT_SUPPORT_UPDATED\x10\x01\x12\x1d\n" +
 	"\x19OHPCF_EVENT_STATE_UPDATED\x10\x02\x12\x1c\n" +
-	"\x18OHPCF_EVENT_DATA_UPDATED\x10\x032\x82\x02\n" +
+	"\x18OHPCF_EVENT_DATA_UPDATED\x10\x03*\xf3\x02\n" +
+	"\x10OHPCFUpdateField\x12\"\n" +
+	"\x1eOHPCF_UPDATE_FIELD_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18OHPCF_UPDATE_FIELD_STATE\x10\x01\x12 \n" +
+	"\x1cOHPCF_UPDATE_FIELD_STOPPABLE\x10\x02\x12\x1f\n" +
+	"\x1bOHPCF_UPDATE_FIELD_PAUSABLE\x10\x03\x12!\n" +
+	"\x1dOHPCF_UPDATE_FIELD_START_TIME\x10\x04\x12/\n" +
+	"+OHPCF_UPDATE_FIELD_REQUESTED_POWER_ESTIMATE\x10\x05\x12*\n" +
+	"&OHPCF_UPDATE_FIELD_REQUESTED_POWER_MAX\x10\x06\x12+\n" +
+	"'OHPCF_UPDATE_FIELD_MINIMAL_RUN_DURATION\x10\a\x12-\n" +
+	")OHPCF_UPDATE_FIELD_MINIMAL_PAUSE_DURATION\x10\b2\x82\x02\n" +
 	"\fOHPCFService\x12T\n" +
 	"\x18GetCompressorFlexibility\x12\x17.eebus.v1.DeviceRequest\x1a\x1f.eebus.v1.CompressorFlexibility\x12S\n" +
 	"\x1cControlCompressorFlexibility\x12\".eebus.v1.ControlCompressorRequest\x1a\x0f.eebus.v1.Empty\x12G\n" +
@@ -483,36 +580,39 @@ func file_eebus_v1_ohpcf_service_proto_rawDescGZIP() []byte {
 	return file_eebus_v1_ohpcf_service_proto_rawDescData
 }
 
-var file_eebus_v1_ohpcf_service_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_eebus_v1_ohpcf_service_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
 var file_eebus_v1_ohpcf_service_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_eebus_v1_ohpcf_service_proto_goTypes = []any{
 	(CompressorPowerConsumptionState)(0), // 0: eebus.v1.CompressorPowerConsumptionState
 	(OHPCFAction)(0),                     // 1: eebus.v1.OHPCFAction
 	(OHPCFEventType)(0),                  // 2: eebus.v1.OHPCFEventType
-	(*CompressorFlexibility)(nil),        // 3: eebus.v1.CompressorFlexibility
-	(*ControlCompressorRequest)(nil),     // 4: eebus.v1.ControlCompressorRequest
-	(*OHPCFEvent)(nil),                   // 5: eebus.v1.OHPCFEvent
-	(*timestamppb.Timestamp)(nil),        // 6: google.protobuf.Timestamp
-	(*DeviceRequest)(nil),                // 7: eebus.v1.DeviceRequest
-	(*Empty)(nil),                        // 8: eebus.v1.Empty
+	(OHPCFUpdateField)(0),                // 3: eebus.v1.OHPCFUpdateField
+	(*CompressorFlexibility)(nil),        // 4: eebus.v1.CompressorFlexibility
+	(*ControlCompressorRequest)(nil),     // 5: eebus.v1.ControlCompressorRequest
+	(*OHPCFEvent)(nil),                   // 6: eebus.v1.OHPCFEvent
+	(*timestamppb.Timestamp)(nil),        // 7: google.protobuf.Timestamp
+	(*DeviceRequest)(nil),                // 8: eebus.v1.DeviceRequest
+	(*Empty)(nil),                        // 9: eebus.v1.Empty
 }
 var file_eebus_v1_ohpcf_service_proto_depIdxs = []int32{
-	0, // 0: eebus.v1.CompressorFlexibility.state:type_name -> eebus.v1.CompressorPowerConsumptionState
-	1, // 1: eebus.v1.ControlCompressorRequest.action:type_name -> eebus.v1.OHPCFAction
-	6, // 2: eebus.v1.ControlCompressorRequest.start_time:type_name -> google.protobuf.Timestamp
-	2, // 3: eebus.v1.OHPCFEvent.event_type:type_name -> eebus.v1.OHPCFEventType
-	3, // 4: eebus.v1.OHPCFEvent.flexibility:type_name -> eebus.v1.CompressorFlexibility
-	7, // 5: eebus.v1.OHPCFService.GetCompressorFlexibility:input_type -> eebus.v1.DeviceRequest
-	4, // 6: eebus.v1.OHPCFService.ControlCompressorFlexibility:input_type -> eebus.v1.ControlCompressorRequest
-	7, // 7: eebus.v1.OHPCFService.SubscribeOHPCFEvents:input_type -> eebus.v1.DeviceRequest
-	3, // 8: eebus.v1.OHPCFService.GetCompressorFlexibility:output_type -> eebus.v1.CompressorFlexibility
-	8, // 9: eebus.v1.OHPCFService.ControlCompressorFlexibility:output_type -> eebus.v1.Empty
-	5, // 10: eebus.v1.OHPCFService.SubscribeOHPCFEvents:output_type -> eebus.v1.OHPCFEvent
-	8, // [8:11] is the sub-list for method output_type
-	5, // [5:8] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	0,  // 0: eebus.v1.CompressorFlexibility.state:type_name -> eebus.v1.CompressorPowerConsumptionState
+	7,  // 1: eebus.v1.CompressorFlexibility.start_time:type_name -> google.protobuf.Timestamp
+	1,  // 2: eebus.v1.ControlCompressorRequest.action:type_name -> eebus.v1.OHPCFAction
+	7,  // 3: eebus.v1.ControlCompressorRequest.start_time:type_name -> google.protobuf.Timestamp
+	2,  // 4: eebus.v1.OHPCFEvent.event_type:type_name -> eebus.v1.OHPCFEventType
+	4,  // 5: eebus.v1.OHPCFEvent.flexibility:type_name -> eebus.v1.CompressorFlexibility
+	3,  // 6: eebus.v1.OHPCFEvent.update_field:type_name -> eebus.v1.OHPCFUpdateField
+	8,  // 7: eebus.v1.OHPCFService.GetCompressorFlexibility:input_type -> eebus.v1.DeviceRequest
+	5,  // 8: eebus.v1.OHPCFService.ControlCompressorFlexibility:input_type -> eebus.v1.ControlCompressorRequest
+	8,  // 9: eebus.v1.OHPCFService.SubscribeOHPCFEvents:input_type -> eebus.v1.DeviceRequest
+	4,  // 10: eebus.v1.OHPCFService.GetCompressorFlexibility:output_type -> eebus.v1.CompressorFlexibility
+	9,  // 11: eebus.v1.OHPCFService.ControlCompressorFlexibility:output_type -> eebus.v1.Empty
+	6,  // 12: eebus.v1.OHPCFService.SubscribeOHPCFEvents:output_type -> eebus.v1.OHPCFEvent
+	10, // [10:13] is the sub-list for method output_type
+	7,  // [7:10] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_eebus_v1_ohpcf_service_proto_init() }
@@ -527,7 +627,7 @@ func file_eebus_v1_ohpcf_service_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_eebus_v1_ohpcf_service_proto_rawDesc), len(file_eebus_v1_ohpcf_service_proto_rawDesc)),
-			NumEnums:      3,
+			NumEnums:      4,
 			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   1,

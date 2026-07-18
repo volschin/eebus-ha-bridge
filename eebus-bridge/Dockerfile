@@ -8,7 +8,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 go build -o /eebus-bridge ./cmd/eebus-bridge
+ARG BUILD_VERSION=dev
+RUN CGO_ENABLED=0 go build \
+  -ldflags "-X github.com/volschin/eebus-bridge/internal/grpc.BuildVersion=${BUILD_VERSION}" \
+  -o /eebus-bridge ./cmd/eebus-bridge
 
 FROM alpine:3.24
 

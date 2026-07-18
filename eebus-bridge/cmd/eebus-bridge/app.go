@@ -36,6 +36,7 @@ const watchdogInterval = 30 * time.Second
 const monitoringRecoveryMaxAttempts = 3
 
 type bridgeLifecycle interface {
+	Setup() error
 	Start() error
 	Shutdown()
 	RegisterRemoteSKI(string)
@@ -44,6 +45,7 @@ type bridgeLifecycle interface {
 
 type grpcLifecycle interface {
 	Start() error
+	WaitReady(context.Context) error
 	Stop()
 	SetHealthy(bool)
 }
@@ -135,8 +137,7 @@ func newOHPCFModule(
 	bridgeSvc *eebus.BridgeService,
 	localEntity spineapi.EntityLocalInterface,
 	ohpcfWrapper *usecases.OHPCFWrapper,
-	bus *eebus.EventBus,
-	registry *eebus.DeviceRegistry,
+	ohpcfService *bridgegrpc.OHPCFService,
 ) applicationModule {
 	return applicationModule{
 		name: "OHPCF",
@@ -156,7 +157,7 @@ func newOHPCFModule(
 			)()
 		},
 		registerGRPC: func(srv *bridgegrpc.Server) {
-			pb.RegisterOHPCFServiceServer(srv.GRPCServer(), bridgegrpc.NewOHPCFService(ohpcfWrapper, bus, registry))
+			pb.RegisterOHPCFServiceServer(srv.GRPCServer(), ohpcfService)
 		},
 	}
 }
@@ -194,6 +195,10 @@ type Application struct {
 	cancelRuntime              context.CancelFunc
 	recoveryMu                 sync.Mutex
 	deviceRecoveries           map[string]*deviceRecoveryState
+	prepareMu                  sync.Mutex
+	prepared                   bool
+	registeredUseCases         []string
+	compose                    func() error
 }
 
 func run(ctx context.Context, cfg *config.Config) error {
@@ -205,9 +210,10 @@ func run(ctx context.Context, cfg *config.Config) error {
 	return app.Start(ctx)
 }
 
-// NewApplication constructs and wires the complete daemon without starting its
-// EEBUS or gRPC serve loops.
-func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
+// NewApplication constructs the daemon's inert core dependencies. EEBUS setup,
+// local-entity-dependent composition, handler/use-case registration, and every
+// long-running component are deferred to Start.
+func NewApplication(cfg *config.Config) (*Application, error) {
 	if cfg == nil {
 		return nil, errors.New("config is nil")
 	}
@@ -247,10 +253,6 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 	roomMonitoringWrapper := usecases.NewRoomMonitoringWrapper(bus, registry, cfg.Logging.DebugEvents)
 	outdoorMonitoringWrapper := usecases.NewOutdoorMonitoringWrapper(bus, registry, cfg.Logging.DebugEvents)
 
-	if err := bridgeSvc.Setup(); err != nil {
-		return nil, fmt.Errorf("setting up EEBUS service: %w", err)
-	}
-
 	app := &Application{
 		cfg:                        cfg,
 		bridgeSvc:                  bridgeSvc,
@@ -258,225 +260,6 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 		monitoringWatchdogInterval: watchdogInterval,
 		backgroundFailures:         make(chan backgroundFailure, 1),
 	}
-	defer func() {
-		if retErr != nil {
-			app.Stop()
-		}
-	}()
-
-	localEntity := bridgeSvc.LocalEntity()
-	if localEntity == nil {
-		return nil, errors.New("local CEM entity is not available")
-	}
-	dhwTemperature := usecases.NewDHWTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
-	dhwSystemFunction := usecases.NewDHWSystemFunction(localEntity, bus, registry, cfg.Logging.DebugEvents)
-	roomHeatingTemperature := usecases.NewRoomHeatingTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
-	roomHeatingSystemFunction := usecases.NewRoomHeatingSystemFunction(localEntity, bus, registry, cfg.Logging.DebugEvents)
-	hydraulicTemperatures := usecases.NewHydraulicTemperatures(bus, registry, cfg.Logging.DebugEvents)
-	deviceOperatingState := usecases.NewDeviceOperatingState(bus, registry, cfg.Logging.DebugEvents)
-
-	mgcpProvider, err := setupMGCPProvider(cfg, bridgeSvc, bus)
-	if err != nil {
-		return nil, err
-	}
-
-	vapdProvider, err := setupVAPDProvider(cfg, bridgeSvc, bus)
-	if err != nil {
-		return nil, err
-	}
-
-	vabdProvider, err := setupVABDProvider(cfg, bridgeSvc, bus)
-	if err != nil {
-		return nil, err
-	}
-
-	// OHPCF (heat-pump compressor flexibility) CEM client. On by default; reads
-	// the remote heat pump's optional-consumption offer and drives
-	// schedule/pause/resume/abort via OHPCFService.
-	var ohpcfWrapper *usecases.OHPCFWrapper
-	if *cfg.OHPCF.Enabled {
-		ohpcfWrapper = usecases.NewOHPCFWrapper(bus, registry, cfg.Logging.DebugEvents)
-	}
-	trustController := eebus.NewTrustController(bridgeSvc, registry, bus)
-
-	lpcService := bridgegrpc.NewLPCService(lpcWrapper, bus, registry)
-	monitoringService := bridgegrpc.NewMonitoringService(
-		monitoringWrapper,
-		bridgegrpc.MonitoringReaders{
-			DHW:         dhwMonitoringWrapper,
-			Room:        roomMonitoringWrapper,
-			Outdoor:     outdoorMonitoringWrapper,
-			Flow:        usecases.FlowTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
-			Return:      usecases.ReturnTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
-			Diagnostics: deviceOperatingState,
-		},
-		bus,
-		registry,
-		cfg.Logging.DebugEvents,
-	)
-	dhwService := bridgegrpc.NewDHWService(dhwTemperature, dhwSystemFunction, bus, registry)
-	hvacService := bridgegrpc.NewHVACService(
-		roomHeatingTemperature,
-		roomHeatingSystemFunction,
-		roomMonitoringWrapper,
-		bus,
-		registry,
-	)
-
-	modules := []applicationModule{
-		{
-			name: "Device",
-			registerGRPC: func(srv *bridgegrpc.Server) {
-				pb.RegisterDeviceServiceServer(
-					srv.GRPCServer(),
-					bridgegrpc.NewDeviceService(
-						bridgeSvc.Callbacks(),
-						bus,
-						ski,
-						registry,
-						trustController,
-						bridgegrpc.WithDeviceStatePayloads(bridgegrpc.DeviceStatePayloadSources{
-							Monitoring: monitoringService,
-							LPC:        lpcService,
-							DHW:        dhwService,
-							HVAC:       hvacService,
-						}),
-					),
-				)
-			},
-		},
-		{
-			name: "LPC",
-			setup: func() error {
-				lpcWrapper.Setup(localEntity)
-				return nil
-			},
-			registerUseCases: useCaseRegistrar(bridgeSvc, eebusUseCaseRegistration{
-				name:    "LPC",
-				useCase: func() eebusapi.UseCaseInterface { return lpcWrapper.UseCase() },
-			}),
-			registerGRPC: func(srv *bridgegrpc.Server) {
-				pb.RegisterLPCServiceServer(srv.GRPCServer(), lpcService)
-			},
-			start: func() error {
-				// Controllable systems revert an active LPC limit to its failsafe value when
-				// heartbeats stop arriving, so keep the local heartbeat running for the
-				// lifetime of the bridge.
-				if err := lpcWrapper.StartHeartbeat(""); err != nil {
-					log.Printf("starting LPC heartbeat failed: %v", err)
-				} else {
-					log.Println("Started LPC heartbeat")
-				}
-				return nil
-			},
-			stop: lpcWrapper.StopHeartbeat,
-		},
-		{
-			name: "Monitoring",
-			setup: func() error {
-				monitoringWrapper.Setup(localEntity)
-				dhwMonitoringWrapper.Setup(localEntity)
-				roomMonitoringWrapper.Setup(localEntity)
-				outdoorMonitoringWrapper.Setup(localEntity)
-				hydraulicTemperatures.Setup(localEntity)
-				deviceOperatingState.Setup(localEntity)
-				return nil
-			},
-			registerUseCases: useCaseRegistrar(
-				bridgeSvc,
-				eebusUseCaseRegistration{name: "Monitoring", useCase: func() eebusapi.UseCaseInterface { return monitoringWrapper.UseCase() }},
-				eebusUseCaseRegistration{name: "DHWMonitoring", useCase: func() eebusapi.UseCaseInterface { return dhwMonitoringWrapper.UseCase() }},
-				eebusUseCaseRegistration{name: "MRT", useCase: func() eebusapi.UseCaseInterface { return roomMonitoringWrapper.UseCase() }},
-				eebusUseCaseRegistration{name: "MOT", useCase: func() eebusapi.UseCaseInterface { return outdoorMonitoringWrapper.UseCase() }},
-			),
-			registerGRPC: func(srv *bridgegrpc.Server) {
-				pb.RegisterMonitoringServiceServer(srv.GRPCServer(), monitoringService)
-			},
-		},
-		{
-			name: "DHW",
-			registerUseCases: useCaseRegistrar(
-				bridgeSvc,
-				eebusUseCaseRegistration{name: "DHWTemperature", useCase: func() eebusapi.UseCaseInterface { return dhwTemperature.UseCase() }},
-				eebusUseCaseRegistration{name: "DHWSystemFunction", useCase: func() eebusapi.UseCaseInterface { return dhwSystemFunction.UseCase() }},
-			),
-			registerGRPC: func(srv *bridgegrpc.Server) {
-				pb.RegisterDHWServiceServer(srv.GRPCServer(), dhwService)
-			},
-		},
-		{
-			name: "HVAC",
-			registerUseCases: useCaseRegistrar(
-				bridgeSvc,
-				eebusUseCaseRegistration{name: "RoomHeatingTemperature", useCase: func() eebusapi.UseCaseInterface { return roomHeatingTemperature.UseCase() }},
-				eebusUseCaseRegistration{name: "RoomHeatingSystemFunction", useCase: func() eebusapi.UseCaseInterface { return roomHeatingSystemFunction.UseCase() }},
-			),
-			registerGRPC: func(srv *bridgegrpc.Server) {
-				pb.RegisterHVACServiceServer(srv.GRPCServer(), hvacService)
-			},
-		},
-	}
-	modules = append(modules, newOHPCFModule(bridgeSvc, localEntity, ohpcfWrapper, bus, registry))
-	modules = append(modules, applicationModule{
-		name: "Providers",
-		registerUseCases: func() ([]string, error) {
-			registrations := make([]eebusUseCaseRegistration, 0, 3)
-			if mgcpProvider != nil {
-				registrations = append(registrations, eebusUseCaseRegistration{name: "MGCP", useCase: func() eebusapi.UseCaseInterface { return mgcpProvider.UseCase() }})
-			}
-			if vapdProvider != nil {
-				registrations = append(registrations, eebusUseCaseRegistration{name: "VAPD", useCase: func() eebusapi.UseCaseInterface { return vapdProvider.UseCase() }})
-			}
-			if vabdProvider != nil {
-				registrations = append(registrations, eebusUseCaseRegistration{name: "VABD", useCase: func() eebusapi.UseCaseInterface { return vabdProvider.UseCase() }})
-			}
-			if len(registrations) == 0 {
-				return nil, nil
-			}
-			names, err := useCaseRegistrar(bridgeSvc, registrations...)()
-			if err != nil {
-				return nil, err
-			}
-			log.Println("[PROVIDERS] experimental provider use cases registered; awaiting data via gRPC push services")
-			return names, nil
-		},
-		registerGRPC: func(srv *bridgegrpc.Server) {
-			gridSvc := bridgegrpc.NewGridService(mgcpProvider)
-			visualizationSvc := bridgegrpc.NewVisualizationService(vapdProvider, vabdProvider)
-			if bridgegrpc.RegisterPushServices(srv, cfg.GRPC.Bind, cfg.GRPC.Security.Mode, gridSvc, visualizationSvc) {
-				log.Println("Registered provider push services (grid/PV/battery)")
-			} else {
-				log.Printf("Refusing to register provider push services: gRPC bind %q is not secured", cfg.GRPC.Bind)
-			}
-		},
-	})
-	app.modules = modules
-
-	registeredUseCases := make([]string, 0, len(modules)+4)
-	for _, module := range app.modules {
-		if module.setup != nil {
-			if err := module.setup(); err != nil {
-				return nil, fmt.Errorf("setting up %s module: %w", module.name, err)
-			}
-		}
-		if module.registerUseCases != nil {
-			names, err := module.registerUseCases()
-			if err != nil {
-				return nil, err
-			}
-			registeredUseCases = append(registeredUseCases, names...)
-		}
-		if module.start != nil {
-			if err := module.start(); err != nil {
-				return nil, fmt.Errorf("starting %s module: %w", module.name, err)
-			}
-		}
-	}
-	if ohpcfWrapper != nil {
-		log.Println("[OHPCF] CEM client registered; awaiting remote compressor SmartEnergyManagementPs")
-	}
-	log.Printf("Registered EEBUS use cases: %s", strings.Join(registeredUseCases, ", "))
-
 	grpcSrv, err := bridgegrpc.NewServerWithSecurity(
 		cfg.GRPC.Bind,
 		cfg.GRPC.Port,
@@ -487,18 +270,250 @@ func NewApplication(cfg *config.Config) (_ *Application, retErr error) {
 		return nil, fmt.Errorf("configuring gRPC server security: %w", err)
 	}
 	app.grpcSrv = grpcSrv
-
-	registeredGRPCServices := make([]string, 0, len(app.modules))
-	for _, module := range app.modules {
-		if module.registerGRPC == nil {
-			continue
+	app.compose = func() error {
+		localEntity := bridgeSvc.LocalEntity()
+		if localEntity == nil {
+			return errors.New("local CEM entity is not available")
 		}
-		module.registerGRPC(grpcSrv)
-		registeredGRPCServices = append(registeredGRPCServices, module.name)
+		dhwTemperature := usecases.NewDHWTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
+		dhwSystemFunction := usecases.NewDHWSystemFunction(localEntity, bus, registry, cfg.Logging.DebugEvents)
+		roomHeatingTemperature := usecases.NewRoomHeatingTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
+		roomHeatingSystemFunction := usecases.NewRoomHeatingSystemFunction(localEntity, bus, registry, cfg.Logging.DebugEvents)
+		hydraulicTemperatures := usecases.NewHydraulicTemperatures(bus, registry, cfg.Logging.DebugEvents)
+		deviceOperatingState := usecases.NewDeviceOperatingState(bus, registry, cfg.Logging.DebugEvents)
+
+		mgcpProvider, err := setupMGCPProvider(cfg, bridgeSvc, bus)
+		if err != nil {
+			return err
+		}
+
+		vapdProvider, err := setupVAPDProvider(cfg, bridgeSvc, bus)
+		if err != nil {
+			return err
+		}
+
+		vabdProvider, err := setupVABDProvider(cfg, bridgeSvc, bus)
+		if err != nil {
+			return err
+		}
+
+		// OHPCF (heat-pump compressor flexibility) CEM client. On by default; reads
+		// the remote heat pump's optional-consumption offer and drives
+		// schedule/pause/resume/abort via OHPCFService.
+		var ohpcfWrapper *usecases.OHPCFWrapper
+		if *cfg.OHPCF.Enabled {
+			ohpcfWrapper = usecases.NewOHPCFWrapper(bus, registry, cfg.Logging.DebugEvents)
+		}
+		trustController := eebus.NewTrustController(bridgeSvc, registry, bus)
+
+		lpcService := bridgegrpc.NewLPCService(lpcWrapper, bus, registry)
+		monitoringService := bridgegrpc.NewMonitoringService(
+			monitoringWrapper,
+			bridgegrpc.MonitoringReaders{
+				DHW:         dhwMonitoringWrapper,
+				Room:        roomMonitoringWrapper,
+				Outdoor:     outdoorMonitoringWrapper,
+				Flow:        usecases.FlowTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
+				Return:      usecases.ReturnTemperatureReader{HydraulicTemperatures: hydraulicTemperatures},
+				Diagnostics: deviceOperatingState,
+			},
+			bus,
+			registry,
+			cfg.Logging.DebugEvents,
+		)
+		dhwService := bridgegrpc.NewDHWService(dhwTemperature, dhwSystemFunction, bus, registry)
+		hvacService := bridgegrpc.NewHVACService(
+			roomHeatingTemperature,
+			roomHeatingSystemFunction,
+			roomMonitoringWrapper,
+			bus,
+			registry,
+		)
+		ohpcfService := bridgegrpc.NewOHPCFService(ohpcfWrapper, bus, registry)
+
+		modules := []applicationModule{
+			{
+				name: "Device",
+				registerGRPC: func(srv *bridgegrpc.Server) {
+					pb.RegisterDeviceServiceServer(
+						srv.GRPCServer(),
+						bridgegrpc.NewDeviceService(
+							bridgeSvc.Callbacks(),
+							bus,
+							ski,
+							registry,
+							trustController,
+							bridgegrpc.WithDeviceStatePayloads(bridgegrpc.DeviceStatePayloadSources{
+								Monitoring: monitoringService,
+								LPC:        lpcService,
+								DHW:        dhwService,
+								HVAC:       hvacService,
+								OHPCF:      ohpcfService,
+							}),
+						),
+					)
+				},
+			},
+			{
+				name: "LPC",
+				setup: func() error {
+					lpcWrapper.Setup(localEntity)
+					return nil
+				},
+				registerUseCases: useCaseRegistrar(bridgeSvc, eebusUseCaseRegistration{
+					name:    "LPC",
+					useCase: func() eebusapi.UseCaseInterface { return lpcWrapper.UseCase() },
+				}),
+				registerGRPC: func(srv *bridgegrpc.Server) {
+					pb.RegisterLPCServiceServer(srv.GRPCServer(), lpcService)
+				},
+				start: func() error {
+					// Controllable systems revert an active LPC limit to its failsafe value when
+					// heartbeats stop arriving, so keep the local heartbeat running for the
+					// lifetime of the bridge.
+					if err := lpcWrapper.StartHeartbeat(""); err != nil {
+						log.Printf("starting LPC heartbeat failed: %v", err)
+					} else {
+						log.Println("Started LPC heartbeat")
+					}
+					return nil
+				},
+				stop: lpcWrapper.StopHeartbeat,
+			},
+			{
+				name: "Monitoring",
+				setup: func() error {
+					monitoringWrapper.Setup(localEntity)
+					dhwMonitoringWrapper.Setup(localEntity)
+					roomMonitoringWrapper.Setup(localEntity)
+					outdoorMonitoringWrapper.Setup(localEntity)
+					hydraulicTemperatures.Setup(localEntity)
+					deviceOperatingState.Setup(localEntity)
+					return nil
+				},
+				registerUseCases: useCaseRegistrar(
+					bridgeSvc,
+					eebusUseCaseRegistration{name: "Monitoring", useCase: func() eebusapi.UseCaseInterface { return monitoringWrapper.UseCase() }},
+					eebusUseCaseRegistration{name: "DHWMonitoring", useCase: func() eebusapi.UseCaseInterface { return dhwMonitoringWrapper.UseCase() }},
+					eebusUseCaseRegistration{name: "MRT", useCase: func() eebusapi.UseCaseInterface { return roomMonitoringWrapper.UseCase() }},
+					eebusUseCaseRegistration{name: "MOT", useCase: func() eebusapi.UseCaseInterface { return outdoorMonitoringWrapper.UseCase() }},
+				),
+				registerGRPC: func(srv *bridgegrpc.Server) {
+					pb.RegisterMonitoringServiceServer(srv.GRPCServer(), monitoringService)
+				},
+			},
+			{
+				name: "DHW",
+				registerUseCases: useCaseRegistrar(
+					bridgeSvc,
+					eebusUseCaseRegistration{name: "DHWTemperature", useCase: func() eebusapi.UseCaseInterface { return dhwTemperature.UseCase() }},
+					eebusUseCaseRegistration{name: "DHWSystemFunction", useCase: func() eebusapi.UseCaseInterface { return dhwSystemFunction.UseCase() }},
+				),
+				registerGRPC: func(srv *bridgegrpc.Server) {
+					pb.RegisterDHWServiceServer(srv.GRPCServer(), dhwService)
+				},
+			},
+			{
+				name: "HVAC",
+				registerUseCases: useCaseRegistrar(
+					bridgeSvc,
+					eebusUseCaseRegistration{name: "RoomHeatingTemperature", useCase: func() eebusapi.UseCaseInterface { return roomHeatingTemperature.UseCase() }},
+					eebusUseCaseRegistration{name: "RoomHeatingSystemFunction", useCase: func() eebusapi.UseCaseInterface { return roomHeatingSystemFunction.UseCase() }},
+				),
+				registerGRPC: func(srv *bridgegrpc.Server) {
+					pb.RegisterHVACServiceServer(srv.GRPCServer(), hvacService)
+				},
+			},
+		}
+		modules = append(modules, newOHPCFModule(bridgeSvc, localEntity, ohpcfWrapper, ohpcfService))
+		modules = append(modules, applicationModule{
+			name: "Providers",
+			registerUseCases: func() ([]string, error) {
+				registrations := make([]eebusUseCaseRegistration, 0, 3)
+				if mgcpProvider != nil {
+					registrations = append(registrations, eebusUseCaseRegistration{name: "MGCP", useCase: func() eebusapi.UseCaseInterface { return mgcpProvider.UseCase() }})
+				}
+				if vapdProvider != nil {
+					registrations = append(registrations, eebusUseCaseRegistration{name: "VAPD", useCase: func() eebusapi.UseCaseInterface { return vapdProvider.UseCase() }})
+				}
+				if vabdProvider != nil {
+					registrations = append(registrations, eebusUseCaseRegistration{name: "VABD", useCase: func() eebusapi.UseCaseInterface { return vabdProvider.UseCase() }})
+				}
+				if len(registrations) == 0 {
+					return nil, nil
+				}
+				names, err := useCaseRegistrar(bridgeSvc, registrations...)()
+				if err != nil {
+					return nil, err
+				}
+				log.Println("[PROVIDERS] experimental provider use cases registered; awaiting data via gRPC push services")
+				return names, nil
+			},
+			registerGRPC: func(srv *bridgegrpc.Server) {
+				gridSvc := bridgegrpc.NewGridService(mgcpProvider)
+				visualizationSvc := bridgegrpc.NewVisualizationService(vapdProvider, vabdProvider)
+				if bridgegrpc.RegisterPushServices(srv, cfg.GRPC.Bind, cfg.GRPC.Security.Mode, gridSvc, visualizationSvc) {
+					log.Println("Registered provider push services (grid/PV/battery)")
+				} else {
+					log.Printf("Refusing to register provider push services: gRPC bind %q is not secured", cfg.GRPC.Bind)
+				}
+			},
+		})
+		app.modules = modules
+
+		registeredGRPCServices := make([]string, 0, len(app.modules))
+		for _, module := range app.modules {
+			if module.registerGRPC == nil {
+				continue
+			}
+			module.registerGRPC(grpcSrv)
+			registeredGRPCServices = append(registeredGRPCServices, module.name)
+		}
+		log.Printf("Registered gRPC services: %s", strings.Join(registeredGRPCServices, ", "))
+		return nil
 	}
-	log.Printf("Registered gRPC services: %s", strings.Join(registeredGRPCServices, ", "))
 
 	return app, nil
+}
+
+// prepareForStart performs EEBUS setup and completes the local-entity-dependent
+// composition. No heartbeat, watchdog, listener, or provider timer runs before
+// this method is reached from Start.
+func (a *Application) prepareForStart() error {
+	a.prepareMu.Lock()
+	defer a.prepareMu.Unlock()
+	if a.prepared {
+		return nil
+	}
+	if err := a.bridgeSvc.Setup(); err != nil {
+		return fmt.Errorf("setting up EEBUS service: %w", err)
+	}
+	if a.compose != nil {
+		if err := a.compose(); err != nil {
+			return fmt.Errorf("composing application modules: %w", err)
+		}
+		a.compose = nil
+	}
+
+	registeredUseCases := make([]string, 0, len(a.modules)+4)
+	for _, module := range a.modules {
+		if module.setup != nil {
+			if err := module.setup(); err != nil {
+				return fmt.Errorf("setting up %s module: %w", module.name, err)
+			}
+		}
+		if module.registerUseCases != nil {
+			names, err := module.registerUseCases()
+			if err != nil {
+				return err
+			}
+			registeredUseCases = append(registeredUseCases, names...)
+		}
+	}
+	log.Printf("Registered EEBUS use cases: %s", strings.Join(registeredUseCases, ", "))
+	a.registeredUseCases = append([]string(nil), registeredUseCases...)
+	a.prepared = true
+	return nil
 }
 
 func setupMGCPProvider(cfg *config.Config, bridgeSvc *eebus.BridgeService, bus *eebus.EventBus) (*usecases.MGCPProvider, error) {
@@ -561,6 +576,9 @@ func (a *Application) Start(ctx context.Context) error {
 	a.cancelRuntime = cancel
 	a.runtimeMu.Unlock()
 	defer a.Stop()
+	if err := a.prepareForStart(); err != nil {
+		return err
+	}
 
 	go func() {
 		log.Printf("gRPC server listening on %s:%d", a.cfg.GRPC.Bind, a.cfg.GRPC.Port)
@@ -577,11 +595,21 @@ func (a *Application) Start(ctx context.Context) error {
 			a.reportBackgroundFailure(wrapped.Error(), wrapped)
 		}
 	}()
-
+	if err := a.grpcSrv.WaitReady(runtimeCtx); err != nil {
+		return fmt.Errorf("gRPC server readiness: %w", err)
+	}
 	if err := a.bridgeSvc.Start(); err != nil {
 		return fmt.Errorf("EEBUS service start: %w", err)
 	}
 	log.Println("EEBUS bridge started")
+	for _, module := range a.modules {
+		if module.start == nil {
+			continue
+		}
+		if err := module.start(); err != nil {
+			return fmt.Errorf("starting %s module: %w", module.name, err)
+		}
+	}
 
 	// SPIKE: trust a known remote SKI at startup so a test container can complete
 	// the SHIP handshake without Home Assistant sending device.register_ski.
@@ -594,6 +622,7 @@ func (a *Application) Start(ctx context.Context) error {
 	}
 
 	a.startWatchdog(runtimeCtx)
+	a.grpcSrv.SetHealthy(true)
 
 	select {
 	case <-runtimeCtx.Done():
@@ -778,6 +807,9 @@ func (a *Application) reportBackgroundFailure(reason string, err error) {
 // remains heartbeat, gRPC, then EEBUS.
 func (a *Application) Stop() {
 	a.stopOnce.Do(func() {
+		if a.grpcSrv != nil {
+			a.grpcSrv.SetHealthy(false)
+		}
 		a.runtimeMu.Lock()
 		cancel := a.cancelRuntime
 		a.runtimeMu.Unlock()

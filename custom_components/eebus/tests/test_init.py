@@ -4,9 +4,13 @@ import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
+import grpc
 import pytest
+from grpc.aio import AioRpcError, Metadata
+from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 
 from custom_components.eebus.const import CONF_DEVICE_SKI
+from custom_components.eebus.server_info import IncompatibleAPIMajorError
 
 
 @pytest.mark.asyncio
@@ -27,6 +31,10 @@ async def test_setup_entry():
 
     with (
         patch("custom_components.eebus.EebusCoordinator") as mock_coordinator_cls,
+        patch(
+            "custom_components.eebus.runtime.BridgeRuntime.ensure_contract",
+            new_callable=AsyncMock,
+        ),
         patch("custom_components.eebus.er.async_get") as async_get_entity_registry,
     ):
         coordinator = AsyncMock()
@@ -62,6 +70,47 @@ async def test_setup_entry():
             call("select.eebus_dhw_operation_mode"),
             call("switch.eebus_heartbeat"),
         ]
+
+
+def _contract_probe_entry() -> MagicMock:
+    entry = MagicMock()
+    entry.data = {
+        "grpc_host": "127.0.0.1",
+        "grpc_port": 50051,
+        "device_ski": "test-ski",
+    }
+    entry.runtime_data = None
+    return entry
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_retries_when_contract_negotiation_unavailable():
+    """An unreachable bridge must map to ConfigEntryNotReady so HA retries setup."""
+    from custom_components.eebus import async_setup_entry
+
+    with patch(
+        "custom_components.eebus.runtime.BridgeRuntime.ensure_contract",
+        new_callable=AsyncMock,
+        side_effect=AioRpcError(
+            grpc.StatusCode.UNAVAILABLE, Metadata(), Metadata(), details="connect failed"
+        ),
+    ):
+        with pytest.raises(ConfigEntryNotReady):
+            await async_setup_entry(MagicMock(), _contract_probe_entry())
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_fails_terminally_on_incompatible_api_major():
+    """An incompatible bridge API major is terminal, not retried forever."""
+    from custom_components.eebus import async_setup_entry
+
+    with patch(
+        "custom_components.eebus.runtime.BridgeRuntime.ensure_contract",
+        new_callable=AsyncMock,
+        side_effect=IncompatibleAPIMajorError(2),
+    ):
+        with pytest.raises(ConfigEntryError):
+            await async_setup_entry(MagicMock(), _contract_probe_entry())
 
 
 def test_remove_replaced_heartbeat_switch():

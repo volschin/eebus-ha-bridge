@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from datetime import datetime
 
     from . import proto_stubs
 
@@ -89,6 +90,7 @@ class CompressorFlexibilityState:
     is_stoppable: bool
     minimal_run_seconds: int
     minimal_pause_seconds: int
+    start_time: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)

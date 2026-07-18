@@ -47,6 +47,7 @@ message CompressorFlexibility {
   // Minimal run / pause durations the CEM must honour once it acts.
   int64 minimal_run_seconds = 7;
   int64 minimal_pause_seconds = 8;
+  optional google.protobuf.Timestamp start_time = 9;
 }
 
 enum OHPCFAction {
@@ -72,8 +73,21 @@ enum OHPCFEventType {
   OHPCF_EVENT_DATA_UPDATED = 3;
 }
 
+enum OHPCFUpdateField {
+  OHPCF_UPDATE_FIELD_UNSPECIFIED = 0;
+  OHPCF_UPDATE_FIELD_STATE = 1;
+  OHPCF_UPDATE_FIELD_STOPPABLE = 2;
+  OHPCF_UPDATE_FIELD_PAUSABLE = 3;
+  OHPCF_UPDATE_FIELD_START_TIME = 4;
+  OHPCF_UPDATE_FIELD_REQUESTED_POWER_ESTIMATE = 5;
+  OHPCF_UPDATE_FIELD_REQUESTED_POWER_MAX = 6;
+  OHPCF_UPDATE_FIELD_MINIMAL_RUN_DURATION = 7;
+  OHPCF_UPDATE_FIELD_MINIMAL_PAUSE_DURATION = 8;
+}
+
 message OHPCFEvent {
   string ski = 1;
   OHPCFEventType event_type = 2;
   CompressorFlexibility flexibility = 3;
+  OHPCFUpdateField update_field = 4;
 }

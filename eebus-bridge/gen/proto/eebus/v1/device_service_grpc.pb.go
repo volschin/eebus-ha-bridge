@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	DeviceService_GetStatus_FullMethodName             = "/eebus.v1.DeviceService/GetStatus"
+	DeviceService_GetServerInfo_FullMethodName         = "/eebus.v1.DeviceService/GetServerInfo"
 	DeviceService_GetDeviceStatus_FullMethodName       = "/eebus.v1.DeviceService/GetDeviceStatus"
 	DeviceService_GetDeviceCapabilities_FullMethodName = "/eebus.v1.DeviceService/GetDeviceCapabilities"
 	DeviceService_ListDiscoveredDevices_FullMethodName = "/eebus.v1.DeviceService/ListDiscoveredDevices"
@@ -35,6 +36,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DeviceServiceClient interface {
 	GetStatus(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ServiceStatus, error)
+	GetServerInfo(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ServerInfo, error)
 	GetDeviceStatus(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*DeviceStatus, error)
 	GetDeviceCapabilities(ctx context.Context, in *DeviceRequest, opts ...grpc.CallOption) (*DeviceCapabilities, error)
 	ListDiscoveredDevices(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ListDevicesResponse, error)
@@ -57,6 +59,16 @@ func (c *deviceServiceClient) GetStatus(ctx context.Context, in *Empty, opts ...
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ServiceStatus)
 	err := c.cc.Invoke(ctx, DeviceService_GetStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deviceServiceClient) GetServerInfo(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ServerInfo, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ServerInfo)
+	err := c.cc.Invoke(ctx, DeviceService_GetServerInfo_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -166,6 +178,7 @@ type DeviceService_SubscribeDeviceStateClient = grpc.ServerStreamingClient[Devic
 // for forward compatibility.
 type DeviceServiceServer interface {
 	GetStatus(context.Context, *Empty) (*ServiceStatus, error)
+	GetServerInfo(context.Context, *Empty) (*ServerInfo, error)
 	GetDeviceStatus(context.Context, *DeviceRequest) (*DeviceStatus, error)
 	GetDeviceCapabilities(context.Context, *DeviceRequest) (*DeviceCapabilities, error)
 	ListDiscoveredDevices(context.Context, *Empty) (*ListDevicesResponse, error)
@@ -186,6 +199,9 @@ type UnimplementedDeviceServiceServer struct{}
 
 func (UnimplementedDeviceServiceServer) GetStatus(context.Context, *Empty) (*ServiceStatus, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStatus not implemented")
+}
+func (UnimplementedDeviceServiceServer) GetServerInfo(context.Context, *Empty) (*ServerInfo, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetServerInfo not implemented")
 }
 func (UnimplementedDeviceServiceServer) GetDeviceStatus(context.Context, *DeviceRequest) (*DeviceStatus, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetDeviceStatus not implemented")
@@ -246,6 +262,24 @@ func _DeviceService_GetStatus_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DeviceServiceServer).GetStatus(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DeviceService_GetServerInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeviceServiceServer).GetServerInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DeviceService_GetServerInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeviceServiceServer).GetServerInfo(ctx, req.(*Empty))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -390,6 +424,10 @@ var DeviceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetStatus",
 			Handler:    _DeviceService_GetStatus_Handler,
+		},
+		{
+			MethodName: "GetServerInfo",
+			Handler:    _DeviceService_GetServerInfo_Handler,
 		},
 		{
 			MethodName: "GetDeviceStatus",

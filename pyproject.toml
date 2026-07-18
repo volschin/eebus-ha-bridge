@@ -1,6 +1,7 @@
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["custom_components/eebus/tests"]
+markers = ["cross_language: runs the Python client against the production Go gRPC server"]
 
 [tool.coverage.run]
 source_pkgs = ["custom_components.eebus"]

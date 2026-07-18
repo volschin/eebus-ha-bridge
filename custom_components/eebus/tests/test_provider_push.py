@@ -178,10 +178,7 @@ async def test_provider_manager_stop_invalidates_enabled_providers(monkeypatch):
 
     class _DeviceStub:
         def __init__(self, _channel):
-            pass
-
-        async def GetDeviceCapabilities(self, request, timeout=None):  # noqa: N802
-            return proto_stubs.DeviceCapabilities(ski=request.ski)
+            raise AssertionError("provider invalidation must not probe GetDeviceCapabilities")
 
     monkeypatch.setattr(proto_stubs, "GridServiceStub", _GridStub)
     monkeypatch.setattr(proto_stubs, "VisualizationServiceStub", _VisualizationStub)
@@ -193,6 +190,8 @@ async def test_provider_manager_stop_invalidates_enabled_providers(monkeypatch):
         grid_power_entity="sensor.grid_power",
         pv_power_entity="sensor.pv_power",
         battery_power_entity="sensor.battery_power",
+        supports_feature=lambda feature: feature
+        == proto_stubs.FeatureId.FEATURE_PROVIDER_SAMPLE_INVALIDATION,
     )
 
     await manager.async_stop()

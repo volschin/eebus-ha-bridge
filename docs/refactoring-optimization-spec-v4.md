@@ -763,6 +763,31 @@ Empfohlene Lieferwellen:
 Jede Welle ist separat releasefähig. Ein neuer optimaler Pfad wird erst zum
 Default, wenn der alte Pfad weiterhin als getesteter Fallback funktioniert.
 
+### Review-Folgepunkte aus dem Welle-A-Review (2026-07-18)
+
+Zwei im Pre-Merge-Review der Welle-A-Umsetzung bestätigte, aber bewusst nicht
+dort gefixte Punkte, da sie Spezifikationsentscheidungen statt Bugfixes sind:
+
+1. **OHPCF-Blattfrische und Löschsemantik** (Ziel: SPEC4-01/SPEC4-08):
+   Die konsolidierte OHPCF-Verfügbarkeit hängt an `ohpcfCoreReadMask` — fällt
+   ein Kernread kurzzeitig aus, flappt das gesamte Aggregat als
+   `TEMPORARILY_UNAVAILABLE`, obwohl nur ein Teilfeld betroffen ist. Zudem
+   stempelt jedes Partial-Delta das gesamte `COMPRESSOR_FLEXIBILITY`-Aggregat
+   als frisch, und optionale Felder (`requested_power_*`, `start_time`) können
+   per Delta nie wieder auf `None` geleert werden. Benötigt eine explizite
+   Entscheidung: Blatt-Granularität für OHPCF-Frische (analog zu den
+   Per-Phase-Measurements) oder dokumentierte Aggregat-Semantik inklusive
+   Clear-Pfad.
+2. **Vertrags- und Stream-Lebenszyklus** (Ziel: SPEC4-02 Folge-Slice, SPEC4-04,
+   SPEC4-05): Der `BridgeContract` wird pro `BridgeRuntime` genau einmal
+   gelesen und nie neu verhandelt — ein Bridge-Upgrade bei bestehendem Channel
+   wird erst nach HA-Reload sichtbar; Neuverhandlung beim Channel-Neuaufbau
+   spezifizieren. Außerdem offen: Begrenzung der Stream-Fan-out-Verstärkung
+   (`MaxConcurrentStreams`/Backpressure), tatsächliches Gaten der RPCs hinter
+   gRPC-Health `NOT_SERVING` (heute nur advisory) und ein Heartbeat-Feld im
+   konsolidierten Stream, damit Heartbeat-Status nicht bis zu einem
+   Poll-Intervall veraltet.
+
 ## 7. Globale Definition of Done
 
 Ein Arbeitspaket gilt nur als abgeschlossen, wenn alle zutreffenden Punkte

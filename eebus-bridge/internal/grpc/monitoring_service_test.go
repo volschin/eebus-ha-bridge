@@ -31,12 +31,90 @@ type fakeDeviceOperatingStateReader struct {
 	err   error
 }
 
+type fakeMonitoringReader struct {
+	entity          spineapi.EntityRemoteInterface
+	compatibleCalls int
+}
+
+func (f *fakeMonitoringReader) CompatibleEntity(string) eebus.EntityResolution {
+	f.compatibleCalls++
+	return eebus.EntityResolution{Entity: f.entity, DeviceCount: 1}
+}
+
+func (*fakeMonitoringReader) Power(spineapi.EntityRemoteInterface) (float64, error) {
+	return 600, nil
+}
+
+func (*fakeMonitoringReader) PowerPerPhase(spineapi.EntityRemoteInterface) ([]float64, error) {
+	return []float64{100, 200, 300}, nil
+}
+
+func (*fakeMonitoringReader) EnergyConsumed(spineapi.EntityRemoteInterface) (float64, error) {
+	return 42, nil
+}
+
+func (*fakeMonitoringReader) EnergyProduced(spineapi.EntityRemoteInterface) (float64, error) {
+	return 12, nil
+}
+
+func (*fakeMonitoringReader) CurrentPerPhase(spineapi.EntityRemoteInterface) ([]float64, error) {
+	return []float64{1, 2, 3}, nil
+}
+
+func (*fakeMonitoringReader) VoltagePerPhase(spineapi.EntityRemoteInterface) ([]float64, error) {
+	return []float64{230, 231, 232}, nil
+}
+
+func (*fakeMonitoringReader) Frequency(spineapi.EntityRemoteInterface) (float64, error) {
+	return 50, nil
+}
+
+func (*fakeMonitoringReader) GenericMeasurements(string) ([]usecases.GenericMeasurement, error) {
+	return nil, nil
+}
+
 func (f fakeDeviceOperatingStateReader) OperatingState(string) (string, error) {
 	return f.value, f.err
 }
 
 func (f fakeDeviceOperatingStateReader) CachedOperatingState(string) (string, error) {
 	return f.value, f.err
+}
+
+func TestAttachMeasurementPayloadConvertsEveryDetailDomainOnce(t *testing.T) {
+	reader := &fakeMonitoringReader{entity: mocks.NewEntityRemoteInterface(t)}
+	svc := bridgegrpc.NewMonitoringService(reader, bridgegrpc.MonitoringReaders{}, eebus.NewEventBus(), eebus.NewDeviceRegistry())
+	tests := []struct {
+		eventType pb.MeasurementEventType
+		types     []string
+		values    []float64
+		unit      string
+	}{
+		{pb.MeasurementEventType_MEASUREMENT_EVENT_POWER_PER_PHASE_UPDATED, []string{"power_l1", "power_l2", "power_l3"}, []float64{100, 200, 300}, "W"},
+		{pb.MeasurementEventType_MEASUREMENT_EVENT_CURRENT_PER_PHASE_UPDATED, []string{"current_l1", "current_l2", "current_l3"}, []float64{1, 2, 3}, "A"},
+		{pb.MeasurementEventType_MEASUREMENT_EVENT_VOLTAGE_PER_PHASE_UPDATED, []string{"voltage_l1", "voltage_l2", "voltage_l3"}, []float64{230, 231, 232}, "V"},
+		{pb.MeasurementEventType_MEASUREMENT_EVENT_FREQUENCY_UPDATED, []string{"frequency"}, []float64{50}, "Hz"},
+		{pb.MeasurementEventType_MEASUREMENT_EVENT_ENERGY_PRODUCED_UPDATED, []string{"energy_produced"}, []float64{12}, "kWh"},
+	}
+	for _, test := range tests {
+		t.Run(test.eventType.String(), func(t *testing.T) {
+			reader.compatibleCalls = 0
+			event := &pb.MeasurementEvent{Ski: testValidSKI, EventType: test.eventType}
+			svc.AttachMeasurementPayload(event, testValidSKI, test.eventType)
+			measurements := event.GetMeasurements().GetMeasurements()
+			if len(measurements) != len(test.types) {
+				t.Fatalf("measurements = %+v", measurements)
+			}
+			for index, measurement := range measurements {
+				if measurement.GetType() != test.types[index] || measurement.GetValue() != test.values[index] || measurement.GetUnit() != test.unit {
+					t.Fatalf("measurement[%d] = %+v", index, measurement)
+				}
+			}
+			if reader.compatibleCalls != 1 {
+				t.Fatalf("entity resolutions = %d, want 1", reader.compatibleCalls)
+			}
+		})
+	}
 }
 
 func TestSubscribeMeasurements(t *testing.T) {

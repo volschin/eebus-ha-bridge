@@ -14,6 +14,7 @@ import "google/protobuf/timestamp.proto";
 
 service DeviceService {
   rpc GetStatus(Empty) returns (ServiceStatus);
+  rpc GetServerInfo(Empty) returns (ServerInfo);
   rpc GetDeviceStatus(DeviceRequest) returns (DeviceStatus);
   rpc GetDeviceCapabilities(DeviceRequest) returns (DeviceCapabilities);
   rpc ListDiscoveredDevices(Empty) returns (ListDevicesResponse);
@@ -67,6 +68,26 @@ message DeviceCapabilities {
 message ServiceStatus {
   bool running = 1;
   string local_ski = 2;
+}
+
+// ServerInfo is the stable, non-secret compatibility contract published by
+// the bridge. Feature identifiers are append-only; clients must ignore values
+// they do not know yet.
+message ServerInfo {
+  uint32 api_major = 1;
+  uint32 api_minor = 2;
+  string bridge_build_version = 3;
+  repeated FeatureId features = 4;
+  string local_ski = 5;
+}
+
+enum FeatureId {
+  FEATURE_UNSPECIFIED = 0;
+  FEATURE_EXPLICIT_CAPABILITIES = 1;
+  FEATURE_CONSOLIDATED_DEVICE_STREAM = 2;
+  FEATURE_DEVICE_SNAPSHOT = 3;
+  FEATURE_PROVIDER_SAMPLE_INVALIDATION = 4;
+  FEATURE_TYPED_MEASUREMENTS = 5;
 }
 
 message DeviceStatus {
@@ -127,6 +148,17 @@ message DeviceStateEvent {
     DeviceCapabilities capability = 10;
     ResyncRequired resync_required = 11;
   }
+  EventAvailability availability = 12;
+}
+
+// EventAvailability makes an adapter read failure explicit. An update event
+// with TEMPORARILY_UNAVAILABLE never means that the value was successfully
+// refreshed, even when its domain payload is absent.
+enum EventAvailability {
+  EVENT_AVAILABILITY_UNSPECIFIED = 0;
+  EVENT_AVAILABILITY_AVAILABLE = 1;
+  EVENT_AVAILABILITY_TEMPORARILY_UNAVAILABLE = 2;
+  EVENT_AVAILABILITY_UNSUPPORTED = 3;
 }
 
 message DeviceStateDHWEvent {
@@ -145,6 +177,7 @@ enum ResyncReason {
   RESYNC_REASON_UNSPECIFIED = 0;
   RESYNC_REASON_INITIAL_STATE_REQUIRED = 1;
   RESYNC_REASON_EVENT_DROPPED = 2;
+  RESYNC_REASON_UNCLASSIFIED_EVENT = 3;
 }
 
 enum DeviceEventType {

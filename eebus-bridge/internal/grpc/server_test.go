@@ -33,6 +33,14 @@ func TestServerStartStop(t *testing.T) {
 	defer conn.Close()
 
 	client := grpc_health_v1.NewHealthClient(conn)
+	initial, err := client.Check(context.Background(), &grpc_health_v1.HealthCheckRequest{})
+	if err != nil {
+		t.Fatalf("initial health check failed: %v", err)
+	}
+	if initial.Status != grpc_health_v1.HealthCheckResponse_NOT_SERVING {
+		t.Errorf("initial health status = %v, want NOT_SERVING", initial.Status)
+	}
+	srv.SetHealthy(true)
 	resp, err := client.Check(context.Background(), &grpc_health_v1.HealthCheckRequest{})
 	if err != nil {
 		t.Fatalf("health check failed: %v", err)

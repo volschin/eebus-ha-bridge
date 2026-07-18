@@ -17,7 +17,7 @@ import (
 
 type MonitoringService struct {
 	pb.UnimplementedMonitoringServiceServer
-	monitoring  *usecases.MonitoringWrapper
+	monitoring  monitoringReader
 	dhw         temperatureReader
 	room        temperatureReader
 	outdoor     temperatureReader
@@ -27,6 +27,18 @@ type MonitoringService struct {
 	bus         *eebus.EventBus
 	registry    *eebus.DeviceRegistry
 	debug       bool
+}
+
+type monitoringReader interface {
+	CompatibleEntity(string) eebus.EntityResolution
+	Power(spineapi.EntityRemoteInterface) (float64, error)
+	PowerPerPhase(spineapi.EntityRemoteInterface) ([]float64, error)
+	EnergyConsumed(spineapi.EntityRemoteInterface) (float64, error)
+	EnergyProduced(spineapi.EntityRemoteInterface) (float64, error)
+	CurrentPerPhase(spineapi.EntityRemoteInterface) ([]float64, error)
+	VoltagePerPhase(spineapi.EntityRemoteInterface) ([]float64, error)
+	Frequency(spineapi.EntityRemoteInterface) (float64, error)
+	GenericMeasurements(string) ([]usecases.GenericMeasurement, error)
 }
 
 type temperatureReader interface {
@@ -50,7 +62,7 @@ type MonitoringReaders struct {
 }
 
 func NewMonitoringService(
-	monitoring *usecases.MonitoringWrapper,
+	monitoring monitoringReader,
 	readers MonitoringReaders,
 	bus *eebus.EventBus,
 	registry *eebus.DeviceRegistry,
@@ -59,6 +71,11 @@ func NewMonitoringService(
 	debugEnabled := false
 	if len(debug) > 0 {
 		debugEnabled = debug[0]
+	}
+	// A nil *MonitoringWrapper narrowed into the interface would defeat the
+	// nil guard in attachMeasurementPayload (typed-nil, the v0.13.0 crash class).
+	if wrapper, ok := monitoring.(*usecases.MonitoringWrapper); ok && wrapper == nil {
+		monitoring = nil
 	}
 	return &MonitoringService{
 		monitoring:  monitoring,
@@ -316,9 +333,18 @@ func (s *MonitoringService) SubscribeMeasurements(req *pb.DeviceRequest, stream 
 
 // attachMeasurementPayload best-effort fills the event's typed payload with the
 // current value so subscribers receive data directly instead of polling. On any
-// read failure the event is sent without a payload and the client falls back to
-// a refresh. Reuses the SKI-resolve + nil-entity fallback of the Get* readers.
+// read failure the event is sent without a value; the consolidated envelope
+// marks that delta temporarily unavailable. Reuses the SKI-resolve + nil-entity
+// fallback of the Get* readers.
 func (s *MonitoringService) attachMeasurementPayload(event *pb.MeasurementEvent, ski string, eventType pb.MeasurementEventType) {
+	if s.monitoring == nil && eventType != pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED &&
+		eventType != pb.MeasurementEventType_MEASUREMENT_EVENT_ROOM_TEMPERATURE_UPDATED &&
+		eventType != pb.MeasurementEventType_MEASUREMENT_EVENT_OUTDOOR_TEMPERATURE_UPDATED &&
+		eventType != pb.MeasurementEventType_MEASUREMENT_EVENT_FLOW_TEMPERATURE_UPDATED &&
+		eventType != pb.MeasurementEventType_MEASUREMENT_EVENT_RETURN_TEMPERATURE_UPDATED &&
+		eventType != pb.MeasurementEventType_MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED {
+		return
+	}
 	switch eventType {
 	case pb.MeasurementEventType_MEASUREMENT_EVENT_POWER_UPDATED:
 		if value, err := readMetric("power", s.resolveForRead(ski), s.monitoring.Power); err == nil {
@@ -333,6 +359,24 @@ func (s *MonitoringService) attachMeasurementPayload(event *pb.MeasurementEvent,
 				KilowattHours: value,
 				Timestamp:     timestamppb.Now(),
 			}}
+		}
+	case pb.MeasurementEventType_MEASUREMENT_EVENT_POWER_PER_PHASE_UPDATED:
+		s.attachMetricList(event, ski, "power-per-phase", s.monitoring.PowerPerPhase, "power_l", "W")
+	case pb.MeasurementEventType_MEASUREMENT_EVENT_CURRENT_PER_PHASE_UPDATED:
+		s.attachMetricList(event, ski, "current-per-phase", s.monitoring.CurrentPerPhase, "current_l", "A")
+	case pb.MeasurementEventType_MEASUREMENT_EVENT_VOLTAGE_PER_PHASE_UPDATED:
+		s.attachMetricList(event, ski, "voltage-per-phase", s.monitoring.VoltagePerPhase, "voltage_l", "V")
+	case pb.MeasurementEventType_MEASUREMENT_EVENT_FREQUENCY_UPDATED:
+		if value, err := readMetric("frequency", s.resolveForRead(ski), s.monitoring.Frequency); err == nil {
+			event.Data = &pb.MeasurementEvent_Measurements{Measurements: measurementList(
+				"frequency", value, "Hz",
+			)}
+		}
+	case pb.MeasurementEventType_MEASUREMENT_EVENT_ENERGY_PRODUCED_UPDATED:
+		if value, err := readMetric("energy-produced", s.resolveForRead(ski), s.monitoring.EnergyProduced); err == nil {
+			event.Data = &pb.MeasurementEvent_Measurements{Measurements: measurementList(
+				"energy_produced", value, "kWh",
+			)}
 		}
 	case pb.MeasurementEventType_MEASUREMENT_EVENT_DHW_TEMPERATURE_UPDATED:
 		s.attachTemperaturePayload(event, ski, s.dhw, "dhw_temperature")
@@ -357,6 +401,38 @@ func (s *MonitoringService) attachMeasurementPayload(event *pb.MeasurementEvent,
 			}}
 		}
 	}
+}
+
+func (s *MonitoringService) AttachMeasurementPayload(event *pb.MeasurementEvent, ski string, eventType pb.MeasurementEventType) {
+	s.attachMeasurementPayload(event, ski, eventType)
+}
+
+func (s *MonitoringService) attachMetricList(
+	event *pb.MeasurementEvent,
+	ski string,
+	label string,
+	read func(spineapi.EntityRemoteInterface) ([]float64, error),
+	typePrefix string,
+	unit string,
+) {
+	values, err := readMetric(label, s.resolveForRead(ski), read)
+	if err != nil || len(values) == 0 {
+		return
+	}
+	now := timestamppb.Now()
+	measurements := make([]*pb.MeasurementEntry, 0, len(values))
+	for index, value := range values {
+		measurements = append(measurements, &pb.MeasurementEntry{
+			Type: fmt.Sprintf("%s%d", typePrefix, index+1), Value: value, Unit: unit, Timestamp: now,
+		})
+	}
+	event.Data = &pb.MeasurementEvent_Measurements{Measurements: &pb.MeasurementList{Measurements: measurements}}
+}
+
+func measurementList(measurementType string, value float64, unit string) *pb.MeasurementList {
+	return &pb.MeasurementList{Measurements: []*pb.MeasurementEntry{{
+		Type: measurementType, Value: value, Unit: unit, Timestamp: timestamppb.Now(),
+	}}}
 }
 
 func (s *MonitoringService) attachTemperaturePayload(

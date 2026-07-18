@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+import grpc.aio
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
@@ -33,6 +35,7 @@ from .const import (
 )
 from .coordinator import EebusCoordinator
 from .runtime import BridgeRuntimeRegistry
+from .server_info import IncompatibleAPIMajorError
 from .ski import is_valid_ski, normalize_ski
 
 _LOGGER = logging.getLogger(__name__)
@@ -131,6 +134,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> boo
     )
     coordinator: EebusCoordinator | None = None
     try:
+        try:
+            await runtime.ensure_contract()
+        except IncompatibleAPIMajorError as err:
+            raise ConfigEntryError(str(err)) from err
+        except grpc.aio.AioRpcError as err:
+            raise ConfigEntryNotReady(
+                f"Bridge at {entry.data[CONF_GRPC_HOST]}:{entry.data[CONF_GRPC_PORT]} "
+                f"is not reachable: {err.code().name}"
+            ) from err
         coordinator = EebusCoordinator(
             hass,
             host=entry.data[CONF_GRPC_HOST],
@@ -273,6 +285,17 @@ async def _async_reload_entry(hass: HomeAssistant, entry: EebusConfigEntry) -> N
             return
 
         try:
+            try:
+                await replacement.ensure_contract()
+            except (IncompatibleAPIMajorError, grpc.aio.AioRpcError) as err:
+                _LOGGER.error(
+                    "Reconfigured bridge %s:%s rejected contract negotiation (%s); "
+                    "keeping the previous connection",
+                    entry.data[CONF_GRPC_HOST],
+                    entry.data[CONF_GRPC_PORT],
+                    err,
+                )
+                return
             await coordinator.async_reconfigure_runtime(
                 replacement,
                 host=entry.data[CONF_GRPC_HOST],

@@ -142,6 +142,7 @@ class ProviderManager:
         battery_charged_energy_entity: str | None = None,
         battery_discharged_energy_entity: str | None = None,
         battery_soc_entity: str | None = None,
+        supports_feature: Callable[[int], bool] | None = None,
     ) -> None:
         """Initialize provider configuration and lifecycle state."""
         self._hass = hass
@@ -160,6 +161,7 @@ class ProviderManager:
         self._provider_pushers: list[_ProviderPusher] = []
         self._provider_push_failing: dict[str, bool] = {}
         self._provider_invalidation_supported: bool | None = None
+        self._supports_feature = supports_feature or (lambda _feature: False)
 
     @property
     def grid_push_enabled(self) -> bool:
@@ -283,32 +285,12 @@ class ProviderManager:
         """Return whether the bridge understands sample.invalid provider pushes."""
         if self._provider_invalidation_supported is not None:
             return self._provider_invalidation_supported
-
-        channel = await self._channel_getter()
         from . import proto_stubs
 
-        try:
-            await proto_stubs.device_service_stub(channel).GetDeviceCapabilities(
-                proto_stubs.DeviceRequest(ski=self._ski),
-                timeout=RPC_TIMEOUT,
-            )
-        except grpc.aio.AioRpcError as err:
-            if _is_unimplemented(err):
-                self._provider_invalidation_supported = False
-                _LOGGER.debug("Bridge lacks capability contract; skipping provider invalidation pushes for old bridge")
-                return False
-            if err.code() in (
-                grpc.StatusCode.UNAVAILABLE,
-                grpc.StatusCode.DEADLINE_EXCEEDED,
-                grpc.StatusCode.CANCELLED,
-            ):
-                _LOGGER.debug(
-                    "Could not confirm provider invalidation support; skipping invalidation: %s",
-                    _rpc_error_text(err),
-                )
-                return False
-        self._provider_invalidation_supported = True
-        return True
+        self._provider_invalidation_supported = self._supports_feature(
+            int(proto_stubs.FeatureId.FEATURE_PROVIDER_SAMPLE_INVALIDATION)
+        )
+        return self._provider_invalidation_supported
 
     def _start_provider_push(
         self,

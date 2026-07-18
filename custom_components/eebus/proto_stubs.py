@@ -24,12 +24,15 @@ from .generated.eebus.v1.device_service_pb2 import (  # noqa: F401
     CapabilityState,
     DeviceCapabilities,
     DeviceEventType,
+    EventAvailability,
+    FeatureId,
     DeviceStateDHWEvent,
     DeviceStateEvent,
     DeviceStatus,
     RegisterSKIRequest,
     ResyncReason,
     ServiceStatus,
+    ServerInfo,
 )
 from .generated.eebus.v1.device_service_pb2_grpc import DeviceServiceStub  # noqa: F401
 from .generated.eebus.v1.dhw_service_pb2 import (  # noqa: F401
@@ -68,6 +71,7 @@ from .generated.eebus.v1.monitoring_service_pb2 import (  # noqa: F401
     EnergyMeasurement,
     MeasurementList,
     MeasurementEventType,
+    MeasurementUpdateField,
 )
 from .generated.eebus.v1.lpc_service_pb2_grpc import LPCServiceStub  # noqa: F401
 from .generated.eebus.v1.monitoring_service_pb2_grpc import MonitoringServiceStub  # noqa: F401
@@ -85,6 +89,7 @@ from .generated.eebus.v1.ohpcf_service_pb2 import (  # noqa: F401
     ControlCompressorRequest,
     OHPCFAction,
     OHPCFEventType,
+    OHPCFUpdateField,
 )
 from .generated.eebus.v1.ohpcf_service_pb2_grpc import OHPCFServiceStub  # noqa: F401
 
@@ -137,6 +142,8 @@ __all__ = [
     "CompressorPowerConsumptionState",
     "ControlCompressorRequest",
     "DeviceEventType",
+    "EventAvailability",
+    "FeatureId",
     "DeviceStateDHWEvent",
     "DeviceStateEvent",
     "DeviceCapabilities",
@@ -163,10 +170,12 @@ __all__ = [
     "LoadLimit",
     "MeasurementEntry",
     "MeasurementEventType",
+    "MeasurementUpdateField",
     "MeasurementList",
     "MonitoringServiceStub",
     "OHPCFAction",
     "OHPCFEventType",
+    "OHPCFUpdateField",
     "OHPCFServiceStub",
     "PVData",
     "PVPeakPowerData",
@@ -184,6 +193,7 @@ __all__ = [
     "SetDHWSetpointRequest",
     "SetRoomHeatingModeRequest",
     "SetRoomHeatingTemperatureRequest",
+    "ServerInfo",
     "ServiceStatus",
     "VisualizationServiceStub",
     "WriteFailsafeLimitRequest",

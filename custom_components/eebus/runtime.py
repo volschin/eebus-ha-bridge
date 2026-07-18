@@ -14,6 +14,7 @@ from homeassistant.core import HomeAssistant
 from .device_session import DeviceSession
 from .device_streams import DeviceStreams
 from .grpc_client import GrpcChannelManager
+from .server_info import BridgeContract, async_read_bridge_contract
 from .ski import normalize_ski
 from .snapshot import DevicePoller
 from .state import DeviceState, DeviceStateStore
@@ -93,7 +94,12 @@ class RuntimeDeviceSession:
     ) -> None:
         self.ski = normalize_ski(ski)
         self.store = DeviceStateStore(publish_state)
-        self.poller = DevicePoller(self.ski, runtime.channel_manager.ensure_channel, self.store)
+        self.poller = DevicePoller(
+            self.ski,
+            runtime.channel_manager.ensure_channel,
+            self.store,
+            runtime.supports,
+        )
         self.writer = DeviceSession(self.ski, runtime.channel_manager.ensure_channel)
         self.streams = DeviceStreams(
             hass,
@@ -101,6 +107,7 @@ class RuntimeDeviceSession:
             self.ski,
             self.store,
             request_refresh,
+            runtime.supports,
         )
         self._close_task: asyncio.Task[None] | None = None
 
@@ -131,8 +138,26 @@ class BridgeRuntime:
             auth_token,
         )
         self.status = BridgeStatus()
+        self._contract: BridgeContract | None = None
+        self._contract_lock = asyncio.Lock()
         self._sessions: dict[str, RuntimeDeviceSession] = {}
         self._close_task: asyncio.Task[None] | None = None
+
+    async def ensure_contract(self) -> BridgeContract:
+        """Negotiate and cache ServerInfo once for every shared bridge runtime."""
+        async with self._contract_lock:
+            if self._contract is None:
+                channel = await self.channel_manager.ensure_channel()
+                self._contract = await async_read_bridge_contract(channel)
+            return self._contract
+
+    @property
+    def contract(self) -> BridgeContract | None:
+        return self._contract
+
+    def supports(self, feature: int) -> bool:
+        contract = self._contract
+        return contract is not None and contract.supports(feature)
 
     def create_device_session(
         self,

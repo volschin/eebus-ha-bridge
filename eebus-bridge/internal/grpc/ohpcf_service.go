@@ -12,20 +12,76 @@ import (
 	"github.com/volschin/eebus-bridge/internal/usecases"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+type ohpcfReadMask uint16
+
+const (
+	ohpcfReadAvailable ohpcfReadMask = 1 << iota
+	ohpcfReadPowerEstimate
+	ohpcfReadPowerMax
+	ohpcfReadStoppable
+	ohpcfReadPausable
+	ohpcfReadState
+	ohpcfReadMinimalRun
+	ohpcfReadMinimalPause
+	ohpcfReadStartTime
+)
+
+const ohpcfCoreReadMask = ohpcfReadAvailable | ohpcfReadStoppable | ohpcfReadPausable |
+	ohpcfReadState | ohpcfReadMinimalRun | ohpcfReadMinimalPause
 
 // OHPCFService exposes the bridge's OHPCF (heat-pump compressor flexibility)
 // CEM-client use case over gRPC: read the compressor's optional-consumption offer
 // and schedule/pause/resume/abort it.
 type OHPCFService struct {
 	pb.UnimplementedOHPCFServiceServer
-	ohpcf    *usecases.OHPCFWrapper
+	ohpcf    OHPCFController
 	bus      *eebus.EventBus
 	registry *eebus.DeviceRegistry
 }
 
-func NewOHPCFService(ohpcf *usecases.OHPCFWrapper, bus *eebus.EventBus, registry *eebus.DeviceRegistry) *OHPCFService {
-	return &OHPCFService{ohpcf: ohpcf, bus: bus, registry: registry}
+// OHPCFController is the narrow read/write seam used by the gRPC adapter.
+type OHPCFController interface {
+	OptionalPowerConsumptionAvailable(spineapi.EntityRemoteInterface) (bool, error)
+	CompatibleEntity(string) eebus.EntityResolution
+	RequestedPowerEstimate(spineapi.EntityRemoteInterface) (float64, error)
+	RequestedPowerMax(spineapi.EntityRemoteInterface) (float64, error)
+	ConsumptionIsStoppable(spineapi.EntityRemoteInterface) (bool, error)
+	ConsumptionIsPausable(spineapi.EntityRemoteInterface) (bool, error)
+	ConsumptionState(spineapi.EntityRemoteInterface) (ucapi.CompressorPowerConsumptionStateType, error)
+	ConsumptionStartTime(spineapi.EntityRemoteInterface) (time.Time, error)
+	MinimalRunDuration(spineapi.EntityRemoteInterface) (time.Duration, error)
+	MinimalPauseDuration(spineapi.EntityRemoteInterface) (time.Duration, error)
+	Schedule(spineapi.EntityRemoteInterface, time.Time) error
+	Pause(spineapi.EntityRemoteInterface) error
+	Resume(spineapi.EntityRemoteInterface) error
+	Abort(spineapi.EntityRemoteInterface) error
+}
+
+// OHPCFServiceOption customizes the OHPCF adapter at construction time.
+type OHPCFServiceOption func(*OHPCFService)
+
+// WithOHPCFController replaces the production wrapper for deterministic tests.
+func WithOHPCFController(controller OHPCFController) OHPCFServiceOption {
+	return func(service *OHPCFService) { service.ohpcf = controller }
+}
+
+func NewOHPCFService(
+	ohpcf *usecases.OHPCFWrapper,
+	bus *eebus.EventBus,
+	registry *eebus.DeviceRegistry,
+	opts ...OHPCFServiceOption,
+) *OHPCFService {
+	service := &OHPCFService{bus: bus, registry: registry}
+	if ohpcf != nil {
+		service.ohpcf = ohpcf
+	}
+	for _, opt := range opts {
+		opt(service)
+	}
+	return service
 }
 
 func (s *OHPCFService) GetCompressorFlexibility(_ context.Context, req *pb.DeviceRequest) (*pb.CompressorFlexibility, error) {
@@ -42,8 +98,8 @@ func (s *OHPCFService) GetCompressorFlexibility(_ context.Context, req *pb.Devic
 	if err != nil {
 		return nil, err
 	}
-	flexibility, successfulReads := s.buildFlexibility(entity)
-	if successfulReads == 0 {
+	flexibility, reads := s.buildFlexibility(entity)
+	if reads == 0 {
 		if s.registry != nil {
 			s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityOHPCF, eebusapi.ErrDataNotAvailable)
 		}
@@ -112,52 +168,104 @@ func (s *OHPCFService) SubscribeOHPCFEvents(req *pb.DeviceRequest, stream pb.OHP
 			return nil, false
 		}
 		event := &pb.OHPCFEvent{Ski: evt.SKI, EventType: eventType}
-		if entity, err := s.resolveEntity(evt.SKI); err == nil {
-			event.Flexibility, _ = s.buildFlexibility(entity)
-		}
+		s.attachOHPCFPayload(event, evt.SKI, evt.Type)
 		return event, true
 	})
+}
+
+// attachOHPCFPayload is shared by the legacy OHPCF stream and the consolidated
+// DeviceState stream so both expose identical flexibility conversion. The
+// payload keeps the legacy-stream contract (attached whenever any field reads
+// cleanly); the boolean answers the stricter consolidated-envelope question of
+// whether the core aggregate plus the event's target field were all readable.
+func (s *OHPCFService) attachOHPCFPayload(event *pb.OHPCFEvent, ski string, eventType eebus.EventType) bool {
+	if s.ohpcf == nil {
+		return false
+	}
+	entity, err := s.resolveEntity(ski)
+	if err != nil {
+		return false
+	}
+	flexibility, reads := s.buildFlexibility(entity)
+	if reads == 0 {
+		return false
+	}
+	event.Flexibility = flexibility
+	target := ohpcfTargetRead(eventType)
+	required := ohpcfCoreReadMask | target
+	return target != 0 && reads&required == required
+}
+
+func (s *OHPCFService) AttachOHPCFPayload(event *pb.OHPCFEvent, ski string, eventType eebus.EventType) bool {
+	return s.attachOHPCFPayload(event, ski, eventType)
+}
+
+func ohpcfTargetRead(eventType eebus.EventType) ohpcfReadMask {
+	switch eventType {
+	case eebus.EventTypeOHPCFConsumptionStateUpdated:
+		return ohpcfReadAvailable | ohpcfReadState
+	case eebus.EventTypeOHPCFConsumptionStoppableUpdated:
+		return ohpcfReadStoppable
+	case eebus.EventTypeOHPCFConsumptionPausableUpdated:
+		return ohpcfReadPausable
+	case eebus.EventTypeOHPCFConsumptionStartTimeUpdated:
+		return ohpcfReadStartTime
+	case eebus.EventTypeOHPCFRequestedPowerEstimateUpdated:
+		return ohpcfReadPowerEstimate
+	case eebus.EventTypeOHPCFRequestedPowerMaxUpdated:
+		return ohpcfReadPowerMax
+	case eebus.EventTypeOHPCFMinimalRunDurationUpdated:
+		return ohpcfReadMinimalRun
+	case eebus.EventTypeOHPCFMinimalPauseDurationUpdated:
+		return ohpcfReadMinimalPause
+	default:
+		return 0
+	}
 }
 
 // buildFlexibility reads the current OHPCF offer/state best-effort. Individual
 // reads return ErrDataInvalid when the compressor advertises no offer yet, so each
 // field is filled only when it reads cleanly; optional power fields are omitted.
-func (s *OHPCFService) buildFlexibility(entity spineapi.EntityRemoteInterface) (*pb.CompressorFlexibility, int) {
+func (s *OHPCFService) buildFlexibility(entity spineapi.EntityRemoteInterface) (*pb.CompressorFlexibility, ohpcfReadMask) {
 	f := &pb.CompressorFlexibility{}
-	successfulReads := 0
+	var reads ohpcfReadMask
 	if available, err := s.ohpcf.OptionalPowerConsumptionAvailable(entity); err == nil {
 		f.Available = available
-		successfulReads++
+		reads |= ohpcfReadAvailable
 	}
 	if est, err := s.ohpcf.RequestedPowerEstimate(entity); err == nil {
 		f.RequestedPowerEstimateW = &est
-		successfulReads++
+		reads |= ohpcfReadPowerEstimate
 	}
 	if max, err := s.ohpcf.RequestedPowerMax(entity); err == nil {
 		f.RequestedPowerMaxW = &max
-		successfulReads++
+		reads |= ohpcfReadPowerMax
 	}
 	if stoppable, err := s.ohpcf.ConsumptionIsStoppable(entity); err == nil {
 		f.IsStoppable = stoppable
-		successfulReads++
+		reads |= ohpcfReadStoppable
 	}
 	if pausable, err := s.ohpcf.ConsumptionIsPausable(entity); err == nil {
 		f.IsPausable = pausable
-		successfulReads++
+		reads |= ohpcfReadPausable
 	}
 	if st, err := s.ohpcf.ConsumptionState(entity); err == nil {
 		f.State = convertCompressorState(st)
-		successfulReads++
+		reads |= ohpcfReadState
 	}
 	if d, err := s.ohpcf.MinimalRunDuration(entity); err == nil {
 		f.MinimalRunSeconds = int64(d / time.Second)
-		successfulReads++
+		reads |= ohpcfReadMinimalRun
 	}
 	if d, err := s.ohpcf.MinimalPauseDuration(entity); err == nil {
 		f.MinimalPauseSeconds = int64(d / time.Second)
-		successfulReads++
+		reads |= ohpcfReadMinimalPause
 	}
-	return f, successfulReads
+	if start, err := s.ohpcf.ConsumptionStartTime(entity); err == nil {
+		f.StartTime = timestamppb.New(start)
+		reads |= ohpcfReadStartTime
+	}
+	return f, reads
 }
 
 func convertCompressorState(st ucapi.CompressorPowerConsumptionStateType) pb.CompressorPowerConsumptionState {

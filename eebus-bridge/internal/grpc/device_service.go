@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"runtime/debug"
 	"sort"
 
 	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
@@ -18,21 +19,44 @@ type TrustController interface {
 
 type DeviceService struct {
 	pb.UnimplementedDeviceServiceServer
-	callbacks *eebus.Callbacks
-	bus       *eebus.EventBus
-	localSKI  string
-	registry  *eebus.DeviceRegistry
-	trust     TrustController
-	payloads  DeviceStatePayloadSources
+	callbacks  *eebus.Callbacks
+	bus        *eebus.EventBus
+	localSKI   string
+	registry   *eebus.DeviceRegistry
+	trust      TrustController
+	payloads   DeviceStatePayloadSources
+	serverInfo *pb.ServerInfo
 }
 
 type DeviceServiceOption func(*DeviceService)
 
 type DeviceStatePayloadSources struct {
-	Monitoring *MonitoringService
-	LPC        *LPCService
-	DHW        *DHWService
-	HVAC       *HVACService
+	Monitoring MeasurementPayloadSource
+	LPC        LPCPayloadSource
+	DHW        DHWPayloadSource
+	HVAC       HVACPayloadSource
+	OHPCF      OHPCFPayloadSource
+}
+
+type MeasurementPayloadSource interface {
+	AttachMeasurementPayload(*pb.MeasurementEvent, string, pb.MeasurementEventType)
+}
+
+type LPCPayloadSource interface {
+	AttachLPCPayload(*pb.LPCEvent, string, pb.LPCEventType)
+}
+
+type DHWPayloadSource interface {
+	AttachDHWPayload(*pb.DHWEvent, string)
+	AttachDHWSystemFunctionPayload(*pb.DHWSystemFunctionEvent, string)
+}
+
+type HVACPayloadSource interface {
+	AttachRoomHeatingPayload(*pb.RoomHeatingEvent, string) bool
+}
+
+type OHPCFPayloadSource interface {
+	AttachOHPCFPayload(*pb.OHPCFEvent, string, eebus.EventType) bool
 }
 
 func WithDeviceStatePayloads(sources DeviceStatePayloadSources) DeviceServiceOption {
@@ -41,18 +65,74 @@ func WithDeviceStatePayloads(sources DeviceStatePayloadSources) DeviceServiceOpt
 	}
 }
 
+const (
+	APIMajor uint32 = 1
+	APIMinor uint32 = 0
+)
+
+// BuildVersion is overridden by release builds through -ldflags. Keeping the
+// development default explicit makes local and test binaries identifiable
+// without coupling the RPC implementation to the main package.
+var BuildVersion = "dev"
+
+var implementedFeatures = []pb.FeatureId{
+	pb.FeatureId_FEATURE_EXPLICIT_CAPABILITIES,
+	pb.FeatureId_FEATURE_CONSOLIDATED_DEVICE_STREAM,
+	pb.FeatureId_FEATURE_PROVIDER_SAMPLE_INVALIDATION,
+}
+
+func WithServerInfo(info *pb.ServerInfo) DeviceServiceOption {
+	return func(service *DeviceService) {
+		service.serverInfo = cloneServerInfo(info)
+	}
+}
+
+func defaultServerInfo() *pb.ServerInfo {
+	version := BuildVersion
+	if version == "dev" {
+		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			version = info.Main.Version
+		}
+	}
+	return &pb.ServerInfo{
+		ApiMajor:           APIMajor,
+		ApiMinor:           APIMinor,
+		BridgeBuildVersion: version,
+		Features:           append([]pb.FeatureId(nil), implementedFeatures...),
+	}
+}
+
+func cloneServerInfo(info *pb.ServerInfo) *pb.ServerInfo {
+	if info == nil {
+		return defaultServerInfo()
+	}
+	return &pb.ServerInfo{
+		ApiMajor:           info.ApiMajor,
+		ApiMinor:           info.ApiMinor,
+		BridgeBuildVersion: info.BridgeBuildVersion,
+		Features:           append([]pb.FeatureId(nil), info.Features...),
+		LocalSki:           info.LocalSki,
+	}
+}
+
 func NewDeviceService(callbacks *eebus.Callbacks, bus *eebus.EventBus, localSKI string, registry *eebus.DeviceRegistry, trust TrustController, opts ...DeviceServiceOption) *DeviceService {
 	service := &DeviceService{
-		callbacks: callbacks,
-		bus:       bus,
-		localSKI:  localSKI,
-		registry:  registry,
-		trust:     trust,
+		callbacks:  callbacks,
+		bus:        bus,
+		localSKI:   localSKI,
+		registry:   registry,
+		trust:      trust,
+		serverInfo: defaultServerInfo(),
 	}
 	for _, opt := range opts {
 		opt(service)
 	}
+	service.serverInfo.LocalSki = localSKI
 	return service
+}
+
+func (s *DeviceService) GetServerInfo(_ context.Context, _ *pb.Empty) (*pb.ServerInfo, error) {
+	return cloneServerInfo(s.serverInfo), nil
 }
 
 func (s *DeviceService) GetStatus(_ context.Context, _ *pb.Empty) (*pb.ServiceStatus, error) {

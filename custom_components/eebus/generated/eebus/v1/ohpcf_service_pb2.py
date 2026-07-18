@@ -26,7 +26,7 @@ from . import common_pb2 as eebus_dot_v1_dot_common__pb2
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1c\x65\x65\x62us/v1/ohpcf_service.proto\x12\x08\x65\x65\x62us.v1\x1a\x15\x65\x65\x62us/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd1\x02\n\x15\x43ompressorFlexibility\x12\x11\n\tavailable\x18\x01 \x01(\x08\x12\'\n\x1arequested_power_estimate_w\x18\x02 \x01(\x01H\x00\x88\x01\x01\x12\"\n\x15requested_power_max_w\x18\x03 \x01(\x01H\x01\x88\x01\x01\x12\x14\n\x0cis_stoppable\x18\x04 \x01(\x08\x12\x13\n\x0bis_pausable\x18\x05 \x01(\x08\x12\x38\n\x05state\x18\x06 \x01(\x0e\x32).eebus.v1.CompressorPowerConsumptionState\x12\x1b\n\x13minimal_run_seconds\x18\x07 \x01(\x03\x12\x1d\n\x15minimal_pause_seconds\x18\x08 \x01(\x03\x42\x1d\n\x1b_requested_power_estimate_wB\x18\n\x16_requested_power_max_w\"~\n\x18\x43ontrolCompressorRequest\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12%\n\x06\x61\x63tion\x18\x02 \x01(\x0e\x32\x15.eebus.v1.OHPCFAction\x12.\n\nstart_time\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"}\n\nOHPCFEvent\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12,\n\nevent_type\x18\x02 \x01(\x0e\x32\x18.eebus.v1.OHPCFEventType\x12\x34\n\x0b\x66lexibility\x18\x03 \x01(\x0b\x32\x1f.eebus.v1.CompressorFlexibility*\xfc\x01\n\x1f\x43ompressorPowerConsumptionState\x12 \n\x1c\x43OMPRESSOR_STATE_UNSPECIFIED\x10\x00\x12\x1e\n\x1a\x43OMPRESSOR_STATE_AVAILABLE\x10\x01\x12\x1e\n\x1a\x43OMPRESSOR_STATE_SCHEDULED\x10\x02\x12\x1c\n\x18\x43OMPRESSOR_STATE_RUNNING\x10\x03\x12\x1b\n\x17\x43OMPRESSOR_STATE_PAUSED\x10\x04\x12\x1e\n\x1a\x43OMPRESSOR_STATE_COMPLETED\x10\x05\x12\x1c\n\x18\x43OMPRESSOR_STATE_STOPPED\x10\x06*\x8f\x01\n\x0bOHPCFAction\x12\x1c\n\x18OHPCF_ACTION_UNSPECIFIED\x10\x00\x12\x19\n\x15OHPCF_ACTION_SCHEDULE\x10\x01\x12\x16\n\x12OHPCF_ACTION_PAUSE\x10\x02\x12\x17\n\x13OHPCF_ACTION_RESUME\x10\x03\x12\x16\n\x12OHPCF_ACTION_ABORT\x10\x04*\x8b\x01\n\x0eOHPCFEventType\x12\x1b\n\x17OHPCF_EVENT_UNSPECIFIED\x10\x00\x12\x1f\n\x1bOHPCF_EVENT_SUPPORT_UPDATED\x10\x01\x12\x1d\n\x19OHPCF_EVENT_STATE_UPDATED\x10\x02\x12\x1c\n\x18OHPCF_EVENT_DATA_UPDATED\x10\x03\x32\x82\x02\n\x0cOHPCFService\x12T\n\x18GetCompressorFlexibility\x12\x17.eebus.v1.DeviceRequest\x1a\x1f.eebus.v1.CompressorFlexibility\x12S\n\x1c\x43ontrolCompressorFlexibility\x12\".eebus.v1.ControlCompressorRequest\x1a\x0f.eebus.v1.Empty\x12G\n\x14SubscribeOHPCFEvents\x12\x17.eebus.v1.DeviceRequest\x1a\x14.eebus.v1.OHPCFEvent0\x01\x42=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1c\x65\x65\x62us/v1/ohpcf_service.proto\x12\x08\x65\x65\x62us.v1\x1a\x15\x65\x65\x62us/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x95\x03\n\x15\x43ompressorFlexibility\x12\x11\n\tavailable\x18\x01 \x01(\x08\x12\'\n\x1arequested_power_estimate_w\x18\x02 \x01(\x01H\x00\x88\x01\x01\x12\"\n\x15requested_power_max_w\x18\x03 \x01(\x01H\x01\x88\x01\x01\x12\x14\n\x0cis_stoppable\x18\x04 \x01(\x08\x12\x13\n\x0bis_pausable\x18\x05 \x01(\x08\x12\x38\n\x05state\x18\x06 \x01(\x0e\x32).eebus.v1.CompressorPowerConsumptionState\x12\x1b\n\x13minimal_run_seconds\x18\x07 \x01(\x03\x12\x1d\n\x15minimal_pause_seconds\x18\x08 \x01(\x03\x12\x33\n\nstart_time\x18\t \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x02\x88\x01\x01\x42\x1d\n\x1b_requested_power_estimate_wB\x18\n\x16_requested_power_max_wB\r\n\x0b_start_time\"~\n\x18\x43ontrolCompressorRequest\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12%\n\x06\x61\x63tion\x18\x02 \x01(\x0e\x32\x15.eebus.v1.OHPCFAction\x12.\n\nstart_time\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\xaf\x01\n\nOHPCFEvent\x12\x0b\n\x03ski\x18\x01 \x01(\t\x12,\n\nevent_type\x18\x02 \x01(\x0e\x32\x18.eebus.v1.OHPCFEventType\x12\x34\n\x0b\x66lexibility\x18\x03 \x01(\x0b\x32\x1f.eebus.v1.CompressorFlexibility\x12\x30\n\x0cupdate_field\x18\x04 \x01(\x0e\x32\x1a.eebus.v1.OHPCFUpdateField*\xfc\x01\n\x1f\x43ompressorPowerConsumptionState\x12 \n\x1c\x43OMPRESSOR_STATE_UNSPECIFIED\x10\x00\x12\x1e\n\x1a\x43OMPRESSOR_STATE_AVAILABLE\x10\x01\x12\x1e\n\x1a\x43OMPRESSOR_STATE_SCHEDULED\x10\x02\x12\x1c\n\x18\x43OMPRESSOR_STATE_RUNNING\x10\x03\x12\x1b\n\x17\x43OMPRESSOR_STATE_PAUSED\x10\x04\x12\x1e\n\x1a\x43OMPRESSOR_STATE_COMPLETED\x10\x05\x12\x1c\n\x18\x43OMPRESSOR_STATE_STOPPED\x10\x06*\x8f\x01\n\x0bOHPCFAction\x12\x1c\n\x18OHPCF_ACTION_UNSPECIFIED\x10\x00\x12\x19\n\x15OHPCF_ACTION_SCHEDULE\x10\x01\x12\x16\n\x12OHPCF_ACTION_PAUSE\x10\x02\x12\x17\n\x13OHPCF_ACTION_RESUME\x10\x03\x12\x16\n\x12OHPCF_ACTION_ABORT\x10\x04*\x8b\x01\n\x0eOHPCFEventType\x12\x1b\n\x17OHPCF_EVENT_UNSPECIFIED\x10\x00\x12\x1f\n\x1bOHPCF_EVENT_SUPPORT_UPDATED\x10\x01\x12\x1d\n\x19OHPCF_EVENT_STATE_UPDATED\x10\x02\x12\x1c\n\x18OHPCF_EVENT_DATA_UPDATED\x10\x03*\xf3\x02\n\x10OHPCFUpdateField\x12\"\n\x1eOHPCF_UPDATE_FIELD_UNSPECIFIED\x10\x00\x12\x1c\n\x18OHPCF_UPDATE_FIELD_STATE\x10\x01\x12 \n\x1cOHPCF_UPDATE_FIELD_STOPPABLE\x10\x02\x12\x1f\n\x1bOHPCF_UPDATE_FIELD_PAUSABLE\x10\x03\x12!\n\x1dOHPCF_UPDATE_FIELD_START_TIME\x10\x04\x12/\n+OHPCF_UPDATE_FIELD_REQUESTED_POWER_ESTIMATE\x10\x05\x12*\n&OHPCF_UPDATE_FIELD_REQUESTED_POWER_MAX\x10\x06\x12+\n\'OHPCF_UPDATE_FIELD_MINIMAL_RUN_DURATION\x10\x07\x12-\n)OHPCF_UPDATE_FIELD_MINIMAL_PAUSE_DURATION\x10\x08\x32\x82\x02\n\x0cOHPCFService\x12T\n\x18GetCompressorFlexibility\x12\x17.eebus.v1.DeviceRequest\x1a\x1f.eebus.v1.CompressorFlexibility\x12S\n\x1c\x43ontrolCompressorFlexibility\x12\".eebus.v1.ControlCompressorRequest\x1a\x0f.eebus.v1.Empty\x12G\n\x14SubscribeOHPCFEvents\x12\x17.eebus.v1.DeviceRequest\x1a\x14.eebus.v1.OHPCFEvent0\x01\x42=Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -34,18 +34,20 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'eebus.v1.ohpcf_service_pb2'
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z;github.com/volschin/eebus-bridge/gen/proto/eebus/v1;eebusv1'
-  _globals['_COMPRESSORPOWERCONSUMPTIONSTATE']._serialized_start=694
-  _globals['_COMPRESSORPOWERCONSUMPTIONSTATE']._serialized_end=946
-  _globals['_OHPCFACTION']._serialized_start=949
-  _globals['_OHPCFACTION']._serialized_end=1092
-  _globals['_OHPCFEVENTTYPE']._serialized_start=1095
-  _globals['_OHPCFEVENTTYPE']._serialized_end=1234
+  _globals['_COMPRESSORPOWERCONSUMPTIONSTATE']._serialized_start=813
+  _globals['_COMPRESSORPOWERCONSUMPTIONSTATE']._serialized_end=1065
+  _globals['_OHPCFACTION']._serialized_start=1068
+  _globals['_OHPCFACTION']._serialized_end=1211
+  _globals['_OHPCFEVENTTYPE']._serialized_start=1214
+  _globals['_OHPCFEVENTTYPE']._serialized_end=1353
+  _globals['_OHPCFUPDATEFIELD']._serialized_start=1356
+  _globals['_OHPCFUPDATEFIELD']._serialized_end=1727
   _globals['_COMPRESSORFLEXIBILITY']._serialized_start=99
-  _globals['_COMPRESSORFLEXIBILITY']._serialized_end=436
-  _globals['_CONTROLCOMPRESSORREQUEST']._serialized_start=438
-  _globals['_CONTROLCOMPRESSORREQUEST']._serialized_end=564
-  _globals['_OHPCFEVENT']._serialized_start=566
-  _globals['_OHPCFEVENT']._serialized_end=691
-  _globals['_OHPCFSERVICE']._serialized_start=1237
-  _globals['_OHPCFSERVICE']._serialized_end=1495
+  _globals['_COMPRESSORFLEXIBILITY']._serialized_end=504
+  _globals['_CONTROLCOMPRESSORREQUEST']._serialized_start=506
+  _globals['_CONTROLCOMPRESSORREQUEST']._serialized_end=632
+  _globals['_OHPCFEVENT']._serialized_start=635
+  _globals['_OHPCFEVENT']._serialized_end=810
+  _globals['_OHPCFSERVICE']._serialized_start=1730
+  _globals['_OHPCFSERVICE']._serialized_end=1988
 # @@protoc_insertion_point(module_scope)
