@@ -69,13 +69,3 @@ func (t *lifecycleTransaction) rollback() error {
 	<-t.done
 	return t.err
 }
-
-func (t *lifecycleTransaction) stageNames() []string {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	result := make([]string, len(t.stages))
-	for index, stage := range t.stages {
-		result[index] = stage.name
-	}
-	return result
-}
