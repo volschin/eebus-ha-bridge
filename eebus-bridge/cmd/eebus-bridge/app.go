@@ -50,6 +50,7 @@ type grpcLifecycle interface {
 	WaitReady(context.Context) error
 	Stop()
 	SetHealthy(bool)
+	SetDeviceHealthy(bool)
 }
 
 type heartbeatLifecycle interface {
@@ -810,7 +811,7 @@ func (a *Application) handleMonitoringWatchdogTick(now time.Time) bool {
 				break
 			}
 		}
-		a.grpcSrv.SetHealthy(healthy)
+		a.grpcSrv.SetDeviceHealthy(healthy)
 	}
 	if !result.RestartRequired {
 		return false

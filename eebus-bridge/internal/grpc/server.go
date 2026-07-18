@@ -26,16 +26,17 @@ const gracefulStopTimeout = 5 * time.Second
 const maxConcurrentStreams = 64
 
 type Server struct {
-	grpcServer *grpc.Server
-	healthSrv  *health.Server
-	listener   net.Listener
-	bind       string
-	port       int
-	mu         sync.RWMutex
-	ready      chan struct{}
-	readyOnce  sync.Once
-	startErr   error
-	serving    *atomic.Bool
+	grpcServer    *grpc.Server
+	healthSrv     *health.Server
+	listener      net.Listener
+	bind          string
+	port          int
+	mu            sync.RWMutex
+	ready         chan struct{}
+	readyOnce     sync.Once
+	startErr      error
+	serving       *atomic.Bool
+	deviceHealthy atomic.Bool
 }
 
 func NewServer(bind string, port int, enableReflection bool) *Server {
@@ -66,23 +67,43 @@ func NewServerWithSecurity(bind string, port int, enableReflection bool, securit
 		reflection.Register(grpcServer)
 	}
 
-	return &Server{
+	server := &Server{
 		grpcServer: grpcServer,
 		healthSrv:  healthSrv,
 		bind:       bind,
 		port:       port,
 		ready:      make(chan struct{}),
 		serving:    serving,
-	}, nil
+	}
+	server.deviceHealthy.Store(true)
+	return server, nil
 }
 
 // SetHealthy atomically controls both the health-service response and the
-// application-RPC readiness gate. Device-scoped recovery deliberately does
-// not change this process-wide state.
+// application-RPC readiness gate. This is the bridge STARTUP/SHUTDOWN
+// lifecycle signal only — call it exactly once each way, from Start's commit
+// point and from Stop. Per-device connectivity must go through
+// SetDeviceHealthy instead: gating every client RPC on "is every device fully
+// healthy right now" would reject HA's calls (GetDeviceStatus,
+// GetDeviceSnapshot, ...) during the ordinary reconnect/grace-period window
+// when they matter most.
 func (s *Server) SetHealthy(healthy bool) {
 	s.serving.Store(healthy)
+	s.publishHealth()
+}
+
+// SetDeviceHealthy reports device-level connectivity to the gRPC health
+// service (Docker/k8s probes) without touching the RPC readiness gate, so a
+// disconnected/recovering device is visible to orchestration tooling while
+// client RPCs keep working.
+func (s *Server) SetDeviceHealthy(healthy bool) {
+	s.deviceHealthy.Store(healthy)
+	s.publishHealth()
+}
+
+func (s *Server) publishHealth() {
 	status := grpc_health_v1.HealthCheckResponse_SERVING
-	if !healthy {
+	if !s.serving.Load() || !s.deviceHealthy.Load() {
 		status = grpc_health_v1.HealthCheckResponse_NOT_SERVING
 	}
 	s.healthSrv.SetServingStatus("", status)

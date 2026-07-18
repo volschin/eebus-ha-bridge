@@ -100,6 +100,9 @@ type fakeGRPCLifecycle struct {
 
 	healthMu sync.Mutex
 	health   []bool
+
+	deviceHealthMu sync.Mutex
+	deviceHealth   []bool
 }
 
 func (f *fakeGRPCLifecycle) Start() error {
@@ -131,6 +134,18 @@ func (f *fakeGRPCLifecycle) SetHealthy(healthy bool) {
 	f.healthMu.Lock()
 	f.health = append(f.health, healthy)
 	f.healthMu.Unlock()
+}
+
+func (f *fakeGRPCLifecycle) SetDeviceHealthy(healthy bool) {
+	f.deviceHealthMu.Lock()
+	f.deviceHealth = append(f.deviceHealth, healthy)
+	f.deviceHealthMu.Unlock()
+}
+
+func (f *fakeGRPCLifecycle) deviceHealthValues() []bool {
+	f.deviceHealthMu.Lock()
+	defer f.deviceHealthMu.Unlock()
+	return append([]bool(nil), f.deviceHealth...)
 }
 
 func (f *fakeGRPCLifecycle) healthValues() []bool {
@@ -655,7 +670,7 @@ func TestMonitoringRecoveryPersistentFailureEscalatesOnce(t *testing.T) {
 	assert.Len(t, registry.clearValues(), monitoringRecoveryMaxAttempts)
 	assert.Len(t, bridge.unregisterValues(), monitoringRecoveryMaxAttempts)
 	assert.Len(t, bridge.registerValues(), monitoringRecoveryMaxAttempts)
-	assert.Equal(t, []bool{false, false, false, false, false}, grpcServer.healthValues())
+	assert.Equal(t, []bool{false, false, false, false, false}, grpcServer.deviceHealthValues())
 }
 
 func TestMonitoringWatchdogHealthTracksTrustedDisconnectedDevice(t *testing.T) {
@@ -666,7 +681,7 @@ func TestMonitoringWatchdogHealthTracksTrustedDisconnectedDevice(t *testing.T) {
 	app := newTestApplication(bridge, grpcServer, &fakeHeartbeatLifecycle{}, registry)
 
 	require.False(t, app.handleMonitoringWatchdogTick(time.Unix(100, 0)))
-	assert.Equal(t, []bool{false}, grpcServer.healthValues())
+	assert.Equal(t, []bool{false}, grpcServer.deviceHealthValues())
 }
 
 func TestApplicationStartSignalTriggersShutdown(t *testing.T) {
