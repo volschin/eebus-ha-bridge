@@ -604,7 +604,7 @@ func TestMonitoringRecoveryDoesNotTouchOtherDevicesOrRunInParallel(t *testing.T)
 	require.True(t, ok)
 	assert.Len(t, other.RemoteEntities, 1)
 	assert.Same(t, otherEntity, other.RemoteEntities[0])
-	assert.Equal(t, []bool{false, false}, grpcServer.healthValues())
+	assert.Equal(t, []bool{false, false}, grpcServer.deviceHealthValues())
 }
 
 func TestMonitoringRecoverySuccessfulRebindPreventsRestart(t *testing.T) {
@@ -625,7 +625,7 @@ func TestMonitoringRecoverySuccessfulRebindPreventsRestart(t *testing.T) {
 	assert.Equal(t, []string{"AA11"}, registry.clearValues())
 	assert.Equal(t, []string{"AA11"}, bridge.unregisterValues())
 	assert.Equal(t, []string{"AA11"}, bridge.registerValues())
-	assert.Equal(t, []bool{false, true}, grpcServer.healthValues())
+	assert.Equal(t, []bool{false, true}, grpcServer.deviceHealthValues())
 }
 
 func TestMonitoringRecoveryDisconnectedOrGraceDoesNotResetRecovery(t *testing.T) {

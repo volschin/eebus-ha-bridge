@@ -30,8 +30,14 @@ const (
 	ohpcfReadStartTime
 )
 
-const ohpcfCoreReadMask = ohpcfReadAvailable | ohpcfReadStoppable | ohpcfReadPausable |
-	ohpcfReadState | ohpcfReadMinimalRun | ohpcfReadMinimalPause
+// ohpcfCoreReadMask covers only fields the compressor reports regardless of
+// whether it currently has an active optional-consumption offer. Minimal
+// run/pause duration, like power estimate/max and start time, are
+// offer-specific and legitimately absent while idle (cf.
+// isOHPCFOptionalAbsent) — requiring them here made the capability read as
+// TemporarilyUnavailable, and thus every idle "off" flexibility reading
+// invisible to HA, whenever the compressor had no active offer.
+const ohpcfCoreReadMask = ohpcfReadAvailable | ohpcfReadStoppable | ohpcfReadPausable | ohpcfReadState
 
 // OHPCFService exposes the bridge's OHPCF (heat-pump compressor flexibility)
 // CEM-client use case over gRPC: read the compressor's optional-consumption offer
@@ -272,10 +278,14 @@ func (s *OHPCFService) buildFlexibility(entity spineapi.EntityRemoteInterface) (
 	if d, err := s.ohpcf.MinimalRunDuration(entity); err == nil {
 		f.MinimalRunSeconds = int64(d / time.Second)
 		reads |= ohpcfReadMinimalRun
+	} else if isOHPCFOptionalAbsent(err) {
+		clears |= ohpcfReadMinimalRun
 	}
 	if d, err := s.ohpcf.MinimalPauseDuration(entity); err == nil {
 		f.MinimalPauseSeconds = int64(d / time.Second)
 		reads |= ohpcfReadMinimalPause
+	} else if isOHPCFOptionalAbsent(err) {
+		clears |= ohpcfReadMinimalPause
 	}
 	if start, err := s.ohpcf.ConsumptionStartTime(entity); err == nil {
 		f.StartTime = timestamppb.New(start)
