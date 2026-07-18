@@ -21,6 +21,13 @@ type snapshotMeasurementStateSource interface {
 	SnapshotMeasurementsWithStates(string) (*pb.MeasurementList, map[pb.MeasurementId]pb.SnapshotValueState, error)
 }
 
+// snapshotDeviceDiagnosticsSource actively refreshes device operating state at
+// snapshot build time, unlike the passive cache-only AttachMeasurementPayload
+// path used by the per-event stream loop.
+type snapshotDeviceDiagnosticsSource interface {
+	SnapshotDeviceDiagnostics(string) *pb.DeviceDiagnosticsData
+}
+
 type SnapshotHeartbeatSource interface {
 	SnapshotHeartbeat(string) (*pb.HeartbeatStatus, error)
 }
@@ -109,9 +116,13 @@ func (a *DeviceSnapshotAssembler) Build(ski string, revision uint64) (*pb.Device
 			result.Measurements = measurements.Measurements
 		}
 		result.MeasurementsState = valueState(eebus.CapabilityMonitoring, len(result.Measurements) > 0, true)
-		diagnostics := &pb.MeasurementEvent{Ski: ski, EventType: pb.MeasurementEventType_MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED}
-		a.monitoring.AttachMeasurementPayload(diagnostics, ski, diagnostics.EventType)
-		result.DeviceDiagnostics = diagnostics.GetDeviceDiagnostics()
+		if source, ok := a.monitoring.(snapshotDeviceDiagnosticsSource); ok {
+			result.DeviceDiagnostics = source.SnapshotDeviceDiagnostics(ski)
+		} else {
+			diagnostics := &pb.MeasurementEvent{Ski: ski, EventType: pb.MeasurementEventType_MEASUREMENT_EVENT_DEVICE_OPERATING_STATE_UPDATED}
+			a.monitoring.AttachMeasurementPayload(diagnostics, ski, diagnostics.EventType)
+			result.DeviceDiagnostics = diagnostics.GetDeviceDiagnostics()
+		}
 		result.DeviceDiagnosticsState = valueState(eebus.CapabilityMonitoring, result.DeviceDiagnostics != nil, true)
 	} else {
 		result.MeasurementsState = valueState(eebus.CapabilityMonitoring, false, false)

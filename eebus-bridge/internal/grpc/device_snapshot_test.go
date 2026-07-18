@@ -240,3 +240,43 @@ func TestInitialSnapshotBuffersConcurrentEvent(t *testing.T) {
 		t.Fatalf("buffered delta = %+v", second)
 	}
 }
+
+// activeDiagnosticsPayloads embeds snapshotPayloads and additionally
+// implements snapshotDeviceDiagnosticsSource, returning a value that differs
+// from AttachMeasurementPayload's canned "running" so the two paths are
+// distinguishable in assertions.
+type activeDiagnosticsPayloads struct {
+	*snapshotPayloads
+	calls int
+}
+
+func (f *activeDiagnosticsPayloads) SnapshotDeviceDiagnostics(string) *pb.DeviceDiagnosticsData {
+	f.calls++
+	return &pb.DeviceDiagnosticsData{OperatingState: "standby"}
+}
+
+func TestDeviceSnapshotPrefersActiveDiagnosticsReadOverCache(t *testing.T) {
+	bus := eebus.NewEventBus()
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	registry.MarkConnected(testValidSKI)
+	payloads := &activeDiagnosticsPayloads{snapshotPayloads: &snapshotPayloads{registry: registry}}
+	service := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false), bus, "local", registry, &recordingTrustController{},
+		bridgegrpc.WithDeviceStatePayloads(bridgegrpc.DeviceStatePayloadSources{Monitoring: payloads}),
+	)
+
+	snapshot, err := service.GetDeviceSnapshot(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil {
+		t.Fatalf("GetDeviceSnapshot: %v", err)
+	}
+	if payloads.calls != 1 {
+		t.Fatalf("SnapshotDeviceDiagnostics calls = %d, want 1", payloads.calls)
+	}
+	if got := snapshot.GetDeviceDiagnostics().GetOperatingState(); got != "standby" {
+		t.Fatalf("operating state = %q, want active-read value %q", got, "standby")
+	}
+	if snapshotFieldState(snapshot, pb.SnapshotFieldId_SNAPSHOT_FIELD_DEVICE_OPERATING_STATE) != pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_AVAILABLE {
+		t.Fatalf("device operating state field = %+v", snapshot.GetFieldStates())
+	}
+}

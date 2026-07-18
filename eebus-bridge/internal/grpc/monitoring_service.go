@@ -91,6 +91,26 @@ func NewMonitoringService(
 	}
 }
 
+// SnapshotDeviceDiagnostics actively reads the remote operating state for
+// snapshot construction (the initial gRPC-stream snapshot and GetDeviceSnapshot
+// polls), unlike attachMeasurementPayload's per-event cache-only read: no
+// SPINE subscription pushes DeviceDiagnosisStateData on its own, so without an
+// active read here the field never populates in the snapshot/stream
+// architecture (cf. the retired legacy GetDeviceDiagnostics poll, which was
+// the only remaining caller of the active OperatingState path before this).
+// Safe to block briefly here: unlike the event send loop, both snapshot call
+// sites run per-request/per-subscribe, not in a hot per-event loop.
+func (s *MonitoringService) SnapshotDeviceDiagnostics(ski string) *pb.DeviceDiagnosticsData {
+	if s.diagnostics == nil {
+		return nil
+	}
+	state, err := s.diagnostics.OperatingState(ski)
+	if err != nil {
+		return nil
+	}
+	return &pb.DeviceDiagnosticsData{OperatingState: state, Timestamp: timestamppb.Now()}
+}
+
 func (s *MonitoringService) GetDeviceDiagnostics(_ context.Context, req *pb.DeviceRequest) (*pb.DeviceDiagnosticsData, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
