@@ -64,6 +64,23 @@ def test_poll_interval_is_slow_reconciliation() -> None:
     assert POLL_INTERVAL == timedelta(minutes=5)
 
 
+def test_stream_publish_does_not_postpone_reconciliation_poll() -> None:
+    """Frequent push updates must not reset the coordinator's poll interval."""
+    coordinator = EebusCoordinator.__new__(EebusCoordinator)
+    coordinator.data = None
+    coordinator.last_update_success = False
+    coordinator.async_set_updated_data = MagicMock()
+    coordinator.async_update_listeners = MagicMock()
+    state = DeviceState(connection=ConnectionState(connected=True))
+
+    coordinator._publish_state(state)
+
+    assert coordinator.data is state
+    assert coordinator.last_update_success is True
+    coordinator.async_update_listeners.assert_called_once_with()
+    coordinator.async_set_updated_data.assert_not_called()
+
+
 async def test_ensure_channel_delegates_to_manager() -> None:
     coordinator = EebusCoordinator.__new__(EebusCoordinator)
     channel = MagicMock()

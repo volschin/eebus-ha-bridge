@@ -221,8 +221,15 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
             raise cancellation
 
     def _publish_state(self, state: DeviceState) -> None:
-        """Publish one already-reduced immutable state atomically."""
-        self.async_set_updated_data(state)
+        """Publish push data without postponing the reconciliation poll.
+
+        ``DataUpdateCoordinator.async_set_updated_data`` resets the coordinator's
+        update interval.  EEBUS normally pushes more often than ``POLL_INTERVAL``,
+        so using it here could postpone the full snapshot reconciliation forever.
+        """
+        self.data = state
+        self.last_update_success = True
+        self.async_update_listeners()
 
     def _publish_session_state(self, generation: object, state: DeviceState) -> None:
         """Ignore staged or superseded session observations outside commit."""
