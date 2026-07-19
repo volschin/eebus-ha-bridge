@@ -31,6 +31,7 @@ jobs:
               - 'eebus-bridge/**'
               - 'scripts/check_go_patch_coverage.py'
               - 'scripts/tests/test_check_go_patch_coverage.py'
+              - 'docs/badges/go-coverage.svg'
               - '.github/workflows/ci.yml'
             python:
               - 'custom_components/**'
@@ -109,7 +110,9 @@ jobs:
             --repository .. \
             --profile coverage.out \
             --base "$coverage_base" \
-            --threshold 90
+            --threshold 90 \
+            --badge-output ../docs/badges/go-coverage.svg
+          git -C .. diff --exit-code -- docs/badges/go-coverage.svg
       - run: go test -tags=integration -v ./internal/grpc/ -run TestIntegration
       - name: govulncheck
         # Invoke govulncheck directly instead of golang/govulncheck-action: the
