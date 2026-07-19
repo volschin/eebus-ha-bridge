@@ -292,6 +292,25 @@ func TestOHPCFEnvelopeAvailabilityTracksTheUpdatedField(t *testing.T) {
 	if missing.GetOhpcf().GetFlexibility() == nil {
 		t.Fatalf("legacy-stream clients must keep the partial payload: %v", missing)
 	}
+	absentPermissionController := controller
+	absentPermissionController.stoppableErr = eebusapi.ErrDataNotAvailable
+	absentPermissionService := NewDeviceService(
+		nil,
+		bus,
+		"local",
+		registry,
+		nil,
+		WithDeviceStatePayloads(DeviceStatePayloadSources{
+			OHPCF: NewOHPCFService(nil, bus, registry, WithOHPCFController(absentPermissionController)),
+		}),
+	)
+	absentPermission := absentPermissionService.deviceStateEnvelope(eebus.Event{
+		SKI: testValidSKI, Type: eebus.EventTypeOHPCFConsumptionStoppableUpdated, OccurredAt: time.Now(),
+	})
+	if absentPermission.GetAvailability() != pb.EventAvailability_EVENT_AVAILABILITY_AVAILABLE ||
+		absentPermission.GetOhpcf().GetFlexibility().GetIsStoppable() {
+		t.Fatalf("absent optional stoppable permission = %v", absentPermission)
+	}
 	missingStateSource := controller
 	missingStateSource.availableErr = errors.New("availability cache miss")
 	missingStateService := NewDeviceService(

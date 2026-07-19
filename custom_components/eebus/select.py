@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import EebusCoordinator
@@ -66,7 +67,7 @@ class EebusCompressorFlexibilitySelect(EebusEntity, SelectEntity):
 
     @property
     def available(self) -> bool:
-        """Available only while the compressor advertises a flexibility offer."""
+        """Available while the OHPCF capability and its base state are readable."""
         data = self.coordinator.data
         return bool(
             super().available
@@ -107,14 +108,35 @@ class EebusCompressorFlexibilitySelect(EebusEntity, SelectEntity):
 
         flex = self._flex()
         if option == OPTION_ON:
-            action = (
-                proto_stubs.OHPCFAction.OHPCF_ACTION_RESUME
-                if flex is not None and flex.state == _OHPCF_PAUSED_STATE
-                else proto_stubs.OHPCFAction.OHPCF_ACTION_SCHEDULE
-            )
+            if flex is not None and flex.state == _OHPCF_PAUSED_STATE:
+                action = proto_stubs.OHPCFAction.OHPCF_ACTION_RESUME
+            elif flex is not None and flex.available:
+                action = proto_stubs.OHPCFAction.OHPCF_ACTION_SCHEDULE
+            else:
+                raise ServiceValidationError(
+                    "No optional compressor-consumption process is available to schedule"
+                )
         elif option == OPTION_PAUSED:
+            if (
+                flex is None
+                or flex.state != "COMPRESSOR_STATE_RUNNING"
+                or not flex.is_pausable
+            ):
+                raise ServiceValidationError(
+                    "Only a running, pausable compressor process can be paused"
+                )
             action = proto_stubs.OHPCFAction.OHPCF_ACTION_PAUSE
-        else:
+        elif option == OPTION_OFF:
+            if (
+                flex is None
+                or flex.state not in _OHPCF_ON_STATES | {_OHPCF_PAUSED_STATE}
+                or not flex.is_stoppable
+            ):
+                raise ServiceValidationError(
+                    "Only an active or scheduled stoppable compressor process can be aborted"
+                )
             action = proto_stubs.OHPCFAction.OHPCF_ACTION_ABORT
+        else:
+            raise ServiceValidationError(f"Unsupported compressor option: {option}")
         await self.coordinator.async_control_compressor(action)
         await self.coordinator.async_request_refresh()
