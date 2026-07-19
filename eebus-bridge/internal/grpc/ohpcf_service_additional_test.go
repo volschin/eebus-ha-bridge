@@ -72,24 +72,28 @@ func (noProcessOHPCFController) ConsumptionState(spineapi.EntityRemoteInterface)
 
 type controlOHPCFController struct {
 	failingOHPCFController
-	available bool
-	state     ucapi.CompressorPowerConsumptionStateType
-	stoppable bool
-	pausable  bool
-	calls     []string
+	available    bool
+	availableErr error
+	state        ucapi.CompressorPowerConsumptionStateType
+	stateErr     error
+	stoppable    bool
+	stoppableErr error
+	pausable     bool
+	pausableErr  error
+	calls        []string
 }
 
 func (c *controlOHPCFController) OptionalPowerConsumptionAvailable(spineapi.EntityRemoteInterface) (bool, error) {
-	return c.available, nil
+	return c.available, c.availableErr
 }
 func (c *controlOHPCFController) ConsumptionState(spineapi.EntityRemoteInterface) (ucapi.CompressorPowerConsumptionStateType, error) {
-	return c.state, nil
+	return c.state, c.stateErr
 }
 func (c *controlOHPCFController) ConsumptionIsStoppable(spineapi.EntityRemoteInterface) (bool, error) {
-	return c.stoppable, nil
+	return c.stoppable, c.stoppableErr
 }
 func (c *controlOHPCFController) ConsumptionIsPausable(spineapi.EntityRemoteInterface) (bool, error) {
-	return c.pausable, nil
+	return c.pausable, c.pausableErr
 }
 func (c *controlOHPCFController) Schedule(spineapi.EntityRemoteInterface, time.Time) error {
 	c.calls = append(c.calls, "schedule")
@@ -293,6 +297,51 @@ func TestOHPCFServiceControlContracts(t *testing.T) {
 			}
 			if len(test.controller.calls) != 0 {
 				t.Fatalf("rejected action reached device: %v", test.controller.calls)
+			}
+		})
+	}
+
+	readFailures := []struct {
+		name       string
+		controller *controlOHPCFController
+		action     pb.OHPCFAction
+		wantCode   codes.Code
+	}{
+		{
+			name: "schedule availability read unavailable", controller: &controlOHPCFController{
+				failingOHPCFController: failingOHPCFController{entity: entity}, availableErr: eebusapi.ErrDataNotAvailable,
+			}, action: pb.OHPCFAction_OHPCF_ACTION_SCHEDULE, wantCode: codes.Unavailable,
+		},
+		{
+			name: "pause state read unavailable", controller: &controlOHPCFController{
+				failingOHPCFController: failingOHPCFController{entity: entity}, stateErr: eebusapi.ErrDataNotAvailable,
+			}, action: pb.OHPCFAction_OHPCF_ACTION_PAUSE, wantCode: codes.Unavailable,
+		},
+		{
+			name: "pause permission read fails", controller: &controlOHPCFController{
+				failingOHPCFController: failingOHPCFController{entity: entity}, state: ucapi.CompressorPowerConsumptionStateRunning, pausableErr: errors.New("permission read failed"),
+			}, action: pb.OHPCFAction_OHPCF_ACTION_PAUSE, wantCode: codes.Internal,
+		},
+		{
+			name: "resume state read unavailable", controller: &controlOHPCFController{
+				failingOHPCFController: failingOHPCFController{entity: entity}, stateErr: eebusapi.ErrDataNotAvailable,
+			}, action: pb.OHPCFAction_OHPCF_ACTION_RESUME, wantCode: codes.Unavailable,
+		},
+		{
+			name: "abort permission read fails", controller: &controlOHPCFController{
+				failingOHPCFController: failingOHPCFController{entity: entity}, state: ucapi.CompressorPowerConsumptionStateRunning, stoppableErr: errors.New("permission read failed"),
+			}, action: pb.OHPCFAction_OHPCF_ACTION_ABORT, wantCode: codes.Internal,
+		},
+	}
+	for _, test := range readFailures {
+		t.Run(test.name, func(t *testing.T) {
+			service := NewOHPCFService(nil, eebus.NewEventBus(), nil, WithOHPCFController(test.controller))
+			_, err := service.ControlCompressorFlexibility(ctx, &pb.ControlCompressorRequest{Ski: testValidSKI, Action: test.action})
+			if status.Code(err) != test.wantCode {
+				t.Fatalf("status = %s, want %s, error=%v", status.Code(err), test.wantCode, err)
+			}
+			if len(test.controller.calls) != 0 {
+				t.Fatalf("failed precondition read reached device: %v", test.controller.calls)
 			}
 		})
 	}
