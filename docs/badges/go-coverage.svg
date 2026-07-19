@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="172" height="28" role="img" aria-label="Go coverage: 83.3%">
+  <title>Go coverage: 83.3%</title>
+  <linearGradient id="s" x2="0" y2="100%">
+    <stop offset="0" stop-color="#fff" stop-opacity=".15"/>
+    <stop offset="1" stop-opacity=".15"/>
+  </linearGradient>
+  <clipPath id="r"><rect width="172" height="28" rx="3" fill="#fff"/></clipPath>
+  <g clip-path="url(#r)">
+    <rect width="112" height="28" fill="#555"/>
+    <rect x="112" width="60" height="28" fill="#4c1"/>
+    <rect width="172" height="28" fill="url(#s)"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,DejaVu Sans,sans-serif" font-size="10" font-weight="700">
+    <text x="56" y="18">GO COVERAGE</text>
+    <text x="142" y="18">83.3%</text>
+  </g>
+</svg>

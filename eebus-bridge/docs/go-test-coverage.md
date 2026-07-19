@@ -116,6 +116,16 @@ Enthält ein Patch keine geänderten produktiven Go-Statements, besteht die
 Patch-Prüfung. Der Checker selbst besitzt isolierte Unit-Tests für Diff-Parsing,
 Scope-Ausschlüsse, Profil-Parsing, Blocküberlappung und Prozentberechnung.
 
+Der gleiche Checker erzeugt aus dem vollständigen Profil das eingecheckte
+`docs/badges/go-coverage.svg`. Das README bindet diese lokale Datei direkt ein;
+es gibt keine Abhängigkeit von einem externen Coverage- oder Badge-Dienst. Die
+CI regeneriert das SVG und schlägt bei einer Abweichung vom eingecheckten Badge
+fehl. Lokal wird es mit folgendem Zusatz zur Patch-Prüfung aktualisiert:
+
+```bash
+--badge-output ../docs/badges/go-coverage.svg
+```
+
 ## Abnahmekriterien
 
 - [x] Der definierte produktive Scope erreicht mindestens 83,0 %.

@@ -90,5 +90,24 @@ class PatchCoverageTest(unittest.TestCase):
         self.assertEqual(result.percentage, 100.0)
 
 
+class CoverageBadgeTest(unittest.TestCase):
+    def test_renders_total_statement_coverage_without_external_service(self) -> None:
+        blocks = [
+            coverage.CoverageBlock("eebus-bridge/internal/example.go", 1, 1, 3, 1),
+            coverage.CoverageBlock("eebus-bridge/internal/example.go", 2, 2, 2, 0),
+        ]
+        covered, total, percentage = coverage.total_statement_coverage(blocks)
+        self.assertEqual((covered, total), (3, 5))
+        self.assertAlmostEqual(percentage, 60.0)
+        badge = coverage.render_coverage_badge(percentage)
+        self.assertIn("Go coverage: 60.0%", badge)
+        self.assertIn("#e05d44", badge)
+
+    def test_target_coverage_uses_green_badge(self) -> None:
+        badge = coverage.render_coverage_badge(83.34)
+        self.assertIn("83.3%", badge)
+        self.assertIn("#4c1", badge)
+
+
 if __name__ == "__main__":
     unittest.main()

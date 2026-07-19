@@ -48,6 +48,45 @@ class PatchCoverage:
         return 100.0 if self.total == 0 else 100.0 * self.covered / self.total
 
 
+def total_statement_coverage(blocks: Iterable[CoverageBlock]) -> tuple[int, int, float]:
+    covered = 0
+    total = 0
+    for block in blocks:
+        total += block.statements
+        if block.count > 0:
+            covered += block.statements
+    percentage = 100.0 if total == 0 else 100.0 * covered / total
+    return covered, total, percentage
+
+
+def render_coverage_badge(percentage: float) -> str:
+    value = f"{percentage:.1f}%"
+    if percentage >= 83.0:
+        color = "#4c1"
+    elif percentage >= 70.0:
+        color = "#dfb317"
+    else:
+        color = "#e05d44"
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="172" height="28" role="img" aria-label="Go coverage: {value}">
+  <title>Go coverage: {value}</title>
+  <linearGradient id="s" x2="0" y2="100%">
+    <stop offset="0" stop-color="#fff" stop-opacity=".15"/>
+    <stop offset="1" stop-opacity=".15"/>
+  </linearGradient>
+  <clipPath id="r"><rect width="172" height="28" rx="3" fill="#fff"/></clipPath>
+  <g clip-path="url(#r)">
+    <rect width="112" height="28" fill="#555"/>
+    <rect x="112" width="60" height="28" fill="{color}"/>
+    <rect width="172" height="28" fill="url(#s)"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,DejaVu Sans,sans-serif" font-size="10" font-weight="700">
+    <text x="56" y="18">GO COVERAGE</text>
+    <text x="142" y="18">{value}</text>
+  </g>
+</svg>
+"""
+
+
 def is_productive_go_path(path: str) -> bool:
     return (
         path.startswith(REPOSITORY_MODULE_PREFIX)
@@ -157,6 +196,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--head", default="HEAD", help="Git head commit (default: HEAD)")
     parser.add_argument("--repository", default=Path.cwd(), type=Path, help="Git repository root")
     parser.add_argument("--threshold", default=90.0, type=float, help="required percentage")
+    parser.add_argument("--badge-output", type=Path, help="write a self-contained total coverage SVG")
     return parser.parse_args()
 
 
@@ -170,6 +210,10 @@ def main() -> int:
         changed = parse_changed_lines(diff)
         with args.profile.open(encoding="utf-8") as profile:
             blocks = parse_coverage_profile(profile)
+        if args.badge_output is not None:
+            _, _, total_percentage = total_statement_coverage(blocks)
+            args.badge_output.parent.mkdir(parents=True, exist_ok=True)
+            args.badge_output.write_text(render_coverage_badge(total_percentage), encoding="utf-8")
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
