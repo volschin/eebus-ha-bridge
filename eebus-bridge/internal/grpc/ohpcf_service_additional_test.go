@@ -59,6 +59,55 @@ func (f failingOHPCFController) Pause(spineapi.EntityRemoteInterface) error  { r
 func (f failingOHPCFController) Resume(spineapi.EntityRemoteInterface) error { return f.err }
 func (f failingOHPCFController) Abort(spineapi.EntityRemoteInterface) error  { return f.err }
 
+type noProcessOHPCFController struct {
+	failingOHPCFController
+}
+
+func (noProcessOHPCFController) OptionalPowerConsumptionAvailable(spineapi.EntityRemoteInterface) (bool, error) {
+	return false, nil
+}
+func (noProcessOHPCFController) ConsumptionState(spineapi.EntityRemoteInterface) (ucapi.CompressorPowerConsumptionStateType, error) {
+	return ucapi.CompressorPowerConsumptionStateStopped, nil
+}
+
+type controlOHPCFController struct {
+	failingOHPCFController
+	available bool
+	state     ucapi.CompressorPowerConsumptionStateType
+	stoppable bool
+	pausable  bool
+	calls     []string
+}
+
+func (c *controlOHPCFController) OptionalPowerConsumptionAvailable(spineapi.EntityRemoteInterface) (bool, error) {
+	return c.available, nil
+}
+func (c *controlOHPCFController) ConsumptionState(spineapi.EntityRemoteInterface) (ucapi.CompressorPowerConsumptionStateType, error) {
+	return c.state, nil
+}
+func (c *controlOHPCFController) ConsumptionIsStoppable(spineapi.EntityRemoteInterface) (bool, error) {
+	return c.stoppable, nil
+}
+func (c *controlOHPCFController) ConsumptionIsPausable(spineapi.EntityRemoteInterface) (bool, error) {
+	return c.pausable, nil
+}
+func (c *controlOHPCFController) Schedule(spineapi.EntityRemoteInterface, time.Time) error {
+	c.calls = append(c.calls, "schedule")
+	return nil
+}
+func (c *controlOHPCFController) Pause(spineapi.EntityRemoteInterface) error {
+	c.calls = append(c.calls, "pause")
+	return nil
+}
+func (c *controlOHPCFController) Resume(spineapi.EntityRemoteInterface) error {
+	c.calls = append(c.calls, "resume")
+	return nil
+}
+func (c *controlOHPCFController) Abort(spineapi.EntityRemoteInterface) error {
+	c.calls = append(c.calls, "abort")
+	return nil
+}
+
 func TestOHPCFServiceGetFlexibilityContracts(t *testing.T) {
 	ctx := context.Background()
 	empty := NewOHPCFService(nil, eebus.NewEventBus(), eebus.NewDeviceRegistry())
@@ -98,6 +147,47 @@ func TestOHPCFServiceGetFlexibilityContracts(t *testing.T) {
 	}
 }
 
+func TestOHPCFNoProcessRemainsAvailableInReadsEventsAndSnapshots(t *testing.T) {
+	ctx := context.Background()
+	entity := mocks.NewEntityRemoteInterface(t)
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	controller := noProcessOHPCFController{failingOHPCFController{
+		entity: entity,
+		err:    eebusapi.ErrDataNotAvailable,
+	}}
+	service := NewOHPCFService(nil, eebus.NewEventBus(), registry, WithOHPCFController(controller))
+
+	result, err := service.GetCompressorFlexibility(ctx, &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.GetAvailable() || result.GetState() != pb.CompressorPowerConsumptionState_COMPRESSOR_STATE_STOPPED ||
+		result.GetIsStoppable() || result.GetIsPausable() || result.RequestedPowerEstimateW != nil ||
+		result.RequestedPowerMaxW != nil || result.StartTime != nil {
+		t.Fatalf("no-process flexibility = %+v", result)
+	}
+
+	event := &pb.OHPCFEvent{}
+	if !service.AttachOHPCFPayload(event, testValidSKI, eebus.EventTypeOHPCFConsumptionStateUpdated) {
+		t.Fatalf("no-process state event was marked unavailable: %+v", event)
+	}
+	permissionEvent := &pb.OHPCFEvent{}
+	if !service.AttachOHPCFPayload(permissionEvent, testValidSKI, eebus.EventTypeOHPCFConsumptionStoppableUpdated) {
+		t.Fatalf("absent optional permission was marked unavailable: %+v", permissionEvent)
+	}
+
+	snapshot, err := NewDeviceSnapshotAssembler(registry, DeviceStatePayloadSources{OHPCF: service}).Build(testValidSKI, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.GetCompressorFlexibilityState() != pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_AVAILABLE ||
+		snapshot.GetCompressorFlexibility().GetAvailable() ||
+		snapshot.GetCompressorFlexibility().GetState() != pb.CompressorPowerConsumptionState_COMPRESSOR_STATE_STOPPED {
+		t.Fatalf("no-process snapshot = %+v", snapshot)
+	}
+}
+
 func TestOHPCFServiceControlContracts(t *testing.T) {
 	ctx := context.Background()
 	entity := mocks.NewEntityRemoteInterface(t)
@@ -115,16 +205,96 @@ func TestOHPCFServiceControlContracts(t *testing.T) {
 	}
 
 	start := timestamppb.New(time.Now().Add(time.Minute))
-	for _, request := range []*pb.ControlCompressorRequest{
-		{Ski: testValidSKI, Action: pb.OHPCFAction_OHPCF_ACTION_SCHEDULE},
-		{Ski: testValidSKI, Action: pb.OHPCFAction_OHPCF_ACTION_SCHEDULE, StartTime: start},
-		{Ski: testValidSKI, Action: pb.OHPCFAction_OHPCF_ACTION_PAUSE},
-		{Ski: testValidSKI, Action: pb.OHPCFAction_OHPCF_ACTION_RESUME},
-		{Ski: testValidSKI, Action: pb.OHPCFAction_OHPCF_ACTION_ABORT},
-	} {
-		if _, err := service.ControlCompressorFlexibility(ctx, request); err != nil {
-			t.Fatalf("action %s: %v", request.Action, err)
-		}
+	allowed := []struct {
+		name       string
+		controller *controlOHPCFController
+		request    *pb.ControlCompressorRequest
+		wantCall   string
+	}{
+		{
+			name: "schedule available process", controller: &controlOHPCFController{
+				failingOHPCFController: failingOHPCFController{entity: entity}, available: true,
+			},
+			request: &pb.ControlCompressorRequest{Ski: testValidSKI, Action: pb.OHPCFAction_OHPCF_ACTION_SCHEDULE, StartTime: start}, wantCall: "schedule",
+		},
+		{
+			name: "pause running pausable process", controller: &controlOHPCFController{
+				failingOHPCFController: failingOHPCFController{entity: entity}, state: ucapi.CompressorPowerConsumptionStateRunning, pausable: true,
+			},
+			request: &pb.ControlCompressorRequest{Ski: testValidSKI, Action: pb.OHPCFAction_OHPCF_ACTION_PAUSE}, wantCall: "pause",
+		},
+		{
+			name: "resume paused process", controller: &controlOHPCFController{
+				failingOHPCFController: failingOHPCFController{entity: entity}, state: ucapi.CompressorPowerConsumptionStatePaused,
+			},
+			request: &pb.ControlCompressorRequest{Ski: testValidSKI, Action: pb.OHPCFAction_OHPCF_ACTION_RESUME}, wantCall: "resume",
+		},
+		{
+			name: "abort running stoppable process", controller: &controlOHPCFController{
+				failingOHPCFController: failingOHPCFController{entity: entity}, state: ucapi.CompressorPowerConsumptionStateRunning, stoppable: true,
+			},
+			request: &pb.ControlCompressorRequest{Ski: testValidSKI, Action: pb.OHPCFAction_OHPCF_ACTION_ABORT}, wantCall: "abort",
+		},
+	}
+	for _, test := range allowed {
+		t.Run(test.name, func(t *testing.T) {
+			service := NewOHPCFService(nil, eebus.NewEventBus(), nil, WithOHPCFController(test.controller))
+			if _, err := service.ControlCompressorFlexibility(ctx, test.request); err != nil {
+				t.Fatal(err)
+			}
+			if len(test.controller.calls) != 1 || test.controller.calls[0] != test.wantCall {
+				t.Fatalf("write calls = %v, want [%s]", test.controller.calls, test.wantCall)
+			}
+		})
+	}
+
+	rejected := []struct {
+		name       string
+		controller *controlOHPCFController
+		action     pb.OHPCFAction
+	}{
+		{
+			name: "schedule without offer", controller: &controlOHPCFController{
+				failingOHPCFController: failingOHPCFController{entity: entity}, available: false,
+			}, action: pb.OHPCFAction_OHPCF_ACTION_SCHEDULE,
+		},
+		{
+			name: "pause non-running process", controller: &controlOHPCFController{
+				failingOHPCFController: failingOHPCFController{entity: entity}, state: ucapi.CompressorPowerConsumptionStateScheduled, pausable: true,
+			}, action: pb.OHPCFAction_OHPCF_ACTION_PAUSE,
+		},
+		{
+			name: "pause process without permission", controller: &controlOHPCFController{
+				failingOHPCFController: failingOHPCFController{entity: entity}, state: ucapi.CompressorPowerConsumptionStateRunning,
+			}, action: pb.OHPCFAction_OHPCF_ACTION_PAUSE,
+		},
+		{
+			name: "resume non-paused process", controller: &controlOHPCFController{
+				failingOHPCFController: failingOHPCFController{entity: entity}, state: ucapi.CompressorPowerConsumptionStateRunning,
+			}, action: pb.OHPCFAction_OHPCF_ACTION_RESUME,
+		},
+		{
+			name: "abort process without permission", controller: &controlOHPCFController{
+				failingOHPCFController: failingOHPCFController{entity: entity}, state: ucapi.CompressorPowerConsumptionStateRunning,
+			}, action: pb.OHPCFAction_OHPCF_ACTION_ABORT,
+		},
+		{
+			name: "abort stopped process", controller: &controlOHPCFController{
+				failingOHPCFController: failingOHPCFController{entity: entity}, state: ucapi.CompressorPowerConsumptionStateStopped, stoppable: true,
+			}, action: pb.OHPCFAction_OHPCF_ACTION_ABORT,
+		},
+	}
+	for _, test := range rejected {
+		t.Run(test.name, func(t *testing.T) {
+			service := NewOHPCFService(nil, eebus.NewEventBus(), nil, WithOHPCFController(test.controller))
+			_, err := service.ControlCompressorFlexibility(ctx, &pb.ControlCompressorRequest{Ski: testValidSKI, Action: test.action})
+			if status.Code(err) != codes.FailedPrecondition {
+				t.Fatalf("status = %s, error=%v", status.Code(err), err)
+			}
+			if len(test.controller.calls) != 0 {
+				t.Fatalf("rejected action reached device: %v", test.controller.calls)
+			}
+		})
 	}
 
 	notInitialized := NewOHPCFService(nil, eebus.NewEventBus(), nil)

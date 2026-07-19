@@ -112,6 +112,7 @@ class DeviceSession:
             "OHPCF control",
             stub.ControlCompressorFlexibility,
             proto_stubs.ControlCompressorRequest(ski=self._ski, action=action),
+            validation=True,
         )
 
     async def write_dhw_setpoint(self, value_celsius: float) -> WriteOutcome:

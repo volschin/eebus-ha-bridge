@@ -30,14 +30,10 @@ const (
 	ohpcfReadStartTime
 )
 
-// ohpcfCoreReadMask covers only fields the compressor reports regardless of
-// whether it currently has an active optional-consumption offer. Minimal
-// run/pause duration, like power estimate/max and start time, are
-// offer-specific and legitimately absent while idle (cf.
-// isOHPCFOptionalAbsent) — requiring them here made the capability read as
-// TemporarilyUnavailable, and thus every idle "off" flexibility reading
-// invisible to HA, whenever the compressor had no active offer.
-const ohpcfCoreReadMask = ohpcfReadAvailable | ohpcfReadStoppable | ohpcfReadPausable | ohpcfReadState
+// ohpcfCoreReadMask contains the two values OHPCF defines even when no optional
+// consumption process exists: availability=false and state=stopped. All other
+// fields describe an offered process and may legitimately be absent while idle.
+const ohpcfCoreReadMask = ohpcfReadAvailable | ohpcfReadState
 
 // OHPCFService exposes the bridge's OHPCF (heat-pump compressor flexibility)
 // CEM-client use case over gRPC: read the compressor's optional-consumption offer
@@ -106,7 +102,7 @@ func (s *OHPCFService) GetCompressorFlexibility(_ context.Context, req *pb.Devic
 		return nil, err
 	}
 	flexibility, reads, _ := s.buildFlexibility(entity)
-	if reads == 0 {
+	if reads&ohpcfCoreReadMask != ohpcfCoreReadMask {
 		if s.registry != nil {
 			s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityOHPCF, eebusapi.ErrDataNotAvailable)
 		}
@@ -132,6 +128,9 @@ func (s *OHPCFService) ControlCompressorFlexibility(_ context.Context, req *pb.C
 	if err != nil {
 		return nil, err
 	}
+	if err := s.validateOHPCFAction(entity, req.Action); err != nil {
+		return nil, err
+	}
 
 	switch req.Action {
 	case pb.OHPCFAction_OHPCF_ACTION_SCHEDULE:
@@ -153,6 +152,65 @@ func (s *OHPCFService) ControlCompressorFlexibility(_ context.Context, req *pb.C
 		return nil, mapUsecaseError("controlling compressor flexibility", err, standardUsecaseErrorClasses)
 	}
 	return &pb.Empty{}, nil
+}
+
+func (s *OHPCFService) validateOHPCFAction(
+	entity spineapi.EntityRemoteInterface,
+	action pb.OHPCFAction,
+) error {
+	switch action {
+	case pb.OHPCFAction_OHPCF_ACTION_SCHEDULE:
+		available, err := s.ohpcf.OptionalPowerConsumptionAvailable(entity)
+		if err != nil {
+			return mapUsecaseError("validating compressor schedule", err, standardUsecaseErrorClasses)
+		}
+		if !available {
+			return status.Error(codes.FailedPrecondition, "compressor schedule requires an available optional-consumption process")
+		}
+	case pb.OHPCFAction_OHPCF_ACTION_PAUSE:
+		state, err := s.ohpcf.ConsumptionState(entity)
+		if err != nil {
+			return mapUsecaseError("validating compressor pause", err, standardUsecaseErrorClasses)
+		}
+		if state != ucapi.CompressorPowerConsumptionStateRunning {
+			return status.Error(codes.FailedPrecondition, "compressor pause requires a running process")
+		}
+		pausable, err := s.ohpcf.ConsumptionIsPausable(entity)
+		if err != nil && !isOHPCFOptionalAbsent(err) {
+			return mapUsecaseError("validating compressor pause", err, standardUsecaseErrorClasses)
+		}
+		if !pausable {
+			return status.Error(codes.FailedPrecondition, "compressor process is not pausable")
+		}
+	case pb.OHPCFAction_OHPCF_ACTION_RESUME:
+		state, err := s.ohpcf.ConsumptionState(entity)
+		if err != nil {
+			return mapUsecaseError("validating compressor resume", err, standardUsecaseErrorClasses)
+		}
+		if state != ucapi.CompressorPowerConsumptionStatePaused {
+			return status.Error(codes.FailedPrecondition, "compressor resume requires a paused process")
+		}
+	case pb.OHPCFAction_OHPCF_ACTION_ABORT:
+		state, err := s.ohpcf.ConsumptionState(entity)
+		if err != nil {
+			return mapUsecaseError("validating compressor abort", err, standardUsecaseErrorClasses)
+		}
+		if state != ucapi.CompressorPowerConsumptionStateScheduled &&
+			state != ucapi.CompressorPowerConsumptionStateRunning &&
+			state != ucapi.CompressorPowerConsumptionStatePaused {
+			return status.Error(codes.FailedPrecondition, "compressor abort requires an active or scheduled process")
+		}
+		stoppable, err := s.ohpcf.ConsumptionIsStoppable(entity)
+		if err != nil && !isOHPCFOptionalAbsent(err) {
+			return mapUsecaseError("validating compressor abort", err, standardUsecaseErrorClasses)
+		}
+		if !stoppable {
+			return status.Error(codes.FailedPrecondition, "compressor process is not stoppable")
+		}
+	default:
+		return status.Error(codes.InvalidArgument, "action is required (schedule/pause/resume/abort)")
+	}
+	return nil
 }
 
 func (s *OHPCFService) SubscribeOHPCFEvents(req *pb.DeviceRequest, stream pb.OHPCFService_SubscribeOHPCFEventsServer) error {
@@ -266,10 +324,14 @@ func (s *OHPCFService) buildFlexibility(entity spineapi.EntityRemoteInterface) (
 	if stoppable, err := s.ohpcf.ConsumptionIsStoppable(entity); err == nil {
 		f.IsStoppable = stoppable
 		reads |= ohpcfReadStoppable
+	} else if isOHPCFOptionalAbsent(err) {
+		clears |= ohpcfReadStoppable
 	}
 	if pausable, err := s.ohpcf.ConsumptionIsPausable(entity); err == nil {
 		f.IsPausable = pausable
 		reads |= ohpcfReadPausable
+	} else if isOHPCFOptionalAbsent(err) {
+		clears |= ohpcfReadPausable
 	}
 	if st, err := s.ohpcf.ConsumptionState(entity); err == nil {
 		f.State = convertCompressorState(st)

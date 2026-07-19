@@ -1,6 +1,7 @@
 """Tests for OHPCF state conversion and controls."""
 
 import asyncio
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -116,6 +117,18 @@ def test_select_is_unavailable_when_retained_offer_is_stale() -> None:
     assert EebusCompressorFlexibilitySelect(coordinator).available is False
 
 
+def test_select_remains_available_when_no_process_is_offered() -> None:
+    flex = replace(
+        _flex("COMPRESSOR_STATE_STOPPED"),
+        available=False,
+        is_pausable=False,
+        is_stoppable=False,
+    )
+    select = _select_with(flex)
+    assert select.available is True
+    assert select.current_option == "off"
+
+
 def test_select_option_on_schedules_or_resumes() -> None:
     select = _select_with(_flex())
     asyncio.run(select.async_select_option("on"))
@@ -123,6 +136,43 @@ def test_select_option_on_schedules_or_resumes() -> None:
     select = _select_with(_flex("COMPRESSOR_STATE_PAUSED"))
     asyncio.run(select.async_select_option("on"))
     select.coordinator.async_control_compressor.assert_awaited_once_with(proto_stubs.OHPCFAction.OHPCF_ACTION_RESUME)
+
+
+def test_select_only_sends_permitted_pause_and_abort_actions() -> None:
+    select = _select_with(_flex("COMPRESSOR_STATE_RUNNING"))
+    asyncio.run(select.async_select_option("paused"))
+    select.coordinator.async_control_compressor.assert_awaited_once_with(
+        proto_stubs.OHPCFAction.OHPCF_ACTION_PAUSE
+    )
+
+    select = _select_with(
+        replace(_flex("COMPRESSOR_STATE_RUNNING"), is_stoppable=True)
+    )
+    asyncio.run(select.async_select_option("off"))
+    select.coordinator.async_control_compressor.assert_awaited_once_with(
+        proto_stubs.OHPCFAction.OHPCF_ACTION_ABORT
+    )
+
+
+@pytest.mark.parametrize(
+    ("flex", "option"),
+    [
+        (replace(_flex(), available=False), "on"),
+        (_flex("COMPRESSOR_STATE_SCHEDULED"), "paused"),
+        (replace(_flex("COMPRESSOR_STATE_RUNNING"), is_pausable=False), "paused"),
+        (_flex("COMPRESSOR_STATE_RUNNING"), "off"),
+        (replace(_flex("COMPRESSOR_STATE_STOPPED"), is_stoppable=True), "off"),
+        (_flex(), "invalid"),
+    ],
+)
+def test_select_rejects_actions_disallowed_by_ohpcf(
+    flex: CompressorFlexibilityState, option: str
+) -> None:
+    select = _select_with(flex)
+    with pytest.raises(ServiceValidationError):
+        asyncio.run(select.async_select_option(option))
+    select.coordinator.async_control_compressor.assert_not_awaited()
+    select.coordinator.async_request_refresh.assert_not_awaited()
 
 
 def test_status_sensor_maps_raw_state() -> None:

@@ -130,11 +130,14 @@ def test_set_lpc_active_reads_current_limit_then_writes():
     assert outcome == WriteOutcome(status_code=None)
 
 
-def test_control_compressor_calls_ohpcf_stub_without_validation():
+def test_control_compressor_classifies_precondition_as_validation_error():
     session = DeviceSession("test-ski", AsyncMock(return_value="channel"))
     err_stub = AsyncMock()
     err = AioRpcError(
-        grpc.StatusCode.INTERNAL, Metadata(), Metadata(), details="data not available"
+        grpc.StatusCode.FAILED_PRECONDITION,
+        Metadata(),
+        Metadata(),
+        details="process is not pausable",
     )
     err_stub.ControlCompressorFlexibility = AsyncMock(side_effect=err)
     with patch.object(proto_stubs, "ohpcf_service_stub", return_value=err_stub):
@@ -144,8 +147,10 @@ def test_control_compressor_calls_ohpcf_stub_without_validation():
             )
         )
 
-    # validation=False for this method: INTERNAL is not classified as validation_error.
-    assert outcome.validation_error is None
+    assert (
+        outcome.validation_error
+        == "OHPCF control failed: process is not pausable"
+    )
     assert outcome.error is err
 
 
