@@ -41,9 +41,12 @@ func newRoomHeatingSysFnFeature(
 	)
 	operation := mocks.NewOperationsInterface(t)
 	operation.On("Write").Return(writable)
+	operation.On("Read").Return(true).Maybe()
 	feature.On("Operations").Return(map[model.FunctionType]spineapi.OperationsInterface{
 		model.FunctionTypeHvacSystemFunctionListData: operation,
 	})
+	feature.On("Address").Return(&model.FeatureAddressType{}).Maybe()
+	feature.On("String").Return("remote room HVAC").Maybe()
 	return feature
 }
 
@@ -86,5 +89,41 @@ func TestRoomHeatingSysFnWriteRejectsModeNotInRelation(t *testing.T) {
 	err := (&RoomHeatingSystemFunction{}).WriteOperationMode(context.Background(), entity, "cool")
 	if !errors.Is(err, ErrRoomHeatingSysFnInvalidMode) {
 		t.Fatalf("WriteOperationMode() error = %v, want ErrRoomHeatingSysFnInvalidMode", err)
+	}
+}
+
+func TestRoomHeatingSysFnWriteUpdatesOperationMode(t *testing.T) {
+	feature := newRoomHeatingSysFnFeature(t, 0, true)
+	local, entity, written := dhwSysFnWriteHarness(t, feature)
+	room := &RoomHeatingSystemFunction{localEntity: local}
+
+	if err := room.WriteOperationMode(context.Background(), entity, "auto"); err != nil {
+		t.Fatalf("WriteOperationMode() error = %v", err)
+	}
+	entries := written.cmd.HvacSystemFunctionListData.HvacSystemFunctionData
+	if len(entries) != 1 || entries[0].CurrentOperationModeId == nil || *entries[0].CurrentOperationModeId != 2 {
+		t.Fatalf("written system function data = %+v", entries)
+	}
+}
+
+func TestRoomHeatingSysFnWriteGuardsAndRejection(t *testing.T) {
+	notWritable := newRoomHeatingSysFnFeature(t, 0, false)
+	entity := mocks.NewEntityRemoteInterface(t)
+	entity.On("FeatureOfTypeAndRole", model.FeatureTypeTypeHvac, model.RoleTypeServer).Return(notWritable)
+	if err := (&RoomHeatingSystemFunction{}).WriteOperationMode(context.Background(), entity, "on"); !errors.Is(err, ErrRoomHeatingSysFnNotWritable) {
+		t.Fatalf("not-writable error = %v", err)
+	}
+
+	feature := newRoomHeatingSysFnFeature(t, 0, true)
+	local, rejectingEntity, _ := dhwSysFnWriteHarnessWithErrno(t, feature, 4)
+	room := &RoomHeatingSystemFunction{localEntity: local}
+	if err := room.WriteOperationMode(context.Background(), rejectingEntity, "on"); !errors.Is(err, ErrRoomHeatingSysFnRejected) {
+		t.Fatalf("rejection error = %v", err)
+	}
+
+	missingLocalEntity := mocks.NewEntityRemoteInterface(t)
+	missingLocalEntity.On("FeatureOfTypeAndRole", model.FeatureTypeTypeHvac, model.RoleTypeServer).Return(feature)
+	if err := (&RoomHeatingSystemFunction{}).WriteOperationMode(context.Background(), missingLocalEntity, "on"); !errors.Is(err, ErrRoomHeatingSysFnDataUnavailable) {
+		t.Fatalf("missing-local error = %v", err)
 	}
 }
