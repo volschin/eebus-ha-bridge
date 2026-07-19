@@ -151,3 +151,45 @@ func TestHasMeasurementServer(t *testing.T) {
 		t.Fatal("Measurement/server was not detected")
 	}
 }
+
+func TestMonitoringAfterSetupDelegatesReadsAndHandlesEmptyCatalog(t *testing.T) {
+	local := clientUsecaseLocalEntity(t)
+	registry := eebus.NewDeviceRegistry()
+	w := NewMonitoringWrapper(nil, registry, false)
+	w.Setup(local)
+	if w.UseCase() == nil {
+		t.Fatal("Setup() did not initialize monitoring use case")
+	}
+
+	checks := []struct {
+		name string
+		call func() error
+	}{
+		{"power", func() error { _, err := w.Power(nil); return err }},
+		{"power per phase", func() error { _, err := w.PowerPerPhase(nil); return err }},
+		{"energy consumed", func() error { _, err := w.EnergyConsumed(nil); return err }},
+		{"energy produced", func() error { _, err := w.EnergyProduced(nil); return err }},
+		{"current per phase", func() error { _, err := w.CurrentPerPhase(nil); return err }},
+		{"voltage per phase", func() error { _, err := w.VoltagePerPhase(nil); return err }},
+		{"frequency", func() error { _, err := w.Frequency(nil); return err }},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if err := check.call(); err == nil {
+				t.Fatal("read without a remote entity unexpectedly succeeded")
+			}
+		})
+	}
+	if got := w.CompatibleEntity(testValidUsecaseSKI); got.Entity != nil {
+		t.Fatalf("CompatibleEntity() = %+v, want no remote entity", got)
+	}
+	if _, err := w.GenericMeasurements(testValidUsecaseSKI); !errors.Is(err, eebusapi.ErrDataNotAvailable) {
+		t.Fatalf("GenericMeasurements() error = %v, want ErrDataNotAvailable", err)
+	}
+
+	withoutRegistry := NewMonitoringWrapper(nil, nil, false)
+	withoutRegistry.Setup(local)
+	if _, err := withoutRegistry.GenericMeasurements(testValidUsecaseSKI); err == nil {
+		t.Fatal("GenericMeasurements() succeeded without a registry")
+	}
+}

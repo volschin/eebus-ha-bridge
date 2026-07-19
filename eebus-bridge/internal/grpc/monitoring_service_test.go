@@ -35,6 +35,8 @@ type fakeDeviceOperatingStateReader struct {
 type fakeMonitoringReader struct {
 	entity          spineapi.EntityRemoteInterface
 	compatibleCalls int
+	powerErr        error
+	energyErr       error
 	powerPhaseErr   error
 }
 
@@ -43,16 +45,16 @@ func (f *fakeMonitoringReader) CompatibleEntity(string) eebus.EntityResolution {
 	return eebus.EntityResolution{Entity: f.entity, DeviceCount: 1}
 }
 
-func (*fakeMonitoringReader) Power(spineapi.EntityRemoteInterface) (float64, error) {
-	return 600, nil
+func (f *fakeMonitoringReader) Power(spineapi.EntityRemoteInterface) (float64, error) {
+	return 600, f.powerErr
 }
 
 func (f *fakeMonitoringReader) PowerPerPhase(spineapi.EntityRemoteInterface) ([]float64, error) {
 	return []float64{100, 200, 300}, f.powerPhaseErr
 }
 
-func (*fakeMonitoringReader) EnergyConsumed(spineapi.EntityRemoteInterface) (float64, error) {
-	return 42, nil
+func (f *fakeMonitoringReader) EnergyConsumed(spineapi.EntityRemoteInterface) (float64, error) {
+	return 42, f.energyErr
 }
 
 func (*fakeMonitoringReader) EnergyProduced(spineapi.EntityRemoteInterface) (float64, error) {
@@ -81,6 +83,94 @@ func (f fakeDeviceOperatingStateReader) OperatingState(string) (string, error) {
 
 func (f fakeDeviceOperatingStateReader) CachedOperatingState(string) (string, error) {
 	return f.value, f.err
+}
+
+func TestMonitoringScalarRPCsAndSnapshot(t *testing.T) {
+	reader := &fakeMonitoringReader{entity: mocks.NewEntityRemoteInterface(t)}
+	svc := bridgegrpc.NewMonitoringService(
+		reader,
+		bridgegrpc.MonitoringReaders{},
+		eebus.NewEventBus(),
+		eebus.NewDeviceRegistry(),
+		true,
+	)
+
+	power, err := svc.GetPowerConsumption(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil || power.GetWatts() != 600 || power.GetTimestamp() == nil {
+		t.Fatalf("GetPowerConsumption() = (%+v, %v)", power, err)
+	}
+	energy, err := svc.GetEnergyConsumed(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil || energy.GetKilowattHours() != 42 || energy.GetTimestamp() == nil {
+		t.Fatalf("GetEnergyConsumed() = (%+v, %v)", energy, err)
+	}
+	measurements, err := svc.SnapshotMeasurements(testValidSKI)
+	if err != nil || len(measurements.GetMeasurements()) != 13 {
+		t.Fatalf("SnapshotMeasurements() = (%+v, %v)", measurements, err)
+	}
+	if reader.compatibleCalls != 3 {
+		t.Fatalf("compatible entity calls = %d, want 3", reader.compatibleCalls)
+	}
+}
+
+func TestMonitoringScalarRPCValidationAndReadFailures(t *testing.T) {
+	ctx := context.Background()
+	empty := bridgegrpc.NewMonitoringService(nil, bridgegrpc.MonitoringReaders{}, nil, nil)
+	for name, call := range map[string]func() error{
+		"nil power request": func() error {
+			_, err := empty.GetPowerConsumption(ctx, nil)
+			return err
+		},
+		"nil energy request": func() error {
+			_, err := empty.GetEnergyConsumed(ctx, nil)
+			return err
+		},
+		"nil measurements request": func() error {
+			_, err := empty.GetMeasurements(ctx, nil)
+			return err
+		},
+		"invalid snapshot ski": func() error {
+			_, err := empty.SnapshotMeasurements("not-a-ski")
+			return err
+		},
+		"invalid snapshot state ski": func() error {
+			_, _, err := empty.SnapshotMeasurementsWithStates("not-a-ski")
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if code := status.Code(call()); code != codes.InvalidArgument {
+				t.Fatalf("status code = %v, want InvalidArgument", code)
+			}
+		})
+	}
+	if _, err := empty.GetPowerConsumption(ctx, &pb.DeviceRequest{Ski: testValidSKI}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("GetPowerConsumption() code = %v, want Unavailable", status.Code(err))
+	}
+	if _, err := empty.GetEnergyConsumed(ctx, &pb.DeviceRequest{Ski: testValidSKI}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("GetEnergyConsumed() code = %v, want Unavailable", status.Code(err))
+	}
+	if _, err := empty.SnapshotMeasurements(testValidSKI); status.Code(err) != codes.Unavailable {
+		t.Fatalf("SnapshotMeasurements() code = %v, want Unavailable", status.Code(err))
+	}
+
+	reader := &fakeMonitoringReader{
+		entity:    mocks.NewEntityRemoteInterface(t),
+		powerErr:  errors.New("power cache failed"),
+		energyErr: status.Error(codes.Unimplemented, "energy not supported"),
+	}
+	svc := bridgegrpc.NewMonitoringService(reader, bridgegrpc.MonitoringReaders{}, nil, nil, true)
+	if _, err := svc.GetPowerConsumption(ctx, &pb.DeviceRequest{Ski: testValidSKI}); status.Code(err) != codes.Internal {
+		t.Fatalf("power read code = %v, want Internal", status.Code(err))
+	}
+	if _, err := svc.GetEnergyConsumed(ctx, &pb.DeviceRequest{Ski: testValidSKI}); status.Code(err) != codes.Unimplemented {
+		t.Fatalf("energy read code = %v, want Unimplemented", status.Code(err))
+	}
+
+	var typedNil *usecases.MonitoringWrapper
+	typedNilService := bridgegrpc.NewMonitoringService(typedNil, bridgegrpc.MonitoringReaders{}, nil, nil)
+	if _, err := typedNilService.GetPowerConsumption(ctx, &pb.DeviceRequest{Ski: testValidSKI}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("typed-nil monitoring code = %v, want Unavailable", status.Code(err))
+	}
 }
 
 func TestSnapshotMeasurementsClassifiesPartialReadFailuresPerLeaf(t *testing.T) {

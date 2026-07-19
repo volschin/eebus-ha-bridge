@@ -2,6 +2,7 @@ package grpc_test
 
 import (
 	"context"
+	"errors"
 	"math"
 	"testing"
 	"time"
@@ -49,6 +50,156 @@ func (fakeLPCController) StopHeartbeat() error        { return nil }
 func (fakeLPCController) IsHeartbeatRunning() bool    { return true }
 func (fakeLPCController) IsHeartbeatWithinDuration(spineapi.EntityRemoteInterface) bool {
 	return true
+}
+
+type recordingLPCController struct {
+	fakeLPCController
+	consumptionErr        error
+	failsafePowerErr      error
+	failsafeDurationErr   error
+	writeConsumptionErr   error
+	writeFailsafePowerErr error
+	writeFailsafeTimeErr  error
+	startErr              error
+	stopErr               error
+	writtenLimit          ucapi.LoadLimit
+	writtenFailsafePower  float64
+	writtenDuration       time.Duration
+	startedSKI            string
+	stopCalls             int
+}
+
+func (f *recordingLPCController) ConsumptionLimit(spineapi.EntityRemoteInterface) (ucapi.LoadLimit, error) {
+	return ucapi.LoadLimit{Value: 1200, Duration: 2 * time.Minute, IsActive: true, IsChangeable: true}, f.consumptionErr
+}
+func (f *recordingLPCController) WriteConsumptionLimit(_ spineapi.EntityRemoteInterface, limit ucapi.LoadLimit) error {
+	f.writtenLimit = limit
+	return f.writeConsumptionErr
+}
+func (f *recordingLPCController) FailsafeConsumptionActivePowerLimit(spineapi.EntityRemoteInterface) (float64, error) {
+	return 2400, f.failsafePowerErr
+}
+func (f *recordingLPCController) WriteFailsafeConsumptionActivePowerLimit(_ spineapi.EntityRemoteInterface, value float64) error {
+	f.writtenFailsafePower = value
+	return f.writeFailsafePowerErr
+}
+func (f *recordingLPCController) FailsafeDurationMinimum(spineapi.EntityRemoteInterface) (time.Duration, error) {
+	return 90 * time.Second, f.failsafeDurationErr
+}
+func (f *recordingLPCController) WriteFailsafeDurationMinimum(_ spineapi.EntityRemoteInterface, duration time.Duration) error {
+	f.writtenDuration = duration
+	return f.writeFailsafeTimeErr
+}
+func (f *recordingLPCController) StartHeartbeat(ski string) error {
+	f.startedSKI = ski
+	return f.startErr
+}
+func (f *recordingLPCController) StopHeartbeat() error {
+	f.stopCalls++
+	return f.stopErr
+}
+
+func TestLPCRPCsReadWriteAndHeartbeat(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	controller := &recordingLPCController{fakeLPCController: fakeLPCController{entity: mocks.NewEntityRemoteInterface(t)}}
+	svc := bridgegrpc.NewLPCService(nil, eebus.NewEventBus(), registry, bridgegrpc.WithLPCController(controller))
+	ctx := context.Background()
+
+	limit, err := svc.GetConsumptionLimit(ctx, &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil || limit.GetValueWatts() != 1200 || limit.GetDurationSeconds() != 120 || !limit.GetIsActive() || !limit.GetIsChangeable() {
+		t.Fatalf("GetConsumptionLimit() = (%+v, %v)", limit, err)
+	}
+	if _, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{
+		Ski: testValidSKI, ValueWatts: 750, DurationSeconds: 30, IsActive: true,
+	}); err != nil {
+		t.Fatalf("WriteConsumptionLimit() error = %v", err)
+	}
+	if controller.writtenLimit.Value != 750 || controller.writtenLimit.Duration != 30*time.Second || !controller.writtenLimit.IsActive {
+		t.Fatalf("written limit = %+v", controller.writtenLimit)
+	}
+
+	failsafe, err := svc.GetFailsafeLimit(ctx, &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil || failsafe.GetValueWatts() != 2400 || failsafe.GetDurationMinimumSeconds() != 90 {
+		t.Fatalf("GetFailsafeLimit() = (%+v, %v)", failsafe, err)
+	}
+	if _, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{
+		Ski: testValidSKI, ValueWatts: 1800, DurationMinimumSeconds: 45,
+	}); err != nil {
+		t.Fatalf("WriteFailsafeLimit() error = %v", err)
+	}
+	if controller.writtenFailsafePower != 1800 || controller.writtenDuration != 45*time.Second {
+		t.Fatalf("written failsafe = (%g, %s)", controller.writtenFailsafePower, controller.writtenDuration)
+	}
+
+	if _, err := svc.StartHeartbeat(ctx, &pb.DeviceRequest{Ski: testValidSKI}); err != nil {
+		t.Fatalf("StartHeartbeat() error = %v", err)
+	}
+	if _, err := svc.StopHeartbeat(ctx, &pb.DeviceRequest{Ski: testValidSKI}); err != nil {
+		t.Fatalf("StopHeartbeat() error = %v", err)
+	}
+	if controller.startedSKI != testValidSKI || controller.stopCalls != 1 {
+		t.Fatalf("heartbeat calls = start %q, stop %d", controller.startedSKI, controller.stopCalls)
+	}
+	statusResult, err := svc.GetHeartbeatStatus(ctx, &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil || !statusResult.GetRunning() || !statusResult.GetWithinDuration() {
+		t.Fatalf("GetHeartbeatStatus() = (%+v, %v)", statusResult, err)
+	}
+}
+
+func TestLPCRPCReadAndWriteErrors(t *testing.T) {
+	want := errors.New("controller failure")
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	controller := &recordingLPCController{fakeLPCController: fakeLPCController{entity: mocks.NewEntityRemoteInterface(t)}}
+	svc := bridgegrpc.NewLPCService(nil, nil, registry, bridgegrpc.WithLPCController(controller))
+	ctx := context.Background()
+
+	checks := []struct {
+		name string
+		set  func()
+		call func() error
+	}{
+		{"read consumption", func() { controller.consumptionErr = want }, func() error { _, err := svc.GetConsumptionLimit(ctx, &pb.DeviceRequest{Ski: testValidSKI}); return err }},
+		{"write consumption", func() { controller.consumptionErr = nil; controller.writeConsumptionErr = want }, func() error {
+			_, err := svc.WriteConsumptionLimit(ctx, &pb.WriteLoadLimitRequest{Ski: testValidSKI})
+			return err
+		}},
+		{"read failsafe power", func() { controller.writeConsumptionErr = nil; controller.failsafePowerErr = want }, func() error { _, err := svc.GetFailsafeLimit(ctx, &pb.DeviceRequest{Ski: testValidSKI}); return err }},
+		{"read failsafe duration", func() { controller.failsafePowerErr = nil; controller.failsafeDurationErr = want }, func() error { _, err := svc.GetFailsafeLimit(ctx, &pb.DeviceRequest{Ski: testValidSKI}); return err }},
+		{"write failsafe power", func() { controller.failsafeDurationErr = nil; controller.writeFailsafePowerErr = want }, func() error {
+			_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: testValidSKI})
+			return err
+		}},
+		{"write failsafe duration", func() { controller.writeFailsafePowerErr = nil; controller.writeFailsafeTimeErr = want }, func() error {
+			_, err := svc.WriteFailsafeLimit(ctx, &pb.WriteFailsafeLimitRequest{Ski: testValidSKI, DurationMinimumSeconds: 1})
+			return err
+		}},
+		{"start heartbeat", func() { controller.writeFailsafeTimeErr = nil; controller.startErr = want }, func() error { _, err := svc.StartHeartbeat(ctx, &pb.DeviceRequest{Ski: testValidSKI}); return err }},
+		{"stop heartbeat", func() { controller.startErr = nil; controller.stopErr = want }, func() error { _, err := svc.StopHeartbeat(ctx, &pb.DeviceRequest{Ski: testValidSKI}); return err }},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			check.set()
+			if err := check.call(); err == nil {
+				t.Fatal("expected controller error")
+			}
+		})
+	}
+
+	empty := bridgegrpc.NewLPCService(nil, nil, nil)
+	if _, err := empty.GetConsumptionLimit(ctx, nil); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("nil consumption request code = %v", status.Code(err))
+	}
+	if _, err := empty.GetFailsafeLimit(ctx, nil); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("nil failsafe request code = %v", status.Code(err))
+	}
+	if _, err := empty.GetConsumptionLimit(ctx, &pb.DeviceRequest{Ski: testValidSKI}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("uninitialized consumption code = %v", status.Code(err))
+	}
+	if _, err := empty.GetFailsafeLimit(ctx, &pb.DeviceRequest{Ski: testValidSKI}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("uninitialized failsafe code = %v", status.Code(err))
+	}
 }
 
 func TestLPCPayloadReadsUpdateCapabilityRegistry(t *testing.T) {

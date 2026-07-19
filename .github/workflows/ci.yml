@@ -29,6 +29,8 @@ jobs:
           filters: |
             go:
               - 'eebus-bridge/**'
+              - 'scripts/check_go_patch_coverage.py'
+              - 'scripts/tests/test_check_go_patch_coverage.py'
               - '.github/workflows/ci.yml'
             python:
               - 'custom_components/**'
@@ -58,6 +60,8 @@ jobs:
         working-directory: eebus-bridge
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26"
@@ -70,6 +74,42 @@ jobs:
           working-directory: eebus-bridge
           version: v2.12.2
       - run: go test -v -race ./...
+      - name: Test Go patch coverage checker
+        run: python3 -m unittest discover -s ../scripts/tests -p 'test_check_go_patch_coverage.py' -v
+      - name: Generate productive Go coverage
+        run: go test -count=1 -coverprofile=coverage.out ./cmd/eebus-bridge ./cmd/eebus-watch ./internal/...
+      - name: Enforce Go coverage
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          go tool cover -func=coverage.out | tee coverage-summary.txt
+          read -r covered_statements total_statements <<< "$(awk 'NR > 1 {
+            total += $2
+            if ($3 > 0) covered += $2
+          } END {print covered, total}' coverage.out)"
+          awk -v covered="$covered_statements" -v total="$total_statements" 'BEGIN {
+            actual = 100 * covered / total
+            if (actual + 1e-9 < 83.0) {
+              printf "Go total coverage %.1f%% is below required 83.0%%\n", actual > "/dev/stderr"
+              exit 1
+            }
+          }'
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            coverage_base="$(git -C .. merge-base "origin/$BASE_REF" HEAD)"
+          elif [[ -n "$BEFORE_SHA" ]] && git -C .. cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            coverage_base="$BEFORE_SHA"
+          else
+            coverage_base="$(git -C .. hash-object -t tree /dev/null)"
+          fi
+          python3 ../scripts/check_go_patch_coverage.py \
+            --repository .. \
+            --profile coverage.out \
+            --base "$coverage_base" \
+            --threshold 90
       - run: go test -tags=integration -v ./internal/grpc/ -run TestIntegration
       - name: govulncheck
         # Invoke govulncheck directly instead of golang/govulncheck-action: the

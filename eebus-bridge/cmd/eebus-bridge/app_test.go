@@ -15,9 +15,11 @@ import (
 	"github.com/enbility/spine-go/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	pb "github.com/volschin/eebus-bridge/gen/proto/eebus/v1"
 	"github.com/volschin/eebus-bridge/internal/config"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 	bridgegrpc "github.com/volschin/eebus-bridge/internal/grpc"
+	"github.com/volschin/eebus-bridge/internal/usecases"
 )
 
 type fakeBridgeLifecycle struct {
@@ -91,12 +93,14 @@ func (f *fakeBridgeLifecycle) unregisterValues() []string {
 }
 
 type fakeGRPCLifecycle struct {
-	startErr error
-	release  chan struct{}
-	stopOnce sync.Once
-	starts   atomic.Int32
-	stops    atomic.Int32
-	recorder *shutdownRecorder
+	startErr  error
+	release   chan struct{}
+	stopOnce  sync.Once
+	serveOnce sync.Once
+	serving   chan struct{}
+	starts    atomic.Int32
+	stops     atomic.Int32
+	recorder  *shutdownRecorder
 
 	healthMu sync.Mutex
 	health   []bool
@@ -134,6 +138,9 @@ func (f *fakeGRPCLifecycle) SetHealthy(healthy bool) {
 	f.healthMu.Lock()
 	f.health = append(f.health, healthy)
 	f.healthMu.Unlock()
+	if healthy && f.serving != nil {
+		f.serveOnce.Do(func() { close(f.serving) })
+	}
 }
 
 func (f *fakeGRPCLifecycle) SetDeviceHealthy(healthy bool) {
@@ -189,6 +196,11 @@ func TestProductionCompositionRootIsInertUntilStartAndRegistersAllUseCases(t *te
 		},
 		Certificates: config.CertificatesConfig{AutoGenerate: &autoGenerate, StoragePath: t.TempDir()},
 		OHPCF:        config.OHPCFConfig{Enabled: &ohpcfEnabled},
+		Experimental: config.ExperimentalConfig{
+			MGCPProvider: true,
+			VAPDProvider: true,
+			VABDProvider: true,
+		},
 	}
 
 	app, err := NewApplication(cfg)
@@ -206,7 +218,93 @@ func TestProductionCompositionRootIsInertUntilStartAndRegistersAllUseCases(t *te
 	assert.ElementsMatch(t, []string{
 		"LPC", "Monitoring", "DHWMonitoring", "MRT", "MOT", "DHWTemperature",
 		"DHWSystemFunction", "RoomHeatingTemperature", "RoomHeatingSystemFunction", "OHPCF",
+		"MGCP", "VAPD", "VABD",
 	}, app.registeredUseCases)
+	providerModule := app.modules[len(app.modules)-1]
+	require.Equal(t, "Providers", providerModule.name)
+	require.NoError(t, providerModule.start())
+	require.NoError(t, providerModule.stop())
+}
+
+func TestProviderSampleStateConversion(t *testing.T) {
+	tests := []struct {
+		in   usecases.ProviderSnapshotState
+		want pb.ProviderSampleState
+	}{
+		{usecases.ProviderSnapshotEmpty, pb.ProviderSampleState_PROVIDER_SAMPLE_STATE_EMPTY},
+		{usecases.ProviderSnapshotCurrent, pb.ProviderSampleState_PROVIDER_SAMPLE_STATE_CURRENT},
+		{usecases.ProviderSnapshotExpired, pb.ProviderSampleState_PROVIDER_SAMPLE_STATE_EXPIRED},
+		{usecases.ProviderSnapshotClosed, pb.ProviderSampleState_PROVIDER_SAMPLE_STATE_CLOSED},
+		{usecases.ProviderSnapshotState(99), pb.ProviderSampleState_PROVIDER_SAMPLE_STATE_UNSPECIFIED},
+	}
+	for _, test := range tests {
+		if got := providerSampleState(test.in); got != test.want {
+			t.Errorf("providerSampleState(%d) = %s, want %s", test.in, got, test.want)
+		}
+	}
+	if got := (applicationProviderDiagnostics{}).ProviderDiagnostics(time.Now()); len(got) != 0 {
+		t.Fatalf("empty provider diagnostics = %+v", got)
+	}
+}
+
+func TestApplicationStartConfigurationAndStateGuards(t *testing.T) {
+	ctx := context.Background()
+	if err := (&Application{}).Start(ctx); err == nil || err.Error() != "EEBUS bridge service is not configured" {
+		t.Fatalf("missing bridge error = %v", err)
+	}
+	if err := (&Application{bridgeSvc: &fakeBridgeLifecycle{}}).Start(ctx); err == nil || err.Error() != "gRPC server is not configured" {
+		t.Fatalf("missing gRPC error = %v", err)
+	}
+	stopped := &Application{bridgeSvc: &fakeBridgeLifecycle{}, grpcSrv: &fakeGRPCLifecycle{}, stopped: true}
+	if err := stopped.Start(ctx); err == nil || err.Error() != "application is stopped" {
+		t.Fatalf("stopped application error = %v", err)
+	}
+	alreadyStarted := &Application{
+		bridgeSvc: &fakeBridgeLifecycle{}, grpcSrv: &fakeGRPCLifecycle{}, lifecycle: newLifecycleTransaction(),
+	}
+	if err := alreadyStarted.Start(ctx); err == nil || err.Error() != "application is already started" {
+		t.Fatalf("already-started application error = %v", err)
+	}
+}
+
+func TestApplicationErrorWrappersAndLogging(t *testing.T) {
+	want := errors.New("runtime failure")
+	controlled := &controlledShutdownError{err: want}
+	if controlled.Error() != want.Error() || !errors.Is(controlled, want) {
+		t.Fatalf("controlled error = %v", controlled)
+	}
+	signalErr := &signalShutdown{signal: syscall.SIGTERM}
+	if signalErr.Error() != "received signal terminated" {
+		t.Fatalf("signal error = %q", signalErr.Error())
+	}
+	logRunError(controlled)
+	logRunError(want)
+}
+
+func TestNotifySignalContextStopsAndCapturesSignal(t *testing.T) {
+	t.Run("explicit stop", func(t *testing.T) {
+		ctx, stop := notifySignalContext(context.Background(), syscall.SIGUSR1)
+		stop()
+		stop()
+		if !errors.Is(context.Cause(ctx), context.Canceled) {
+			t.Fatalf("context cause = %v", context.Cause(ctx))
+		}
+	})
+
+	t.Run("signal", func(t *testing.T) {
+		ctx, stop := notifySignalContext(context.Background(), syscall.SIGUSR1)
+		defer stop()
+		require.NoError(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
+		select {
+		case <-ctx.Done():
+			var signalCause *signalShutdown
+			if !errors.As(context.Cause(ctx), &signalCause) || signalCause.signal != syscall.SIGUSR1 {
+				t.Fatalf("context cause = %v", context.Cause(ctx))
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timeout waiting for signal context")
+		}
+	})
 }
 
 type fakeHeartbeatLifecycle struct {
@@ -686,7 +784,7 @@ func TestMonitoringWatchdogHealthTracksTrustedDisconnectedDevice(t *testing.T) {
 
 func TestApplicationStartSignalTriggersShutdown(t *testing.T) {
 	bridge := &fakeBridgeLifecycle{started: make(chan struct{})}
-	grpcServer := &fakeGRPCLifecycle{release: make(chan struct{})}
+	grpcServer := &fakeGRPCLifecycle{release: make(chan struct{}), serving: make(chan struct{})}
 	heartbeat := &fakeHeartbeatLifecycle{}
 	app := newTestApplication(bridge, grpcServer, heartbeat, nil)
 	ctx, cancel := context.WithCancelCause(context.Background())
@@ -694,9 +792,9 @@ func TestApplicationStartSignalTriggersShutdown(t *testing.T) {
 	go func() { result <- app.Start(ctx) }()
 
 	select {
-	case <-bridge.started:
+	case <-grpcServer.serving:
 	case <-time.After(time.Second):
-		t.Fatal("application did not start")
+		t.Fatal("application did not become ready")
 	}
 	cancel(&signalShutdown{signal: syscall.SIGTERM})
 

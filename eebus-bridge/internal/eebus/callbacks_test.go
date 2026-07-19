@@ -1,6 +1,7 @@
 package eebus_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -161,5 +162,45 @@ func TestCallbacksVisibleServicesUpdated(t *testing.T) {
 
 	if got := cb.DiscoveredServices(); len(got) != 1 || got[0].Ski != "abc" {
 		t.Errorf("DiscoveredServices() = %+v, want one entry with Ski=abc", got)
+	}
+}
+
+func TestCallbacksPairingAndTrustUpdates(t *testing.T) {
+	bus := eebus.NewEventBus()
+	events := bus.Subscribe()
+	defer bus.Unsubscribe(events)
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice("ab:cd", eebus.DeviceInfo{})
+	callbacks := eebus.NewCallbacks(bus, true)
+	callbacks.SetRegistry(registry)
+	identity := shipapi.ServiceIdentity{SKI: "ab:cd"}
+
+	callbacks.ServiceUpdated(identity)
+	callbacks.ServicePairingDetailUpdate(identity, nil)
+	select {
+	case event := <-events:
+		if event.Type != eebus.EventTypePairingUpdated || event.SKI != "ABCD" {
+			t.Fatalf("pairing event = %+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for pairing event")
+	}
+
+	callbacks.ServiceAutoTrusted(nil, identity)
+	if health, ok := registry.DeviceHealth("ab:cd"); !ok || !health.Trusted {
+		t.Fatalf("trusted health = (%+v, %t)", health, ok)
+	}
+	callbacks.ServiceAutoTrustFailed(nil, identity, errors.New("pairing failed"))
+	if health, ok := registry.DeviceHealth("ab:cd"); !ok || health.Trusted {
+		t.Fatalf("failed-trust health = (%+v, %t)", health, ok)
+	}
+	callbacks.ServiceAutoTrustRemoved(nil, identity, "revoked")
+	select {
+	case event := <-events:
+		if event.Type != eebus.EventTypeDeviceTrustRemoved {
+			t.Fatalf("trust removal event = %+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for trust removal event")
 	}
 }
