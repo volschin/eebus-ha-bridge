@@ -66,8 +66,9 @@ func TestDHWSystemFunctionMonitoringRoutesMDSFEvents(t *testing.T) {
 }
 
 type fakeDHWSysFnReader struct {
-	entity spineapi.EntityRemoteInterface
-	state  DHWSystemFunctionState
+	entity   spineapi.EntityRemoteInterface
+	state    DHWSystemFunctionState
+	stateErr error
 }
 
 func (f *fakeDHWSysFnReader) CompatibleEntity(string) eebus.EntityResolution {
@@ -75,7 +76,7 @@ func (f *fakeDHWSysFnReader) CompatibleEntity(string) eebus.EntityResolution {
 }
 
 func (f *fakeDHWSysFnReader) State(spineapi.EntityRemoteInterface) (DHWSystemFunctionState, error) {
-	return f.state, nil
+	return f.state, f.stateErr
 }
 
 type fakeDHWSysFnWriter struct {
@@ -145,5 +146,112 @@ func TestDHWSystemFunctionAdapterFailsWritesClosedWithoutCDSFNegotiation(t *test
 
 	if err := adapter.WriteBoost(context.Background(), entity, true); !errors.Is(err, ErrDHWSysFnNotWritable) {
 		t.Fatalf("WriteBoost() error = %v, want ErrDHWSysFnNotWritable", err)
+	}
+}
+
+func TestDHWSystemFunctionMonitoringReportsStateReadErrors(t *testing.T) {
+	entity := spinemocks.NewEntityRemoteInterface(t)
+	wrapper := &DHWSystemFunctionMonitoring{}
+	if _, err := wrapper.State(entity); !errors.Is(err, errDHWSystemFunctionMonitoringNotInitialized) {
+		t.Fatalf("State() error = %v, want initialization error", err)
+	}
+
+	operationModesErr := errors.New("operation modes unavailable")
+	operationModesUC := ucmocks.NewMaMDSFInterface(t)
+	operationModesUC.EXPECT().OperationModes(entity).Return(nil, operationModesErr)
+	wrapper.uc = operationModesUC
+	if _, err := wrapper.State(entity); !errors.Is(err, ErrDHWSysFnDataUnavailable) {
+		t.Fatalf("State() operation modes error = %v, want ErrDHWSysFnDataUnavailable", err)
+	}
+
+	currentModeErr := errors.New("current mode unavailable")
+	currentModeUC := ucmocks.NewMaMDSFInterface(t)
+	currentModeUC.EXPECT().OperationModes(entity).Return([]ucapi.HvacOperationModeType{ucapi.HvacOperationModeTypeAuto}, nil)
+	currentModeUC.EXPECT().CurrentOperationMode(entity).Return(ucapi.HvacOperationModeType(""), currentModeErr)
+	wrapper.uc = currentModeUC
+	if _, err := wrapper.State(entity); !errors.Is(err, ErrDHWSysFnDataUnavailable) {
+		t.Fatalf("State() current mode error = %v, want ErrDHWSysFnDataUnavailable", err)
+	}
+}
+
+func TestDHWSystemFunctionMonitoringUsesReportedOverrunStatus(t *testing.T) {
+	uc := ucmocks.NewMaMDSFInterface(t)
+	entity := spinemocks.NewEntityRemoteInterface(t)
+	uc.EXPECT().OperationModes(entity).Return([]ucapi.HvacOperationModeType{ucapi.HvacOperationModeTypeAuto}, nil)
+	uc.EXPECT().CurrentOperationMode(entity).Return(ucapi.HvacOperationModeTypeAuto, nil)
+	uc.EXPECT().OverrunStatus(entity).Return(model.HvacOverrunStatusTypeActive, nil)
+
+	state, err := (&DHWSystemFunctionMonitoring{uc: uc}).State(entity)
+	if err != nil || state.BoostStatus != "active" {
+		t.Fatalf("State() = %+v, %v", state, err)
+	}
+}
+
+func TestDHWSystemFunctionMonitoringHandlesOptionalPaths(t *testing.T) {
+	wrapper := NewDHWSystemFunctionMonitoring(nil, eebus.NewDeviceRegistry(), true)
+	wrapper.Setup(nil)
+	if wrapper.UseCase() != nil {
+		t.Fatal("UseCase() initialized for nil local entity")
+	}
+	if resolution := wrapper.CompatibleEntity("ab:cd"); resolution.Entity != nil || resolution.DeviceCount != 0 {
+		t.Fatalf("CompatibleEntity() = %+v for uninitialized use case", resolution)
+	}
+
+	wrapper.HandleEvent("ab:cd", nil, nil, mamdsf.DataUpdateOperationMode)
+	wrapper.HandleEvent("ab:cd", nil, nil, eebusapi.EventType("unknown"))
+}
+
+func TestDHWSystemFunctionAdapterHandlesUnavailableComponents(t *testing.T) {
+	var nilAdapter *DHWSystemFunctionAdapter
+	if resolution := nilAdapter.CompatibleEntity("ab:cd"); resolution.Entity != nil {
+		t.Fatalf("CompatibleEntity() = %+v for nil adapter", resolution)
+	}
+	if _, err := nilAdapter.State(nil); !errors.Is(err, ErrDHWSysFnDataUnavailable) {
+		t.Fatalf("State() error = %v, want ErrDHWSysFnDataUnavailable", err)
+	}
+	if err := nilAdapter.WriteOperationMode(context.Background(), nil, "auto"); !errors.Is(err, ErrDHWSysFnNotWritable) {
+		t.Fatalf("WriteOperationMode() error = %v, want ErrDHWSysFnNotWritable", err)
+	}
+
+	readErr := errors.New("monitoring failed")
+	adapter := NewDHWSystemFunctionAdapter(&fakeDHWSysFnReader{stateErr: readErr}, nil)
+	if _, err := adapter.State(nil); !errors.Is(err, readErr) {
+		t.Fatalf("State() error = %v, want monitoring error", err)
+	}
+
+	reader := &fakeDHWSysFnReader{state: DHWSystemFunctionState{OperationMode: "auto"}}
+	adapter = NewDHWSystemFunctionAdapter(reader, nil)
+	state, err := adapter.State(nil)
+	if err != nil || state.OperationMode != "auto" {
+		t.Fatalf("State() = %+v, %v without configuration", state, err)
+	}
+	if resolution := adapter.CompatibleEntity("ab:cd"); resolution.DeviceCount != 1 {
+		t.Fatalf("CompatibleEntity() = %+v", resolution)
+	}
+
+	nilDeviceEntity := spinemocks.NewEntityRemoteInterface(t)
+	nilDeviceEntity.EXPECT().Device().Return(nil)
+	adapter = NewDHWSystemFunctionAdapter(reader, &fakeDHWSysFnWriter{})
+	if err := adapter.WriteOperationMode(context.Background(), nilDeviceEntity, "auto"); !errors.Is(err, ErrDHWSysFnNotWritable) {
+		t.Fatalf("WriteOperationMode() error = %v, want ErrDHWSysFnNotWritable", err)
+	}
+}
+
+func TestDHWSystemFunctionAdapterIgnoresConfigurationStateErrors(t *testing.T) {
+	device := spinemocks.NewDeviceRemoteInterface(t)
+	device.EXPECT().Ski().Return("ab:cd")
+	monitoringEntity := spinemocks.NewEntityRemoteInterface(t)
+	monitoringEntity.EXPECT().Device().Return(device)
+	configurationEntity := spinemocks.NewEntityRemoteInterface(t)
+
+	reader := &fakeDHWSysFnReader{state: DHWSystemFunctionState{OperationMode: "auto"}}
+	writer := &fakeDHWSysFnWriter{
+		entity:   configurationEntity,
+		state:    DHWSystemFunctionState{BoostWritable: true, ModeWritable: true},
+		stateErr: errors.New("configuration state unavailable"),
+	}
+	state, err := NewDHWSystemFunctionAdapter(reader, writer).State(monitoringEntity)
+	if err != nil || state.BoostWritable || state.ModeWritable {
+		t.Fatalf("State() = %+v, %v", state, err)
 	}
 }
