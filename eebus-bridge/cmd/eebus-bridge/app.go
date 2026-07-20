@@ -311,7 +311,14 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 			return errors.New("local CEM entity is not available")
 		}
 		dhwTemperature := usecases.NewDHWTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
-		dhwSystemFunction := usecases.NewDHWSystemFunction(localEntity, bus, registry, cfg.Logging.DebugEvents)
+		dhwSystemFunctionMonitoring := usecases.NewDHWSystemFunctionMonitoring(bus, registry, cfg.Logging.DebugEvents)
+		// Keep the proven CDSF implementation for writes, but let MDSF own
+		// capability discovery, reads, and events.
+		dhwSystemFunctionConfiguration := usecases.NewDHWSystemFunction(localEntity, nil, nil, cfg.Logging.DebugEvents)
+		dhwSystemFunction := usecases.NewDHWSystemFunctionAdapter(
+			dhwSystemFunctionMonitoring,
+			dhwSystemFunctionConfiguration,
+		)
 		roomHeatingTemperature := usecases.NewRoomHeatingTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
 		roomHeatingSystemFunction := usecases.NewRoomHeatingSystemFunction(localEntity, bus, registry, cfg.Logging.DebugEvents)
 		hydraulicTemperatures := usecases.NewHydraulicTemperatures(bus, registry, cfg.Logging.DebugEvents)
@@ -438,10 +445,15 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 			},
 			{
 				name: "DHW",
+				setup: func() error {
+					dhwSystemFunctionMonitoring.Setup(localEntity)
+					return nil
+				},
 				registerUseCases: useCaseRegistrar(
 					bridgeSvc,
 					eebusUseCaseRegistration{name: "DHWTemperature", useCase: func() eebusapi.UseCaseInterface { return dhwTemperature.UseCase() }},
-					eebusUseCaseRegistration{name: "DHWSystemFunction", useCase: func() eebusapi.UseCaseInterface { return dhwSystemFunction.UseCase() }},
+					eebusUseCaseRegistration{name: "MDSF", useCase: func() eebusapi.UseCaseInterface { return dhwSystemFunctionMonitoring.UseCase() }},
+					eebusUseCaseRegistration{name: "DHWSystemFunctionConfiguration", useCase: func() eebusapi.UseCaseInterface { return dhwSystemFunctionConfiguration.UseCase() }},
 				),
 				registerGRPC: func(srv *bridgegrpc.Server) {
 					pb.RegisterDHWServiceServer(srv.GRPCServer(), dhwService)
