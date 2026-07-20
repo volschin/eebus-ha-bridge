@@ -1,6 +1,6 @@
 # Upstream patch inventory
 
-The bridge currently pins commit `7dc3d134d968` from the
+The bridge currently pins commit `8a29b1ba99f0` from the
 `github.com/volschin/eebus-go` branch `bridge-integration` because the required
 upstream changes have not been merged.
 
@@ -14,6 +14,7 @@ Upstream base: `enbility/eebus-go@363db3c5c262`
 | [enbility/eebus-go#246](https://github.com/enbility/eebus-go/pull/246) | `363db3c5c262` | `327bff5d0ac3` | Monitoring of DHW System Function (MDSF) client | Remove this patch after #246 is merged into an eebus-go revision used by the bridge. |
 | [enbility/eebus-go#247](https://github.com/enbility/eebus-go/pull/247) | `363db3c5c262` | `7dc3d134d968` | Configuration of DHW System Function (CDSF), including relation-safe writes and result callbacks | Remove this patch after #247 is merged into an eebus-go revision used by the bridge. |
 | [enbility/eebus-go#249](https://github.com/enbility/eebus-go/pull/249) | `363db3c5c262` + #239 | `8659252c6d26` | Configuration of DHW Temperature (CDT) contribution with validated full-list writes | Remove this patch after #249 is merged into an eebus-go revision used by the bridge. |
+| [volschin/eebus-go#1](https://github.com/volschin/eebus-go/pull/1) | `7dc3d134d968` | `8a29b1ba99f0` | Fail-closed list merges, payload-level write tests, and stricter CDSF/CDT integration | Remove this patch after the corresponding follow-ups are merged upstream. |
 
 All rows are unmodified cherry-picks of the feature commits from their upstream
 pull requests; #249 is our replacement contribution for the obsolete draft #132.
@@ -23,8 +24,3 @@ newer `enbility/dev` base. Monitoring of DHW Temperature (#226) is now part of
 that base and has therefore been removed from the patch inventory. Remove the
 `replace` directive and this inventory once all listed patches are available in
 the eebus-go revision used by the bridge.
-
-Additional fail-closed behavior and payload-level tests are under review first
-in [volschin/eebus-go#1](https://github.com/volschin/eebus-go/pull/1). They are
-intentionally not part of the pinned integration branch until that internal PR
-has been reviewed.

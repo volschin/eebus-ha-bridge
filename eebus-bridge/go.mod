@@ -35,4 +35,4 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
 )
 
-replace github.com/enbility/eebus-go => github.com/volschin/eebus-go v0.7.1-0.20260720192426-7dc3d134d968
+replace github.com/enbility/eebus-go => github.com/volschin/eebus-go v0.7.1-0.20260720194145-8a29b1ba99f0
