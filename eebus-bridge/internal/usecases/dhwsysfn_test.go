@@ -57,7 +57,7 @@ func TestDHWSystemFunctionStateModeWritableWithoutChangeableFlag(t *testing.T) {
 func TestDHWSystemFunctionWriteBoostDeviceRejection(t *testing.T) {
 	feature := dhwSysFnFeature(t, true, true, nil)
 	local, entity, _ := dhwSysFnWriteHarnessWithErrno(t, feature, 2)
-	dhw := &DHWSystemFunction{localEntity: local}
+	dhw := NewLegacyDHWSystemFunctionConfiguration(&DHWSystemFunction{localEntity: local})
 
 	err := dhw.WriteBoost(context.Background(), entity, true)
 	if !errors.Is(err, ErrDHWSysFnRejected) {
@@ -85,7 +85,7 @@ func TestDHWSystemFunctionStateFailsClosedForAmbiguousDHWFunction(t *testing.T) 
 func TestDHWSystemFunctionWriteBoostUpdatesFullOverrunList(t *testing.T) {
 	feature := dhwSysFnFeature(t, true, true, nil)
 	local, entity, written := dhwSysFnWriteHarness(t, feature)
-	dhw := &DHWSystemFunction{localEntity: local}
+	dhw := NewLegacyDHWSystemFunctionConfiguration(&DHWSystemFunction{localEntity: local})
 
 	if err := dhw.WriteBoost(context.Background(), entity, true); err != nil {
 		t.Fatalf("WriteBoost() error = %v", err)
@@ -99,7 +99,7 @@ func TestDHWSystemFunctionWriteBoostUpdatesFullOverrunList(t *testing.T) {
 func TestDHWSystemFunctionWriteOperationModeResolvesModeIDFromType(t *testing.T) {
 	feature := dhwSysFnFeature(t, true, true, nil)
 	local, entity, written := dhwSysFnWriteHarness(t, feature)
-	dhw := &DHWSystemFunction{localEntity: local}
+	dhw := NewLegacyDHWSystemFunctionConfiguration(&DHWSystemFunction{localEntity: local})
 
 	if err := dhw.WriteOperationMode(context.Background(), entity, "off"); err != nil {
 		t.Fatalf("WriteOperationMode() error = %v", err)

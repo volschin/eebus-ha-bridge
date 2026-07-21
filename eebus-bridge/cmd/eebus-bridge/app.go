@@ -314,7 +314,8 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		dhwSystemFunctionMonitoring := usecases.NewDHWSystemFunctionMonitoring(bus, registry, cfg.Logging.DebugEvents)
 		// Keep the proven CDSF implementation for writes, but let MDSF own
 		// capability discovery, reads, and events.
-		dhwSystemFunctionConfiguration := usecases.NewDHWSystemFunction(localEntity, nil, nil, cfg.Logging.DebugEvents)
+		dhwSystemFunctionUseCase := usecases.NewDHWSystemFunction(localEntity, nil, nil, cfg.Logging.DebugEvents)
+		dhwSystemFunctionConfiguration := usecases.NewLegacyDHWSystemFunctionConfiguration(dhwSystemFunctionUseCase)
 		dhwSystemFunction := usecases.NewDHWSystemFunctionAdapter(
 			dhwSystemFunctionMonitoring,
 			dhwSystemFunctionConfiguration,
@@ -453,7 +454,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 					bridgeSvc,
 					eebusUseCaseRegistration{name: "DHWTemperature", useCase: func() eebusapi.UseCaseInterface { return dhwTemperature.UseCase() }},
 					eebusUseCaseRegistration{name: "MDSF", useCase: func() eebusapi.UseCaseInterface { return dhwSystemFunctionMonitoring.UseCase() }},
-					eebusUseCaseRegistration{name: "DHWSystemFunctionConfiguration", useCase: func() eebusapi.UseCaseInterface { return dhwSystemFunctionConfiguration.UseCase() }},
+					eebusUseCaseRegistration{name: "DHWSystemFunctionConfiguration", useCase: func() eebusapi.UseCaseInterface { return dhwSystemFunctionUseCase.UseCase() }},
 				),
 				registerGRPC: func(srv *bridgegrpc.Server) {
 					pb.RegisterDHWServiceServer(srv.GRPCServer(), dhwService)
