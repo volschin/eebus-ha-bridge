@@ -35,7 +35,7 @@ The released bridge version at the time of this specification is `v0.14.4`.
 It pins:
 
 ```text
-volschin/eebus-go@8a29b1ba99f0
+volschin/eebus-go@a5640012fbd6
 ```
 
 through a `replace` directive while retaining imports from
