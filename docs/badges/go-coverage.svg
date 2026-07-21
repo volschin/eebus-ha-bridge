@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="172" height="28" role="img" aria-label="Go coverage: 84.2%">
-  <title>Go coverage: 84.2%</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="172" height="28" role="img" aria-label="Go coverage: 84.3%">
+  <title>Go coverage: 84.3%</title>
   <linearGradient id="s" x2="0" y2="100%">
     <stop offset="0" stop-color="#fff" stop-opacity=".15"/>
     <stop offset="1" stop-opacity=".15"/>
@@ -12,6 +12,6 @@
   </g>
   <g fill="#fff" text-anchor="middle" font-family="Verdana,DejaVu Sans,sans-serif" font-size="10" font-weight="700">
     <text x="56" y="18">GO COVERAGE</text>
-    <text x="142" y="18">84.2%</text>
+    <text x="142" y="18">84.3%</text>
   </g>
 </svg>

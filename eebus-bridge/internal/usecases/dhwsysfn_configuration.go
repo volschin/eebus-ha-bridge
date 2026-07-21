@@ -74,9 +74,9 @@ func newCDSFConfigurationFacade(
 }
 
 // NewUpstreamDHWSystemFunctionConfiguration selects eebus-go CDSF for use-case
-// negotiation and feature setup while retaining both bridge-local write
-// strategies. A nil event callback deliberately keeps MDSF as the sole owner of
-// DHW state and support events.
+// negotiation, feature setup and boost writes while retaining the bridge-local
+// operation-mode strategy. A nil event callback deliberately keeps MDSF as the
+// sole owner of DHW state and support events.
 func NewUpstreamDHWSystemFunctionConfiguration(
 	localEntity spineapi.EntityLocalInterface,
 	debug bool,
@@ -111,15 +111,20 @@ func newUpstreamDHWSystemFunctionConfiguration(
 		request:          request,
 		inspector:        inspector,
 	}
-	facade := newCDSFConfigurationFacade(caCDSFEntityResolver{client: client}, inspector, transport, transport)
+	boostTransport := &upstreamDHWBoostWriter{
+		client:    client,
+		inspector: inspector,
+		request:   request,
+	}
+	facade := newCDSFConfigurationFacade(caCDSFEntityResolver{client: client}, inspector, boostTransport, transport)
 	facade.useCase = client
 	return facade
 }
 
 // NewLegacyDHWSystemFunctionConfiguration selects the local CDSF use case for
-// negotiation and both legacy write strategies. Phase 1 can replace the entity
-// resolver without changing the adapter or gRPC service; later phases can swap
-// the boost and operation-mode writers independently.
+// negotiation and both legacy write strategies. It remains the release-level
+// rollback composition while the upstream boost and operation-mode strategies
+// are validated independently.
 func NewLegacyDHWSystemFunctionConfiguration(useCase *DHWSystemFunction) *CDSFConfigurationFacade {
 	if useCase == nil {
 		return &CDSFConfigurationFacade{}

@@ -147,8 +147,8 @@ type dhwSystemFunctionWriter interface {
 	WriteOperationMode(context.Context, spineapi.EntityRemoteInterface, string) error
 }
 
-// DHWSystemFunctionAdapter combines MDSF reads/events with the proven local
-// CDSF write implementation. Writeability is advertised only when CDSF was
+// DHWSystemFunctionAdapter combines MDSF reads/events with the selected CDSF
+// configuration strategies. Writeability is advertised only when CDSF was
 // independently negotiated for the same device.
 type DHWSystemFunctionAdapter struct {
 	monitoring    dhwSystemFunctionReader

@@ -312,9 +312,9 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		}
 		dhwTemperature := usecases.NewDHWTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
 		dhwSystemFunctionMonitoring := usecases.NewDHWSystemFunctionMonitoring(bus, registry, cfg.Logging.DebugEvents)
-		// eebus-go CDSF owns negotiation and feature setup; the facade keeps
-		// both writes on the proven legacy strategies. MDSF remains the sole
-		// owner of reads and user-visible state events.
+		// eebus-go CDSF owns negotiation, feature setup and boost writes. The
+		// facade keeps operation-mode writes on the proven legacy strategy.
+		// MDSF remains the sole owner of reads and user-visible state events.
 		dhwSystemFunctionConfiguration := usecases.NewUpstreamDHWSystemFunctionConfiguration(
 			localEntity,
 			cfg.Logging.DebugEvents,
