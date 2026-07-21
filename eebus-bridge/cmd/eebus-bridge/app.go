@@ -312,10 +312,13 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		}
 		dhwTemperature := usecases.NewDHWTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
 		dhwSystemFunctionMonitoring := usecases.NewDHWSystemFunctionMonitoring(bus, registry, cfg.Logging.DebugEvents)
-		// Keep the proven CDSF implementation for writes, but let MDSF own
-		// capability discovery, reads, and events.
-		dhwSystemFunctionUseCase := usecases.NewDHWSystemFunction(localEntity, nil, nil, cfg.Logging.DebugEvents)
-		dhwSystemFunctionConfiguration := usecases.NewLegacyDHWSystemFunctionConfiguration(dhwSystemFunctionUseCase)
+		// eebus-go CDSF owns negotiation and feature setup; the facade keeps
+		// both writes on the proven legacy strategies. MDSF remains the sole
+		// owner of reads and user-visible state events.
+		dhwSystemFunctionConfiguration := usecases.NewUpstreamDHWSystemFunctionConfiguration(
+			localEntity,
+			cfg.Logging.DebugEvents,
+		)
 		dhwSystemFunction := usecases.NewDHWSystemFunctionAdapter(
 			dhwSystemFunctionMonitoring,
 			dhwSystemFunctionConfiguration,
@@ -454,7 +457,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 					bridgeSvc,
 					eebusUseCaseRegistration{name: "DHWTemperature", useCase: func() eebusapi.UseCaseInterface { return dhwTemperature.UseCase() }},
 					eebusUseCaseRegistration{name: "MDSF", useCase: func() eebusapi.UseCaseInterface { return dhwSystemFunctionMonitoring.UseCase() }},
-					eebusUseCaseRegistration{name: "DHWSystemFunctionConfiguration", useCase: func() eebusapi.UseCaseInterface { return dhwSystemFunctionUseCase.UseCase() }},
+					eebusUseCaseRegistration{name: "DHWSystemFunctionConfiguration", useCase: func() eebusapi.UseCaseInterface { return dhwSystemFunctionConfiguration.UseCase() }},
 				),
 				registerGRPC: func(srv *bridgegrpc.Server) {
 					pb.RegisterDHWServiceServer(srv.GRPCServer(), dhwService)

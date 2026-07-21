@@ -3,16 +3,105 @@ package usecases
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	eebusapi "github.com/enbility/eebus-go/api"
+	cacdsf "github.com/enbility/eebus-go/usecases/ca/cdsf"
+	ucmocks "github.com/enbility/eebus-go/usecases/mocks"
 	spineapi "github.com/enbility/spine-go/api"
 	spinemocks "github.com/enbility/spine-go/mocks"
 	"github.com/enbility/spine-go/model"
 	"github.com/stretchr/testify/mock"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
+
+func TestUpstreamDHWSystemFunctionConfigurationSelectsEebusGoCDSF(t *testing.T) {
+	facade := NewUpstreamDHWSystemFunctionConfiguration(clientUsecaseLocalEntity(t), false)
+	if _, ok := facade.UseCase().(*cacdsf.CDSF); !ok {
+		t.Fatalf("UseCase() = %T, want *cdsf.CDSF", facade.UseCase())
+	}
+}
+
+func TestUpstreamCDSFResolverAndCapabilitiesMatchLegacyWhenAllScenariosExist(t *testing.T) {
+	feature := dhwSysFnFeature(t, true, true, nil)
+	device := spinemocks.NewDeviceRemoteInterface(t)
+	device.EXPECT().Ski().Return("ab:cd").Maybe()
+	entity := spinemocks.NewEntityRemoteInterface(t)
+	entity.EXPECT().Device().Return(device).Maybe()
+	entity.EXPECT().FeatureOfTypeAndRole(model.FeatureTypeTypeHvac, model.RoleTypeServer).Return(feature).Maybe()
+
+	client := ucmocks.NewCaCDSFInterface(t)
+	client.EXPECT().RemoteEntitiesScenarios().Return([]eebusapi.RemoteEntityScenarios{{
+		Entity: entity, Scenarios: []uint{1, 2, 3},
+	}})
+	for _, scenario := range []uint{1, 2, 3} {
+		client.EXPECT().IsScenarioAvailableAtEntity(entity, scenario).Return(true)
+	}
+	facade := newUpstreamDHWSystemFunctionConfiguration(client, nil, nil)
+
+	if resolution := facade.CompatibleEntity("ABCD"); resolution.Entity != entity || resolution.DeviceCount != 1 {
+		t.Fatalf("CompatibleEntity() = %+v, want upstream CDSF entity", resolution)
+	}
+	want, err := (cachedDHWSystemFunctionCapabilityInspector{}).State(entity)
+	if err != nil {
+		t.Fatalf("legacy capability State() error = %v", err)
+	}
+	got, err := facade.State(entity)
+	if err != nil {
+		t.Fatalf("upstream capability State() error = %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("upstream capabilities = %+v, want legacy %+v", got, want)
+	}
+}
+
+func TestUpstreamCDSFScenariosGateLegacyWriters(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		scenarios map[uint]bool
+		write     func(*CDSFConfigurationFacade, spineapi.EntityRemoteInterface) error
+	}{
+		{
+			name:      "mode requires scenario 1",
+			scenarios: map[uint]bool{1: false, 2: true, 3: true},
+			write: func(facade *CDSFConfigurationFacade, entity spineapi.EntityRemoteInterface) error {
+				return facade.WriteOperationMode(context.Background(), entity, "off")
+			},
+		},
+		{
+			name:      "boost requires start scenario 2",
+			scenarios: map[uint]bool{1: true, 2: false, 3: true},
+			write: func(facade *CDSFConfigurationFacade, entity spineapi.EntityRemoteInterface) error {
+				return facade.WriteBoost(context.Background(), entity, true)
+			},
+		},
+		{
+			name:      "boost requires stop scenario 3",
+			scenarios: map[uint]bool{1: true, 2: true, 3: false},
+			write: func(facade *CDSFConfigurationFacade, entity spineapi.EntityRemoteInterface) error {
+				return facade.WriteBoost(context.Background(), entity, false)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			feature := dhwSysFnFeature(t, true, true, nil)
+			entity := spinemocks.NewEntityRemoteInterface(t)
+			entity.EXPECT().FeatureOfTypeAndRole(model.FeatureTypeTypeHvac, model.RoleTypeServer).Return(feature)
+			client := ucmocks.NewCaCDSFInterface(t)
+			for _, scenario := range []uint{1, 2, 3} {
+				client.EXPECT().IsScenarioAvailableAtEntity(entity, scenario).Return(test.scenarios[scenario])
+			}
+			facade := newUpstreamDHWSystemFunctionConfiguration(client, nil, nil)
+
+			if err := test.write(facade, entity); !errors.Is(err, ErrDHWSysFnNotWritable) {
+				t.Fatalf("write error = %v, want ErrDHWSysFnNotWritable", err)
+			}
+		})
+	}
+}
 
 func TestAwaitDHWWriteHandlesSynchronousAndAsynchronousCallbacks(t *testing.T) {
 	counter := model.MsgCounterType(7)

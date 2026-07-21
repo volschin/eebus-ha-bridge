@@ -5,10 +5,32 @@ import (
 	"fmt"
 	"time"
 
+	eebusapi "github.com/enbility/eebus-go/api"
+	ucapi "github.com/enbility/eebus-go/usecases/api"
+	cacdsf "github.com/enbility/eebus-go/usecases/ca/cdsf"
 	spineapi "github.com/enbility/spine-go/api"
 	"github.com/enbility/spine-go/model"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
+
+type caCDSFClient interface {
+	eebusapi.UseCaseInterface
+	RemoteEntitiesScenarios() []eebusapi.RemoteEntityScenarios
+	IsScenarioAvailableAtEntity(spineapi.EntityRemoteInterface, uint) bool
+	WriteOperationMode(
+		spineapi.EntityRemoteInterface,
+		ucapi.HvacOperationModeType,
+		func(model.ResultDataType, model.MsgCounterType),
+	) (*model.MsgCounterType, error)
+	StartOneTimeDhw(
+		spineapi.EntityRemoteInterface,
+		func(model.ResultDataType, model.MsgCounterType),
+	) (*model.MsgCounterType, error)
+	StopOneTimeDhw(
+		spineapi.EntityRemoteInterface,
+		func(model.ResultDataType, model.MsgCounterType),
+	) (*model.MsgCounterType, error)
+}
 
 type dhwSystemFunctionEntityResolver interface {
 	CompatibleEntity(string) eebus.EntityResolution
@@ -30,6 +52,7 @@ type dhwOperationModeWriter interface {
 // and the two write transports independently replaceable during the CDSF
 // upstream migration.
 type CDSFConfigurationFacade struct {
+	useCase             eebusapi.UseCaseInterface
 	resolver            dhwSystemFunctionEntityResolver
 	capabilityInspector dhwSystemFunctionCapabilityInspector
 	boostWriter         dhwBoostWriter
@@ -50,6 +73,49 @@ func newCDSFConfigurationFacade(
 	}
 }
 
+// NewUpstreamDHWSystemFunctionConfiguration selects eebus-go CDSF for use-case
+// negotiation and feature setup while retaining both bridge-local write
+// strategies. A nil event callback deliberately keeps MDSF as the sole owner of
+// DHW state and support events.
+func NewUpstreamDHWSystemFunctionConfiguration(
+	localEntity spineapi.EntityLocalInterface,
+	debug bool,
+) *CDSFConfigurationFacade {
+	if localEntity == nil {
+		return &CDSFConfigurationFacade{}
+	}
+	client := cacdsf.NewCDSF(localEntity, nil)
+	localHvacFeature := func() spineapi.FeatureLocalInterface {
+		return localEntity.FeatureOfTypeAndRole(model.FeatureTypeTypeHvac, model.RoleTypeClient)
+	}
+	request := func(entity spineapi.EntityRemoteInterface, function model.FunctionType) {
+		requestRemoteFeatureData(entity, hvacServer, localHvacFeature, function, debug, "DHWSYSFN")
+	}
+	return newUpstreamDHWSystemFunctionConfiguration(client, localHvacFeature, request)
+}
+
+func newUpstreamDHWSystemFunctionConfiguration(
+	client caCDSFClient,
+	localHvacFeature func() spineapi.FeatureLocalInterface,
+	request func(spineapi.EntityRemoteInterface, model.FunctionType),
+) *CDSFConfigurationFacade {
+	if client == nil {
+		return &CDSFConfigurationFacade{}
+	}
+	inspector := scenarioAwareDHWSystemFunctionCapabilityInspector{
+		client: client,
+		cached: cachedDHWSystemFunctionCapabilityInspector{},
+	}
+	transport := &legacyDHWSystemFunctionWriter{
+		localHvacFeature: localHvacFeature,
+		request:          request,
+		inspector:        inspector,
+	}
+	facade := newCDSFConfigurationFacade(caCDSFEntityResolver{client: client}, inspector, transport, transport)
+	facade.useCase = client
+	return facade
+}
+
 // NewLegacyDHWSystemFunctionConfiguration selects the local CDSF use case for
 // negotiation and both legacy write strategies. Phase 1 can replace the entity
 // resolver without changing the adapter or gRPC service; later phases can swap
@@ -64,7 +130,17 @@ func NewLegacyDHWSystemFunctionConfiguration(useCase *DHWSystemFunction) *CDSFCo
 		request:          useCase.request,
 		inspector:        inspector,
 	}
-	return newCDSFConfigurationFacade(useCase, inspector, transport, transport)
+	facade := newCDSFConfigurationFacade(useCase, inspector, transport, transport)
+	facade.useCase = useCase
+	return facade
+}
+
+// UseCase returns the selected CDSF negotiation owner for service registration.
+func (f *CDSFConfigurationFacade) UseCase() eebusapi.UseCaseInterface {
+	if f == nil {
+		return nil
+	}
+	return f.useCase
 }
 
 func (f *CDSFConfigurationFacade) CompatibleEntity(ski string) eebus.EntityResolution {
@@ -101,6 +177,40 @@ func (f *CDSFConfigurationFacade) WriteOperationMode(
 		return ErrDHWSysFnNotWritable
 	}
 	return f.operationModeWriter.WriteOperationMode(ctx, entity, mode)
+}
+
+type caCDSFEntityResolver struct {
+	client caCDSFClient
+}
+
+func (r caCDSFEntityResolver) CompatibleEntity(ski string) eebus.EntityResolution {
+	if r.client == nil {
+		return eebus.EntityResolution{}
+	}
+	return compatibleEntity(r.client.RemoteEntitiesScenarios(), ski)
+}
+
+type scenarioAwareDHWSystemFunctionCapabilityInspector struct {
+	client caCDSFClient
+	cached dhwSystemFunctionCapabilityInspector
+}
+
+func (i scenarioAwareDHWSystemFunctionCapabilityInspector) State(
+	entity spineapi.EntityRemoteInterface,
+) (DHWSystemFunctionState, error) {
+	if i.client == nil || i.cached == nil {
+		return DHWSystemFunctionState{}, ErrDHWSysFnDataUnavailable
+	}
+	state, err := i.cached.State(entity)
+	if err != nil {
+		return DHWSystemFunctionState{}, err
+	}
+	modeScenario := i.client.IsScenarioAvailableAtEntity(entity, 1)
+	boostStartScenario := i.client.IsScenarioAvailableAtEntity(entity, 2)
+	boostStopScenario := i.client.IsScenarioAvailableAtEntity(entity, 3)
+	state.ModeWritable = state.ModeWritable && modeScenario
+	state.BoostWritable = state.BoostWritable && boostStartScenario && boostStopScenario
+	return state, nil
 }
 
 // legacyDHWSystemFunctionWriter contains the bridge-local list merge and SPINE
