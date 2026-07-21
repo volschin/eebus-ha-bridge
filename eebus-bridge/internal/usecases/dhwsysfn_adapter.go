@@ -111,15 +111,36 @@ func (w *DHWSystemFunctionMonitoring) State(entity spineapi.EntityRemoteInterfac
 		OperationMode:  string(current),
 		AvailableModes: uniqueOperationModes(modes),
 	}
-	if status, err := w.uc.OverrunStatus(entity); err == nil {
-		state.BoostStatus = string(status)
-	} else if active, activeErr := w.uc.IsOverrunActive(entity); activeErr == nil {
-		state.BoostStatus = string(model.HvacOverrunStatusTypeInactive)
-		if active {
-			state.BoostStatus = string(model.HvacOverrunStatusTypeActive)
-		}
-	}
+	status, statusErr := w.uc.OverrunStatus(entity)
+	active, activeErr := w.uc.IsOverrunActive(entity)
+	state.BoostStatus = resolvedDHWBoostStatus(status, statusErr, active, activeErr)
 	return state, nil
+}
+
+func resolvedDHWBoostStatus(
+	status model.HvacOverrunStatusType,
+	statusErr error,
+	active bool,
+	activeErr error,
+) string {
+	if activeErr == nil {
+		if active {
+			if statusErr == nil && (status == model.HvacOverrunStatusTypeActive ||
+				status == model.HvacOverrunStatusTypeRunning) {
+				return string(status)
+			}
+			return string(model.HvacOverrunStatusTypeActive)
+		}
+		if statusErr == nil && (status == model.HvacOverrunStatusTypeInactive ||
+			status == model.HvacOverrunStatusTypeFinished) {
+			return string(status)
+		}
+		return string(model.HvacOverrunStatusTypeInactive)
+	}
+	if statusErr == nil {
+		return string(status)
+	}
+	return ""
 }
 
 func uniqueOperationModes(modes []ucapi.HvacOperationModeType) []string {

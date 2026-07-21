@@ -14,15 +14,15 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func TestUpstreamCDSFSelectsUpstreamBoostAndLegacyModeStrategies(t *testing.T) {
+func TestUpstreamCDSFSelectsUpstreamWriteStrategies(t *testing.T) {
 	client := ucmocks.NewCaCDSFInterface(t)
 	facade := newUpstreamDHWSystemFunctionConfiguration(client, nil, nil)
 
 	if _, ok := facade.boostWriter.(*upstreamDHWBoostWriter); !ok {
 		t.Fatalf("boost writer = %T, want *upstreamDHWBoostWriter", facade.boostWriter)
 	}
-	if _, ok := facade.operationModeWriter.(*legacyDHWSystemFunctionWriter); !ok {
-		t.Fatalf("operation-mode writer = %T, want *legacyDHWSystemFunctionWriter", facade.operationModeWriter)
+	if _, ok := facade.operationModeWriter.(*upstreamDHWOperationModeWriter); !ok {
+		t.Fatalf("operation-mode writer = %T, want *upstreamDHWOperationModeWriter", facade.operationModeWriter)
 	}
 }
 

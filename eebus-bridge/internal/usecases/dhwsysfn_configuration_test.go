@@ -344,6 +344,14 @@ func TestLegacyDHWWriterFailsClosedBeforeTransport(t *testing.T) {
 		t.Fatalf("WriteOperationMode() error = %v, want %v", err, inspectionErr)
 	}
 
+	writer.inspector = facadeCapabilityInspector{}
+	if err := writer.WriteBoost(context.Background(), nil, true); !errors.Is(err, ErrDHWSysFnNotWritable) {
+		t.Fatalf("WriteBoost() non-writable error = %v, want ErrDHWSysFnNotWritable", err)
+	}
+	if err := writer.WriteOperationMode(context.Background(), nil, "off"); !errors.Is(err, ErrDHWSysFnNotWritable) {
+		t.Fatalf("WriteOperationMode() non-writable error = %v, want ErrDHWSysFnNotWritable", err)
+	}
+
 	writer.inspector = facadeCapabilityInspector{state: DHWSystemFunctionState{BoostWritable: true, ModeWritable: true}}
 	if err := writer.WriteBoost(context.Background(), nil, true); !errors.Is(err, ErrDHWSysFnDataUnavailable) {
 		t.Fatalf("WriteBoost() missing transport error = %v, want ErrDHWSysFnDataUnavailable", err)
