@@ -24,6 +24,8 @@ type watchRPCFixture struct {
 	mu          sync.Mutex
 	registered  string
 	failDetails bool
+	failStatus  bool
+	failPaired  bool
 }
 
 type watchDeviceServer struct {
@@ -32,10 +34,16 @@ type watchDeviceServer struct {
 }
 
 func (s watchDeviceServer) GetStatus(context.Context, *pb.Empty) (*pb.ServiceStatus, error) {
+	if s.fixture.failStatus {
+		return nil, status.Error(codes.Unavailable, "status unavailable")
+	}
 	return &pb.ServiceStatus{Running: true, LocalSki: "local-ski"}, nil
 }
 
 func (s watchDeviceServer) ListPairedDevices(context.Context, *pb.Empty) (*pb.ListPairedDevicesResponse, error) {
+	if s.fixture.failPaired {
+		return nil, status.Error(codes.Unavailable, "paired devices unavailable")
+	}
 	return &pb.ListPairedDevicesResponse{Devices: []*pb.PairedDevice{
 		nil,
 		{Ski: "remote-ski", Brand: "Paired Brand", Model: "Paired Model", Serial: "paired-serial", DeviceType: "HeatPump", SupportedUseCases: []string{"MPC", "LPC"}},
@@ -305,6 +313,37 @@ func TestCollectSnapshotFiltersExpectedErrorsAndReportsUnexpectedErrors(t *testi
 	}
 	if withDebug.SelectedSKI != "remote-ski" {
 		t.Fatalf("selected SKI = %q, want first paired device", withDebug.SelectedSKI)
+	}
+}
+
+func TestCollectSnapshotReportsRequiredDeviceRPCFailures(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		fixture *watchRPCFixture
+		want    string
+	}{
+		{name: "status", fixture: &watchRPCFixture{failStatus: true}, want: "get status"},
+		{name: "paired devices", fixture: &watchRPCFixture{failPaired: true}, want: "list paired devices"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			host, port := startWatchTestServer(t, test.fixture)
+			conn, err := bridgegrpc.NewClient(
+				net.JoinHostPort(host, strconv.Itoa(port)),
+				bridgegrpc.ClientSecurityConfig{Mode: config.GRPCSecurityModeLoopback},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+
+			_, err = collectSnapshot(
+				context.Background(), pb.NewDeviceServiceClient(conn), pb.NewMonitoringServiceClient(conn),
+				pb.NewLPCServiceClient(conn), pb.NewOHPCFServiceClient(conn), host, port, "", false, false,
+			)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("collectSnapshot() error = %v, want %q", err, test.want)
+			}
+		})
 	}
 }
 

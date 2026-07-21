@@ -82,6 +82,80 @@ func TestDHWSystemFunctionStateFailsClosedForAmbiguousDHWFunction(t *testing.T) 
 	}
 }
 
+func TestDHWSystemFunctionCacheHelpersFailClosedOnMissingData(t *testing.T) {
+	missing := mocks.NewFeatureRemoteInterface(t)
+	missing.On("DataCopy", mock.Anything).Return(nil)
+
+	if _, ok := dhwSystemFunctionID(missing); ok {
+		t.Fatal("dhwSystemFunctionID() accepted missing data")
+	}
+	if _, ok := hvacSystemFunction(missing, 3); ok {
+		t.Fatal("hvacSystemFunction() accepted missing data")
+	}
+	if _, ok := oneTimeDHWOverrunID(missing, 3); ok {
+		t.Fatal("oneTimeDHWOverrunID() accepted missing data")
+	}
+	if _, ok := hvacOverrun(missing, 7); ok {
+		t.Fatal("hvacOverrun() accepted missing data")
+	}
+	if _, _, ok := operationModesForSystem(missing, 3); ok {
+		t.Fatal("operationModesForSystem() accepted missing data")
+	}
+	if _, ok := operationModeType(missing, 0); ok {
+		t.Fatal("operationModeType() accepted missing data")
+	}
+	if _, err := resolveDHWSystemFunction(missing); !errors.Is(err, ErrDHWSysFnDataUnavailable) {
+		t.Fatalf("resolveDHWSystemFunction() error = %v, want ErrDHWSysFnDataUnavailable", err)
+	}
+	if hvacServer(nil) != nil {
+		t.Fatal("hvacServer(nil) unexpectedly returned a feature")
+	}
+	if containsSystemFunction([]model.HvacSystemFunctionIdType{1, 2}, 3) {
+		t.Fatal("containsSystemFunction() reported an absent ID")
+	}
+}
+
+func TestDHWSystemFunctionCacheHelpersRejectUnmatchedData(t *testing.T) {
+	feature := mocks.NewFeatureRemoteInterface(t)
+	feature.On("DataCopy", model.FunctionTypeHvacSystemFunctionDescriptionListData).Return(
+		&model.HvacSystemFunctionDescriptionListDataType{},
+	)
+	feature.On("DataCopy", model.FunctionTypeHvacSystemFunctionListData).Return(
+		&model.HvacSystemFunctionListDataType{},
+	)
+	feature.On("DataCopy", model.FunctionTypeHvacOverrunDescriptionListData).Return(
+		&model.HvacOverrunDescriptionListDataType{},
+	)
+	feature.On("DataCopy", model.FunctionTypeHvacOverrunListData).Return(
+		&model.HvacOverrunListDataType{},
+	)
+	feature.On("DataCopy", model.FunctionTypeHvacSystemFunctionOperationModeRelationListData).Return(
+		&model.HvacSystemFunctionOperationModeRelationListDataType{},
+	)
+	feature.On("DataCopy", model.FunctionTypeHvacOperationModeDescriptionListData).Return(
+		&model.HvacOperationModeDescriptionListDataType{},
+	)
+
+	if _, ok := dhwSystemFunctionID(feature); ok {
+		t.Fatal("dhwSystemFunctionID() accepted an empty list")
+	}
+	if _, ok := hvacSystemFunction(feature, 3); ok {
+		t.Fatal("hvacSystemFunction() accepted an unmatched list")
+	}
+	if _, ok := oneTimeDHWOverrunID(feature, 3); ok {
+		t.Fatal("oneTimeDHWOverrunID() accepted an empty list")
+	}
+	if _, ok := hvacOverrun(feature, 7); ok {
+		t.Fatal("hvacOverrun() accepted an unmatched list")
+	}
+	if _, _, ok := operationModesForSystem(feature, 3); ok {
+		t.Fatal("operationModesForSystem() accepted an unmatched list")
+	}
+	if _, ok := operationModeType(feature, 0); ok {
+		t.Fatal("operationModeType() accepted an unmatched list")
+	}
+}
+
 func TestDHWSystemFunctionWriteBoostUpdatesFullOverrunList(t *testing.T) {
 	feature := dhwSysFnFeature(t, true, true, nil)
 	local, entity, written := dhwSysFnWriteHarness(t, feature)

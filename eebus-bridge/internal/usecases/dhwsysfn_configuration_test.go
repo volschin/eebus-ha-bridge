@@ -209,10 +209,11 @@ func (r facadeEntityResolver) CompatibleEntity(string) eebus.EntityResolution {
 
 type facadeCapabilityInspector struct {
 	state DHWSystemFunctionState
+	err   error
 }
 
 func (i facadeCapabilityInspector) State(spineapi.EntityRemoteInterface) (DHWSystemFunctionState, error) {
-	return i.state, nil
+	return i.state, i.err
 }
 
 type facadeBoostWriter struct {
@@ -279,6 +280,79 @@ func TestCDSFConfigurationFacadeDoesNotFallbackBetweenWriters(t *testing.T) {
 	}
 	if boost.calls != 1 || mode.calls != 0 {
 		t.Fatalf("writer calls = boost %d, mode %d; want 1, 0", boost.calls, mode.calls)
+	}
+}
+
+func TestCDSFConfigurationFacadeFailsClosedWithoutDependencies(t *testing.T) {
+	constructors := map[string]*CDSFConfigurationFacade{
+		"nil upstream local entity": NewUpstreamDHWSystemFunctionConfiguration(nil, false),
+		"nil upstream client":       newUpstreamDHWSystemFunctionConfiguration(nil, nil, nil),
+		"nil legacy use case":       NewLegacyDHWSystemFunctionConfiguration(nil),
+		"empty facade":              {},
+		"nil facade":                nil,
+	}
+	for name, facade := range constructors {
+		t.Run(name, func(t *testing.T) {
+			if facade.UseCase() != nil {
+				t.Fatal("UseCase() unexpectedly returned a negotiation owner")
+			}
+			if resolution := facade.CompatibleEntity("ABCD"); resolution.Entity != nil || resolution.DeviceCount != 0 {
+				t.Fatalf("CompatibleEntity() = %+v, want empty resolution", resolution)
+			}
+			if _, err := facade.State(nil); !errors.Is(err, ErrDHWSysFnDataUnavailable) {
+				t.Fatalf("State() error = %v, want ErrDHWSysFnDataUnavailable", err)
+			}
+			if err := facade.WriteBoost(context.Background(), nil, true); !errors.Is(err, ErrDHWSysFnNotWritable) {
+				t.Fatalf("WriteBoost() error = %v, want ErrDHWSysFnNotWritable", err)
+			}
+			if err := facade.WriteOperationMode(context.Background(), nil, "off"); !errors.Is(err, ErrDHWSysFnNotWritable) {
+				t.Fatalf("WriteOperationMode() error = %v, want ErrDHWSysFnNotWritable", err)
+			}
+		})
+	}
+
+	if resolution := (caCDSFEntityResolver{}).CompatibleEntity("ABCD"); resolution.Entity != nil || resolution.DeviceCount != 0 {
+		t.Fatalf("nil-client CompatibleEntity() = %+v, want empty resolution", resolution)
+	}
+}
+
+func TestScenarioAwareDHWCapabilitiesPropagateUnavailableCache(t *testing.T) {
+	if _, err := (scenarioAwareDHWSystemFunctionCapabilityInspector{}).State(nil); !errors.Is(err, ErrDHWSysFnDataUnavailable) {
+		t.Fatalf("missing dependencies State() error = %v, want ErrDHWSysFnDataUnavailable", err)
+	}
+
+	cacheErr := errors.New("cache unavailable")
+	client := ucmocks.NewCaCDSFInterface(t)
+	inspector := scenarioAwareDHWSystemFunctionCapabilityInspector{
+		client: client,
+		cached: facadeCapabilityInspector{err: cacheErr},
+	}
+	if _, err := inspector.State(nil); !errors.Is(err, cacheErr) {
+		t.Fatalf("cached State() error = %v, want %v", err, cacheErr)
+	}
+}
+
+func TestLegacyDHWWriterFailsClosedBeforeTransport(t *testing.T) {
+	inspectionErr := errors.New("inspection failed")
+	writer := &legacyDHWSystemFunctionWriter{
+		inspector: facadeCapabilityInspector{err: inspectionErr},
+	}
+	if err := writer.WriteBoost(context.Background(), nil, true); !errors.Is(err, inspectionErr) {
+		t.Fatalf("WriteBoost() error = %v, want %v", err, inspectionErr)
+	}
+	if err := writer.WriteOperationMode(context.Background(), nil, "off"); !errors.Is(err, inspectionErr) {
+		t.Fatalf("WriteOperationMode() error = %v, want %v", err, inspectionErr)
+	}
+
+	writer.inspector = facadeCapabilityInspector{state: DHWSystemFunctionState{BoostWritable: true, ModeWritable: true}}
+	if err := writer.WriteBoost(context.Background(), nil, true); !errors.Is(err, ErrDHWSysFnDataUnavailable) {
+		t.Fatalf("WriteBoost() missing transport error = %v, want ErrDHWSysFnDataUnavailable", err)
+	}
+	if err := writer.WriteOperationMode(context.Background(), nil, "off"); !errors.Is(err, ErrDHWSysFnDataUnavailable) {
+		t.Fatalf("WriteOperationMode() missing transport error = %v, want ErrDHWSysFnDataUnavailable", err)
+	}
+	if writer.localFeature() != nil {
+		t.Fatal("localFeature() unexpectedly returned a feature")
 	}
 }
 
