@@ -206,10 +206,12 @@ func (s *RecoverySupervisor) reconcileHealthy(now time.Time, device DeviceHealth
 		record.FirstStaleAt = time.Time{}
 		record.LastAttemptAt = time.Time{}
 		record.NextAttemptAt = time.Time{}
-		s.transitionLocked(record, RecoveryStateHealthy, now)
+		transitioned := s.transitionLocked(record, RecoveryStateHealthy, now)
 		snapshot := record.RecoverySnapshot
 		s.mu.Unlock()
-		s.logTransition(ski, snapshot)
+		if transitioned {
+			s.logTransition(ski, snapshot)
+		}
 		return
 	}
 	if state == RecoveryStateExhausted {
@@ -303,12 +305,13 @@ func (s *RecoverySupervisor) recordLocked(ski string, now time.Time) *recoveryRe
 	return record
 }
 
-func (s *RecoverySupervisor) transitionLocked(record *recoveryRecord, state RecoveryState, now time.Time) {
+func (s *RecoverySupervisor) transitionLocked(record *recoveryRecord, state RecoveryState, now time.Time) bool {
 	if record.State == state {
-		return
+		return false
 	}
 	record.State = state
 	record.LastTransitionAt = now
+	return true
 }
 
 func (s *RecoverySupervisor) backoff(attempt int) time.Duration {

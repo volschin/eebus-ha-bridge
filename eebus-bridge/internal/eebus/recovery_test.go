@@ -1,6 +1,9 @@
 package eebus
 
 import (
+	"bytes"
+	"log"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -197,6 +200,57 @@ func TestRecoverySupervisorMonitoringSuccessEndsRecoveryDeterministically(t *tes
 	snapshot := supervisor.Snapshot("AA11", now.Add(time.Minute))
 	if snapshot.State != RecoveryStateHealthy || snapshot.Attempts != 0 {
 		t.Fatalf("snapshot after monitoring success = %+v", snapshot)
+	}
+}
+
+func TestRecoverySupervisorLogsHealthyOnlyAfterARealRecovery(t *testing.T) {
+	var output bytes.Buffer
+	previousWriter := log.Writer()
+	previousFlags := log.Flags()
+	previousPrefix := log.Prefix()
+	log.SetOutput(&output)
+	log.SetFlags(0)
+	log.SetPrefix("")
+	t.Cleanup(func() {
+		log.SetOutput(previousWriter)
+		log.SetFlags(previousFlags)
+		log.SetPrefix(previousPrefix)
+	})
+
+	now := time.Unix(100, 0)
+	registry := &recoveryRegistryFake{
+		health: []DeviceHealthSnapshot{{
+			SKI: "AA11", Connected: true, MonitoringSuccessOnConnect: true,
+		}},
+		successAt: make(map[string]time.Time),
+	}
+	supervisor := NewRecoverySupervisor(registry, &recoveryControllerFake{}, recoveryTestConfig())
+	supervisor.Tick(now)
+	supervisor.Tick(now.Add(30 * time.Second))
+	if output.Len() != 0 {
+		t.Fatalf("steady-state healthy ticks logged %q", output.String())
+	}
+
+	registry.mu.Lock()
+	registry.stale = []string{"AA11"}
+	registry.health[0].MonitoringSuccessOnConnect = false
+	registry.mu.Unlock()
+	supervisor.Tick(now.Add(time.Minute))
+
+	registry.mu.Lock()
+	registry.stale = nil
+	registry.successAt["AA11"] = now.Add(2 * time.Minute)
+	registry.health[0].MonitoringSuccessOnConnect = true
+	registry.mu.Unlock()
+	supervisor.Tick(now.Add(2 * time.Minute))
+	supervisor.Tick(now.Add(2*time.Minute + 30*time.Second))
+
+	logs := output.String()
+	if !strings.Contains(logs, "stage=stale") {
+		t.Fatalf("real recovery stages were not logged: %q", logs)
+	}
+	if count := strings.Count(logs, "stage=healthy"); count != 1 {
+		t.Fatalf("healthy transition log count = %d, want 1; logs=%q", count, logs)
 	}
 }
 
