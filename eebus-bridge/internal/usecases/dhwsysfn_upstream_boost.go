@@ -16,7 +16,6 @@ import (
 type upstreamDHWBoostWriter struct {
 	client    caCDSFClient
 	inspector dhwSystemFunctionCapabilityInspector
-	request   func(spineapi.EntityRemoteInterface, model.FunctionType)
 }
 
 func (w *upstreamDHWBoostWriter) WriteBoost(
@@ -51,9 +50,6 @@ func (w *upstreamDHWBoostWriter) WriteBoost(
 	})
 	if err != nil {
 		return err
-	}
-	if w.request != nil {
-		w.request(entity, model.FunctionTypeHvacOverrunListData)
 	}
 	return nil
 }

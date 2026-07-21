@@ -16,7 +16,6 @@ import (
 type upstreamDHWOperationModeWriter struct {
 	client    caCDSFClient
 	inspector dhwSystemFunctionCapabilityInspector
-	request   func(spineapi.EntityRemoteInterface, model.FunctionType)
 }
 
 func (w *upstreamDHWOperationModeWriter) WriteOperationMode(
@@ -54,9 +53,6 @@ func (w *upstreamDHWOperationModeWriter) WriteOperationMode(
 	})
 	if err != nil {
 		return err
-	}
-	if w.request != nil {
-		w.request(entity, model.FunctionTypeHvacSystemFunctionListData)
 	}
 	return nil
 }

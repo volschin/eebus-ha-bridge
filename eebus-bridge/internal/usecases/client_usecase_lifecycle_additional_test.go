@@ -41,7 +41,6 @@ func TestClientUsecaseConstructorsAndFeatures(t *testing.T) {
 	registry := eebus.NewDeviceRegistry()
 
 	dhwTemperature := NewDHWTemperature(local, bus, registry, true)
-	dhwSystemFunction := NewDHWSystemFunction(local, bus, registry, true)
 	roomTemperature := NewRoomHeatingTemperature(local, bus, registry, true)
 	roomSystemFunction := NewRoomHeatingSystemFunction(local, bus, registry, true)
 
@@ -51,7 +50,6 @@ func TestClientUsecaseConstructorsAndFeatures(t *testing.T) {
 		add        func() error
 	}{
 		{"DHW temperature", dhwTemperature.UseCase() == nil, dhwTemperature.AddFeatures},
-		{"DHW system function", dhwSystemFunction.UseCase() == nil, dhwSystemFunction.AddFeatures},
 		{"room temperature", roomTemperature.UseCase() == nil, roomTemperature.AddFeatures},
 		{"room system function", roomSystemFunction.UseCase() == nil, roomSystemFunction.AddFeatures},
 	}
@@ -67,7 +65,7 @@ func TestClientUsecaseConstructorsAndFeatures(t *testing.T) {
 	}
 
 	if dhwTemperature.localSetpointFeature() == nil || roomTemperature.localSetpointFeature() == nil ||
-		dhwSystemFunction.localHvacFeature() == nil || roomSystemFunction.localHvacFeature() == nil {
+		roomSystemFunction.localHvacFeature() == nil {
 		t.Fatal("local client features were not available after AddFeatures")
 	}
 }
@@ -78,7 +76,6 @@ func TestClientUsecaseAddFeaturesRejectsMissingLocalEntity(t *testing.T) {
 		call func() error
 	}{
 		{"DHW temperature", (&DHWTemperature{}).AddFeatures},
-		{"DHW system function", (&DHWSystemFunction{}).AddFeatures},
 		{"room temperature", (&RoomHeatingTemperature{}).AddFeatures},
 		{"room system function", (&RoomHeatingSystemFunction{}).AddFeatures},
 	}
@@ -89,41 +86,6 @@ func TestClientUsecaseAddFeaturesRejectsMissingLocalEntity(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestDHWSystemFunctionRoutesSupportAndValueUpdates(t *testing.T) {
-	bus := eebus.NewEventBus()
-	channel := bus.Subscribe()
-	defer bus.Unsubscribe(channel)
-	dhw := NewDHWSystemFunction(clientUsecaseLocalEntity(t), bus, nil, false)
-	feature := dhwSysFnFeature(t, true, true, nil)
-	entity := mocks.NewEntityRemoteInterface(t)
-	entity.On("EntityType").Return(model.EntityTypeTypeDHWCircuit)
-	entity.On("FeatureOfTypeAndRole", model.FeatureTypeTypeHvac, model.RoleTypeServer).Return(feature)
-
-	tests := []struct {
-		data any
-		want eebus.EventType
-	}{
-		{&model.HvacSystemFunctionDescriptionListDataType{}, eebus.EventTypeDHWSystemFunctionSupportUpdated},
-		{&model.HvacSystemFunctionListDataType{}, eebus.EventTypeDHWSystemFunctionUpdated},
-	}
-	for _, test := range tests {
-		dhw.HandleEvent(spineapi.EventPayload{
-			Ski: testValidUsecaseSKI, Entity: entity, EventType: spineapi.EventTypeDataChange,
-			ChangeType: spineapi.ElementChangeUpdate, Data: test.data,
-		})
-		select {
-		case event := <-channel:
-			if event.Type != test.want || event.SKI != eebus.NormalizeSKI(testValidUsecaseSKI) {
-				t.Fatalf("event = %+v, want type %q", event, test.want)
-			}
-		case <-time.After(time.Second):
-			t.Fatalf("timeout waiting for %q", test.want)
-		}
-	}
-	dhw.HandleEvent(spineapi.EventPayload{Entity: entity, EventType: spineapi.EventTypeDataChange, ChangeType: spineapi.ElementChangeAdd})
-	dhw.HandleEvent(spineapi.EventPayload{})
 }
 
 func TestRoomSystemFunctionRoutesSupportAndValueUpdates(t *testing.T) {
@@ -161,31 +123,23 @@ func TestRoomSystemFunctionRoutesSupportAndValueUpdates(t *testing.T) {
 	room.HandleEvent(spineapi.EventPayload{})
 }
 
-func TestSystemFunctionUseCaseEventsPublishSupport(t *testing.T) {
+func TestRoomSystemFunctionUseCaseEventsPublishSupport(t *testing.T) {
 	bus := eebus.NewEventBus()
 	channel := bus.Subscribe()
 	defer bus.Unsubscribe(channel)
 	local := clientUsecaseLocalEntity(t)
-	dhw := NewDHWSystemFunction(local, bus, nil, false)
 	room := NewRoomHeatingSystemFunction(local, bus, nil, false)
 
-	dhw.handleUseCaseEvent(testValidUsecaseSKI, nil, nil, dhwSysFnUseCaseSupportUpdate)
 	room.handleUseCaseEvent(testValidUsecaseSKI, nil, nil, roomHeatingSysFnUseCaseSupportUpdate)
-	for _, want := range []eebus.EventType{
-		eebus.EventTypeDHWSystemFunctionSupportUpdated,
-		eebus.EventTypeRoomHeatingSystemFunctionSupportUpdated,
-	} {
-		select {
-		case event := <-channel:
-			if event.Type != want {
-				t.Fatalf("event = %+v, want %q", event, want)
-			}
-		case <-time.After(time.Second):
-			t.Fatalf("timeout waiting for %q", want)
+	select {
+	case event := <-channel:
+		if event.Type != eebus.EventTypeRoomHeatingSystemFunctionSupportUpdated {
+			t.Fatalf("event = %+v, want room-heating support update", event)
 		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for room-heating support update")
 	}
 
-	(&DHWSystemFunction{}).handleUseCaseEvent(testValidUsecaseSKI, nil, nil, dhwSysFnUseCaseSupportUpdate)
 	(&RoomHeatingSystemFunction{}).handleUseCaseEvent(testValidUsecaseSKI, nil, nil, roomHeatingSysFnUseCaseSupportUpdate)
 }
 
@@ -195,9 +149,6 @@ func TestClientUsecaseUnavailableGuards(t *testing.T) {
 	}
 	if _, err := (&RoomHeatingTemperature{}).State(nil); !errors.Is(err, ErrRoomHeatingDataUnavailable) {
 		t.Fatalf("room State() error = %v", err)
-	}
-	if _, err := (&DHWSystemFunction{}).State(nil); !errors.Is(err, ErrDHWSysFnDataUnavailable) {
-		t.Fatalf("DHW system State() error = %v", err)
 	}
 	if _, err := (&RoomHeatingSystemFunction{}).State(nil); !errors.Is(err, ErrRoomHeatingSysFnDataUnavailable) {
 		t.Fatalf("room system State() error = %v", err)
@@ -284,14 +235,11 @@ func TestClientUsecaseRefreshAndResolutionGuards(t *testing.T) {
 	local := clientUsecaseLocalEntity(t)
 	dhw := NewDHWTemperature(local, nil, nil, false)
 	room := NewRoomHeatingTemperature(local, nil, nil, false)
-	dhwSystem := NewDHWSystemFunction(local, nil, nil, false)
 	roomSystem := NewRoomHeatingSystemFunction(local, nil, nil, false)
 
 	dhw.Refresh(nil)
 	room.Refresh(nil)
-	dhwSystem.Refresh(nil)
 	roomSystem.Refresh(nil)
-	dhwSystem.connect(nil)
 	roomSystem.connect(nil)
 
 	missingSetpoint := mocks.NewEntityRemoteInterface(t)
@@ -300,7 +248,7 @@ func TestClientUsecaseRefreshAndResolutionGuards(t *testing.T) {
 	room.connect(missingSetpoint)
 
 	if dhw.CompatibleEntity("").Entity != nil || room.CompatibleEntity("").Entity != nil ||
-		dhwSystem.CompatibleEntity("").Entity != nil || roomSystem.CompatibleEntity("").Entity != nil {
+		roomSystem.CompatibleEntity("").Entity != nil {
 		t.Fatal("uninitialized use case resolved an entity")
 	}
 }

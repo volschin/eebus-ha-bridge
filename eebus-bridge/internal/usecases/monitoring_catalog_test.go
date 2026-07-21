@@ -26,4 +26,3 @@ func TestGenericEnergyClassificationUsesEntityMetadata(t *testing.T) {
 		})
 	}
 }
-

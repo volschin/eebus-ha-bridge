@@ -316,7 +316,6 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		// the sole owner of reads and user-visible state events.
 		dhwSystemFunctionConfiguration := usecases.NewUpstreamDHWSystemFunctionConfiguration(
 			localEntity,
-			cfg.Logging.DebugEvents,
 		)
 		dhwSystemFunction := usecases.NewDHWSystemFunctionAdapter(
 			dhwSystemFunctionMonitoring,
