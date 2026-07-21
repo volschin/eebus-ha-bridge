@@ -180,10 +180,52 @@ func TestDHWSystemFunctionMonitoringUsesReportedOverrunStatus(t *testing.T) {
 	uc.EXPECT().OperationModes(entity).Return([]ucapi.HvacOperationModeType{ucapi.HvacOperationModeTypeAuto}, nil)
 	uc.EXPECT().CurrentOperationMode(entity).Return(ucapi.HvacOperationModeTypeAuto, nil)
 	uc.EXPECT().OverrunStatus(entity).Return(model.HvacOverrunStatusTypeActive, nil)
+	uc.EXPECT().IsOverrunActive(entity).Return(true, nil)
 
 	state, err := (&DHWSystemFunctionMonitoring{uc: uc}).State(entity)
 	if err != nil || state.BoostStatus != "active" {
 		t.Fatalf("State() = %+v, %v", state, err)
+	}
+}
+
+func TestDHWSystemFunctionMonitoringUsesInactiveSignalOverStaleActiveStatus(t *testing.T) {
+	uc := ucmocks.NewMaMDSFInterface(t)
+	entity := spinemocks.NewEntityRemoteInterface(t)
+	uc.EXPECT().OperationModes(entity).Return([]ucapi.HvacOperationModeType{ucapi.HvacOperationModeTypeAuto}, nil)
+	uc.EXPECT().CurrentOperationMode(entity).Return(ucapi.HvacOperationModeTypeAuto, nil)
+	uc.EXPECT().OverrunStatus(entity).Return(model.HvacOverrunStatusTypeActive, nil)
+	uc.EXPECT().IsOverrunActive(entity).Return(false, nil)
+
+	state, err := (&DHWSystemFunctionMonitoring{uc: uc}).State(entity)
+	if err != nil || state.BoostStatus != "inactive" {
+		t.Fatalf("State() = %+v, %v", state, err)
+	}
+}
+
+func TestResolvedDHWBoostStatusReconcilesDetailedAndActiveSignals(t *testing.T) {
+	unavailable := errors.New("unavailable")
+	tests := []struct {
+		name      string
+		status    model.HvacOverrunStatusType
+		statusErr error
+		active    bool
+		activeErr error
+		want      string
+	}{
+		{"matching running", model.HvacOverrunStatusTypeRunning, nil, true, nil, "running"},
+		{"stale finished while active", model.HvacOverrunStatusTypeFinished, nil, true, nil, "active"},
+		{"matching finished", model.HvacOverrunStatusTypeFinished, nil, false, nil, "finished"},
+		{"stale running while inactive", model.HvacOverrunStatusTypeRunning, nil, false, nil, "inactive"},
+		{"detailed status fallback", model.HvacOverrunStatusTypeRunning, nil, false, unavailable, "running"},
+		{"no status available", "", unavailable, false, unavailable, ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := resolvedDHWBoostStatus(test.status, test.statusErr, test.active, test.activeErr)
+			if got != test.want {
+				t.Fatalf("resolvedDHWBoostStatus() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 
