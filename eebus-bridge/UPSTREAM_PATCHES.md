@@ -30,3 +30,27 @@ newer `enbility/dev` base. Monitoring of DHW Temperature (#226) is now part of
 that base and has therefore been removed from the patch inventory. Remove the
 `replace` directive and this inventory once all listed patches are available in
 the eebus-go revision used by the bridge.
+
+## Known limitations (not yet filed upstream)
+
+- `cdsf.CDSF.WriteCapabilities` deliberately returns zero capabilities with a
+  nil error whenever required CDSF metadata is missing, ambiguous, or the
+  device genuinely doesn't support the write (`usecases/ca/cdsf/public.go`).
+  The bridge (`upstreamDHWSystemFunctionCapabilityInspector.State`,
+  `internal/usecases/dhwsysfn_configuration.go`) has no way to tell these
+  cases apart, so a DHW boost/mode write attempted in the narrow window right
+  after connect — before CDSF's cache has populated — now surfaces as
+  `FAILED_PRECONDITION` ("not writable") instead of the pre-migration
+  `UNAVAILABLE` ("try again"). Fixing this needs an upstream API change
+  (e.g. a distinguishable "not yet negotiated" return) — no bridge-side fix
+  is possible without re-implementing the cache-population tracking this
+  migration was designed to remove.
+- `features/client.NewFeature` returns plain, unwrapped `errors.New(...)`
+  values (e.g. `"local feature not found"`, `"remote feature not found"`) when
+  a feature binding disappears mid-write (a disconnect race). These reach
+  `mapUpstreamDHWWriteError` (`internal/usecases/dhwsysfn_upstream_boost.go`,
+  `dhwsysfn_upstream_mode.go`) with no matchable sentinel, so they fall
+  through to `codes.Internal` instead of `codes.Unavailable`. A bridge-side
+  fix would require string-matching the error text, which is fragile across
+  upstream revisions; the correct fix is an exported sentinel error from
+  upstream's `NewFeature`.

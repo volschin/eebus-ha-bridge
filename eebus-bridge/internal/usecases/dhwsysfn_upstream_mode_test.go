@@ -53,13 +53,32 @@ func TestUpstreamDHWOperationModeWriterPrevalidatesRelationSafeModes(t *testing.
 	if err := writer.WriteOperationMode(context.Background(), entity, "off"); !errors.Is(err, ErrDHWSysFnInvalidMode) {
 		t.Fatalf("unrelated WriteOperationMode() error = %v, want ErrDHWSysFnInvalidMode", err)
 	}
+}
 
-	writer.inspector = facadeCapabilityInspector{state: DHWSystemFunctionState{
-		ModeWritable:   true,
-		AvailableModes: []string{"auto", "eco", "eco"},
-	}}
-	if err := writer.WriteOperationMode(context.Background(), entity, "eco"); !errors.Is(err, ErrDHWSysFnDataUnavailable) {
-		t.Fatalf("ambiguous WriteOperationMode() error = %v, want ErrDHWSysFnDataUnavailable", err)
+// A relation duplicated in the device's metadata (the same mode listed twice)
+// must not block a write: AvailableModes carries mode types only, not the
+// underlying mode IDs, so the bridge cannot tell "listed twice" apart from
+// "two distinct modes with the same type" — that resolution is upstream's job.
+func TestUpstreamDHWOperationModeWriterAllowsDuplicateModeListing(t *testing.T) {
+	entity := spinemocks.NewEntityRemoteInterface(t)
+	client := ucmocks.NewCaCDSFInterface(t)
+	counter := model.MsgCounterType(30)
+	client.EXPECT().WriteOperationMode(entity, ucapi.HvacOperationModeTypeEco, mock.Anything).RunAndReturn(
+		func(_ spineapi.EntityRemoteInterface, _ ucapi.HvacOperationModeType, callback func(model.ResultDataType, model.MsgCounterType)) (*model.MsgCounterType, error) {
+			callback(model.ResultDataType{}, counter)
+			return &counter, nil
+		},
+	)
+	writer := &upstreamDHWOperationModeWriter{
+		client: client,
+		inspector: facadeCapabilityInspector{state: DHWSystemFunctionState{
+			ModeWritable:   true,
+			AvailableModes: []string{"auto", "eco", "eco"},
+		}},
+	}
+
+	if err := writer.WriteOperationMode(context.Background(), entity, "eco"); err != nil {
+		t.Fatalf("WriteOperationMode() error = %v, want nil for a duplicated-but-present mode", err)
 	}
 }
 
@@ -109,7 +128,7 @@ func TestUpstreamDHWOperationModeWriterHonoursCancellation(t *testing.T) {
 	}
 }
 
-func TestUpstreamDHWOperationModeWriterMapsSendFailuresWithoutFallbackOrRefresh(t *testing.T) {
+func TestUpstreamDHWOperationModeWriterMapsSendFailuresWithoutFallback(t *testing.T) {
 	sendErr := errors.New("send failed")
 	for _, test := range []struct {
 		name string

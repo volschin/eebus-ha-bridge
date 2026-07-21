@@ -11,8 +11,8 @@ import (
 )
 
 // upstreamDHWBoostWriter delegates the one-time-DHW command to eebus-go CDSF
-// while retaining bridge-specific context handling and post-write convergence.
-// It never falls back to the legacy writer after an upstream call.
+// while retaining bridge-specific context handling. Post-write convergence is
+// performed by the CDSF client itself, not by this writer.
 type upstreamDHWBoostWriter struct {
 	client    caCDSFClient
 	inspector dhwSystemFunctionCapabilityInspector

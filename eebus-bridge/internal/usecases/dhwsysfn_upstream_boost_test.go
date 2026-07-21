@@ -98,7 +98,7 @@ func TestUpstreamDHWBoostWriterHonoursCancellation(t *testing.T) {
 	}
 }
 
-func TestUpstreamDHWBoostWriterMapsSendFailuresWithoutFallbackOrRefresh(t *testing.T) {
+func TestUpstreamDHWBoostWriterMapsSendFailuresWithoutFallback(t *testing.T) {
 	sendErr := errors.New("send failed")
 	for _, test := range []struct {
 		name string

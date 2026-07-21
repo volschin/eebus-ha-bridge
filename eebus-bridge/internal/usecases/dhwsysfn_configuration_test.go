@@ -105,6 +105,19 @@ func TestUpstreamCDSFFacadePreservesAmbiguousModesForValidation(t *testing.T) {
 	}
 }
 
+func TestUpstreamCDSFFacadePropagatesOperationModesError(t *testing.T) {
+	entity := spinemocks.NewEntityRemoteInterface(t)
+	client := ucmocks.NewCaCDSFInterface(t)
+	client.EXPECT().WriteCapabilities(entity).Return(
+		ucapi.DHWSystemFunctionWriteCapabilities{OperationMode: true}, nil,
+	)
+	client.EXPECT().OperationModes(entity).Return(nil, eebusapi.ErrDataNotAvailable)
+
+	if _, err := (upstreamDHWSystemFunctionCapabilityInspector{client: client}).State(entity); !errors.Is(err, ErrDHWSysFnDataUnavailable) {
+		t.Fatalf("State() error = %v, want ErrDHWSysFnDataUnavailable", err)
+	}
+}
+
 func TestAwaitDHWWriteHandlesSynchronousAndAsynchronousCallbacks(t *testing.T) {
 	counter := model.MsgCounterType(7)
 	for _, test := range []struct {

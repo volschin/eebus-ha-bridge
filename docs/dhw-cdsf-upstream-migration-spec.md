@@ -177,28 +177,24 @@ After an accepted write, the affected list must be requested again unless the
 library can guarantee an equivalent fresh notification. A successful transport
 result alone does not prove that the local cache and HA state have converged.
 
-Until `eebus-go` exposes or internally performs the required refresh, a small
-bridge helper may request:
-
-- `HvacOverrunListData` after boost start/stop;
-- `HvacSystemFunctionListData` after an operation-mode change.
-
-This temporary helper may request data but must not implement its own CDSF state
-model.
+As of Phase 4, `eebus-go` CDSF performs this refresh internally
+(`registerResultCallback` re-requests the affected list before invoking the
+bridge's result callback), so the bridge no longer runs its own post-write
+request. The bridge's role is limited to waiting for the write result via
+`awaitDHWWrite`.
 
 ## 6. Target architecture
 
 ```text
 eebus-go MDSF                         eebus-go CDSF
-  reads and state events                negotiation and writes
+  reads and state events                negotiation, writes and refresh
           │                                      │
           ▼                                      ▼
 DHWSystemFunctionMonitoring       CDSFConfigurationFacade
           │                         ├── entity resolver
-          │                         ├── capability inspector (temporary local)
+          │                         ├── capability inspector (upstream-delegated)
           │                         ├── boost strategy
-          │                         ├── mode strategy
-          │                         └── result/refresh adapter
+          │                         └── mode strategy
           └──────────────────────┬───────────────────┘
                                  ▼
                     DHWSystemFunctionAdapter
@@ -209,14 +205,15 @@ DHWSystemFunctionMonitoring       CDSFConfigurationFacade
 
 ### 6.1 Narrow upstream client interface
 
-The bridge wrapper should depend on a narrow mockable interface rather than on
+The bridge wrapper depends on a narrow mockable interface rather than on
 the concrete `*cdsf.CDSF` type:
 
 ```go
 type caCDSFClient interface {
     eebusapi.UseCaseInterface
     RemoteEntitiesScenarios() []eebusapi.RemoteEntityScenarios
-    IsScenarioAvailableAtEntity(spineapi.EntityRemoteInterface, uint) bool
+    WriteCapabilities(spineapi.EntityRemoteInterface) (ucapi.DHWSystemFunctionWriteCapabilities, error)
+    OperationModes(spineapi.EntityRemoteInterface) ([]ucapi.HvacOperationModeType, error)
     WriteOperationMode(
         spineapi.EntityRemoteInterface,
         ucapi.HvacOperationModeType,
@@ -432,25 +429,33 @@ Exit criteria:
 Rollback: restore the legacy mode strategy in the next build. No automatic
 request-level fallback is permitted.
 
-### Phase 4 — Remove local CDSF semantics
+### Phase 4 — Remove local CDSF semantics (done)
 
 Work:
 
-1. Add or adopt an upstream CDSF write-capability API.
-2. Add or adopt upstream post-write refresh behaviour.
-3. Replace the temporary local capability inspector.
+1. Add or adopt an upstream CDSF write-capability API. (`WriteCapabilities`,
+   `OperationModes` on `volschin/eebus-go` — done.)
+2. Add or adopt upstream post-write refresh behaviour. (`registerResultCallback`
+   re-requests the affected list before the result callback fires — done.)
+3. Replace the temporary local capability inspector. (`upstreamDHWSystemFunctionCapabilityInspector`
+   now only maps the upstream contract — done.)
 4. Remove local CDSF ID, relation, list-merge and changeability resolution.
+   (`dhwsysfn_cache.go` deleted — done.)
 5. Remove legacy transport code and tests that only cover deleted internals.
-6. Retain bridge tests for the public facade, adapter and error mapping.
+   (`legacyDHWSystemFunctionWriter`, `NewLegacyDHWSystemFunctionConfiguration`,
+   `DHWSystemFunction`/`dhwsysfn_test.go` removed — done.)
+6. Retain bridge tests for the public facade, adapter and error mapping. (done.)
 
 Exit criteria:
 
 - The bridge contains no second implementation of CDSF ID/relation resolution or
-  list-write semantics.
-- `dhwsysfn.go` is deleted or reduced to bridge-domain state/errors only.
-- `DHWSystemFunctionAdapter` still maps MDSF and CDSF entities explicitly.
+  list-write semantics. — met.
+- `dhwsysfn.go` is deleted or reduced to bridge-domain state/errors only. — met
+  (state struct + error vars only).
+- `DHWSystemFunctionAdapter` still maps MDSF and CDSF entities explicitly. — met
+  (unchanged in this phase).
 - All capability and write decisions are covered through the upstream client
-  interface.
+  interface. — met.
 
 ### Phase 5 — Return to upstream dependency
 
@@ -474,19 +479,23 @@ Exit criteria:
 
 ### 10.1 Unit tests
 
+This list covered Phases 1-3, while the bridge still owned scenario gating,
+changeability-flag resolution and post-write refresh. As of Phase 4 those
+concerns moved into `eebus-go` CDSF's own contract tests
+(`usecases/ca/cdsf/public_test.go`) and are no longer bridge-tested directly;
+scenario-absent, changeability-flag and refresh-count cases were removed from
+the bridge test suite accordingly (see `dhwsysfn_configuration_test.go`,
+`dhwsysfn_upstream_boost_test.go`, `dhwsysfn_upstream_mode_test.go`).
+
 The facade and strategies must cover:
 
 - MDSF entity and CDSF entity are different objects for the same SKI;
 - missing CDSF negotiation;
 - nil monitoring entity, device or configuration entity;
 - ambiguous device/entity resolution;
-- scenario 1 absent;
-- scenario 2 or 3 absent;
-- remote operation does not advertise `Write()`;
-- changeability flag is `nil`, `false` and `true`;
+- `WriteCapabilities`/`OperationModes` error propagation;
+- boost requires both start and stop capability;
 - requested mode is related, unrelated and ambiguously related;
-- one and multiple matching DHW system functions;
-- one and multiple matching one-time-DHW overruns;
 - partial-write and full-list-write behaviour in `eebus-go` contract tests;
 - callback before method return;
 - callback after method return;
@@ -495,9 +504,7 @@ The facade and strategies must cover:
 - nil message counter;
 - callback registration error;
 - caller cancellation and deadline;
-- internal result timeout;
-- accepted result triggers exactly one refresh;
-- no legacy fallback after an upstream error.
+- internal result timeout.
 
 ### 10.2 Bridge integration tests
 
