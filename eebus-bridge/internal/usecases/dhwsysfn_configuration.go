@@ -16,7 +16,8 @@ import (
 type caCDSFClient interface {
 	eebusapi.UseCaseInterface
 	RemoteEntitiesScenarios() []eebusapi.RemoteEntityScenarios
-	IsScenarioAvailableAtEntity(spineapi.EntityRemoteInterface, uint) bool
+	WriteCapabilities(spineapi.EntityRemoteInterface) (ucapi.DHWSystemFunctionWriteCapabilities, error)
+	OperationModes(spineapi.EntityRemoteInterface) ([]ucapi.HvacOperationModeType, error)
 	WriteOperationMode(
 		spineapi.EntityRemoteInterface,
 		ucapi.HvacOperationModeType,
@@ -48,9 +49,8 @@ type dhwOperationModeWriter interface {
 	WriteOperationMode(context.Context, spineapi.EntityRemoteInterface, string) error
 }
 
-// CDSFConfigurationFacade keeps entity resolution, cached capability inspection,
-// and the two write transports independently replaceable during the CDSF
-// upstream migration.
+// CDSFConfigurationFacade keeps bridge entity composition and synchronous write
+// adaptation separate from eebus-go's CDSF protocol semantics.
 type CDSFConfigurationFacade struct {
 	useCase             eebusapi.UseCaseInterface
 	resolver            dhwSystemFunctionEntityResolver
@@ -74,72 +74,33 @@ func newCDSFConfigurationFacade(
 }
 
 // NewUpstreamDHWSystemFunctionConfiguration selects eebus-go CDSF for use-case
-// negotiation, feature setup and DHW writes. A nil event callback deliberately
-// keeps MDSF as the sole owner of DHW state and support events.
+// negotiation, feature setup, capabilities, writes and post-write refreshes. A
+// nil event callback deliberately keeps MDSF as the sole state/event owner.
 func NewUpstreamDHWSystemFunctionConfiguration(
 	localEntity spineapi.EntityLocalInterface,
-	debug bool,
 ) *CDSFConfigurationFacade {
 	if localEntity == nil {
 		return &CDSFConfigurationFacade{}
 	}
-	client := cacdsf.NewCDSF(localEntity, nil)
-	localHvacFeature := func() spineapi.FeatureLocalInterface {
-		return localEntity.FeatureOfTypeAndRole(model.FeatureTypeTypeHvac, model.RoleTypeClient)
-	}
-	request := func(entity spineapi.EntityRemoteInterface, function model.FunctionType) {
-		requestRemoteFeatureData(entity, hvacServer, localHvacFeature, function, debug, "DHWSYSFN")
-	}
-	return newUpstreamDHWSystemFunctionConfiguration(client, localHvacFeature, request)
+	return newUpstreamDHWSystemFunctionConfiguration(cacdsf.NewCDSF(localEntity, nil))
 }
 
-func newUpstreamDHWSystemFunctionConfiguration(
-	client caCDSFClient,
-	localHvacFeature func() spineapi.FeatureLocalInterface,
-	request func(spineapi.EntityRemoteInterface, model.FunctionType),
-) *CDSFConfigurationFacade {
+func newUpstreamDHWSystemFunctionConfiguration(client caCDSFClient) *CDSFConfigurationFacade {
 	if client == nil {
 		return &CDSFConfigurationFacade{}
 	}
-	inspector := scenarioAwareDHWSystemFunctionCapabilityInspector{
-		client: client,
-		cached: cachedDHWSystemFunctionCapabilityInspector{},
-	}
-	boostTransport := &upstreamDHWBoostWriter{
-		client:    client,
-		inspector: inspector,
-		request:   request,
-	}
-	modeTransport := &upstreamDHWOperationModeWriter{
-		client:    client,
-		inspector: inspector,
-		request:   request,
-	}
-	facade := newCDSFConfigurationFacade(caCDSFEntityResolver{client: client}, inspector, boostTransport, modeTransport)
+	inspector := upstreamDHWSystemFunctionCapabilityInspector{client: client}
+	facade := newCDSFConfigurationFacade(
+		caCDSFEntityResolver{client: client},
+		inspector,
+		&upstreamDHWBoostWriter{client: client, inspector: inspector},
+		&upstreamDHWOperationModeWriter{client: client, inspector: inspector},
+	)
 	facade.useCase = client
 	return facade
 }
 
-// NewLegacyDHWSystemFunctionConfiguration selects the local CDSF use case for
-// negotiation and both legacy write strategies. It remains the release-level
-// rollback composition while the upstream boost and operation-mode strategies
-// are validated independently.
-func NewLegacyDHWSystemFunctionConfiguration(useCase *DHWSystemFunction) *CDSFConfigurationFacade {
-	if useCase == nil {
-		return &CDSFConfigurationFacade{}
-	}
-	inspector := cachedDHWSystemFunctionCapabilityInspector{}
-	transport := &legacyDHWSystemFunctionWriter{
-		localHvacFeature: useCase.localHvacFeature,
-		request:          useCase.request,
-		inspector:        inspector,
-	}
-	facade := newCDSFConfigurationFacade(useCase, inspector, transport, transport)
-	facade.useCase = useCase
-	return facade
-}
-
-// UseCase returns the selected CDSF negotiation owner for service registration.
+// UseCase returns eebus-go's CDSF use case for service registration.
 func (f *CDSFConfigurationFacade) UseCase() eebusapi.UseCaseInterface {
 	if f == nil {
 		return nil
@@ -194,179 +155,39 @@ func (r caCDSFEntityResolver) CompatibleEntity(ski string) eebus.EntityResolutio
 	return compatibleEntity(r.client.RemoteEntitiesScenarios(), ski)
 }
 
-type scenarioAwareDHWSystemFunctionCapabilityInspector struct {
+// upstreamDHWSystemFunctionCapabilityInspector only maps eebus-go's public CDSF
+// contract into the existing bridge state shape. It does not inspect SPINE
+// features, identifiers, relations or list data itself.
+type upstreamDHWSystemFunctionCapabilityInspector struct {
 	client caCDSFClient
-	cached dhwSystemFunctionCapabilityInspector
 }
 
-func (i scenarioAwareDHWSystemFunctionCapabilityInspector) State(
+func (i upstreamDHWSystemFunctionCapabilityInspector) State(
 	entity spineapi.EntityRemoteInterface,
 ) (DHWSystemFunctionState, error) {
-	if i.client == nil || i.cached == nil {
+	if i.client == nil || entity == nil {
 		return DHWSystemFunctionState{}, ErrDHWSysFnDataUnavailable
 	}
-	state, err := i.cached.State(entity)
+	capabilities, err := i.client.WriteCapabilities(entity)
 	if err != nil {
-		return DHWSystemFunctionState{}, err
+		return DHWSystemFunctionState{}, mapUpstreamDHWWriteError(err)
 	}
-	modeScenario := i.client.IsScenarioAvailableAtEntity(entity, 1)
-	boostStartScenario := i.client.IsScenarioAvailableAtEntity(entity, 2)
-	boostStopScenario := i.client.IsScenarioAvailableAtEntity(entity, 3)
-	state.ModeWritable = state.ModeWritable && modeScenario
-	state.BoostWritable = state.BoostWritable && boostStartScenario && boostStopScenario
-	return state, nil
-}
-
-// legacyDHWSystemFunctionWriter contains the bridge-local list merge and SPINE
-// transport retained for rollback while upstream CDSF is introduced.
-type legacyDHWSystemFunctionWriter struct {
-	localHvacFeature func() spineapi.FeatureLocalInterface
-	request          func(spineapi.EntityRemoteInterface, model.FunctionType)
-	inspector        dhwSystemFunctionCapabilityInspector
-}
-
-func (w *legacyDHWSystemFunctionWriter) WriteBoost(
-	ctx context.Context,
-	entity spineapi.EntityRemoteInterface,
-	active bool,
-) error {
-	state, err := w.inspector.State(entity)
-	if err != nil {
-		return err
-	}
-	if !state.BoostWritable {
-		return ErrDHWSysFnNotWritable
-	}
-	remote := hvacServer(entity)
-	local := w.localFeature()
-	if remote == nil || local == nil {
-		return ErrDHWSysFnDataUnavailable
-	}
-	resolved, err := resolveDHWSystemFunction(remote)
-	if err != nil {
-		return err
-	}
-	data, ok := remote.DataCopy(model.FunctionTypeHvacOverrunListData).(*model.HvacOverrunListDataType)
-	if !ok || data == nil {
-		return ErrDHWSysFnDataUnavailable
-	}
-	entries := make([]model.HvacOverrunDataType, len(data.HvacOverrunData))
-	copy(entries, data.HvacOverrunData)
-	status := model.HvacOverrunStatusTypeInactive
-	if active {
-		status = model.HvacOverrunStatusTypeActive
-	}
-	found := false
-	for index := range entries {
-		if entries[index].OverrunId != nil && *entries[index].OverrunId == resolved.overrunID {
-			entries[index].OverrunStatus = &status
-			found = true
-			break
+	var availableModes []string
+	if capabilities.OperationMode {
+		modes, modesErr := i.client.OperationModes(entity)
+		if modesErr != nil {
+			return DHWSystemFunctionState{}, mapUpstreamDHWWriteError(modesErr)
+		}
+		availableModes = make([]string, 0, len(modes))
+		for _, mode := range modes {
+			availableModes = append(availableModes, string(mode))
 		}
 	}
-	if !found {
-		return ErrDHWSysFnDataUnavailable
-	}
-	return w.write(ctx, entity, remote, local, model.CmdType{
-		HvacOverrunListData: &model.HvacOverrunListDataType{HvacOverrunData: entries},
-	}, model.FunctionTypeHvacOverrunListData, "DHW boost")
-}
-
-func (w *legacyDHWSystemFunctionWriter) WriteOperationMode(
-	ctx context.Context,
-	entity spineapi.EntityRemoteInterface,
-	modeType string,
-) error {
-	state, err := w.inspector.State(entity)
-	if err != nil {
-		return err
-	}
-	if !state.ModeWritable {
-		return ErrDHWSysFnNotWritable
-	}
-	remote := hvacServer(entity)
-	local := w.localFeature()
-	if remote == nil || local == nil {
-		return ErrDHWSysFnDataUnavailable
-	}
-	resolved, err := resolveDHWSystemFunction(remote)
-	if err != nil {
-		return err
-	}
-	id, ok := resolved.modeIDForType[modeType]
-	if !ok {
-		return fmt.Errorf("%w: %s", ErrDHWSysFnInvalidMode, modeType)
-	}
-	data, ok := remote.DataCopy(model.FunctionTypeHvacSystemFunctionListData).(*model.HvacSystemFunctionListDataType)
-	if !ok || data == nil {
-		return ErrDHWSysFnDataUnavailable
-	}
-	entries := make([]model.HvacSystemFunctionDataType, len(data.HvacSystemFunctionData))
-	copy(entries, data.HvacSystemFunctionData)
-	found := false
-	for index := range entries {
-		if entries[index].SystemFunctionId != nil && *entries[index].SystemFunctionId == resolved.systemID {
-			entries[index].CurrentOperationModeId = &id
-			found = true
-			break
-		}
-	}
-	if !found {
-		return ErrDHWSysFnDataUnavailable
-	}
-	return w.write(ctx, entity, remote, local, model.CmdType{
-		HvacSystemFunctionListData: &model.HvacSystemFunctionListDataType{HvacSystemFunctionData: entries},
-	}, model.FunctionTypeHvacSystemFunctionListData, "DHW operation mode")
-}
-
-func (w *legacyDHWSystemFunctionWriter) write(
-	ctx context.Context,
-	entity spineapi.EntityRemoteInterface,
-	remote spineapi.FeatureRemoteInterface,
-	local spineapi.FeatureLocalInterface,
-	cmd model.CmdType,
-	refresh model.FunctionType,
-	label string,
-) error {
-	err := awaitDHWWrite(ctx, label, func(callback dhwResultCallback) (*model.MsgCounterType, error) {
-		device := entity.Device()
-		if device == nil {
-			return nil, ErrDHWSysFnDataUnavailable
-		}
-		sender := device.Sender()
-		if sender == nil {
-			return nil, ErrDHWSysFnDataUnavailable
-		}
-		counter, err := sender.Write(local.Address(), remote.Address(), cmd)
-		if err != nil {
-			return counter, fmt.Errorf("sending %s: %w", label, err)
-		}
-		if counter == nil {
-			return nil, fmt.Errorf("sending %s returned no message counter", label)
-		}
-		if err := local.AddResponseCallback(*counter, func(message spineapi.ResponseMessage) {
-			if data, ok := message.Data.(*model.ResultDataType); ok && data != nil {
-				callback(*data, *counter)
-			}
-		}); err != nil {
-			return counter, fmt.Errorf("waiting for %s result: %w", label, err)
-		}
-		return counter, nil
-	})
-	if err != nil {
-		return err
-	}
-	if w.request != nil {
-		w.request(entity, refresh)
-	}
-	return nil
-}
-
-func (w *legacyDHWSystemFunctionWriter) localFeature() spineapi.FeatureLocalInterface {
-	if w == nil || w.localHvacFeature == nil {
-		return nil
-	}
-	return w.localHvacFeature()
+	return DHWSystemFunctionState{
+		BoostWritable:  capabilities.StartOneTimeDhw && capabilities.StopOneTimeDhw,
+		AvailableModes: availableModes,
+		ModeWritable:   capabilities.OperationMode,
+	}, nil
 }
 
 type dhwResultCallback func(model.ResultDataType, model.MsgCounterType)

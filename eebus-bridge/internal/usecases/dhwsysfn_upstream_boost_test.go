@@ -16,7 +16,7 @@ import (
 
 func TestUpstreamCDSFSelectsUpstreamWriteStrategies(t *testing.T) {
 	client := ucmocks.NewCaCDSFInterface(t)
-	facade := newUpstreamDHWSystemFunctionConfiguration(client, nil, nil)
+	facade := newUpstreamDHWSystemFunctionConfiguration(client)
 
 	if _, ok := facade.boostWriter.(*upstreamDHWBoostWriter); !ok {
 		t.Fatalf("boost writer = %T, want *upstreamDHWBoostWriter", facade.boostWriter)
@@ -26,7 +26,7 @@ func TestUpstreamCDSFSelectsUpstreamWriteStrategies(t *testing.T) {
 	}
 }
 
-func TestUpstreamDHWBoostWriterStartsStopsAndRefreshes(t *testing.T) {
+func TestUpstreamDHWBoostWriterStartsStopsAndAwaitsResults(t *testing.T) {
 	entity := spinemocks.NewEntityRemoteInterface(t)
 	client := ucmocks.NewCaCDSFInterface(t)
 	counter := model.MsgCounterType(17)
@@ -43,16 +43,9 @@ func TestUpstreamDHWBoostWriterStartsStopsAndRefreshes(t *testing.T) {
 		},
 	)
 
-	refreshes := 0
 	writer := &upstreamDHWBoostWriter{
 		client:    client,
 		inspector: facadeCapabilityInspector{state: DHWSystemFunctionState{BoostWritable: true}},
-		request: func(gotEntity spineapi.EntityRemoteInterface, function model.FunctionType) {
-			refreshes++
-			if gotEntity != entity || function != model.FunctionTypeHvacOverrunListData {
-				t.Fatalf("refresh = (%v, %s), want selected entity and HvacOverrunListData", gotEntity, function)
-			}
-		},
 	}
 
 	if err := writer.WriteBoost(context.Background(), entity, true); err != nil {
@@ -61,12 +54,9 @@ func TestUpstreamDHWBoostWriterStartsStopsAndRefreshes(t *testing.T) {
 	if err := writer.WriteBoost(context.Background(), entity, false); err != nil {
 		t.Fatalf("stop WriteBoost() error = %v", err)
 	}
-	if refreshes != 2 {
-		t.Fatalf("refresh count = %d, want one per accepted transition", refreshes)
-	}
 }
 
-func TestUpstreamDHWBoostWriterReturnsDeviceRejectionWithoutRefresh(t *testing.T) {
+func TestUpstreamDHWBoostWriterReturnsDeviceRejection(t *testing.T) {
 	entity := spinemocks.NewEntityRemoteInterface(t)
 	client := ucmocks.NewCaCDSFInterface(t)
 	counter := model.MsgCounterType(18)
@@ -81,48 +71,34 @@ func TestUpstreamDHWBoostWriterReturnsDeviceRejectionWithoutRefresh(t *testing.T
 		},
 	)
 
-	refreshes := 0
 	writer := &upstreamDHWBoostWriter{
 		client:    client,
 		inspector: facadeCapabilityInspector{state: DHWSystemFunctionState{BoostWritable: true}},
-		request: func(spineapi.EntityRemoteInterface, model.FunctionType) {
-			refreshes++
-		},
 	}
 	err := writer.WriteBoost(context.Background(), entity, true)
 	if !errors.Is(err, ErrDHWSysFnRejected) || !strings.Contains(err.Error(), string(description)) {
 		t.Fatalf("WriteBoost() error = %v, want device rejection", err)
 	}
-	if refreshes != 0 {
-		t.Fatalf("refresh count = %d, want zero after rejection", refreshes)
-	}
 }
 
-func TestUpstreamDHWBoostWriterHonoursCancellationWithoutRefresh(t *testing.T) {
+func TestUpstreamDHWBoostWriterHonoursCancellation(t *testing.T) {
 	entity := spinemocks.NewEntityRemoteInterface(t)
 	client := ucmocks.NewCaCDSFInterface(t)
 	counter := model.MsgCounterType(19)
 	client.EXPECT().StartOneTimeDhw(entity, mock.Anything).Return(&counter, nil)
 
-	refreshes := 0
 	writer := &upstreamDHWBoostWriter{
 		client:    client,
 		inspector: facadeCapabilityInspector{state: DHWSystemFunctionState{BoostWritable: true}},
-		request: func(spineapi.EntityRemoteInterface, model.FunctionType) {
-			refreshes++
-		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := writer.WriteBoost(ctx, entity, true); !errors.Is(err, context.Canceled) {
 		t.Fatalf("WriteBoost() error = %v, want context.Canceled", err)
 	}
-	if refreshes != 0 {
-		t.Fatalf("refresh count = %d, want zero after cancellation", refreshes)
-	}
 }
 
-func TestUpstreamDHWBoostWriterMapsSendFailuresWithoutFallbackOrRefresh(t *testing.T) {
+func TestUpstreamDHWBoostWriterMapsSendFailuresWithoutFallback(t *testing.T) {
 	sendErr := errors.New("send failed")
 	for _, test := range []struct {
 		name string
@@ -137,20 +113,13 @@ func TestUpstreamDHWBoostWriterMapsSendFailuresWithoutFallbackOrRefresh(t *testi
 			entity := spinemocks.NewEntityRemoteInterface(t)
 			client := ucmocks.NewCaCDSFInterface(t)
 			client.EXPECT().StartOneTimeDhw(entity, mock.Anything).Return(nil, test.err).Once()
-			refreshes := 0
 			writer := &upstreamDHWBoostWriter{
 				client:    client,
 				inspector: facadeCapabilityInspector{state: DHWSystemFunctionState{BoostWritable: true}},
-				request: func(spineapi.EntityRemoteInterface, model.FunctionType) {
-					refreshes++
-				},
 			}
 
 			if err := writer.WriteBoost(context.Background(), entity, true); !errors.Is(err, test.want) {
 				t.Fatalf("WriteBoost() error = %v, want %v", err, test.want)
-			}
-			if refreshes != 0 {
-				t.Fatalf("refresh count = %d, want zero after send failure", refreshes)
 			}
 		})
 	}

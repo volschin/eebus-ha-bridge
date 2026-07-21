@@ -94,7 +94,7 @@ func TestRoomHeatingSysFnWriteRejectsModeNotInRelation(t *testing.T) {
 
 func TestRoomHeatingSysFnWriteUpdatesOperationMode(t *testing.T) {
 	feature := newRoomHeatingSysFnFeature(t, 0, true)
-	local, entity, written := dhwSysFnWriteHarness(t, feature)
+	local, entity, written := hvacWriteHarness(t, feature)
 	room := &RoomHeatingSystemFunction{localEntity: local}
 
 	if err := room.WriteOperationMode(context.Background(), entity, "auto"); err != nil {
@@ -115,7 +115,7 @@ func TestRoomHeatingSysFnWriteGuardsAndRejection(t *testing.T) {
 	}
 
 	feature := newRoomHeatingSysFnFeature(t, 0, true)
-	local, rejectingEntity, _ := dhwSysFnWriteHarnessWithErrno(t, feature, 4)
+	local, rejectingEntity, _ := hvacWriteHarnessWithErrno(t, feature, 4)
 	room := &RoomHeatingSystemFunction{localEntity: local}
 	if err := room.WriteOperationMode(context.Background(), rejectingEntity, "on"); !errors.Is(err, ErrRoomHeatingSysFnRejected) {
 		t.Fatalf("rejection error = %v", err)
