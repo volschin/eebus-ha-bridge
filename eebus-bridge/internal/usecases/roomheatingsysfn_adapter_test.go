@@ -203,6 +203,85 @@ func TestRoomHeatingSystemFunctionAdapterKeepsMRHSFReadsWhenCRHSFStateIsUnavaila
 	}
 }
 
+func TestRoomHeatingSystemFunctionMonitoringMapsCurrentModeErrors(t *testing.T) {
+	entity := spinemocks.NewEntityRemoteInterface(t)
+	uc := ucmocks.NewMaMRHSFInterface(t)
+	uc.EXPECT().OperationModes(entity).Return([]ucapi.HvacOperationModeType{ucapi.HvacOperationModeTypeAuto}, nil)
+	uc.EXPECT().CurrentOperationMode(entity).Return(ucapi.HvacOperationModeType(""), eebusapi.ErrDataNotAvailable)
+
+	wrapper := &RoomHeatingSystemFunctionMonitoring{uc: uc}
+	if _, err := wrapper.State(entity); !errors.Is(err, ErrRoomHeatingSysFnDataUnavailable) {
+		t.Fatalf("State() error = %v, want ErrRoomHeatingSysFnDataUnavailable", err)
+	}
+}
+
+func TestRoomHeatingSystemFunctionMonitoringResolvesCompatibleEntity(t *testing.T) {
+	uc := ucmocks.NewMaMRHSFInterface(t)
+	uc.EXPECT().RemoteEntitiesScenarios().Return(nil)
+
+	wrapper := &RoomHeatingSystemFunctionMonitoring{uc: uc}
+	if resolution := wrapper.CompatibleEntity("ab:cd"); resolution.Entity != nil || resolution.DeviceCount != 0 {
+		t.Fatalf("CompatibleEntity() = %+v, want empty resolution", resolution)
+	}
+}
+
+func TestRoomHeatingSystemFunctionAdapterFailsClosedWithoutMonitoring(t *testing.T) {
+	var adapter *RoomHeatingSystemFunctionAdapter
+	if resolution := adapter.CompatibleEntity("ab:cd"); resolution.Entity != nil {
+		t.Fatalf("CompatibleEntity() = %+v, want empty resolution", resolution)
+	}
+	if _, err := adapter.State(nil); !errors.Is(err, ErrRoomHeatingSysFnDataUnavailable) {
+		t.Fatalf("State() error = %v, want ErrRoomHeatingSysFnDataUnavailable", err)
+	}
+
+	empty := NewRoomHeatingSystemFunctionAdapter(nil, nil)
+	if resolution := empty.CompatibleEntity("ab:cd"); resolution.Entity != nil {
+		t.Fatalf("CompatibleEntity() = %+v, want empty resolution", resolution)
+	}
+	if _, err := empty.State(nil); !errors.Is(err, ErrRoomHeatingSysFnDataUnavailable) {
+		t.Fatalf("State() error = %v, want ErrRoomHeatingSysFnDataUnavailable", err)
+	}
+	if err := empty.WriteOperationMode(context.Background(), nil, "on"); !errors.Is(err, ErrRoomHeatingSysFnNotWritable) {
+		t.Fatalf("WriteOperationMode() error = %v, want ErrRoomHeatingSysFnNotWritable", err)
+	}
+}
+
+func TestRoomHeatingSystemFunctionAdapterDelegatesResolutionAndReadErrors(t *testing.T) {
+	monitoringEntity := spinemocks.NewEntityRemoteInterface(t)
+	reader := &fakeRoomHeatingSystemFunctionReader{
+		entity:   monitoringEntity,
+		stateErr: ErrRoomHeatingSysFnDataUnavailable,
+	}
+	adapter := NewRoomHeatingSystemFunctionAdapter(reader, &fakeRoomHeatingSystemFunctionWriter{})
+
+	if resolution := adapter.CompatibleEntity("ab:cd"); resolution.Entity != monitoringEntity {
+		t.Fatalf("CompatibleEntity() = %+v, want the monitoring entity", resolution)
+	}
+	if _, err := adapter.State(monitoringEntity); !errors.Is(err, ErrRoomHeatingSysFnDataUnavailable) {
+		t.Fatalf("State() error = %v, want ErrRoomHeatingSysFnDataUnavailable", err)
+	}
+}
+
+func TestRoomHeatingSystemFunctionAdapterKeepsMRHSFReadsWithoutCRHSFEntity(t *testing.T) {
+	device := spinemocks.NewDeviceRemoteInterface(t)
+	device.EXPECT().Ski().Return("ab:cd")
+	monitoringEntity := spinemocks.NewEntityRemoteInterface(t)
+	monitoringEntity.EXPECT().Device().Return(device)
+	reader := &fakeRoomHeatingSystemFunctionReader{state: RoomHeatingSystemFunctionState{OperationMode: "auto"}}
+
+	adapter := NewRoomHeatingSystemFunctionAdapter(reader, &fakeRoomHeatingSystemFunctionWriter{})
+	state, err := adapter.State(monitoringEntity)
+	if err != nil || state.OperationMode != "auto" || state.ModeWritable {
+		t.Fatalf("State() = %+v, %v", state, err)
+	}
+
+	detached := spinemocks.NewEntityRemoteInterface(t)
+	detached.EXPECT().Device().Return(nil)
+	if err := adapter.WriteOperationMode(context.Background(), detached, "on"); !errors.Is(err, ErrRoomHeatingSysFnNotWritable) {
+		t.Fatalf("WriteOperationMode() error = %v, want ErrRoomHeatingSysFnNotWritable", err)
+	}
+}
+
 func TestRoomHeatingSystemFunctionMonitoringOptionalPaths(t *testing.T) {
 	wrapper := NewRoomHeatingSystemFunctionMonitoring(nil, eebus.NewDeviceRegistry(), true)
 	wrapper.Setup(nil)
