@@ -68,14 +68,12 @@ func newCRHSFConfigurationFacade(
 // user-visible room-heating state events.
 func NewUpstreamRoomHeatingSystemFunctionConfiguration(
 	localEntity spineapi.EntityLocalInterface,
-	debug bool,
 ) *CRHSFConfigurationFacade {
 	if localEntity == nil {
 		return &CRHSFConfigurationFacade{}
 	}
 	client := cacrhsf.NewCRHSF(localEntity, nil)
-	legacy := newLegacyRoomHeatingSystemFunctionStrategy(localEntity, debug)
-	inspector := bridgeRoomHeatingSystemFunctionCapabilityInspector{state: legacy}
+	inspector := bridgeRoomHeatingSystemFunctionCapabilityInspector{}
 	return newCRHSFConfigurationFacade(
 		client,
 		crhsfEntityResolver{useCase: client},
@@ -131,22 +129,55 @@ func (r crhsfEntityResolver) CompatibleEntity(ski string) eebus.EntityResolution
 }
 
 // bridgeRoomHeatingSystemFunctionCapabilityInspector is intentionally
-// read-only. It preserves the legacy distinction between incomplete caches
-// (data unavailable) and a negotiated read-only function (ModeWritable=false)
-// without taking negotiation or write ownership away from upstream CRHSF.
-type bridgeRoomHeatingSystemFunctionCapabilityInspector struct {
-	state roomHeatingSystemFunctionCapabilityInspector
-}
+// read-only. Until CRHSF exposes WriteCapabilities, it inspects only the
+// operation and changeability fields needed by the stable bridge contract.
+// Mode IDs, relations, state reads and writes remain wholly upstream-owned.
+type bridgeRoomHeatingSystemFunctionCapabilityInspector struct{}
 
 func (i bridgeRoomHeatingSystemFunctionCapabilityInspector) State(
 	entity spineapi.EntityRemoteInterface,
 ) (RoomHeatingSystemFunctionState, error) {
-	if i.state == nil || entity == nil {
+	if entity == nil {
 		return RoomHeatingSystemFunctionState{}, ErrRoomHeatingSysFnDataUnavailable
 	}
-	state, err := i.state.State(entity)
-	if err != nil {
-		return RoomHeatingSystemFunctionState{}, err
+	remote := entity.FeatureOfTypeAndRole(model.FeatureTypeTypeHvac, model.RoleTypeServer)
+	if remote == nil {
+		return RoomHeatingSystemFunctionState{}, ErrRoomHeatingSysFnDataUnavailable
 	}
-	return RoomHeatingSystemFunctionState{ModeWritable: state.ModeWritable}, nil
+	descriptions, ok := remote.DataCopy(model.FunctionTypeHvacSystemFunctionDescriptionListData).(*model.HvacSystemFunctionDescriptionListDataType)
+	if !ok || descriptions == nil {
+		return RoomHeatingSystemFunctionState{}, ErrRoomHeatingSysFnDataUnavailable
+	}
+	var heatingIDs []model.HvacSystemFunctionIdType
+	for _, description := range descriptions.HvacSystemFunctionDescriptionData {
+		if description.SystemFunctionId != nil && description.SystemFunctionType != nil &&
+			*description.SystemFunctionType == model.HvacSystemFunctionTypeTypeHeating {
+			heatingIDs = append(heatingIDs, *description.SystemFunctionId)
+		}
+	}
+	if len(heatingIDs) != 1 {
+		return RoomHeatingSystemFunctionState{}, ErrRoomHeatingSysFnDataUnavailable
+	}
+	data, ok := remote.DataCopy(model.FunctionTypeHvacSystemFunctionListData).(*model.HvacSystemFunctionListDataType)
+	if !ok || data == nil {
+		return RoomHeatingSystemFunctionState{}, ErrRoomHeatingSysFnDataUnavailable
+	}
+	var system *model.HvacSystemFunctionDataType
+	for index := range data.HvacSystemFunctionData {
+		candidate := &data.HvacSystemFunctionData[index]
+		if candidate.SystemFunctionId != nil && *candidate.SystemFunctionId == heatingIDs[0] {
+			if system != nil {
+				return RoomHeatingSystemFunctionState{}, ErrRoomHeatingSysFnDataUnavailable
+			}
+			system = candidate
+		}
+	}
+	if system == nil {
+		return RoomHeatingSystemFunctionState{}, ErrRoomHeatingSysFnDataUnavailable
+	}
+	operation := remote.Operations()[model.FunctionTypeHvacSystemFunctionListData]
+	return RoomHeatingSystemFunctionState{
+		ModeWritable: operation != nil && operation.Write() &&
+			(system.IsOperationModeIdChangeable == nil || *system.IsOperationModeIdChangeable),
+	}, nil
 }

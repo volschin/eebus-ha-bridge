@@ -59,7 +59,7 @@ func (w *upstreamRoomHeatingOperationModeWriter) WriteOperationMode(
 type roomHeatingResultCallback func(model.ResultDataType, model.MsgCounterType)
 type roomHeatingWriteCall func(roomHeatingResultCallback) (*model.MsgCounterType, error)
 
-var roomHeatingSystemFunctionWriteTimeout = hvacWriteTimeout
+var roomHeatingSystemFunctionWriteTimeout = 10 * time.Second
 
 func awaitRoomHeatingSystemFunctionWrite(ctx context.Context, write roomHeatingWriteCall) error {
 	type writeResult struct {

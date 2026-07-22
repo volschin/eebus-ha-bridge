@@ -10,11 +10,12 @@ import (
 	ucmocks "github.com/enbility/eebus-go/usecases/mocks"
 	spineapi "github.com/enbility/spine-go/api"
 	spinemocks "github.com/enbility/spine-go/mocks"
+	"github.com/enbility/spine-go/model"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
 
 func TestUpstreamRoomHeatingSystemFunctionConfigurationSelectsCRHSF(t *testing.T) {
-	facade := NewUpstreamRoomHeatingSystemFunctionConfiguration(clientUsecaseLocalEntity(t), false)
+	facade := NewUpstreamRoomHeatingSystemFunctionConfiguration(clientUsecaseLocalEntity(t))
 	client, ok := facade.UseCase().(*cacrhsf.CRHSF)
 	if !ok {
 		t.Fatalf("UseCase() = %T, want *crhsf.CRHSF", facade.UseCase())
@@ -103,32 +104,52 @@ func TestCRHSFConfigurationFacadeComposesUpstreamEntityAndSelectedStrategies(t *
 }
 
 func TestBridgeRoomHeatingCapabilityInspectorPreservesUnavailableAndReadOnly(t *testing.T) {
-	entity := spinemocks.NewEntityRemoteInterface(t)
 	for _, test := range []struct {
-		name         string
-		legacyState  RoomHeatingSystemFunctionState
-		legacyError  error
-		wantWritable bool
-		wantError    error
+		name           string
+		writeOperation bool
+		changeable     *bool
+		missingData    bool
+		wantWritable   bool
+		wantError      error
 	}{
 		{
-			name:         "writable",
-			legacyState:  RoomHeatingSystemFunctionState{OperationMode: "auto", AvailableModes: []string{"auto"}, ModeWritable: true},
-			wantWritable: true,
+			name: "writable", writeOperation: true, wantWritable: true,
 		},
 		{
-			name:        "negotiated read only",
-			legacyState: RoomHeatingSystemFunctionState{OperationMode: "off", AvailableModes: []string{"off"}},
+			name: "write operation missing",
 		},
 		{
-			name:        "cache incomplete",
-			legacyError: ErrRoomHeatingSysFnDataUnavailable,
-			wantError:   ErrRoomHeatingSysFnDataUnavailable,
+			name: "explicitly not changeable", writeOperation: true, changeable: ptr(false),
+		},
+		{
+			name: "cache incomplete", missingData: true, wantError: ErrRoomHeatingSysFnDataUnavailable,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			legacy := &phase2RoomHeatingCapabilityInspector{state: test.legacyState, err: test.legacyError}
-			state, err := (bridgeRoomHeatingSystemFunctionCapabilityInspector{state: legacy}).State(entity)
+			feature := spinemocks.NewFeatureRemoteInterface(t)
+			if test.missingData {
+				feature.EXPECT().DataCopy(model.FunctionTypeHvacSystemFunctionDescriptionListData).Return(nil)
+			} else {
+				id := model.HvacSystemFunctionIdType(1)
+				feature.EXPECT().DataCopy(model.FunctionTypeHvacSystemFunctionDescriptionListData).Return(
+					&model.HvacSystemFunctionDescriptionListDataType{HvacSystemFunctionDescriptionData: []model.HvacSystemFunctionDescriptionDataType{{
+						SystemFunctionId: &id, SystemFunctionType: ptr(model.HvacSystemFunctionTypeTypeHeating),
+					}}},
+				)
+				feature.EXPECT().DataCopy(model.FunctionTypeHvacSystemFunctionListData).Return(
+					&model.HvacSystemFunctionListDataType{HvacSystemFunctionData: []model.HvacSystemFunctionDataType{{
+						SystemFunctionId: &id, IsOperationModeIdChangeable: test.changeable,
+					}}},
+				)
+				operation := spinemocks.NewOperationsInterface(t)
+				operation.EXPECT().Write().Return(test.writeOperation)
+				feature.EXPECT().Operations().Return(map[model.FunctionType]spineapi.OperationsInterface{
+					model.FunctionTypeHvacSystemFunctionListData: operation,
+				})
+			}
+			entity := spinemocks.NewEntityRemoteInterface(t)
+			entity.EXPECT().FeatureOfTypeAndRole(model.FeatureTypeTypeHvac, model.RoleTypeServer).Return(feature)
+			state, err := (bridgeRoomHeatingSystemFunctionCapabilityInspector{}).State(entity)
 			if !errors.Is(err, test.wantError) {
 				t.Fatalf("State() error = %v, want %v", err, test.wantError)
 			}
@@ -136,7 +157,63 @@ func TestBridgeRoomHeatingCapabilityInspectorPreservesUnavailableAndReadOnly(t *
 				t.Fatalf("State() = %+v, want writable=%t", state, test.wantWritable)
 			}
 			if state.OperationMode != "" || len(state.AvailableModes) != 0 {
-				t.Fatalf("State() leaked legacy read ownership: %+v", state)
+				t.Fatalf("State() leaked read ownership: %+v", state)
+			}
+		})
+	}
+}
+
+func TestBridgeRoomHeatingCapabilityInspectorRejectsIncompleteCache(t *testing.T) {
+	heatingID := model.HvacSystemFunctionIdType(1)
+	otherID := model.HvacSystemFunctionIdType(2)
+	heatingDescriptions := &model.HvacSystemFunctionDescriptionListDataType{
+		HvacSystemFunctionDescriptionData: []model.HvacSystemFunctionDescriptionDataType{{
+			SystemFunctionId:   &heatingID,
+			SystemFunctionType: ptr(model.HvacSystemFunctionTypeTypeHeating),
+		}},
+	}
+	tests := []struct {
+		name         string
+		missingHVAC  bool
+		descriptions *model.HvacSystemFunctionDescriptionListDataType
+		data         *model.HvacSystemFunctionListDataType
+	}{
+		{name: "missing HVAC feature", missingHVAC: true},
+		{name: "no heating function", descriptions: &model.HvacSystemFunctionDescriptionListDataType{}},
+		{name: "missing function data", descriptions: heatingDescriptions},
+		{
+			name:         "no matching function data",
+			descriptions: heatingDescriptions,
+			data: &model.HvacSystemFunctionListDataType{HvacSystemFunctionData: []model.HvacSystemFunctionDataType{{
+				SystemFunctionId: &otherID,
+			}}},
+		},
+		{
+			name:         "duplicate matching function data",
+			descriptions: heatingDescriptions,
+			data: &model.HvacSystemFunctionListDataType{HvacSystemFunctionData: []model.HvacSystemFunctionDataType{
+				{SystemFunctionId: &heatingID},
+				{SystemFunctionId: &heatingID},
+			}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			entity := spinemocks.NewEntityRemoteInterface(t)
+			if test.missingHVAC {
+				entity.EXPECT().FeatureOfTypeAndRole(model.FeatureTypeTypeHvac, model.RoleTypeServer).Return(nil)
+			} else {
+				feature := spinemocks.NewFeatureRemoteInterface(t)
+				entity.EXPECT().FeatureOfTypeAndRole(model.FeatureTypeTypeHvac, model.RoleTypeServer).Return(feature)
+				feature.EXPECT().DataCopy(model.FunctionTypeHvacSystemFunctionDescriptionListData).Return(test.descriptions)
+				if len(test.descriptions.HvacSystemFunctionDescriptionData) == 1 {
+					feature.EXPECT().DataCopy(model.FunctionTypeHvacSystemFunctionListData).Return(test.data)
+				}
+			}
+
+			if _, err := (bridgeRoomHeatingSystemFunctionCapabilityInspector{}).State(entity); !errors.Is(err, ErrRoomHeatingSysFnDataUnavailable) {
+				t.Fatalf("State() error = %v, want data unavailable", err)
 			}
 		})
 	}
@@ -157,7 +234,7 @@ func TestCRHSFConfigurationFacadeFailsClosedWhenIncomplete(t *testing.T) {
 		t.Fatalf("WriteOperationMode() error = %v, want not writable", err)
 	}
 
-	empty := NewUpstreamRoomHeatingSystemFunctionConfiguration(nil, false)
+	empty := NewUpstreamRoomHeatingSystemFunctionConfiguration(nil)
 	if empty.UseCase() != nil {
 		t.Fatal("nil local entity initialized CRHSF")
 	}

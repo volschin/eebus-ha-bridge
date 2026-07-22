@@ -172,3 +172,30 @@ func TestDHWWriteRejectsOffStepValueBeforeSending(t *testing.T) {
 		t.Fatalf("Write() error = %v, want ErrDHWInvalidStep", err)
 	}
 }
+
+func TestDHWWriteValidationGuards(t *testing.T) {
+	tests := []struct {
+		name  string
+		state DHWSetpoint
+		value float64
+		want  error
+	}{
+		{
+			name: "read only",
+			want: ErrDHWNotWritable,
+		},
+		{
+			name:  "out of range",
+			state: DHWSetpoint{Minimum: 35, Maximum: 70, Step: 1, Writable: true},
+			value: 71,
+			want:  ErrDHWOutOfRange,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateDHWSetpointWrite(test.state, test.value); !errors.Is(err, test.want) {
+				t.Fatalf("validateDHWSetpointWrite() error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}
