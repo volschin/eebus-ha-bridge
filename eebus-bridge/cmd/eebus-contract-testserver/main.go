@@ -122,6 +122,8 @@ func (fakePayloadSource) AttachOHPCFPayload(event *pb.OHPCFEvent, _ string, _ ee
 	return true
 }
 
+func (fakePayloadSource) RefreshCompressorFlexibility(string) {}
+
 type fakeTrust struct {
 	bus      *eebus.EventBus
 	registry *eebus.DeviceRegistry

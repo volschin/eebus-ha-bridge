@@ -83,6 +83,17 @@ type controlOHPCFController struct {
 	calls        []string
 }
 
+type refreshingOHPCFController struct {
+	noProcessOHPCFController
+	refreshes       int
+	refreshedEntity spineapi.EntityRemoteInterface
+}
+
+func (c *refreshingOHPCFController) Refresh(entity spineapi.EntityRemoteInterface) {
+	c.refreshes++
+	c.refreshedEntity = entity
+}
+
 func (c *controlOHPCFController) OptionalPowerConsumptionAvailable(spineapi.EntityRemoteInterface) (bool, error) {
 	return c.available, c.availableErr
 }
@@ -148,6 +159,33 @@ func TestOHPCFServiceGetFlexibilityContracts(t *testing.T) {
 	}))
 	if _, err := failing.GetCompressorFlexibility(ctx, &pb.DeviceRequest{Ski: testValidSKI}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("all-failed status = %s, error=%v", status.Code(err), err)
+	}
+}
+
+func TestOHPCFSnapshotActivelyReconcilesStoppedRemoteCache(t *testing.T) {
+	entity := mocks.NewEntityRemoteInterface(t)
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{})
+	controller := &refreshingOHPCFController{
+		noProcessOHPCFController: noProcessOHPCFController{failingOHPCFController{
+			entity: entity,
+			err:    eebusapi.ErrDataNotAvailable,
+		}},
+	}
+	service := NewOHPCFService(nil, eebus.NewEventBus(), registry, WithOHPCFController(controller))
+
+	snapshot, err := NewDeviceSnapshotAssembler(
+		registry,
+		DeviceStatePayloadSources{OHPCF: service},
+	).Build(testValidSKI, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.GetCompressorFlexibility().GetState() != pb.CompressorPowerConsumptionState_COMPRESSOR_STATE_STOPPED {
+		t.Fatalf("cached snapshot state = %s, want stopped", snapshot.GetCompressorFlexibility().GetState())
+	}
+	if controller.refreshes != 1 || controller.refreshedEntity != entity {
+		t.Fatalf("snapshot refresh = (%d, %v), want (1, requested entity)", controller.refreshes, controller.refreshedEntity)
 	}
 }
 
