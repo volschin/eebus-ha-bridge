@@ -22,12 +22,15 @@ func TestUpstreamRoomHeatingSystemFunctionConfigurationSelectsCRHSF(t *testing.T
 	if client.EventCB != nil {
 		t.Fatal("upstream CRHSF has an event callback; MRHSF must remain the sole state-event owner")
 	}
-	legacy, ok := facade.operationModeWriter.(*RoomHeatingSystemFunction)
+	writer, ok := facade.operationModeWriter.(*upstreamRoomHeatingOperationModeWriter)
 	if !ok {
-		t.Fatalf("operationModeWriter = %T, want *RoomHeatingSystemFunction", facade.operationModeWriter)
+		t.Fatalf("operationModeWriter = %T, want *upstreamRoomHeatingOperationModeWriter", facade.operationModeWriter)
 	}
-	if legacy.UseCaseBase != nil {
-		t.Fatalf("legacy strategy UseCaseBase = %p, want nil", legacy.UseCaseBase)
+	if writer.client != client {
+		t.Fatalf("writer client = %T, want facade CRHSF client", writer.client)
+	}
+	if _, ok := writer.inspector.(bridgeRoomHeatingSystemFunctionCapabilityInspector); !ok {
+		t.Fatalf("writer inspector = %T, want bridge capability inspector", writer.inspector)
 	}
 }
 

@@ -1,7 +1,7 @@
 # Room Heating auf eebus-go migrieren — Spec Proposal
 
 **Datum:** 2026-07-22
-**Status:** In Umsetzung — Phase 2 begonnen
+**Status:** In Umsetzung — Phase 3 begonnen
 **Scope:** Schrittweise Ablösung der bridge-lokalen Implementierungen für
 Configuration/Monitoring of Room Heating durch die bereits im gepinnten
 `eebus-go`-Fork enthaltenen Upstream-PRs, ohne Änderung des bestehenden gRPC-
@@ -668,6 +668,41 @@ Exit:
 
 Rollback: In einem Folgerelease wird die Legacy-Strategie wieder ausgewählt.
 Ein fehlgeschlagener Upstream-Write wird niemals im selben Request wiederholt.
+
+Umsetzungsstand 2026-07-22:
+
+- [x] Bridge-seitigen CRHSF-Writer eingeführt und als releaseweit einzige
+  Mode-Write-Strategie ausgewählt; der Legacy-Writer bleibt unverändert im
+  Baum und es existiert kein Request-Fallback.
+- [x] Angeforderte Modi werden vor dem Senden sowohl gegen die MRHSF- als auch
+  gegen die CRHSF-Modusliste geprüft. Abweichende oder fremde Modi senden
+  keinen Write.
+- [x] CRHSF-Result wird anhand des Message Counters context- und
+  timeoutgebunden abgewartet; Geräteablehnung, read-only, Data-Unavailable und
+  Context-Fehler bleiben auf die bestehenden Bridge-Sentinels abgebildet.
+- [x] Unit-, Composition- und vollständige Go-Suite für den Bridge-Teil grün.
+- [ ] CRHSF upstream auf eindeutige Mode-ID-Auflösung und Post-Result-Refresh
+  härten und den Fork-Pin aktualisieren. Der aktuelle Pin `b40877d34a63` wählt
+  bei mehreren IDs desselben Mode-Typs noch den ersten Treffer und refreshed
+  nach einem akzeptierten Write nicht explizit.
+- [ ] Den gemeinsamen `features/client.NewFeature`-Sentinel aus §4.6 upstream
+  einreichen und im Bridge-Mapping übernehmen; der aktuelle Pin liefert im
+  Disconnect-Rennen weiterhin nicht klassifizierbare Textfehler.
+- [x] Hardwarematrix am VR940 (SKI `682f708c…`, Stack 93, Image
+  `crhsf-phase3`) am 2026-07-22 durchgeführt:
+  - Frischstart füllt Caches ohne Legacy-Writer: `hvac_modes=[auto, heat, off]`,
+    Setpoint 21.0 °C.
+  - 18 Mode-Übergänge über alle drei angebotenen Modi, alle vom Gerät
+    übernommen; keine Ablehnung, kein Fehler im Bridge-Log.
+  - Setpoint-Write (Legacy-Pfad, unverändert) 21.0 → 21.5 → 21.0 erfolgreich.
+  - Drei Container-Restarts: Modi, Setpoint und Schreibfähigkeit identisch
+    reproduziert; Post-Restart-Write erfolgreich.
+  - Konvergenz nach akzeptiertem Write < 0,1 s (Geräte-Notify), obwohl der
+    Upstream-Writer keinen expliziten Post-Result-Refresh sendet. Einmalig
+    zeigte ein Sample bei sehr schneller Write-Folge (6 s Abstand) noch den
+    Vorzustand; der Zustand konvergierte anschließend korrekt.
+  - Stack nach dem Test auf `:latest` zurückgesetzt, Ausgangszustand
+    (`auto`, 21.0 °C) wiederhergestellt.
 
 ### Phase 4 — Upstream CRHT übernimmt Negotiation und Reads
 

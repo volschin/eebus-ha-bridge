@@ -323,9 +323,9 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		)
 		roomHeatingTemperature := usecases.NewRoomHeatingTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
 		roomHeatingSystemFunctionMonitoring := usecases.NewRoomHeatingSystemFunctionMonitoring(bus, registry, cfg.Logging.DebugEvents)
-		// MRHSF owns reads and state events. Upstream CRHSF owns negotiation and
-		// cache population; Phase 2 retains the read-only bridge capability
-		// inspector and legacy writer as release-wide strategies.
+		// MRHSF owns reads and state events. Upstream CRHSF owns negotiation,
+		// cache population and mode writes; the bridge temporarily retains only
+		// its read-only capability inspector.
 		roomHeatingSystemFunctionConfiguration := usecases.NewUpstreamRoomHeatingSystemFunctionConfiguration(
 			localEntity,
 			cfg.Logging.DebugEvents,
