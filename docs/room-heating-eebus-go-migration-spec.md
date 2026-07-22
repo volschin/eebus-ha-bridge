@@ -57,7 +57,7 @@ Der produktive Dependency-Satz enthält die benötigten Upstream-Beiträge berei
 
 ```text
 replace github.com/enbility/eebus-go =>
-        github.com/volschin/eebus-go@930469d6dd8e
+        github.com/volschin/eebus-go@3c6795b4d157
 ```
 
 `eebus-bridge/UPSTREAM_PATCHES.md` inventarisiert #239–#242. Die Bridge importiert
@@ -733,7 +733,7 @@ Umsetzungsstand 2026-07-22:
   Wert, Minimum, Maximum, Step und Write-Operation nur bei vollständig
   vorhandenen, validen Remote-Feldern. Geteilte IDs werden dedupliziert;
   mehrere verschiedene `roomAirTemperature`-Kandidaten bleiben fail-closed.
-  Fork-PR `volschin/eebus-go#5` ist über `930469d6dd8e` gepinnt.
+  Fork-PR `volschin/eebus-go#5` ist im aktuellen Pin `3c6795b4d157` enthalten.
 - [x] `CRHTConfigurationFacade` eingeführt und `crht.NewCRHT` als alleinigen
   Owner für Negotiation, Cache-Population und Reads registriert.
 - [x] CRHT-Value-/Constraint-Events auf das bestehende Setpoint-Event und
@@ -782,6 +782,26 @@ Exit:
 - Zehn Writes mit Read-back und Wiederherstellung sind erfolgreich.
 - Out-of-range, falscher Step, read-only, non-zero Result, Timeout und
   Disconnect behalten ihre Fehlercodes.
+
+Umsetzungsstand 2026-07-22:
+
+- [x] Mode-unabhängige, relation-sichere CRHT-API
+  `WriteRoomAirTemperatureSetpoint` im Fork ergänzt. Sie adressiert genau den
+  von `State` eindeutig ausgewählten `roomAirTemperature`-Setpoint und benötigt
+  weder für `auto` noch für `off` einen falschen Mode-Alias. Fork-PR
+  `volschin/eebus-go#6` ist über `3c6795b4d157` gepinnt.
+- [x] Upstream prüft Write-Operation, Changeability, finite Range und Step,
+  erhält bei Full-List-Writes fremde Setpoints und fordert nach akzeptiertem
+  Result die Setpoint-Liste vor dem Bridge-Callback erneut an.
+- [x] Die Bridge validiert Wert, Range und Step weiterhin selbst, wartet
+  Message-Counter und Result contextgebunden ab und bildet read-only,
+  Data-Unavailable, Geräteablehnung, Cancellation, Timeout sowie Disconnect
+  auf die bestehenden Sentinels ab. Es existiert kein Legacy-Fallback im
+  Request.
+- [x] Focused-, vollständige-, Vet- und Race-Suite für Fork und Bridge grün.
+- [ ] Hardwarematrix einschließlich zehn Writes mit Read-back, kontrollierter
+  `auto`-/`off`-Semantik, Disconnect und Wiederherstellung durchführen. Der
+  Legacy-Writer bleibt bis dahin unverdrahtet als Release-Rollback im Baum.
 
 ### Phase 5b — Legacy-Code löschen
 

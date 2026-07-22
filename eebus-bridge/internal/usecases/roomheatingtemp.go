@@ -76,9 +76,9 @@ func NewRoomHeatingTemperature(
 	return r
 }
 
-// newLegacyRoomHeatingTemperatureStrategy retains only the Phase 4 setpoint
-// writer. Upstream CRHT owns negotiation, cache population, reads and events,
-// so this strategy deliberately has no UseCaseBase or event subscription.
+// newLegacyRoomHeatingTemperatureStrategy retains the previous setpoint writer
+// as a release rollback until Phase 5 hardware acceptance. It is not selected
+// in the composition root and has no UseCaseBase or event subscription.
 func newLegacyRoomHeatingTemperatureStrategy(
 	localEntity spineapi.EntityLocalInterface,
 	debug bool,
