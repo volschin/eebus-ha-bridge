@@ -76,16 +76,6 @@ func NewRoomHeatingTemperature(
 	return r
 }
 
-// newLegacyRoomHeatingTemperatureStrategy retains the previous setpoint writer
-// as a release rollback until Phase 5 hardware acceptance. It is not selected
-// in the composition root and has no UseCaseBase or event subscription.
-func newLegacyRoomHeatingTemperatureStrategy(
-	localEntity spineapi.EntityLocalInterface,
-	debug bool,
-) *RoomHeatingTemperature {
-	return &RoomHeatingTemperature{localEntity: localEntity, debug: debug}
-}
-
 // UseCase returns this use case for Service.AddUseCase.
 func (r *RoomHeatingTemperature) UseCase() eebusapi.UseCaseInterface { return r }
 

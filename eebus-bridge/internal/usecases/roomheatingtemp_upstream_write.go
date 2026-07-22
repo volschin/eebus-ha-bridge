@@ -33,10 +33,7 @@ func (w *upstreamRoomHeatingTemperatureWriter) Write(
 		return err
 	}
 	if err := validateSetpointWrite(
-		setpointState{
-			Value: state.Value, Minimum: state.Minimum, Maximum: state.Maximum,
-			Step: state.Step, Writable: state.Writable,
-		},
+		setpointState(state),
 		value,
 		ErrRoomHeatingNotWritable,
 		ErrRoomHeatingOutOfRange,

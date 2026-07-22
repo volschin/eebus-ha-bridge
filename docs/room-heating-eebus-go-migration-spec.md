@@ -801,7 +801,9 @@ Umsetzungsstand 2026-07-22:
 - [x] Focused-, vollständige-, Vet- und Race-Suite für Fork und Bridge grün.
 - [ ] Hardwarematrix einschließlich zehn Writes mit Read-back, kontrollierter
   `auto`-/`off`-Semantik, Disconnect und Wiederherstellung durchführen. Der
-  Legacy-Writer bleibt bis dahin unverdrahtet als Release-Rollback im Baum.
+  Legacy-Typ `RoomHeatingTemperature` bleibt bis Phase 5b als Release-Rollback
+  im Baum; sein Strategie-Konstruktor entfällt, da der Rollback über einen
+  Revert erfolgt.
 
 ### Phase 5b — Legacy-Code löschen
 
