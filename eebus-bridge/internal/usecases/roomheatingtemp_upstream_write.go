@@ -13,8 +13,7 @@ import (
 
 // upstreamRoomHeatingTemperatureWriter delegates the protocol write and
 // refresh to CRHT while preserving the bridge's validation, synchronous
-// result, and stable error contracts. It never retries through the legacy
-// writer.
+// result, and stable error contracts.
 type upstreamRoomHeatingTemperatureWriter struct {
 	client caCRHTClient
 	reader roomHeatingTemperatureStateReader

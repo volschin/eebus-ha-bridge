@@ -36,9 +36,8 @@ type roomHeatingOperationModeWriter interface {
 
 // CRHSFConfigurationFacade keeps upstream CRHSF negotiation and entity
 // resolution separate from the release-wide capability and writer strategies.
-// Phase 3 retains the read-only bridge capability inspector while selecting
-// CRHSF as the sole writer. There is no per-request fallback to the legacy
-// writer.
+// A read-only bridge capability inspector remains the capability owner while
+// CRHSF is the sole write strategy.
 type CRHSFConfigurationFacade struct {
 	useCase             eebusapi.UseCaseInterface
 	resolver            roomHeatingSystemFunctionEntityResolver

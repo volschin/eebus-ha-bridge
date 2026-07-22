@@ -41,8 +41,18 @@ the eebus-go revision used by the bridge.
   IDs or fail closed when several distinct IDs share that type. Unlike the
   hardened CDSF writer, it also does not request
   `HvacSystemFunctionListData` again after an accepted result. Room-heating
-  Phase 3 therefore still needs an upstream hardening patch for unambiguous
-  mode resolution and post-result refresh before hardware acceptance.
+  mode writes are hardware-accepted on the VR940 (single heating system
+  function, so the ambiguity never triggers there), but multi-zone devices
+  still need an upstream hardening patch for unambiguous mode resolution and
+  post-result refresh.
+- `crhsf.CRHSF` exposes no public `WriteCapabilities` equivalent, so the bridge
+  cannot ask upstream whether an operation-mode write is permitted. Room
+  heating therefore keeps a read-only bridge inspector
+  (`bridgeRoomHeatingSystemFunctionCapabilityInspector`,
+  `internal/usecases/roomheatingsysfn_configuration.go`) that reads
+  `HvacSystemFunctionDescriptionListData`/`HvacSystemFunctionListData` directly
+  and fails closed on ambiguity. The inspector can be dropped once upstream
+  offers a fail-closed capability API.
 - `cdsf.CDSF.WriteCapabilities` deliberately returns zero capabilities with a
   nil error whenever required CDSF metadata is missing, ambiguous, or the
   device genuinely doesn't support the write (`usecases/ca/cdsf/public.go`).
