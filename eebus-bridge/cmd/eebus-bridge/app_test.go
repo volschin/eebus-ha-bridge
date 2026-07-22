@@ -217,7 +217,7 @@ func TestProductionCompositionRootIsInertUntilStartAndRegistersAllUseCases(t *te
 	require.NoError(t, app.prepareForStart())
 	assert.ElementsMatch(t, []string{
 		"LPC", "Monitoring", "DHWMonitoring", "MRT", "MOT", "DHWTemperature",
-		"MDSF", "DHWSystemFunctionConfiguration", "RoomHeatingTemperature", "MRHSF", "CRHSF", "OHPCF",
+		"MDSF", "DHWSystemFunctionConfiguration", "CRHT", "MRHSF", "CRHSF", "OHPCF",
 		"MGCP", "VAPD", "VABD",
 	}, app.registeredUseCases)
 	providerModule := app.modules[len(app.modules)-1]

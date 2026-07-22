@@ -1,7 +1,7 @@
 # Room Heating auf eebus-go migrieren — Spec Proposal
 
 **Datum:** 2026-07-22
-**Status:** In Umsetzung — Phase 3 begonnen
+**Status:** In Umsetzung — Phase 4 begonnen
 **Scope:** Schrittweise Ablösung der bridge-lokalen Implementierungen für
 Configuration/Monitoring of Room Heating durch die bereits im gepinnten
 `eebus-go`-Fork enthaltenen Upstream-PRs, ohne Änderung des bestehenden gRPC-
@@ -57,7 +57,7 @@ Der produktive Dependency-Satz enthält die benötigten Upstream-Beiträge berei
 
 ```text
 replace github.com/enbility/eebus-go =>
-        github.com/volschin/eebus-go@b40877d34a63
+        github.com/volschin/eebus-go@930469d6dd8e
 ```
 
 `eebus-bridge/UPSTREAM_PATCHES.md` inventarisiert #239–#242. Die Bridge importiert
@@ -682,7 +682,7 @@ Umsetzungsstand 2026-07-22:
   Context-Fehler bleiben auf die bestehenden Bridge-Sentinels abgebildet.
 - [x] Unit-, Composition- und vollständige Go-Suite für den Bridge-Teil grün.
 - [ ] CRHSF upstream auf eindeutige Mode-ID-Auflösung und Post-Result-Refresh
-  härten und den Fork-Pin aktualisieren. Der aktuelle Pin `b40877d34a63` wählt
+  härten. Der aktuelle Pin `930469d6dd8e` wählt
   bei mehreren IDs desselben Mode-Typs noch den ersten Treffer und refreshed
   nach einem akzeptierten Write nicht explizit.
 - [ ] Den gemeinsamen `features/client.NewFeature`-Sentinel aus §4.6 upstream
@@ -726,6 +726,25 @@ Exit:
 - Fehlende einzelne Remote-Felder machen den Setpoint unavailable und werden
   nicht zu Nullwerten.
 - Constraint- und Value-Events konvergieren ohne doppelte Publikation.
+
+Umsetzungsstand 2026-07-22:
+
+- [x] Presence-sicheren CRHT-Aggregatzustand im Fork ergänzt: `State` liefert
+  Wert, Minimum, Maximum, Step und Write-Operation nur bei vollständig
+  vorhandenen, validen Remote-Feldern. Geteilte IDs werden dedupliziert;
+  mehrere verschiedene `roomAirTemperature`-Kandidaten bleiben fail-closed.
+  Fork-PR `volschin/eebus-go#5` ist über `930469d6dd8e` gepinnt.
+- [x] `CRHTConfigurationFacade` eingeführt und `crht.NewCRHT` als alleinigen
+  Owner für Negotiation, Cache-Population und Reads registriert.
+- [x] CRHT-Value-/Constraint-Events auf das bestehende Setpoint-Event und
+  Support-Updates auf das bestehende Support-Event abgebildet. Partielle
+  Zustände publizieren kein zwischenzeitliches Null-/Teil-Snapshot.
+- [x] Der extrahierte Legacy-Writer bleibt bis Phase 5 der einzige Writer und
+  besitzt keinen eigenen Use Case oder Event-Subscriber mehr.
+- [x] Unit-, Composition-, vollständige Go-, Vet-, Race-, Integrations- und
+  Go/Python-Contract-Suite grün; Patch-Coverage 93,4 %.
+- [ ] Hardwarematrix für Fresh Start, Reconnect, Restart, vollständige
+  Setpoint-Metadaten und Eventgleichheit abschließen.
 
 ### Phase 5 — Upstream CRHT übernimmt Setpoint-Writes
 
