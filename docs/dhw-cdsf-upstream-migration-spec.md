@@ -1,7 +1,7 @@
 # DHW CDSF Upstream Migration — Specification
 
-**Date:** 2026-07-20  
-**Status:** Phase 4 in progress; Phase 3 exit criteria validated
+**Date:** 2026-07-21 
+**Status:** Phase 4 exit criteria validated
 **Scope:** Incremental replacement of the bridge-local Configuration of DHW
 System Function (CDSF) implementation with `eebus-go` CDSF while preserving the
 existing gRPC and Home Assistant behaviour.
