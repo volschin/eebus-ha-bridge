@@ -534,7 +534,8 @@ Umsetzungsstand 2026-07-22:
   (`off`/21,0 °C) wiederhergestellt. Firmware/Modell konnten nicht erfasst
   werden — das HA-Device-Registry-Objekt liefert `manufacturer`, `model`,
   `sw_version` und `hw_version` als `None` (separat zu klären, nicht Teil
-  dieser Phase).
+  dieser Phase; mit OPEN-D1 nachträglich als fehlender Classification-Request
+  und unvollständige Metadatenweitergabe behoben).
 - [x] Upstream-CRHT/CRHSF-Write ohne zusätzliches Feature-Binding am VR940
   geprüft. Die Hardwarematrizen aus Phase 3 (`:crhsf-phase3`) und Phase 5
   (`:crht-phase5`) belegen erfolgreiche Mode- und Setpoint-Writes über die

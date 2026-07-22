@@ -516,6 +516,26 @@ func TestListDevicesResponsesAreSortedByNormalizedSKI(t *testing.T) {
 	}
 }
 
+func TestListPairedDevicesIncludesClassificationRevisions(t *testing.T) {
+	bus := eebus.NewEventBus()
+	registry := eebus.NewDeviceRegistry()
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{
+		Brand: "Vaillant", Model: "VR940", SoftwareRevision: "4.2.1", HardwareRevision: "R3",
+	})
+	svc := bridgegrpc.NewDeviceService(
+		eebus.NewCallbacks(bus, false), bus, "local", registry, &recordingTrustController{},
+	)
+
+	response, err := svc.ListPairedDevices(context.Background(), &pb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Devices) != 1 || response.Devices[0].GetSoftwareRevision() != "4.2.1" ||
+		response.Devices[0].GetHardwareRevision() != "R3" {
+		t.Fatalf("paired classification = %+v", response.Devices)
+	}
+}
+
 const testValidSKI = "682f708ceba5df9adcb9e6787ea911d9fc3ac490"
 
 func TestRegisterRemoteSKIRejectsMalformedSKI(t *testing.T) {

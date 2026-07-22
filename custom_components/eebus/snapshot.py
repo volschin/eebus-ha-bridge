@@ -285,8 +285,12 @@ async def _async_fetch_device_info(device_stub: proto_stubs.DeviceServiceStub, s
         model=match.model or None,
         serial=match.serial or None,
         device_type=match.device_type or None,
+        sw_version=match.software_revision or None,
+        hw_version=match.hardware_revision or None,
     )
-    return info if any((info.manufacturer, info.model, info.serial, info.device_type)) else None
+    return info if any(
+        (info.manufacturer, info.model, info.serial, info.device_type, info.sw_version, info.hw_version)
+    ) else None
 
 
 async def _async_read_compressor_flexibility(
@@ -712,8 +716,19 @@ def _snapshot_observation_from_proto(
             model=classification.model or None,
             serial=classification.serial or None,
             device_type=classification.device_type or None,
+            sw_version=classification.software_revision or None,
+            hw_version=classification.hardware_revision or None,
         )
-        if any((candidate.manufacturer, candidate.model, candidate.serial, candidate.device_type)):
+        if any(
+            (
+                candidate.manufacturer,
+                candidate.model,
+                candidate.serial,
+                candidate.device_type,
+                candidate.sw_version,
+                candidate.hw_version,
+            )
+        ):
             device_info = candidate
 
     consumption_limit = None

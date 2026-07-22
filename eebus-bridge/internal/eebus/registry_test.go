@@ -252,7 +252,12 @@ func TestRegistryUpsertDeviceClassification(t *testing.T) {
 	reg := eebus.NewDeviceRegistry()
 
 	// First observation establishes the device with real Bosch metadata.
-	reg.UpsertDeviceClassification("ski-bosch", "Bosch", "Compress 5800i", "SN-1", "HeatPumpAppliance")
+	changed := reg.UpsertDeviceClassification(
+		"ski-bosch", "Bosch", "Compress 5800i", "SN-1", "HeatPumpAppliance", "4.2.1", "R3",
+	)
+	if !changed {
+		t.Fatal("first classification update was not reported as changed")
+	}
 
 	info, ok := reg.GetDevice("ski-bosch")
 	if !ok {
@@ -264,12 +269,26 @@ func TestRegistryUpsertDeviceClassification(t *testing.T) {
 	if info.Serial != "SN-1" || info.DeviceType != "HeatPumpAppliance" {
 		t.Errorf("got Serial=%q DeviceType=%q", info.Serial, info.DeviceType)
 	}
+	if info.SoftwareRevision != "4.2.1" || info.HardwareRevision != "R3" {
+		t.Errorf("got SoftwareRevision=%q HardwareRevision=%q", info.SoftwareRevision, info.HardwareRevision)
+	}
 
 	// Empty fields in a later partial update must not clear discovered values.
-	reg.UpsertDeviceClassification("ski-bosch", "", "", "", "")
+	if reg.UpsertDeviceClassification("ski-bosch", "", "", "", "", "", "") {
+		t.Fatal("empty classification update was reported as changed")
+	}
 	info, _ = reg.GetDevice("ski-bosch")
 	if info.Brand != "Bosch" || info.Model != "Compress 5800i" {
 		t.Errorf("partial update cleared fields: Brand=%q Model=%q", info.Brand, info.Model)
+	}
+}
+
+func TestRegistryClassificationCannotRecreateRemovedDevice(t *testing.T) {
+	reg := eebus.NewDeviceRegistry()
+	reg.AddDevice("removed", eebus.DeviceInfo{})
+	reg.RemoveDevice("removed")
+	if reg.UpsertDeviceClassification("removed", "vendor", "model", "serial", "type", "sw", "hw") {
+		t.Fatal("classification recreated a removed device")
 	}
 }
 
@@ -309,7 +328,7 @@ func TestRegistrySKINormalizationConsistency(t *testing.T) {
 
 	// Classification reported under a differently-cased SKI must land on the
 	// same record so brand/model are not split across two keys.
-	reg.UpsertDeviceClassification("ABCD12", "Bosch", "Compress 5800i", "", "")
+	reg.UpsertDeviceClassification("ABCD12", "Bosch", "Compress 5800i", "", "", "", "")
 	info, ok := reg.GetDevice("ab cd 12")
 	if !ok || info.Model != "Compress 5800i" {
 		t.Errorf("classification not merged onto same device: ok=%v model=%q", ok, info.Model)
@@ -374,7 +393,7 @@ func TestRegistryParallelCatalogHealthAndCapabilityProjections(t *testing.T) {
 			for iteration := range 100 {
 				ski := fmt.Sprintf("%02d%02d", worker, iteration%4)
 				reg.AddDevice(ski, eebus.DeviceInfo{UseCases: []string{"monitoring"}})
-				reg.UpsertDeviceClassification(ski, "vendor", "model", "serial", "type")
+				reg.UpsertDeviceClassification(ski, "vendor", "model", "serial", "type", "software", "hardware")
 				reg.MarkConnected(ski)
 				reg.RecordCapabilityRead(ski, eebus.CapabilityMonitoring, nil)
 				reg.GetDevice(ski)

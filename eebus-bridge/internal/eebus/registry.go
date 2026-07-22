@@ -19,15 +19,17 @@ type EntityInfo struct {
 }
 
 type DeviceInfo struct {
-	SKI            string
-	Brand          string
-	Model          string
-	Serial         string
-	DeviceType     string
-	UseCases       []string
-	RemoteDevice   spineapi.DeviceRemoteInterface
-	RemoteEntities []spineapi.EntityRemoteInterface
-	Entities       []EntityInfo
+	SKI              string
+	Brand            string
+	Model            string
+	Serial           string
+	DeviceType       string
+	SoftwareRevision string
+	HardwareRevision string
+	UseCases         []string
+	RemoteDevice     spineapi.DeviceRemoteInterface
+	RemoteEntities   []spineapi.EntityRemoteInterface
+	Entities         []EntityInfo
 }
 
 // EntityResolution describes a device-scoped entity lookup. DeviceCount is the
@@ -439,16 +441,19 @@ func (r *DeviceRegistry) UpsertObservation(
 // UpsertDeviceClassification stores manufacturer/device-type metadata reported by
 // a remote device. Empty values are ignored so later partial updates never clear
 // previously discovered fields.
-func (r *DeviceRegistry) UpsertDeviceClassification(ski, brand, deviceModel, serial, deviceType string) {
+func (r *DeviceRegistry) UpsertDeviceClassification(
+	ski, brand, deviceModel, serial, deviceType, softwareRevision, hardwareRevision string,
+) bool {
 	ski = NormalizeSKI(ski)
 	r.lifecycle.RLock()
 	defer r.lifecycle.RUnlock()
 	if r.removedLocked(ski) {
-		return
+		return false
 	}
 	r.catalog.mu.Lock()
 	defer r.catalog.mu.Unlock()
 	info := r.catalog.devices[ski]
+	previous := info
 	info.SKI = ski
 	if brand != "" {
 		info.Brand = brand
@@ -462,7 +467,20 @@ func (r *DeviceRegistry) UpsertDeviceClassification(ski, brand, deviceModel, ser
 	if deviceType != "" {
 		info.DeviceType = deviceType
 	}
+	if softwareRevision != "" {
+		info.SoftwareRevision = softwareRevision
+	}
+	if hardwareRevision != "" {
+		info.HardwareRevision = hardwareRevision
+	}
 	r.catalog.devices[ski] = info
+	return info.SKI != previous.SKI ||
+		info.Brand != previous.Brand ||
+		info.Model != previous.Model ||
+		info.Serial != previous.Serial ||
+		info.DeviceType != previous.DeviceType ||
+		info.SoftwareRevision != previous.SoftwareRevision ||
+		info.HardwareRevision != previous.HardwareRevision
 }
 
 func (r *DeviceRegistry) RemoveDevice(ski string) {

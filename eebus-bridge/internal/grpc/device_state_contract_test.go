@@ -202,6 +202,16 @@ func TestUnknownEventRequiresResyncInsteadOfProviderRelabel(t *testing.T) {
 	}
 }
 
+func TestClassificationUpdateRequestsFreshSnapshot(t *testing.T) {
+	service := NewDeviceService(nil, nil, "local", nil, nil)
+	event := service.deviceStateEnvelope(eebus.Event{
+		SKI: testValidSKI, Type: eebus.EventTypeDeviceClassificationUpdated, OccurredAt: time.Now(),
+	})
+	if event.GetResyncRequired().GetReason() != pb.ResyncReason_RESYNC_REASON_INITIAL_STATE_REQUIRED {
+		t.Fatalf("classification update envelope = %v", event)
+	}
+}
+
 type missingMeasurementPayload struct{}
 
 func (missingMeasurementPayload) AttachMeasurementPayload(*pb.MeasurementEvent, string, pb.MeasurementEventType) {

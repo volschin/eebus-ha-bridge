@@ -382,20 +382,24 @@ class RegisterSKIRequest(_message.Message):
     def __init__(self, ski: _Optional[str] = ...) -> None: ...
 
 class PairedDevice(_message.Message):
-    __slots__ = ("ski", "brand", "model", "serial", "device_type", "supported_use_cases")
+    __slots__ = ("ski", "brand", "model", "serial", "device_type", "supported_use_cases", "software_revision", "hardware_revision")
     SKI_FIELD_NUMBER: _ClassVar[int]
     BRAND_FIELD_NUMBER: _ClassVar[int]
     MODEL_FIELD_NUMBER: _ClassVar[int]
     SERIAL_FIELD_NUMBER: _ClassVar[int]
     DEVICE_TYPE_FIELD_NUMBER: _ClassVar[int]
     SUPPORTED_USE_CASES_FIELD_NUMBER: _ClassVar[int]
+    SOFTWARE_REVISION_FIELD_NUMBER: _ClassVar[int]
+    HARDWARE_REVISION_FIELD_NUMBER: _ClassVar[int]
     ski: str
     brand: str
     model: str
     serial: str
     device_type: str
     supported_use_cases: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, ski: _Optional[str] = ..., brand: _Optional[str] = ..., model: _Optional[str] = ..., serial: _Optional[str] = ..., device_type: _Optional[str] = ..., supported_use_cases: _Optional[_Iterable[str]] = ...) -> None: ...
+    software_revision: str
+    hardware_revision: str
+    def __init__(self, ski: _Optional[str] = ..., brand: _Optional[str] = ..., model: _Optional[str] = ..., serial: _Optional[str] = ..., device_type: _Optional[str] = ..., supported_use_cases: _Optional[_Iterable[str]] = ..., software_revision: _Optional[str] = ..., hardware_revision: _Optional[str] = ...) -> None: ...
 
 class ListPairedDevicesResponse(_message.Message):
     __slots__ = ("devices",)

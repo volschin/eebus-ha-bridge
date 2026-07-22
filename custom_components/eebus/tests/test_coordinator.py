@@ -1285,13 +1285,20 @@ async def test_fetch_device_info_uses_matching_ski() -> None:
             return_value=device_service_pb2.ListPairedDevicesResponse(
                 devices=[
                     device_service_pb2.PairedDevice(ski="other", brand="Other"),
-                    device_service_pb2.PairedDevice(ski="target", brand="Bosch", model="Compress", serial="SN"),
+                    device_service_pb2.PairedDevice(
+                        ski="target",
+                        brand="Bosch",
+                        model="Compress",
+                        serial="SN",
+                        software_revision="4.2.1",
+                        hardware_revision="R3",
+                    ),
                 ]
             )
         )
     )
     assert await _async_fetch_device_info(stub, "target") == DeviceInfo(
-        manufacturer="Bosch", model="Compress", serial="SN"
+        manufacturer="Bosch", model="Compress", serial="SN", sw_version="4.2.1", hw_version="R3"
     )
 
 
@@ -1378,10 +1385,25 @@ def test_device_snapshot_converts_partial_status_and_zero_values() -> None:
                 )
             ],
         ),
+        classification=device_service_pb2.PairedDevice(
+            ski="DEVICE",
+            brand="Vaillant",
+            model="VR940",
+            serial="SN-1",
+            software_revision="4.2.1",
+            hardware_revision="R3",
+        ),
     )
     observation = _snapshot_observation_from_proto(snapshot, ski_registered=True)
     assert observation.state.connection.connected is True
     assert observation.state.connection.local_ski == "LOCAL"
+    assert observation.state.connection.device_info == DeviceInfo(
+        manufacturer="Vaillant",
+        model="VR940",
+        serial="SN-1",
+        sw_version="4.2.1",
+        hw_version="R3",
+    )
     assert observation.state.measurements.power_watts == 0
     assert StateField.POWER_WATTS in observation.observed_fields
     assert StateField.ENERGY_CONSUMED_KWH in observation.unavailable_fields

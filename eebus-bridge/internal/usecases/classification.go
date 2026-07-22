@@ -1,16 +1,131 @@
 package usecases
 
 import (
+	"errors"
+	"log"
+
 	"github.com/enbility/eebus-go/features/client"
 	spineapi "github.com/enbility/spine-go/api"
+	"github.com/enbility/spine-go/model"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
 
-// enrichDeviceClassification reads brand, model and serial from the remote
-// device's DeviceClassification manufacturer data and the EEBUS device type,
-// then stores them in the registry. It is best-effort: any missing data leaves
-// the corresponding registry field untouched, so a device is never mislabeled
-// with stale or hardcoded values.
+type deviceClassificationDetails struct {
+	brand            string
+	model            string
+	serial           string
+	softwareRevision string
+	hardwareRevision string
+}
+
+// DeviceClassifier owns the generic DeviceClassification client feature. It
+// requests manufacturer data as soon as a remote entity is discovered and
+// persists later responses independently of any HVAC or monitoring use case.
+type DeviceClassifier struct {
+	localEntity spineapi.EntityLocalInterface
+	registry    *eebus.DeviceRegistry
+	bus         *eebus.EventBus
+}
+
+func NewDeviceClassifier(registry *eebus.DeviceRegistry, bus *eebus.EventBus) *DeviceClassifier {
+	return &DeviceClassifier{registry: registry, bus: bus}
+}
+
+func (c *DeviceClassifier) Setup(localEntity spineapi.EntityLocalInterface) error {
+	if localEntity == nil {
+		return errors.New("device classifier local entity is required")
+	}
+	if localEntity.GetOrAddFeature(model.FeatureTypeTypeDeviceClassification, model.RoleTypeClient) == nil {
+		return errors.New("failed to add DeviceClassification client feature")
+	}
+	c.localEntity = localEntity
+	if err := localEntity.Device().Events().Subscribe(c); err != nil {
+		return errors.New("subscribing device classifier: " + err.Error())
+	}
+	return nil
+}
+
+func (c *DeviceClassifier) HandleEvent(payload spineapi.EventPayload) {
+	if c == nil || c.localEntity == nil || c.registry == nil {
+		return
+	}
+	device := payload.Device
+	if device == nil && payload.Entity != nil {
+		device = payload.Entity.Device()
+	}
+
+	if data, ok := payload.Data.(*model.DeviceClassificationManufacturerDataType); ok {
+		c.store(payload.Ski, device, classificationDetails(data))
+		return
+	}
+	if payload.ChangeType != spineapi.ElementChangeAdd {
+		return
+	}
+	if payload.Entity != nil {
+		c.readOrRequest(payload.Ski, device, payload.Entity)
+		return
+	}
+	if device != nil {
+		for _, entity := range device.Entities() {
+			c.readOrRequest(payload.Ski, device, entity)
+		}
+	}
+}
+
+func (c *DeviceClassifier) readOrRequest(
+	ski string,
+	device spineapi.DeviceRemoteInterface,
+	entity spineapi.EntityRemoteInterface,
+) {
+	if entity == nil || entity.FeatureOfTypeAndRole(
+		model.FeatureTypeTypeDeviceClassification,
+		model.RoleTypeServer,
+	) == nil {
+		return
+	}
+	dc, err := client.NewDeviceClassification(c.localEntity, entity)
+	if err != nil {
+		return
+	}
+	if data, readErr := dc.GetManufacturerDetails(); readErr == nil && data != nil {
+		c.store(ski, device, classificationDetails(data))
+		return
+	}
+	if _, err := dc.RequestManufacturerDetails(); err != nil {
+		log.Printf(
+			"requesting DeviceClassification data for %s: %v",
+			eebus.ShortSKI(observationSKI(ski, device)),
+			err,
+		)
+	}
+}
+
+func (c *DeviceClassifier) store(
+	ski string,
+	device spineapi.DeviceRemoteInterface,
+	details deviceClassificationDetails,
+) {
+	ski = observationSKI(ski, device)
+	var deviceType string
+	if device != nil && device.DeviceType() != nil {
+		deviceType = string(*device.DeviceType())
+	}
+	changed := c.registry.UpsertDeviceClassification(
+		ski,
+		details.brand,
+		details.model,
+		details.serial,
+		deviceType,
+		details.softwareRevision,
+		details.hardwareRevision,
+	)
+	if changed && c.bus != nil {
+		c.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeDeviceClassificationUpdated})
+	}
+}
+
+// enrichDeviceClassification is a cache-only fallback for existing use-case
+// callbacks. DeviceClassifier owns the request and update lifecycle.
 func enrichDeviceClassification(
 	registry *eebus.DeviceRegistry,
 	localEntity spineapi.EntityLocalInterface,
@@ -26,26 +141,31 @@ func enrichDeviceClassification(
 	if device != nil && device.DeviceType() != nil {
 		deviceType = string(*device.DeviceType())
 	}
-
-	brand, model, serial := manufacturerDetails(localEntity, device, entity)
-
-	if brand == "" && model == "" && serial == "" && deviceType == "" {
+	details := manufacturerDetails(localEntity, device, entity)
+	if details == (deviceClassificationDetails{}) && deviceType == "" {
 		return
 	}
-	registry.UpsertDeviceClassification(ski, brand, model, serial, deviceType)
+	registry.UpsertDeviceClassification(
+		ski,
+		details.brand,
+		details.model,
+		details.serial,
+		deviceType,
+		details.softwareRevision,
+		details.hardwareRevision,
+	)
 }
 
-// manufacturerDetails extracts brand, model and serial from the remote entity's
-// DeviceClassification server feature. The manufacturer data usually lives on the
-// device's main entity, so the event entity is tried first and then every entity
-// of the device until a brand name is found.
+// manufacturerDetails extracts manufacturer data from every classification
+// server feature cached for the remote device. Partial values from different
+// entities are merged without replacing already found fields.
 func manufacturerDetails(
 	localEntity spineapi.EntityLocalInterface,
 	device spineapi.DeviceRemoteInterface,
 	entity spineapi.EntityRemoteInterface,
-) (brand, model, serial string) {
+) deviceClassificationDetails {
 	if localEntity == nil {
-		return "", "", ""
+		return deviceClassificationDetails{}
 	}
 
 	candidates := make([]spineapi.EntityRemoteInterface, 0, 4)
@@ -53,40 +173,76 @@ func manufacturerDetails(
 		candidates = append(candidates, entity)
 	}
 	if device != nil {
-		for _, e := range device.Entities() {
-			if e != nil && e != entity {
-				candidates = append(candidates, e)
+		for _, candidate := range device.Entities() {
+			if candidate != nil && candidate != entity {
+				candidates = append(candidates, candidate)
 			}
 		}
 	}
 
+	var result deviceClassificationDetails
 	for _, candidate := range candidates {
 		dc, err := client.NewDeviceClassification(localEntity, candidate)
 		if err != nil {
 			continue
 		}
-		details, err := dc.GetManufacturerDetails()
-		if err != nil || details == nil {
+		data, err := dc.GetManufacturerDetails()
+		if err != nil || data == nil {
 			continue
 		}
-
-		if brand == "" && details.BrandName != nil {
-			brand = string(*details.BrandName)
-		}
-		if model == "" {
-			if details.DeviceCode != nil && *details.DeviceCode != "" {
-				model = string(*details.DeviceCode)
-			} else if details.DeviceName != nil {
-				model = string(*details.DeviceName)
-			}
-		}
-		if serial == "" && details.SerialNumber != nil {
-			serial = string(*details.SerialNumber)
-		}
-
-		if brand != "" && model != "" && serial != "" {
+		mergeClassificationDetails(&result, classificationDetails(data))
+		if result.brand != "" && result.model != "" && result.serial != "" &&
+			result.softwareRevision != "" && result.hardwareRevision != "" {
 			break
 		}
 	}
-	return brand, model, serial
+	return result
+}
+
+func classificationDetails(data *model.DeviceClassificationManufacturerDataType) deviceClassificationDetails {
+	if data == nil {
+		return deviceClassificationDetails{}
+	}
+	result := deviceClassificationDetails{
+		brand:            classificationString(data.BrandName),
+		serial:           classificationString(data.SerialNumber),
+		softwareRevision: classificationString(data.SoftwareRevision),
+		hardwareRevision: classificationString(data.HardwareRevision),
+	}
+	if result.brand == "" {
+		result.brand = classificationString(data.VendorName)
+	}
+	if result.brand == "" {
+		result.brand = classificationString(data.VendorCode)
+	}
+	result.model = classificationString(data.DeviceCode)
+	if result.model == "" {
+		result.model = classificationString(data.DeviceName)
+	}
+	return result
+}
+
+func mergeClassificationDetails(target *deviceClassificationDetails, source deviceClassificationDetails) {
+	if target.brand == "" {
+		target.brand = source.brand
+	}
+	if target.model == "" {
+		target.model = source.model
+	}
+	if target.serial == "" {
+		target.serial = source.serial
+	}
+	if target.softwareRevision == "" {
+		target.softwareRevision = source.softwareRevision
+	}
+	if target.hardwareRevision == "" {
+		target.hardwareRevision = source.hardwareRevision
+	}
+}
+
+func classificationString(value *model.DeviceClassificationStringType) string {
+	if value == nil {
+		return ""
+	}
+	return string(*value)
 }

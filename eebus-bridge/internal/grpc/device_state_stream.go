@@ -120,6 +120,11 @@ func classifyDeviceStateEvent(eventType eebus.EventType) (deviceStateEventClass,
 		return deviceStateEventProviderAcknowledgement, true
 	case eebus.EventTypeResyncRequired:
 		return deviceStateEventResync, true
+	case eebus.EventTypeDeviceClassificationUpdated:
+		// Classification arrives asynchronously after detailed discovery. Force
+		// clients to fetch the now-complete snapshot rather than waiting for the
+		// periodic reconciliation poll.
+		return deviceStateEventResync, true
 	case eebus.EventTypeDiscoveryUpdated:
 		// Discovery reports on the whole visible-services list; it has no
 		// device SKI, never consumes a per-device revision, and never reaches
@@ -162,8 +167,12 @@ func (s *DeviceService) deviceStateEnvelope(event eebus.Event) *pb.DeviceStateEv
 		return envelope
 	}
 	if classification == deviceStateEventResync {
+		reason := pb.ResyncReason_RESYNC_REASON_EVENT_DROPPED
+		if event.Type == eebus.EventTypeDeviceClassificationUpdated {
+			reason = pb.ResyncReason_RESYNC_REASON_INITIAL_STATE_REQUIRED
+		}
 		envelope.Payload = &pb.DeviceStateEvent_ResyncRequired{ResyncRequired: &pb.ResyncRequired{
-			Reason:        pb.ResyncReason_RESYNC_REASON_EVENT_DROPPED,
+			Reason:        reason,
 			DroppedEvents: event.Dropped,
 		}}
 		return envelope

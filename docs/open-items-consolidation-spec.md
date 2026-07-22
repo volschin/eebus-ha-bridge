@@ -140,7 +140,7 @@ entfernbare Zeilen.
 
 ### Gruppe D — Aufgefallene Punkte aus Umsetzung und Review
 
-**OPEN-D1 — HA-Device-Registry liefert keine Gerätemetadaten.**
+**[x] OPEN-D1 — HA-Device-Registry liefert keine Gerätemetadaten.**
 Quelle: RH Phase 0, Capture 2026-07-22:
 `manufacturer`, `model`, `sw_version`, `hw_version` sind am
 `climate.eebus_…`-Device `None`, obwohl die Bridge DeviceClassification
@@ -149,6 +149,16 @@ als „separat zu klären" vertagt.
 Exit: Ursache geklärt (liefert die Bridge die Felder nicht, oder setzt die
 Integration `DeviceInfo` unvollständig?) und behoben oder als
 Geräteeinschränkung dokumentiert.
+Erledigt 2026-07-22: Es lagen drei Bridge-/Integrationslücken vor. Die Bridge
+las nur einen zufällig bereits gefüllten Cache, ohne ein
+DeviceClassification-Client-Feature anzulegen oder Manufacturer-Daten
+anzufordern; Software- und Hardware-Revision fehlten im gRPC-Vertrag; und die
+Integration schrieb nach dem Entity-Aufbau eintreffende Metadaten nicht in die
+HA-Device-Registry nach. Ein eigener Classification-Client fordert die Daten
+nun bei Detailed Discovery an, persistiert Brand, Modell, Seriennummer,
+Gerätetyp sowie Software-/Hardware-Revision und löst einen Snapshot-Refresh
+aus. HA übernimmt Initial- und Spätwerte. Nicht vom Gerät gesendete Felder
+bleiben bewusst leer; es werden keine Vaillant-/VR940-Konstanten erfunden.
 
 **[x] OPEN-D2 — Spec- und Kommentar-Drift nach Phasenabschlüssen.**
 Beobachtet in PR #156: Statuszeile der RH-Spec stand nach Phase 5b noch auf
@@ -200,15 +210,13 @@ OPEN-B2 --> OPEN-D5
 OPEN-B3 (unabhängig einreichbar)
 
 OPEN-C1 wartet auf Produktionstelemetrie.
-OPEN-C3 und OPEN-D1 sind jederzeit unabhängig umsetzbar; OPEN-D2 bis OPEN-D4
-sind erledigt.
+OPEN-C3 ist jederzeit unabhängig umsetzbar; OPEN-D1 bis OPEN-D4 sind erledigt.
 ```
 
 Empfohlene Bearbeitung:
 
 1. **Erledigt:** OPEN-D2, OPEN-D3, OPEN-D4 — Dokumentations- und CI-Hygiene.
-2. **Als Nächstes:** OPEN-D1 — einziger Punkt mit direkt sichtbarer
-   Nutzerwirkung (leere Geräteinformation in Home Assistant).
+2. **Erledigt:** OPEN-D1 — Geräteinformationen werden Ende-zu-Ende übernommen.
 3. **Laufend:** OPEN-A1/A2 verfolgen und einreichen; OPEN-B3 ist der billigste
    Upstream-Beitrag mit echtem Nutzen (korrektes `UNAVAILABLE`-Mapping).
 4. **Danach:** OPEN-A3, anschließend OPEN-C2 und OPEN-C3.

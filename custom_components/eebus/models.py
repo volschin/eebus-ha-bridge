@@ -101,6 +101,8 @@ class DeviceInfo:
     model: str | None = None
     serial: str | None = None
     device_type: str | None = None
+    sw_version: str | None = None
+    hw_version: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
