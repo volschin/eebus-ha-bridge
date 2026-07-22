@@ -636,10 +636,14 @@ Umsetzungsstand 2026-07-22:
   aufgelöst und erst im bestehenden Adapter komponiert.
 - [x] Focused Unit- und Composition-Root-Tests für Use-Case-Auswahl,
   Entity-Auflösung, Capability-Trennung und Writer-Delegation ergänzt.
-- [ ] Auf Zielhardware verifizieren, dass Upstream CRHSF nach Fresh Start und
-  Reconnect alle Caches füllt, `mode_writable` stabil bleibt und der
-  Legacy-Writer mit dem von CRHSF installierten HVAC-Client weiterhin
-  `auto`/`on`/`off` schreibt und zurückliest.
+- [x] Auf Zielhardware verifiziert (VR940, SKI `682f708c…`, Stack 93,
+  Image `crhsf-phase2`, 2026-07-22): Nach Fresh Start füllt Upstream CRHSF alle
+  Caches (`hvac_modes=[auto, heat, off]`, Setpoint 21.0 °C); der Legacy-Writer
+  schreibt und liest `auto`/`heat`/`off` sowie Setpoints 21.5/21.0 °C korrekt
+  zurück. Drei Bridge-Restarts reproduzieren Modi und Setpoint unverändert,
+  ein Write nach dem letzten Restart bleibt erfolgreich; keine
+  `ROOMHEATINGSYSFN`-Fehler oder Rejects im Log. Stack danach auf `:latest`
+  zurückgesetzt.
 
 ### Phase 3 — Upstream CRHSF übernimmt Mode-Writes
 
