@@ -74,6 +74,16 @@ func NewRoomHeatingSystemFunction(
 	return r
 }
 
+// newLegacyRoomHeatingSystemFunctionStrategy constructs only the Phase 2
+// capability inspector and writer. It deliberately has no UseCaseBase and no
+// event subscription: upstream CRHSF is the sole negotiation owner.
+func newLegacyRoomHeatingSystemFunctionStrategy(
+	localEntity spineapi.EntityLocalInterface,
+	debug bool,
+) *RoomHeatingSystemFunction {
+	return &RoomHeatingSystemFunction{localEntity: localEntity, debug: debug}
+}
+
 // UseCase returns this use case for Service.AddUseCase.
 func (r *RoomHeatingSystemFunction) UseCase() eebusapi.UseCaseInterface { return r }
 

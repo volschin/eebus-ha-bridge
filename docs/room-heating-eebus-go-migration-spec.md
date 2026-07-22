@@ -1,7 +1,7 @@
 # Room Heating auf eebus-go migrieren — Spec Proposal
 
 **Datum:** 2026-07-22
-**Status:** In Umsetzung — Phase 1 begonnen
+**Status:** In Umsetzung — Phase 2 begonnen
 **Scope:** Schrittweise Ablösung der bridge-lokalen Implementierungen für
 Configuration/Monitoring of Room Heating durch die bereits im gepinnten
 `eebus-go`-Fork enthaltenen Upstream-PRs, ohne Änderung des bestehenden gRPC-
@@ -619,6 +619,31 @@ Exit:
   überein.
 - Upstream CRHSF füllt nach Start/Reconnect alle benötigten Caches.
 - Der Legacy-Writer arbeitet mit dem von CRHSF installierten HVAC-Client weiter.
+
+Umsetzungsstand 2026-07-22:
+
+- [x] `CRHSFConfigurationFacade` eingeführt und `crhsf.NewCRHSF` als alleinigen
+  Owner für Negotiation, HVAC-Client-Feature und Cache-Population registriert;
+  der lokale CRHSF-Use-Case wird nicht parallel registriert.
+- [x] Temporären read-only Bridge-Inspector beibehalten, weil der gepinnte
+  CRHSF noch keine öffentliche fail-closed `WriteCapabilities`-API anbietet.
+  Unvollständige Caches bleiben `UNAVAILABLE`, ein ausgehandeltes read-only
+  Gerät liefert dagegen konservativ `mode_writable=false`.
+- [x] Den Legacy-Writer als releaseweit einzige Write-Strategie ohne eigenen
+  `UseCaseBase`, Event-Subscriber oder Request-Fallback extrahiert. MRHSF bleibt
+  alleiniger Owner von Reads und benutzersichtbaren State-Events.
+- [x] MRHSF- und CRHSF-Entity werden weiterhin getrennt per normalisiertem SKI
+  aufgelöst und erst im bestehenden Adapter komponiert.
+- [x] Focused Unit- und Composition-Root-Tests für Use-Case-Auswahl,
+  Entity-Auflösung, Capability-Trennung und Writer-Delegation ergänzt.
+- [x] Auf Zielhardware verifiziert (VR940, SKI `682f708c…`, Stack 93,
+  Image `crhsf-phase2`, 2026-07-22): Nach Fresh Start füllt Upstream CRHSF alle
+  Caches (`hvac_modes=[auto, heat, off]`, Setpoint 21.0 °C); der Legacy-Writer
+  schreibt und liest `auto`/`heat`/`off` sowie Setpoints 21.5/21.0 °C korrekt
+  zurück. Drei Bridge-Restarts reproduzieren Modi und Setpoint unverändert,
+  ein Write nach dem letzten Restart bleibt erfolgreich; keine
+  `ROOMHEATINGSYSFN`-Fehler oder Rejects im Log. Stack danach auf `:latest`
+  zurückgesetzt.
 
 ### Phase 3 — Upstream CRHSF übernimmt Mode-Writes
 
