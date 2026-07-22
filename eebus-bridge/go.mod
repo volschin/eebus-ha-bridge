@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/enbility/eebus-go v0.7.1-0.20260720111250-363db3c5c262
-	github.com/enbility/ship-go v0.6.1-0.20260706134013-3abd41d19f41
+	github.com/enbility/ship-go v0.6.1-0.20260720110450-0aa90f64ac76
 	github.com/enbility/spine-go v0.7.1-0.20260629113257-b3bcc643f323
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.82.1
