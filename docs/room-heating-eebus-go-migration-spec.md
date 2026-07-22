@@ -743,8 +743,21 @@ Umsetzungsstand 2026-07-22:
   besitzt keinen eigenen Use Case oder Event-Subscriber mehr.
 - [x] Unit-, Composition-, vollständige Go-, Vet-, Race-, Integrations- und
   Go/Python-Contract-Suite grün; Patch-Coverage 93,4 %.
-- [ ] Hardwarematrix für Fresh Start, Reconnect, Restart, vollständige
-  Setpoint-Metadaten und Eventgleichheit abschließen.
+- [x] Hardwarematrix am VR940 (SKI `682f708c…`, Stack 93, Image
+  `:crht-phase4`) abgeschlossen:
+  - Fresh Start: CRHT registriert (`Registered EEBUS use cases: … CRHT …`),
+    vollständige Setpoint-Metadaten in Home Assistant (`temperature=21.0`,
+    `min_temp=5.0`, `max_temp=30.0`, `target_temp_step=0.5`) — kein
+    Fail-closed, kein Teil-Snapshot.
+  - Setpoint-Writes über den Legacy-Writer: 21.0 → 21.5 → 22.0 → 21.0,
+    jeweils Round-Trip-Bestätigung innerhalb von 8 s.
+  - Modus-Writes (CRHSF, Phase 3) unverändert funktionsfähig: `heat` → `auto`
+    ohne Rückwirkung auf den Setpoint.
+  - Restart: 3 Zyklen; nach jedem Neustart erneut vollständige Metadaten und
+    ein erfolgreicher Write (21.5 → 21.0).
+  - Bridge-Logs über den gesamten Lauf ohne Error-Einträge.
+  - Stack anschließend auf `:latest` zurückgesetzt, Baseline `auto` / 21.0 °C
+    wiederhergestellt.
 
 ### Phase 5 — Upstream CRHT übernimmt Setpoint-Writes
 
