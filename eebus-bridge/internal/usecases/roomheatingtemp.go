@@ -223,11 +223,18 @@ func roomHeatingSetpointID(feature spineapi.FeatureRemoteInterface) (model.Setpo
 	if !ok || data == nil {
 		return 0, false
 	}
+	ids := make(map[model.SetpointIdType]struct{})
 	for _, description := range data.SetpointDescriptionData {
 		if description.SetpointId != nil && description.ScopeType != nil &&
 			*description.ScopeType == model.ScopeTypeTypeRoomAirTemperature {
-			return *description.SetpointId, true
+			ids[*description.SetpointId] = struct{}{}
 		}
+	}
+	if len(ids) != 1 {
+		return 0, false
+	}
+	for id := range ids {
+		return id, true
 	}
 	return 0, false
 }

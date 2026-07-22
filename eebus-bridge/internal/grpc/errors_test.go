@@ -48,6 +48,35 @@ func TestEquivalentDeviceWriteRejectionsAreFailedPrecondition(t *testing.T) {
 	}
 }
 
+func TestRoomHeatingErrorMappingContract(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		code codes.Code
+	}{
+		{name: "temperature out of range", err: usecases.ErrRoomHeatingOutOfRange, code: codes.InvalidArgument},
+		{name: "temperature off step", err: usecases.ErrRoomHeatingInvalidStep, code: codes.InvalidArgument},
+		{name: "mode outside relation", err: usecases.ErrRoomHeatingSysFnInvalidMode, code: codes.InvalidArgument},
+		{name: "temperature not writable", err: usecases.ErrRoomHeatingNotWritable, code: codes.FailedPrecondition},
+		{name: "temperature rejected", err: usecases.ErrRoomHeatingRejected, code: codes.FailedPrecondition},
+		{name: "mode not writable", err: usecases.ErrRoomHeatingSysFnNotWritable, code: codes.FailedPrecondition},
+		{name: "mode rejected", err: usecases.ErrRoomHeatingSysFnRejected, code: codes.FailedPrecondition},
+		{name: "temperature unavailable", err: usecases.ErrRoomHeatingDataUnavailable, code: codes.Unavailable},
+		{name: "mode unavailable", err: usecases.ErrRoomHeatingSysFnDataUnavailable, code: codes.Unavailable},
+		{name: "caller canceled", err: context.Canceled, code: codes.Canceled},
+		{name: "caller deadline", err: context.DeadlineExceeded, code: codes.DeadlineExceeded},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := mapRoomHeatingError("writing room heating", fmt.Errorf("wrapped: %w", test.err))
+			if code := status.Code(err); code != test.code {
+				t.Fatalf("code = %v, want %v (err: %v)", code, test.code, err)
+			}
+		})
+	}
+}
+
 func TestUnknownInternalErrorIsSanitized(t *testing.T) {
 	err := mapUsecaseError("reading data", errors.New("token=super-secret"), usecaseErrorClasses{})
 	if status.Code(err) != codes.Internal || strings.Contains(err.Error(), "super-secret") {

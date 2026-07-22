@@ -1,7 +1,7 @@
 # Room Heating auf eebus-go migrieren — Spec Proposal
 
 **Datum:** 2026-07-22
-**Status:** Proposal
+**Status:** In Umsetzung — Phase 0 begonnen
 **Scope:** Schrittweise Ablösung der bridge-lokalen Implementierungen für
 Configuration/Monitoring of Room Heating durch die bereits im gepinnten
 `eebus-go`-Fork enthaltenen Upstream-PRs, ohne Änderung des bestehenden gRPC-
@@ -516,6 +516,27 @@ Exit:
 - Kein öffentlicher Vertrag wurde geändert.
 - Die §4.7-Semantik ist als Invariante getestet und dient allen folgenden
   „identisch zu vorher“-Exits als Referenz.
+
+Umsetzungsstand 2026-07-22:
+
+- [x] §4.7 lokal gehärtet: Mode-Typen werden dedupliziert, verschiedene IDs
+  desselben Typs sind nicht schreibbar, und mehrere verschiedene
+  `roomAirTemperature`-Setpoints liefern Data-Unavailable.
+- [x] Automatisierte Contract-Tests für State/Presence, Range, Step, Relation,
+  Result/Reject, Cancellation, internen Timeout, Reconnect-Refresh und das
+  bestehende gRPC-Fehlermapping ergänzt.
+- [x] Reproduzierbaren VR940-Capture mit Ausgangswerten, `auto`/`on`/`off`,
+  Setpoint-Read-back und Restore durchgeführt (2026-07-22, Stack 93,
+  `climate.eebus_682f708c_raumheizung`): Baseline `off`/21,0 °C
+  (Range 5–30 °C, Step 0,5 °C, `hvac_modes` = `auto`/`heat`/`off`);
+  Transitions `auto` → `heat` → `off` → `auto` je mit Read-back bestätigt;
+  Setpoint 21,0 → 21,5 °C geschrieben und zurückgelesen; Baseline
+  (`off`/21,0 °C) wiederhergestellt. Firmware/Modell konnten nicht erfasst
+  werden — das HA-Device-Registry-Objekt liefert `manufacturer`, `model`,
+  `sw_version` und `hw_version` als `None` (separat zu klären, nicht Teil
+  dieser Phase).
+- [ ] Upstream-CRHT/CRHSF-Write ohne zusätzliches Feature-Binding am VR940
+  prüfen.
 
 ### Phase 1 — MRHSF übernimmt Reads und State-Events
 

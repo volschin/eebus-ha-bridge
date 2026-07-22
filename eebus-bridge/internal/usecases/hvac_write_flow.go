@@ -9,6 +9,8 @@ import (
 	"github.com/enbility/spine-go/model"
 )
 
+var hvacWriteTimeout = dhwWriteTimeout
+
 func writeHvacCommand(
 	ctx context.Context,
 	entity spineapi.EntityRemoteInterface,
@@ -36,7 +38,7 @@ func writeHvacCommand(
 		return fmt.Errorf("waiting for %s result: %w", label, err)
 	}
 
-	timer := time.NewTimer(dhwWriteTimeout)
+	timer := time.NewTimer(hvacWriteTimeout)
 	defer timer.Stop()
 	select {
 	case response := <-result:

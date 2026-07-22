@@ -252,3 +252,76 @@ func TestClientUsecaseRefreshAndResolutionGuards(t *testing.T) {
 		t.Fatal("uninitialized use case resolved an entity")
 	}
 }
+
+func TestRoomHeatingReconnectReestablishesRelationsAndRefreshesCaches(t *testing.T) {
+	tests := []struct {
+		name      string
+		feature   model.FeatureTypeType
+		functions []model.FunctionType
+		connect   func(spineapi.EntityLocalInterface, spineapi.EntityRemoteInterface)
+	}{
+		{
+			name:    "temperature",
+			feature: model.FeatureTypeTypeSetpoint,
+			functions: []model.FunctionType{
+				model.FunctionTypeSetpointDescriptionListData,
+				model.FunctionTypeSetpointConstraintsListData,
+				model.FunctionTypeSetpointListData,
+			},
+			connect: func(local spineapi.EntityLocalInterface, remote spineapi.EntityRemoteInterface) {
+				(&RoomHeatingTemperature{localEntity: local}).connect(remote)
+			},
+		},
+		{
+			name:    "system function",
+			feature: model.FeatureTypeTypeHvac,
+			functions: []model.FunctionType{
+				model.FunctionTypeHvacSystemFunctionDescriptionListData,
+				model.FunctionTypeHvacSystemFunctionListData,
+				model.FunctionTypeHvacOperationModeDescriptionListData,
+				model.FunctionTypeHvacSystemFunctionOperationModeRelationListData,
+			},
+			connect: func(local spineapi.EntityLocalInterface, remote spineapi.EntityRemoteInterface) {
+				(&RoomHeatingSystemFunction{localEntity: local}).connect(remote)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			address := &model.FeatureAddressType{}
+			operation := mocks.NewOperationsInterface(t)
+			operation.On("Read").Return(true)
+			operations := make(map[model.FunctionType]spineapi.OperationsInterface, len(test.functions))
+			for _, function := range test.functions {
+				operations[function] = operation
+			}
+			remoteFeature := mocks.NewFeatureRemoteInterface(t)
+			remoteFeature.On("Address").Return(address)
+			remoteFeature.On("Operations").Return(operations)
+			remoteFeature.On("String").Return("remote room-heating feature").Maybe()
+
+			localFeature := mocks.NewFeatureLocalInterface(t)
+			localFeature.On("HasSubscriptionToRemote", address).Return(false)
+			localFeature.On("SubscribeToRemote", address).
+				Return(ptr(model.MsgCounterType(1)), (*model.ErrorType)(nil)).Once()
+			localFeature.On("HasBindingToRemote", address).Return(false)
+			localFeature.On("BindToRemote", address).
+				Return(ptr(model.MsgCounterType(2)), (*model.ErrorType)(nil)).Once()
+			for _, function := range test.functions {
+				localFeature.On("RequestRemoteData", function, nil, nil, remoteFeature).
+					Return(ptr(model.MsgCounterType(3)), (*model.ErrorType)(nil)).Once()
+			}
+
+			remoteEntity := mocks.NewEntityRemoteInterface(t)
+			remoteEntity.On("FeatureOfTypeAndRole", test.feature, model.RoleTypeServer).Return(remoteFeature)
+			localEntity := mocks.NewEntityLocalInterface(t)
+			localEntity.On("FeatureOfTypeAndRole", test.feature, model.RoleTypeClient).Return(localFeature)
+
+			test.connect(localEntity, remoteEntity)
+			localFeature.AssertNumberOfCalls(t, "RequestRemoteData", len(test.functions))
+			localFeature.AssertCalled(t, "SubscribeToRemote", address)
+			localFeature.AssertCalled(t, "BindToRemote", address)
+		})
+	}
+}
