@@ -12,6 +12,7 @@ import (
 	ucmocks "github.com/enbility/eebus-go/usecases/mocks"
 	spineapi "github.com/enbility/spine-go/api"
 	spinemocks "github.com/enbility/spine-go/mocks"
+	"github.com/enbility/spine-go/model"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
 
@@ -169,6 +170,42 @@ func assertRoomHeatingTemperatureEvent(
 	case <-time.After(time.Second):
 		t.Fatalf("timed out waiting for %s", want)
 	}
+}
+
+func TestCRHTConfigurationFacadeRecordsObservationsAndIgnoresUnknownEvents(t *testing.T) {
+	bus := eebus.NewEventBus()
+	ch := bus.Subscribe()
+	defer bus.Unsubscribe(ch)
+	registry := eebus.NewDeviceRegistry()
+	device := spinemocks.NewDeviceRemoteInterface(t)
+	device.EXPECT().Ski().Return("ab:cd").Maybe()
+	entity := spinemocks.NewEntityRemoteInterface(t)
+	entity.EXPECT().Device().Return(device).Maybe()
+	entity.EXPECT().Address().Return(&model.EntityAddressType{}).Maybe()
+	entity.EXPECT().EntityType().Return(model.EntityTypeTypeHvacRoom).Maybe()
+	entity.EXPECT().Features().Return(nil).Maybe()
+	facade := &CRHTConfigurationFacade{
+		reader:   &phase4RoomHeatingTemperatureReader{state: RoomHeatingSetpoint{Value: 21}},
+		bus:      bus,
+		registry: registry,
+		debug:    true,
+	}
+
+	facade.HandleEvent("ab:cd", device, entity, cacrht.DataUpdateSetpoints)
+	assertRoomHeatingTemperatureEvent(t, ch, eebus.EventTypeRoomHeatingSetpointUpdated)
+	if entities := registry.Entities("ABCD"); len(entities) == 0 {
+		t.Fatal("data update did not record a registry observation")
+	}
+
+	facade.HandleEvent("ab:cd", device, entity, eebusapi.EventType("bridge-unknown-event"))
+	select {
+	case event := <-ch:
+		t.Fatalf("unknown event published %+v", event)
+	default:
+	}
+
+	var nilFacade *CRHTConfigurationFacade
+	nilFacade.HandleEvent("ab:cd", device, entity, cacrht.DataUpdateSetpoints)
 }
 
 func TestCRHTConfigurationFacadeFailsClosedWhenIncomplete(t *testing.T) {
