@@ -535,8 +535,11 @@ Umsetzungsstand 2026-07-22:
   werden — das HA-Device-Registry-Objekt liefert `manufacturer`, `model`,
   `sw_version` und `hw_version` als `None` (separat zu klären, nicht Teil
   dieser Phase).
-- [ ] Upstream-CRHT/CRHSF-Write ohne zusätzliches Feature-Binding am VR940
-  prüfen.
+- [x] Upstream-CRHT/CRHSF-Write ohne zusätzliches Feature-Binding am VR940
+  geprüft. Die Hardwarematrizen aus Phase 3 (`:crhsf-phase3`) und Phase 5
+  (`:crht-phase5`) belegen erfolgreiche Mode- und Setpoint-Writes über die
+  Upstream-Writer; ein zusätzliches Bridge-seitiges Feature-Binding war dabei
+  nicht registriert.
 
 ### Phase 1 — MRHSF übernimmt Reads und State-Events
 
@@ -936,6 +939,15 @@ vollständigen SKIs oder Zertifikatsdaten committed.
   Retry im laufenden Request.
 - Änderungen an #239–#242 werden zuerst im jeweiligen Contribution-Branch und
   danach im Fork-Integrationsbranch übernommen.
+
+### Checkliste für jeden Phasenabschluss
+
+- [ ] Den Statuskopf dieser Spezifikation auf die tatsächlich erreichte Phase
+  aktualisieren.
+- [ ] Kommentare und Dokumentation von Verweisen auf gelöschte Writer,
+  veraltete Ownership oder bereits abgeschlossene Abnahmen bereinigen.
+- [ ] Den Abschnitt zu bekannten Upstream-Limitierungen und das Patch-Inventar
+  gegen den neuen Stand prüfen und verbleibende Lücken ausdrücklich festhalten.
 
 ## 11. Nicht Teil dieses Proposals
 

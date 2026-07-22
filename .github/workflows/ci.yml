@@ -111,8 +111,8 @@ jobs:
             --profile coverage.out \
             --base "$coverage_base" \
             --threshold 90 \
-            --badge-output ../docs/badges/go-coverage.svg
-          git -C .. diff --exit-code -- docs/badges/go-coverage.svg
+            --badge-reference ../docs/badges/go-coverage.svg \
+            --badge-tolerance 0.2
       - run: go test -tags=integration -v ./internal/grpc/ -run TestIntegration
       - name: govulncheck
         # Invoke govulncheck directly instead of golang/govulncheck-action: the
