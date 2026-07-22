@@ -1,7 +1,7 @@
 # Room Heating auf eebus-go migrieren — Spec Proposal
 
 **Datum:** 2026-07-22
-**Status:** In Umsetzung — Phase 4 begonnen
+**Status:** Abgeschlossen — Phase 5b (Legacy-Entfernung) umgesetzt
 **Scope:** Schrittweise Ablösung der bridge-lokalen Implementierungen für
 Configuration/Monitoring of Room Heating durch die bereits im gepinnten
 `eebus-go`-Fork enthaltenen Upstream-PRs, ohne Änderung des bestehenden gRPC-
@@ -827,6 +827,28 @@ ohne Verhaltensänderung. Zu erwartende Löschungen bzw. Restumfänge:
 
 Ein Nachweis, dass keine dieser Dateien mehr referenziert wird, ist Teil des
 PRs (`go build ./... && go vet ./...` plus Grep auf die entfernten Symbole).
+
+Umsetzungsstand 2026-07-22:
+
+- [x] Die Legacy-Use-Cases `RoomHeatingSystemFunction` und
+  `RoomHeatingTemperature` einschließlich eigener Negotiation, Events,
+  Cache-Auflösung und roher Writes sind gelöscht. In den bisherigen Dateien
+  bleiben ausschließlich die stabilen Bridge-State-/Sentinel-Verträge sowie
+  die Heating-spezifische Range-/Step-Validierung.
+- [x] Mode-ID-, Relations-, Full-List-Merge- und HVAC-Write-Code ist entfernt;
+  `hvac_cache.go` und `hvac_write_flow.go` entfallen vollständig. Der bis zu
+  einer öffentlichen CRHSF-`WriteCapabilities`-API nötige read-only Inspector
+  prüft nur noch eindeutige Heating-SystemFunction, Write-Operation und
+  Changeability.
+- [x] `setpoint_flow.go` ist entfernt. Der noch aktive rohe DHW-Setpoint-Pfad
+  besitzt nun DHW-spezifische Helfer; CRHT validiert weiterhin separat in der
+  Heating-Facade und führt ausschließlich den Upstream-Write aus.
+- [x] Legacy-only Tests und Lifecycle-Abdeckung sind entfernt bzw. auf die
+  verbleibenden Upstream-Facades, Writer und DHW-Verträge zugeschnitten.
+- [x] Grep auf die entfernten internen Symbole ist leer; `go test ./...`,
+  `go test -race ./...`, `go build ./...` und `go vet ./...` sind grün. Die
+  Coverage-Gates liegen bei 85,4 % gesamt und 90,6 % für geänderte produktive
+  Statements.
 
 ### Phase 6 — Fork-Patches abbauen
 

@@ -13,8 +13,7 @@ import (
 
 // upstreamRoomHeatingTemperatureWriter delegates the protocol write and
 // refresh to CRHT while preserving the bridge's validation, synchronous
-// result, and stable error contracts. It never retries through the legacy
-// writer.
+// result, and stable error contracts.
 type upstreamRoomHeatingTemperatureWriter struct {
 	client caCRHTClient
 	reader roomHeatingTemperatureStateReader
@@ -32,13 +31,7 @@ func (w *upstreamRoomHeatingTemperatureWriter) Write(
 	if err != nil {
 		return err
 	}
-	if err := validateSetpointWrite(
-		setpointState(state),
-		value,
-		ErrRoomHeatingNotWritable,
-		ErrRoomHeatingOutOfRange,
-		ErrRoomHeatingInvalidStep,
-	); err != nil {
+	if err := validateRoomHeatingSetpointWrite(state, value); err != nil {
 		return err
 	}
 
@@ -51,7 +44,7 @@ func (w *upstreamRoomHeatingTemperatureWriter) Write(
 type roomHeatingTemperatureResultCallback func(model.ResultDataType, model.MsgCounterType)
 type roomHeatingTemperatureWriteCall func(roomHeatingTemperatureResultCallback) (*model.MsgCounterType, error)
 
-var roomHeatingTemperatureWriteTimeout = setpointWriteTimeout
+var roomHeatingTemperatureWriteTimeout = 10 * time.Second
 
 func awaitRoomHeatingTemperatureWrite(ctx context.Context, write roomHeatingTemperatureWriteCall) error {
 	type writeResult struct {

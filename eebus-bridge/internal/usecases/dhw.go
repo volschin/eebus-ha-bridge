@@ -3,6 +3,7 @@ package usecases
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"math"
 	"time"
@@ -181,35 +182,138 @@ func (d *DHWTemperature) CompatibleEntity(ski string) eebus.EntityResolution {
 // Missing or partial metadata fails closed so Home Assistant never invents a
 // writable range for physical temperature control.
 func (d *DHWTemperature) State(entity spineapi.EntityRemoteInterface) (DHWSetpoint, error) {
-	state, _, _, err := readSetpointState(entity, dhwSetpointID, ErrDHWDataUnavailable)
+	state, _, _, err := readDHWSetpointState(entity)
 	if err != nil {
 		return DHWSetpoint{}, err
 	}
-	return DHWSetpoint(state), nil
+	return state, nil
 }
 
 // Write validates against device-provided constraints, sends the complete
 // SetpointListData required by the VR940, and waits for the device result.
 func (d *DHWTemperature) Write(ctx context.Context, entity spineapi.EntityRemoteInterface, value float64) error {
-	state, id, remote, err := readSetpointState(entity, dhwSetpointID, ErrDHWDataUnavailable)
+	state, id, remote, err := readDHWSetpointState(entity)
 	if err != nil {
 		return err
 	}
-	if err := validateSetpointWrite(state, value, ErrDHWNotWritable, ErrDHWOutOfRange, ErrDHWInvalidStep); err != nil {
+	if err := validateDHWSetpointWrite(state, value); err != nil {
 		return err
 	}
-	return writeSetpointValue(
+	return d.writeDHWSetpointValue(
 		ctx,
 		entity,
 		remote,
-		d.localSetpointFeature(),
 		id,
 		value,
-		"DHW setpoint",
-		ErrDHWDataUnavailable,
-		ErrDHWRejected,
-		func() { d.request(entity, model.FunctionTypeSetpointListData) },
 	)
+}
+
+func readDHWSetpointState(
+	entity spineapi.EntityRemoteInterface,
+) (DHWSetpoint, model.SetpointIdType, spineapi.FeatureRemoteInterface, error) {
+	remote := setpointServer(entity)
+	if remote == nil {
+		return DHWSetpoint{}, 0, nil, ErrDHWDataUnavailable
+	}
+	id, ok := dhwSetpointID(remote)
+	if !ok {
+		return DHWSetpoint{}, 0, nil, ErrDHWDataUnavailable
+	}
+	value, ok := setpointValue(remote, id)
+	if !ok {
+		return DHWSetpoint{}, 0, nil, ErrDHWDataUnavailable
+	}
+	minimum, maximum, step, ok := setpointRange(remote, id)
+	if !ok {
+		return DHWSetpoint{}, 0, nil, ErrDHWDataUnavailable
+	}
+	operation := remote.Operations()[model.FunctionTypeSetpointListData]
+	return DHWSetpoint{
+		Value:    value,
+		Minimum:  minimum,
+		Maximum:  maximum,
+		Step:     step,
+		Writable: operation != nil && operation.Write(),
+	}, id, remote, nil
+}
+
+func validateDHWSetpointWrite(state DHWSetpoint, value float64) error {
+	if !state.Writable {
+		return ErrDHWNotWritable
+	}
+	if !isFinite(value) || value < state.Minimum || value > state.Maximum {
+		return fmt.Errorf("%w: %.3f not in [%.3f, %.3f]", ErrDHWOutOfRange, value, state.Minimum, state.Maximum)
+	}
+	steps := math.Round((value - state.Minimum) / state.Step)
+	if math.Abs(state.Minimum+steps*state.Step-value) > 1e-6 {
+		return fmt.Errorf("%w: %.3f with step %.3f", ErrDHWInvalidStep, value, state.Step)
+	}
+	return nil
+}
+
+func (d *DHWTemperature) writeDHWSetpointValue(
+	ctx context.Context,
+	entity spineapi.EntityRemoteInterface,
+	remote spineapi.FeatureRemoteInterface,
+	id model.SetpointIdType,
+	value float64,
+) error {
+	local := d.localSetpointFeature()
+	if remote == nil || local == nil {
+		return ErrDHWDataUnavailable
+	}
+	data, ok := remote.DataCopy(model.FunctionTypeSetpointListData).(*model.SetpointListDataType)
+	if !ok || data == nil {
+		return ErrDHWDataUnavailable
+	}
+	entries := make([]model.SetpointDataType, len(data.SetpointData))
+	copy(entries, data.SetpointData)
+	found := false
+	for index := range entries {
+		if entries[index].SetpointId != nil && *entries[index].SetpointId == id {
+			entries[index].Value = model.NewScaledNumberType(value)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return ErrDHWDataUnavailable
+	}
+
+	counter, err := entity.Device().Sender().Write(
+		local.Address(),
+		remote.Address(),
+		model.CmdType{SetpointListData: &model.SetpointListDataType{SetpointData: entries}},
+	)
+	if err != nil {
+		return fmt.Errorf("sending DHW setpoint: %w", err)
+	}
+	if counter == nil {
+		return errors.New("sending DHW setpoint returned no message counter")
+	}
+	result := make(chan model.ResultDataType, 1)
+	if err := local.AddResponseCallback(*counter, func(message spineapi.ResponseMessage) {
+		if data, ok := message.Data.(*model.ResultDataType); ok && data != nil {
+			result <- *data
+		}
+	}); err != nil {
+		return fmt.Errorf("waiting for DHW setpoint result: %w", err)
+	}
+
+	timer := time.NewTimer(dhwWriteTimeout)
+	defer timer.Stop()
+	select {
+	case response := <-result:
+		if response.ErrorNumber != nil && *response.ErrorNumber != 0 {
+			return fmt.Errorf("%w: error=%d", ErrDHWRejected, *response.ErrorNumber)
+		}
+		d.request(entity, model.FunctionTypeSetpointListData)
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return errors.New("timed out waiting for DHW setpoint result")
+	}
 }
 
 func (d *DHWTemperature) localSetpointFeature() spineapi.FeatureLocalInterface {
