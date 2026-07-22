@@ -321,7 +321,15 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 			dhwSystemFunctionMonitoring,
 			dhwSystemFunctionConfiguration,
 		)
-		roomHeatingTemperature := usecases.NewRoomHeatingTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
+		// Upstream CRHT owns room-heating setpoint negotiation, reads and events.
+		// The bridge retains only its setpoint writer until Phase 5 resolves the
+		// operation-mode semantics of CRHT writes.
+		roomHeatingTemperature := usecases.NewUpstreamRoomHeatingTemperatureConfiguration(
+			localEntity,
+			bus,
+			registry,
+			cfg.Logging.DebugEvents,
+		)
 		roomHeatingSystemFunctionMonitoring := usecases.NewRoomHeatingSystemFunctionMonitoring(bus, registry, cfg.Logging.DebugEvents)
 		// MRHSF owns reads and state events. Upstream CRHSF owns negotiation,
 		// cache population and mode writes; the bridge temporarily retains only
@@ -480,7 +488,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 				},
 				registerUseCases: useCaseRegistrar(
 					bridgeSvc,
-					eebusUseCaseRegistration{name: "RoomHeatingTemperature", useCase: func() eebusapi.UseCaseInterface { return roomHeatingTemperature.UseCase() }},
+					eebusUseCaseRegistration{name: "CRHT", useCase: func() eebusapi.UseCaseInterface { return roomHeatingTemperature.UseCase() }},
 					eebusUseCaseRegistration{name: "MRHSF", useCase: func() eebusapi.UseCaseInterface { return roomHeatingSystemFunctionMonitoring.UseCase() }},
 					eebusUseCaseRegistration{name: "CRHSF", useCase: func() eebusapi.UseCaseInterface { return roomHeatingSystemFunctionConfiguration.UseCase() }},
 				),
