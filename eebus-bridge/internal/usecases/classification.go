@@ -3,6 +3,7 @@ package usecases
 import (
 	"errors"
 	"log"
+	"sync"
 
 	"github.com/enbility/eebus-go/features/client"
 	spineapi "github.com/enbility/spine-go/api"
@@ -25,10 +26,20 @@ type DeviceClassifier struct {
 	localEntity spineapi.EntityLocalInterface
 	registry    *eebus.DeviceRegistry
 	bus         *eebus.EventBus
+
+	// requested tracks devices for which an active manufacturer-data read has
+	// already been issued, so we request (and, on rejection, log) at most once
+	// per device instead of once per classification-server entity on every
+	// reconnect. Some gateways (e.g. Vaillant VR940) reject the read with
+	// "operation is not supported on function deviceClassificationManufacturerData";
+	// without this guard that rejection is logged for every entity on every
+	// SHIP reconnect.
+	mu        sync.Mutex
+	requested map[string]bool
 }
 
 func NewDeviceClassifier(registry *eebus.DeviceRegistry, bus *eebus.EventBus) *DeviceClassifier {
-	return &DeviceClassifier{registry: registry, bus: bus}
+	return &DeviceClassifier{registry: registry, bus: bus, requested: make(map[string]bool)}
 }
 
 func (c *DeviceClassifier) Setup(localEntity spineapi.EntityLocalInterface) error {
@@ -91,10 +102,18 @@ func (c *DeviceClassifier) readOrRequest(
 		c.store(ski, device, classificationDetails(data))
 		return
 	}
+	key := observationSKI(ski, device)
+	c.mu.Lock()
+	already := c.requested[key]
+	c.requested[key] = true
+	c.mu.Unlock()
+	if already {
+		return
+	}
 	if _, err := dc.RequestManufacturerDetails(); err != nil {
 		log.Printf(
 			"requesting DeviceClassification data for %s: %v",
-			eebus.ShortSKI(observationSKI(ski, device)),
+			eebus.ShortSKI(key),
 			err,
 		)
 	}
@@ -109,6 +128,14 @@ func (c *DeviceClassifier) store(
 	var deviceType string
 	if device != nil && device.DeviceType() != nil {
 		deviceType = string(*device.DeviceType())
+	}
+	// Ignore payloads that carry no usable field (every element of
+	// DeviceClassificationManufacturerDataType is optional). Without this guard
+	// an all-nil response can still flip the registry's SKI-only record to
+	// changed=true and fan out a spurious classification resync. Mirrors the
+	// guard in enrichDeviceClassification.
+	if details == (deviceClassificationDetails{}) && deviceType == "" {
+		return
 	}
 	changed := c.registry.UpsertDeviceClassification(
 		ski,

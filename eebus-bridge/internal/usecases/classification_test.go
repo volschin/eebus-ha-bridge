@@ -90,6 +90,32 @@ func TestDeviceClassifierStoresManufacturerDataAndPublishesChange(t *testing.T) 
 	}
 }
 
+func TestDeviceClassifierIgnoresEmptyManufacturerData(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	bus := eebus.NewEventBus()
+	events := bus.Subscribe()
+	defer bus.Unsubscribe(events)
+	classifier := NewDeviceClassifier(registry, bus)
+	classifier.localEntity = mocks.NewEntityLocalInterface(t)
+	device := mocks.NewDeviceRemoteInterface(t)
+	device.On("DeviceType").Return(nil)
+
+	classifier.HandleEvent(spineapi.EventPayload{
+		Ski:    testValidUsecaseSKI,
+		Device: device,
+		Data:   &model.DeviceClassificationManufacturerDataType{},
+	})
+
+	if _, ok := registry.GetDevice(testValidUsecaseSKI); ok {
+		t.Fatal("empty manufacturer data created a device")
+	}
+	select {
+	case event := <-events:
+		t.Fatalf("empty manufacturer data published %+v", event)
+	default:
+	}
+}
+
 func TestDeviceClassifierReadsCachedClassificationOnEntityDiscovery(t *testing.T) {
 	registry := eebus.NewDeviceRegistry()
 	classifier := NewDeviceClassifier(registry, nil)
@@ -176,6 +202,49 @@ func TestDeviceClassifierRequestsMissingClassification(t *testing.T) {
 		Ski: testValidUsecaseSKI, Device: device, Entity: entity,
 		EventType: spineapi.EventTypeEntityChange, ChangeType: spineapi.ElementChangeAdd,
 	})
+}
+
+func TestDeviceClassifierRequestsManufacturerDataOncePerDevice(t *testing.T) {
+	classifier := NewDeviceClassifier(eebus.NewDeviceRegistry(), nil)
+	local := mocks.NewEntityLocalInterface(t)
+	localFeature := mocks.NewFeatureLocalInterface(t)
+	local.On("Device").Return(nil)
+	local.On("FeatureOfTypeAndRole", model.FeatureTypeTypeDeviceClassification, model.RoleTypeClient).
+		Return(localFeature)
+	classifier.localEntity = local
+
+	device := mocks.NewDeviceRemoteInterface(t)
+	entity := mocks.NewEntityRemoteInterface(t)
+	remoteFeature := mocks.NewFeatureRemoteInterface(t)
+	remoteFeature.On("String").Return("DeviceClassification/server").Maybe()
+	operation := mocks.NewOperationsInterface(t)
+	operation.On("Read").Return(true)
+	entity.On("Device").Return(device)
+	entity.On("FeatureOfTypeAndRole", model.FeatureTypeTypeDeviceClassification, model.RoleTypeServer).
+		Return(remoteFeature)
+	device.On(
+		"FeatureByEntityTypeAndRole",
+		entity,
+		model.FeatureTypeTypeDeviceClassification,
+		model.RoleTypeServer,
+	).Return(remoteFeature)
+	remoteFeature.On("DataCopy", model.FunctionTypeDeviceClassificationManufacturerData).Return(nil)
+	remoteFeature.On("Operations").Return(map[model.FunctionType]spineapi.OperationsInterface{
+		model.FunctionTypeDeviceClassificationManufacturerData: operation,
+	})
+	counter := model.MsgCounterType(1)
+	// A device that answers no data must be asked at most once, even across
+	// repeated discovery events / reconnects.
+	localFeature.On(
+		"RequestRemoteData",
+		model.FunctionTypeDeviceClassificationManufacturerData,
+		nil,
+		nil,
+		remoteFeature,
+	).Return(&counter, (*model.ErrorType)(nil)).Once()
+
+	classifier.readOrRequest(testValidUsecaseSKI, device, entity)
+	classifier.readOrRequest(testValidUsecaseSKI, device, entity)
 }
 
 func TestDeviceClassifierIgnoresIrrelevantAndUnavailableEntities(t *testing.T) {

@@ -160,6 +160,18 @@ Gerätetyp sowie Software-/Hardware-Revision und löst einen Snapshot-Refresh
 aus. HA übernimmt Initial- und Spätwerte. Nicht vom Gerät gesendete Felder
 bleiben bewusst leer; es werden keine Vaillant-/VR940-Konstanten erfunden.
 
+Hardwarebefund 2026-07-22 (VR940 `682F708C`, Stack 93, Dev-Image
+`ghcr.io/volschin/eebus-bridge:d1-hwtest`): `manufacturer` = `Vaillant`,
+`model` = `VWL 75/8.1 A 230V`, `serial_number` = `8000033711` erscheinen
+Ende-zu-Ende im HA-Device-Registry (vorher alle `None`) und überstehen einen
+Bridge-Neustart. **Geräteeinschränkung:** `sw_version`/`hw_version` bleiben
+`null`. Der VR940 lehnt den aktiven `RequestManufacturerDetails`-Read ab
+(`operation is not supported on function deviceClassificationManufacturerData`);
+Software-/Hardware-Revision werden nur über diesen Read übertragen und sind auf
+dem VR940 daher nicht verfügbar. Marke/Modell/Seriennummer kommen passiv aus der
+Detailed Discovery. Die Bridge fordert den Read pro Gerät nur einmal an und
+loggt die Ablehnung nur einmal statt bei jedem Reconnect.
+
 **[x] OPEN-D2 — Spec- und Kommentar-Drift nach Phasenabschlüssen.**
 Beobachtet in PR #156: Statuszeile der RH-Spec stand nach Phase 5b noch auf
 „Phase 4 begonnen"; Doc-Kommentare verwiesen auf gelöschte Legacy-Writer;

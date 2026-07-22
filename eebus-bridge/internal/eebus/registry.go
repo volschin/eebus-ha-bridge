@@ -438,9 +438,10 @@ func (r *DeviceRegistry) UpsertObservation(
 	r.catalog.devices[ski] = info
 }
 
-// UpsertDeviceClassification stores manufacturer/device-type metadata reported by
-// a remote device. Empty values are ignored so later partial updates never clear
-// previously discovered fields.
+// UpsertDeviceClassification stores manufacturer, model, serial, device-type and
+// software/hardware-revision metadata reported by a remote device. Empty values
+// are ignored so later partial updates never clear previously discovered fields.
+// Returns true when any stored field changed, so callers can fan out a resync.
 func (r *DeviceRegistry) UpsertDeviceClassification(
 	ski, brand, deviceModel, serial, deviceType, softwareRevision, hardwareRevision string,
 ) bool {
