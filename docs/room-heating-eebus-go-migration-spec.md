@@ -688,8 +688,21 @@ Umsetzungsstand 2026-07-22:
 - [ ] Den gemeinsamen `features/client.NewFeature`-Sentinel aus §4.6 upstream
   einreichen und im Bridge-Mapping übernehmen; der aktuelle Pin liefert im
   Disconnect-Rennen weiterhin nicht klassifizierbare Textfehler.
-- [ ] Hardwarematrix (alle Modi, mindestens zehn Übergänge sowie drei
-  Reconnect-/Restart-Zyklen) durchführen und Ausgangszustand wiederherstellen.
+- [x] Hardwarematrix am VR940 (SKI `682f708c…`, Stack 93, Image
+  `crhsf-phase3`) am 2026-07-22 durchgeführt:
+  - Frischstart füllt Caches ohne Legacy-Writer: `hvac_modes=[auto, heat, off]`,
+    Setpoint 21.0 °C.
+  - 18 Mode-Übergänge über alle drei angebotenen Modi, alle vom Gerät
+    übernommen; keine Ablehnung, kein Fehler im Bridge-Log.
+  - Setpoint-Write (Legacy-Pfad, unverändert) 21.0 → 21.5 → 21.0 erfolgreich.
+  - Drei Container-Restarts: Modi, Setpoint und Schreibfähigkeit identisch
+    reproduziert; Post-Restart-Write erfolgreich.
+  - Konvergenz nach akzeptiertem Write < 0,1 s (Geräte-Notify), obwohl der
+    Upstream-Writer keinen expliziten Post-Result-Refresh sendet. Einmalig
+    zeigte ein Sample bei sehr schneller Write-Folge (6 s Abstand) noch den
+    Vorzustand; der Zustand konvergierte anschließend korrekt.
+  - Stack nach dem Test auf `:latest` zurückgesetzt, Ausgangszustand
+    (`auto`, 21.0 °C) wiederhergestellt.
 
 ### Phase 4 — Upstream CRHT übernimmt Negotiation und Reads
 
