@@ -187,6 +187,18 @@ func TestOHPCFSnapshotActivelyReconcilesStoppedRemoteCache(t *testing.T) {
 	if controller.refreshes != 1 || controller.refreshedEntity != entity {
 		t.Fatalf("snapshot refresh = (%d, %v), want (1, requested entity)", controller.refreshes, controller.refreshedEntity)
 	}
+
+	NewOHPCFService(nil, eebus.NewEventBus(), registry).RefreshCompressorFlexibility(testValidSKI)
+	unresolved := &refreshingOHPCFController{}
+	NewOHPCFService(
+		nil,
+		eebus.NewEventBus(),
+		registry,
+		WithOHPCFController(unresolved),
+	).RefreshCompressorFlexibility(testValidSKI)
+	if unresolved.refreshes != 0 {
+		t.Fatalf("unresolved entity triggered %d refreshes, want 0", unresolved.refreshes)
+	}
 }
 
 func TestOHPCFNoProcessRemainsAvailableInReadsEventsAndSnapshots(t *testing.T) {
