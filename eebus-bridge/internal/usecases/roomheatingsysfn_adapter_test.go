@@ -283,8 +283,11 @@ func TestRoomHeatingSystemFunctionAdapterFailsClosedWithoutMonitoring(t *testing
 	if _, err := empty.State(nil); !errors.Is(err, ErrRoomHeatingSysFnDataUnavailable) {
 		t.Fatalf("State() error = %v, want ErrRoomHeatingSysFnDataUnavailable", err)
 	}
-	if err := empty.WriteOperationMode(context.Background(), nil, "on"); !errors.Is(err, ErrRoomHeatingSysFnNotWritable) {
-		t.Fatalf("WriteOperationMode() error = %v, want ErrRoomHeatingSysFnNotWritable", err)
+	if err := adapter.WriteOperationMode(context.Background(), nil, "on"); !errors.Is(err, ErrRoomHeatingSysFnDataUnavailable) {
+		t.Fatalf("WriteOperationMode() error = %v, want ErrRoomHeatingSysFnDataUnavailable", err)
+	}
+	if err := empty.WriteOperationMode(context.Background(), nil, "on"); !errors.Is(err, ErrRoomHeatingSysFnDataUnavailable) {
+		t.Fatalf("WriteOperationMode() error = %v, want ErrRoomHeatingSysFnDataUnavailable", err)
 	}
 }
 

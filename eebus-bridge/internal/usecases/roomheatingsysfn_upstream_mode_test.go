@@ -197,3 +197,61 @@ func TestUpstreamRoomHeatingOperationModeWriterTimesOut(t *testing.T) {
 		t.Fatalf("WriteOperationMode() error = %v, want timeout", err)
 	}
 }
+
+func TestUpstreamRoomHeatingOperationModeWriterMapsRelationLookupError(t *testing.T) {
+	entity := spinemocks.NewEntityRemoteInterface(t)
+	client := ucmocks.NewCaCRHSFInterface(t)
+	client.EXPECT().OperationModes(entity).Return(nil, eebusapi.ErrDataNotAvailable)
+	writer := &upstreamRoomHeatingOperationModeWriter{
+		client: client,
+		inspector: &phase2RoomHeatingCapabilityInspector{state: RoomHeatingSystemFunctionState{
+			ModeWritable: true,
+		}},
+	}
+
+	if err := writer.WriteOperationMode(context.Background(), entity, "on"); !errors.Is(err, ErrRoomHeatingSysFnDataUnavailable) {
+		t.Fatalf("WriteOperationMode() error = %v, want ErrRoomHeatingSysFnDataUnavailable", err)
+	}
+}
+
+func TestUpstreamRoomHeatingOperationModeWriterRejectsMissingMessageCounter(t *testing.T) {
+	entity := spinemocks.NewEntityRemoteInterface(t)
+	client := ucmocks.NewCaCRHSFInterface(t)
+	client.EXPECT().OperationModes(entity).Return([]ucapi.HvacOperationModeType{ucapi.HvacOperationModeTypeOn}, nil)
+	client.EXPECT().WriteOperationMode(entity, ucapi.HvacOperationModeTypeOn, mock.Anything).Return(nil, nil)
+	writer := &upstreamRoomHeatingOperationModeWriter{
+		client: client,
+		inspector: &phase2RoomHeatingCapabilityInspector{state: RoomHeatingSystemFunctionState{
+			ModeWritable: true,
+		}},
+	}
+
+	err := writer.WriteOperationMode(context.Background(), entity, "on")
+	if err == nil || !strings.Contains(err.Error(), "no message counter") {
+		t.Fatalf("WriteOperationMode() error = %v, want missing message counter", err)
+	}
+}
+
+func TestUpstreamRoomHeatingOperationModeWriterRejectsForeignMessageCounter(t *testing.T) {
+	entity := spinemocks.NewEntityRemoteInterface(t)
+	client := ucmocks.NewCaCRHSFInterface(t)
+	client.EXPECT().OperationModes(entity).Return([]ucapi.HvacOperationModeType{ucapi.HvacOperationModeTypeOn}, nil)
+	counter := model.MsgCounterType(45)
+	client.EXPECT().WriteOperationMode(entity, ucapi.HvacOperationModeTypeOn, mock.Anything).RunAndReturn(
+		func(_ spineapi.EntityRemoteInterface, _ ucapi.HvacOperationModeType, callback func(model.ResultDataType, model.MsgCounterType)) (*model.MsgCounterType, error) {
+			callback(model.ResultDataType{}, model.MsgCounterType(99))
+			return &counter, nil
+		},
+	)
+	writer := &upstreamRoomHeatingOperationModeWriter{
+		client: client,
+		inspector: &phase2RoomHeatingCapabilityInspector{state: RoomHeatingSystemFunctionState{
+			ModeWritable: true,
+		}},
+	}
+
+	err := writer.WriteOperationMode(context.Background(), entity, "on")
+	if err == nil || !strings.Contains(err.Error(), "unexpected message counter") {
+		t.Fatalf("WriteOperationMode() error = %v, want unexpected message counter", err)
+	}
+}

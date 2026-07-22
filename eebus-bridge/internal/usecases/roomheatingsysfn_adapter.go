@@ -172,12 +172,12 @@ func (a *RoomHeatingSystemFunctionAdapter) WriteOperationMode(
 	entity spineapi.EntityRemoteInterface,
 	mode string,
 ) error {
+	if a == nil || a.monitoring == nil {
+		return ErrRoomHeatingSysFnDataUnavailable
+	}
 	configurationEntity := a.configurationEntity(entity)
 	if configurationEntity == nil {
 		return ErrRoomHeatingSysFnNotWritable
-	}
-	if a == nil || a.monitoring == nil {
-		return ErrRoomHeatingSysFnDataUnavailable
 	}
 	monitoringState, err := a.monitoring.State(entity)
 	if err != nil {
