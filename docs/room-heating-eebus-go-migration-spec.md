@@ -1,7 +1,7 @@
 # Room Heating auf eebus-go migrieren — Spec Proposal
 
 **Datum:** 2026-07-22
-**Status:** In Umsetzung — Phase 2 begonnen
+**Status:** In Umsetzung — Phase 3 begonnen
 **Scope:** Schrittweise Ablösung der bridge-lokalen Implementierungen für
 Configuration/Monitoring of Room Heating durch die bereits im gepinnten
 `eebus-go`-Fork enthaltenen Upstream-PRs, ohne Änderung des bestehenden gRPC-
@@ -668,6 +668,28 @@ Exit:
 
 Rollback: In einem Folgerelease wird die Legacy-Strategie wieder ausgewählt.
 Ein fehlgeschlagener Upstream-Write wird niemals im selben Request wiederholt.
+
+Umsetzungsstand 2026-07-22:
+
+- [x] Bridge-seitigen CRHSF-Writer eingeführt und als releaseweit einzige
+  Mode-Write-Strategie ausgewählt; der Legacy-Writer bleibt unverändert im
+  Baum und es existiert kein Request-Fallback.
+- [x] Angeforderte Modi werden vor dem Senden sowohl gegen die MRHSF- als auch
+  gegen die CRHSF-Modusliste geprüft. Abweichende oder fremde Modi senden
+  keinen Write.
+- [x] CRHSF-Result wird anhand des Message Counters context- und
+  timeoutgebunden abgewartet; Geräteablehnung, read-only, Data-Unavailable und
+  Context-Fehler bleiben auf die bestehenden Bridge-Sentinels abgebildet.
+- [x] Unit-, Composition- und vollständige Go-Suite für den Bridge-Teil grün.
+- [ ] CRHSF upstream auf eindeutige Mode-ID-Auflösung und Post-Result-Refresh
+  härten und den Fork-Pin aktualisieren. Der aktuelle Pin `b40877d34a63` wählt
+  bei mehreren IDs desselben Mode-Typs noch den ersten Treffer und refreshed
+  nach einem akzeptierten Write nicht explizit.
+- [ ] Den gemeinsamen `features/client.NewFeature`-Sentinel aus §4.6 upstream
+  einreichen und im Bridge-Mapping übernehmen; der aktuelle Pin liefert im
+  Disconnect-Rennen weiterhin nicht klassifizierbare Textfehler.
+- [ ] Hardwarematrix (alle Modi, mindestens zehn Übergänge sowie drei
+  Reconnect-/Restart-Zyklen) durchführen und Ausgangszustand wiederherstellen.
 
 ### Phase 4 — Upstream CRHT übernimmt Negotiation und Reads
 

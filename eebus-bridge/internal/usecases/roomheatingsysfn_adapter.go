@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 
 	eebusapi "github.com/enbility/eebus-go/api"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
@@ -122,9 +123,9 @@ type roomHeatingSystemFunctionWriter interface {
 	WriteOperationMode(context.Context, spineapi.EntityRemoteInterface, string) error
 }
 
-// RoomHeatingSystemFunctionAdapter combines MRHSF reads with the legacy CRHSF
-// configuration path. The two independently negotiated entities are composed
-// by normalized device SKI so a stale monitoring entity is never used for a
+// RoomHeatingSystemFunctionAdapter combines MRHSF reads with CRHSF
+// configuration. The two independently negotiated entities are composed by
+// normalized device SKI so a stale monitoring entity is never used for a
 // configuration write after reconnect.
 type RoomHeatingSystemFunctionAdapter struct {
 	monitoring    roomHeatingSystemFunctionReader
@@ -174,6 +175,16 @@ func (a *RoomHeatingSystemFunctionAdapter) WriteOperationMode(
 	configurationEntity := a.configurationEntity(entity)
 	if configurationEntity == nil {
 		return ErrRoomHeatingSysFnNotWritable
+	}
+	if a == nil || a.monitoring == nil {
+		return ErrRoomHeatingSysFnDataUnavailable
+	}
+	monitoringState, err := a.monitoring.State(entity)
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(monitoringState.AvailableModes, mode) {
+		return fmt.Errorf("%w: %s", ErrRoomHeatingSysFnInvalidMode, mode)
 	}
 	return a.configuration.WriteOperationMode(ctx, configurationEntity, mode)
 }

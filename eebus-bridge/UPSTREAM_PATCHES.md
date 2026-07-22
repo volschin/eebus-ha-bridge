@@ -34,6 +34,13 @@ the eebus-go revision used by the bridge.
 
 ## Known limitations (not yet filed upstream)
 
+- `crhsf.CRHSF.WriteOperationMode` currently selects the first related mode ID
+  whose description has the requested type. It does not deduplicate identical
+  IDs or fail closed when several distinct IDs share that type. Unlike the
+  hardened CDSF writer, it also does not request
+  `HvacSystemFunctionListData` again after an accepted result. Room-heating
+  Phase 3 therefore still needs an upstream hardening patch for unambiguous
+  mode resolution and post-result refresh before hardware acceptance.
 - `cdsf.CDSF.WriteCapabilities` deliberately returns zero capabilities with a
   nil error whenever required CDSF metadata is missing, ambiguous, or the
   device genuinely doesn't support the write (`usecases/ca/cdsf/public.go`).

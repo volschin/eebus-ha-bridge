@@ -74,9 +74,10 @@ func NewRoomHeatingSystemFunction(
 	return r
 }
 
-// newLegacyRoomHeatingSystemFunctionStrategy constructs only the Phase 2
-// capability inspector and writer. It deliberately has no UseCaseBase and no
-// event subscription: upstream CRHSF is the sole negotiation owner.
+// newLegacyRoomHeatingSystemFunctionStrategy constructs the retained
+// capability inspector and rollback writer. It deliberately has no
+// UseCaseBase and no event subscription: upstream CRHSF is the sole
+// negotiation owner.
 func newLegacyRoomHeatingSystemFunctionStrategy(
 	localEntity spineapi.EntityLocalInterface,
 	debug bool,

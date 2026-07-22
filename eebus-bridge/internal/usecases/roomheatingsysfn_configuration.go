@@ -4,10 +4,23 @@ import (
 	"context"
 
 	eebusapi "github.com/enbility/eebus-go/api"
+	ucapi "github.com/enbility/eebus-go/usecases/api"
 	cacrhsf "github.com/enbility/eebus-go/usecases/ca/crhsf"
 	spineapi "github.com/enbility/spine-go/api"
+	"github.com/enbility/spine-go/model"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
+
+type caCRHSFClient interface {
+	eebusapi.UseCaseInterface
+	RemoteEntitiesScenarios() []eebusapi.RemoteEntityScenarios
+	OperationModes(spineapi.EntityRemoteInterface) ([]ucapi.HvacOperationModeType, error)
+	WriteOperationMode(
+		spineapi.EntityRemoteInterface,
+		ucapi.HvacOperationModeType,
+		func(model.ResultDataType, model.MsgCounterType),
+	) (*model.MsgCounterType, error)
+}
 
 type roomHeatingSystemFunctionEntityResolver interface {
 	CompatibleEntity(string) eebus.EntityResolution
@@ -23,8 +36,9 @@ type roomHeatingOperationModeWriter interface {
 
 // CRHSFConfigurationFacade keeps upstream CRHSF negotiation and entity
 // resolution separate from the release-wide capability and writer strategies.
-// Phase 2 deliberately selects the bridge inspector and legacy writer; there
-// is no per-request fallback to a second writer.
+// Phase 3 retains the read-only bridge capability inspector while selecting
+// CRHSF as the sole writer. There is no per-request fallback to the legacy
+// writer.
 type CRHSFConfigurationFacade struct {
 	useCase             eebusapi.UseCaseInterface
 	resolver            roomHeatingSystemFunctionEntityResolver
@@ -49,9 +63,9 @@ func newCRHSFConfigurationFacade(
 // NewUpstreamRoomHeatingSystemFunctionConfiguration selects eebus-go CRHSF
 // for use-case negotiation, feature setup and cache population. Until CRHSF
 // exposes a fail-closed public WriteCapabilities API, a read-only bridge
-// inspector remains the capability owner and the legacy writer remains the
-// only selected write strategy. A nil upstream callback keeps MRHSF as the
-// sole owner of user-visible room-heating state events.
+// inspector remains the capability owner. CRHSF is the only selected write
+// strategy. A nil upstream callback keeps MRHSF as the sole owner of
+// user-visible room-heating state events.
 func NewUpstreamRoomHeatingSystemFunctionConfiguration(
 	localEntity spineapi.EntityLocalInterface,
 	debug bool,
@@ -61,11 +75,12 @@ func NewUpstreamRoomHeatingSystemFunctionConfiguration(
 	}
 	client := cacrhsf.NewCRHSF(localEntity, nil)
 	legacy := newLegacyRoomHeatingSystemFunctionStrategy(localEntity, debug)
+	inspector := bridgeRoomHeatingSystemFunctionCapabilityInspector{state: legacy}
 	return newCRHSFConfigurationFacade(
 		client,
 		crhsfEntityResolver{useCase: client},
-		bridgeRoomHeatingSystemFunctionCapabilityInspector{state: legacy},
-		legacy,
+		inspector,
+		&upstreamRoomHeatingOperationModeWriter{client: client, inspector: inspector},
 	)
 }
 

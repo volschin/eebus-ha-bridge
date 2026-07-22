@@ -184,6 +184,48 @@ func TestRoomHeatingSystemFunctionAdapterFailsClosedWithoutCRHSF(t *testing.T) {
 	}
 }
 
+func TestRoomHeatingSystemFunctionAdapterPrevalidatesMRHSFModes(t *testing.T) {
+	device := spinemocks.NewDeviceRemoteInterface(t)
+	device.EXPECT().Ski().Return("ab:cd")
+	monitoringEntity := spinemocks.NewEntityRemoteInterface(t)
+	monitoringEntity.EXPECT().Device().Return(device)
+	configurationEntity := spinemocks.NewEntityRemoteInterface(t)
+	reader := &fakeRoomHeatingSystemFunctionReader{state: RoomHeatingSystemFunctionState{
+		AvailableModes: []string{"auto", "on"},
+	}}
+	writer := &fakeRoomHeatingSystemFunctionWriter{entity: configurationEntity}
+
+	err := NewRoomHeatingSystemFunctionAdapter(reader, writer).WriteOperationMode(
+		context.Background(), monitoringEntity, "off",
+	)
+	if !errors.Is(err, ErrRoomHeatingSysFnInvalidMode) {
+		t.Fatalf("WriteOperationMode() error = %v, want ErrRoomHeatingSysFnInvalidMode", err)
+	}
+	if writer.writeEntity != nil {
+		t.Fatal("configuration writer was called for a mode absent from MRHSF")
+	}
+}
+
+func TestRoomHeatingSystemFunctionAdapterFailsClosedWhenMRHSFStateIsUnavailable(t *testing.T) {
+	device := spinemocks.NewDeviceRemoteInterface(t)
+	device.EXPECT().Ski().Return("ab:cd")
+	monitoringEntity := spinemocks.NewEntityRemoteInterface(t)
+	monitoringEntity.EXPECT().Device().Return(device)
+	configurationEntity := spinemocks.NewEntityRemoteInterface(t)
+	reader := &fakeRoomHeatingSystemFunctionReader{stateErr: ErrRoomHeatingSysFnDataUnavailable}
+	writer := &fakeRoomHeatingSystemFunctionWriter{entity: configurationEntity}
+
+	err := NewRoomHeatingSystemFunctionAdapter(reader, writer).WriteOperationMode(
+		context.Background(), monitoringEntity, "on",
+	)
+	if !errors.Is(err, ErrRoomHeatingSysFnDataUnavailable) {
+		t.Fatalf("WriteOperationMode() error = %v, want ErrRoomHeatingSysFnDataUnavailable", err)
+	}
+	if writer.writeEntity != nil {
+		t.Fatal("configuration writer was called with unavailable MRHSF state")
+	}
+}
+
 func TestRoomHeatingSystemFunctionAdapterKeepsMRHSFReadsWhenCRHSFStateIsUnavailable(t *testing.T) {
 	device := spinemocks.NewDeviceRemoteInterface(t)
 	device.EXPECT().Ski().Return("ab:cd")
