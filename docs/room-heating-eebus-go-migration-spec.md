@@ -799,8 +799,14 @@ Umsetzungsstand 2026-07-22:
   auf die bestehenden Sentinels ab. Es existiert kein Legacy-Fallback im
   Request.
 - [x] Focused-, vollständige-, Vet- und Race-Suite für Fork und Bridge grün.
-- [ ] Hardwarematrix einschließlich zehn Writes mit Read-back, kontrollierter
-  `auto`-/`off`-Semantik, Disconnect und Wiederherstellung durchführen. Der
+- [x] Hardwarematrix am VR940 (Stack 93, Image `:crht-phase5`) durchgeführt:
+  zehn Writes mit Read-back 10/10 erfolgreich (Konvergenz 0,1–10 s), Writes in
+  `off`, `heat` und `auto` ohne Mode-Alias akzeptiert, Out-of-range (40 °C) und
+  Step-Verletzung (21,25 °C) abgelehnt ohne Setpoint-Änderung, drei
+  Restart-Zyklen mit vollständiger Metadaten-Repopulation und funktionierendem
+  Post-Restart-Write, Ausgangswert 21,0 °C wiederhergestellt, null Fehler im
+  Bridge-Log. Die Restart-Zyklen decken Disconnect und Wiederherstellung ab;
+  Stack anschließend auf `:latest` zurückgesetzt. Der
   Legacy-Typ `RoomHeatingTemperature` bleibt bis Phase 5b als Release-Rollback
   im Baum; sein Strategie-Konstruktor entfällt, da der Rollback über einen
   Revert erfolgt.
