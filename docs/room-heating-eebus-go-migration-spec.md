@@ -28,6 +28,11 @@ wird ausschließlich die Ownership der generischen EEBUS-Semantik:
    [#233](https://github.com/enbility/eebus-go/pull/233) werden nicht erneut
    implementiert.
 
+Vorgeschaltet ist ein eigenständiger Fix zweier bereits vorhandener
+Bridge-Defekte (§4.7): doppelte Mode-Typen und mehrdeutige
+`roomAirTemperature`-Setpoints. Ohne ihn ist kein Phasen-Exit der Form
+„identisch zu vorher“ auswertbar.
+
 Die Migration erfolgt in getrennten, releaseweit rückrollbaren Phasen. Pro
 Request gibt es niemals einen automatischen Fallback vom Upstream-Writer auf
 den Legacy-Writer: Ein bereits am Gerät angekommener Befehl darf nicht über
@@ -79,11 +84,36 @@ Diese Daten sind Hardwareevidenz, keine zulässigen Konstanten. Entity-Adressen,
 Setpoint-, SystemFunction- und Mode-IDs werden weiterhin ausschließlich aus
 Descriptions und Relations aufgelöst.
 
+### 2.2 Verifizierte Befunde im aktuellen Bridge-Code
+
+Stand `322a9bc`. Diese Befunde sind am Code belegt und binden die Phasen-Exits;
+sie sind nicht identisch mit „so soll es bleiben“:
+
+| Ort | Verhalten heute | Bewertung |
+|---|---|---|
+| `internal/usecases/roomheatingsysfn.go:299-315` (`roomHeatingSystemFunctionID`) | genau eine Heating-SystemFunction, sonst `ErrRoomHeatingSysFnDataUnavailable` | bereits fail-closed; MRHSF muss dieses Niveau erreichen, nicht unterschreiten |
+| `internal/usecases/hvac_cache.go:51-61` (`operationModesForSystem`) | mehrere Relation-Einträge desselben Mode-Typs erzeugen doppelte Einträge in `AvailableModes`, und `idForType` überschreibt — **es gewinnt der letzte**, nicht der erste | Defekt, siehe §4.7 |
+| `internal/usecases/roomheatingtemp.go:221-233` (`roomHeatingSetpointID`) | erster Setpoint mit Scope `roomAirTemperature` gewinnt; mehrere Kandidaten werden nicht erkannt | Defekt, siehe §4.7 |
+| `internal/usecases/setpoint_flow.go` (`readSetpointState`/`validateSetpointWrite`) | fehlende Value/Range/Step-Felder ⇒ `ErrRoomHeatingDataUnavailable` | fail-closed; muss erhalten bleiben (§4.1) |
+| `internal/grpc/hvac_service.go:258-260` | `*OutOfRange`/`*InvalidStep`/`*InvalidMode` ⇒ `INVALID_ARGUMENT`; `*NotWritable`/`*Rejected` ⇒ `FAILED_PRECONDITION`; `*DataUnavailable` ⇒ `UNAVAILABLE` | Referenzverhalten für §7 |
+| `custom_components/eebus/climate.py:74-81` | `TARGET_TEMPERATURE` an Setpoint-Writable, `TURN_ON`/`TURN_OFF` an `mode_writable && available_modes` gebunden | Capability-Regression wäre in HA sofort sichtbar |
+
+Die Bridge importiert `usecases/ca/crht`, `usecases/ca/crhsf` und
+`usecases/ma/mrhsf` bislang nicht (verifiziert über die Import-Liste in
+`internal/`); importiert sind nur `ma/mrt`, `ma/mot`, `ma/mdt`, `ma/mpc`,
+`ma/mdsf` und `ca/cdsf`.
+
 ## 3. Analyse der relevanten eebus-go-PRs
 
 Stand 2026-07-22 sind alle folgenden PRs offen und gegen `enbility/eebus-go:dev`
 mergebar. Die Upstream-Checks `Build` und `gosec` sind grün; formale Reviews
 fehlen noch.
+
+Die Spalte „analysierter Head“ nennt den PR-Head bei `enbility`. Sie ist **nicht**
+identisch mit den in `eebus-bridge/UPSTREAM_PATCHES.md` gepinnten Cherry-picks im
+Fork (#239 → `237461d19a74`, #240 → `c72bfd76e95a`, #241 → `c6415cc4b453`,
+#242 → `a5640012fbd6`). Beide Listen müssen bei jedem Fork-Rebase gemeinsam
+aktualisiert werden.
 
 | PR | analysierter Head | Bedeutung | Bewertung für diese Migration |
 |---|---|---|---|
@@ -95,6 +125,13 @@ fehlen noch.
 | [#233 MOT](https://github.com/enbility/eebus-go/pull/233) | `f304f83a4e0c` | Außentemperatur | Bereits integriert, aber kein Teil der Room-Heating-Ownership. |
 | [#248 VHAN](https://github.com/enbility/eebus-go/pull/248) | `da0e479c8333` | Namen für HeatingCircuit, HeatingZone und HVACRoom | Optionaler Multi-Zone-Baustein. Der bekannte VR940 kündigt VHAN mit `available=false` an; deshalb kein Gate und kein Bestandteil der ersten Migration. |
 | [#251 Write gate](https://github.com/enbility/eebus-go/pull/251) | `4102a3a8dd67` | konsistentes `Write()`-Gate für andere Client-Features | Gutes generisches Hardening, aber #239 enthält das Gate für HVAC/Setpoint bereits. Separat integrieren; kein Heating-Blocker. |
+
+Zusätzlich enthält der Fork drei bereits gemergte Integrations-Härtungen, die
+für Heating als Vorlage dienen und deren Heating-Äquivalente noch fehlen:
+`volschin/eebus-go#1` (fail-closed List-Merges, Payload-Tests), `#2`
+(strukturierte CDSF-`WriteCapabilities` plus Post-Acceptance-Refresh) und `#3`
+(unabhängige, fail-closed Capability-Auflösung optionaler Szenarien). §4.2 und
+§4.4 beschreiben genau die Heating-Fassung dieser drei Patches.
 
 Die Cooling-PRs #243–#245 sind absichtlich nicht Teil dieses Scopes. Sie sind
 strukturell ähnlich, aber weder durch die aktuelle Hardware noch durch das
@@ -177,6 +214,34 @@ Bis diese API existiert, darf vorübergehend ein read-only Capability-Inspector
 in der Bridge verbleiben. Er sendet keine Befehle und wird nach dem Muster der
 abgeschlossenen CDSF-Migration wieder entfernt.
 
+#### 4.2.1 Bekannter CDSF-Fehler, der hier nicht wiederholt werden darf
+
+`cdsf.CDSF.WriteCapabilities` liefert laut „Known limitations“ in
+`eebus-bridge/UPSTREAM_PATCHES.md` bei fehlenden, mehrdeutigen *und* bei
+schlicht noch nicht befüllten Caches identisch `zero capabilities, nil error`.
+Ergebnis in Produktion: Ein DHW-Write im Fenster direkt nach Connect meldet
+`FAILED_PRECONDITION` („nicht schreibbar“) statt vormals `UNAVAILABLE`
+(„später erneut“) — eine bewusst akzeptierte Regression ohne bridge-seitigen
+Fix.
+
+Die Heating-`WriteCapabilities` müssen diese drei Fälle unterscheidbar machen,
+bevor Phase 2 den Capability-Owner wechselt. Verbindliche Zielform:
+
+```go
+// Fehler statt stiller Nullwerte, solange nichts entschieden werden kann.
+// ErrDataNotAvailable  -> Use Case/Cache noch nicht befüllt   -> UNAVAILABLE
+// Capabilities{false}  -> ausgehandelt, Gerät erlaubt es nicht -> FAILED_PRECONDITION
+WriteCapabilities(spineapi.EntityRemoteInterface) (
+    ucapi.RoomHeatingSystemFunctionWriteCapabilities, error,
+)
+```
+
+Mehrdeutige Metadaten (mehrere Heating-SystemFunctions, mehrere Setpoint-
+Kandidaten) sind ein Fehler, keine „false“-Capability. Wird diese Trennung
+upstream nicht erreicht, bleibt der Bridge-Inspector Capability-Owner und
+Phase 2 gilt als nicht erreicht — ein Übernehmen der CDSF-Semantik wäre eine
+wissentliche Wiederholung derselben Regression.
+
 ### 4.3 CRHT-API und bestehender SKI-basierter gRPC-Write passen nicht zusammen
 
 Der bestehende RPC erhält nur `ski` und `value_celsius`. `CRHT.WriteSetpoint`
@@ -230,9 +295,8 @@ dem Ownership-Wechsel keine zweite rohe SPINE-Refresh-Implementierung.
 CRHSF verlangt bereits genau eine Heating-SystemFunction. MRHSF verwendet
 aktuell den ersten Treffer. Monitoring und Configuration könnten dadurch bei
 einem Gerät mit mehreren Heating-SystemFunctions unterschiedliche Einträge
-anzeigen beziehungsweise steuern. Außerdem wählen die aktuellen CRHT-/CRHSF-
-Writes bei mehreren verschiedenen, aber gleich benannten Mode-IDs den ersten
-Treffer.
+anzeigen beziehungsweise steuern. Außerdem lösen die aktuellen CRHT-/CRHSF-
+Writes mehrere verschiedene Mode-IDs mit demselben Mode-Typ nicht eindeutig auf.
 
 #242 muss ebenfalls `ErrDataNotAvailable` liefern, wenn nicht exakt eine
 passende Heating-SystemFunction auf der ausgehandelten `HVACRoom` existiert.
@@ -253,6 +317,38 @@ exportierte Sentinel-Fehler kann die Bridge diese nicht stabil als temporär
 Dieses Follow-up gilt für alle eebus-go-Use-Cases, wird für Heating aber Teil
 der Exit-Kriterien, weil Reconnects während eines Climate-Writes realistisch
 sind. String-Matching in der Bridge ist ausgeschlossen.
+
+Der Punkt ist bereits als „Known limitation“ in `UPSTREAM_PATCHES.md` für die
+DHW-Writer (`mapUpstreamDHWWriteError`) dokumentiert: Solche Fehler landen dort
+heute in `codes.Internal` statt `codes.Unavailable`. Heating erbt diesen Defekt
+mit dem ersten Upstream-Write. Ein gemeinsames Upstream-Sentinel-PR löst beide
+Domänen zugleich und ist deshalb vor Phase 3 einzureichen.
+
+### 4.7 Bestehende Bridge-Defekte, die vor dem Ownership-Wechsel zu klären sind
+
+Zwei Defekte existieren bereits im lokalen Pfad (§2.2). Sie sind kein Ergebnis
+der Migration, dürfen aber weder mitgeschleppt noch stillschweigend durch
+abweichendes Upstream-Verhalten „gefixt“ werden — sonst ist der
+Phasen-Exit „Verhalten identisch zu vorher“ nicht auswertbar.
+
+1. **Doppelte Mode-Typen (`hvac_cache.go:51-61`).** Enthält die Relation zwei
+   IDs mit demselben `OperationModeType`, erscheint der Typ doppelt in
+   `AvailableModes` und `idForType` behält die **zuletzt** gesehene ID. Ein
+   Mode-Write trifft damit eine nicht determinierte ID. Zielverhalten:
+   `AvailableModes` wird nach Typ dedupliziert; bleibt für einen angeforderten
+   Typ mehr als eine ID übrig, ist der Write `ErrRoomHeatingSysFnInvalidMode`
+   statt einer Zufallsauswahl. Der bereits gemergte DHW-Pfad
+   (`dhwsysfn_upstream_mode.go:37-45`) delegiert die ID-Auflösung an Upstream und
+   dokumentiert dieselbe Einschränkung — Heating muss dieselbe Regel treffen.
+2. **Erster `roomAirTemperature`-Setpoint gewinnt (`roomheatingtemp.go:221-233`).**
+   Zielverhalten: genau ein vollständig auflösbarer Kandidat, sonst
+   `ErrRoomHeatingDataUnavailable`.
+
+Beide Korrekturen gehören in **Phase 0** und in den lokalen Pfad, damit die
+Charakterisierungstests aus Phase 0 die *gewollte* Semantik festschreiben und
+die späteren Exits auf Gleichheit prüfen können. Am beobachteten VR940 ändert
+das nichts (ein Setpoint, disjunkte Mode-Typen); es ist deshalb ein risikoarmer,
+eigenständig releasebarer Vorabfix.
 
 ## 5. Zielarchitektur
 
@@ -301,7 +397,12 @@ worden sein.
 ### 5.3 Schmale, mockbare Facades
 
 Die Bridge hängt nicht direkt überall von den konkreten Typen ab. Analog zur
-DHW-CDSF-Migration werden schmale Interfaces eingeführt:
+abgeschlossenen DHW-CDSF-Migration werden schmale Interfaces eingeführt. Die
+konkreten Vorlagen im Repo sind `internal/usecases/dhwsysfn_adapter.go`
+(Monitoring-State + Configuration-Capability zu einem Facade-State komponiert),
+`dhwsysfn_configuration.go` (Client-Interface, Capability-Inspector,
+`awaitDHWWrite`) und `dhwsysfn_upstream_mode.go` (Vorvalidierung, Write,
+Fehlerabbildung):
 
 ```go
 type maMRHSFClient interface {
@@ -381,6 +482,8 @@ wären Entity-/Zone-Identifier in Requests, State und Unique IDs nötig. VHAN
 | Use Case/Szenario nicht ausgehandelt, `Write()` fehlt oder Changeability explizit false | `ErrRoomHeatingNotWritable` / `ErrRoomHeatingSysFnNotWritable` | `FAILED_PRECONDITION` |
 | Gerät liefert non-zero `ResultData.ErrorNumber` | `ErrRoomHeatingRejected` / `ErrRoomHeatingSysFnRejected` | `FAILED_PRECONDITION` |
 | Entity, Presence, Relation, Constraints oder Counter fehlen/mehrdeutig | bestehende Data-Unavailable-Sentinels | `UNAVAILABLE` beziehungsweise `NOT_FOUND` bei fehlender Entity |
+| Capability upstream noch nicht befüllt (kein Negotiation-Ergebnis) | `ErrRoomHeating*DataUnavailable` | `UNAVAILABLE`, ausdrücklich **nicht** `FAILED_PRECONDITION` (§4.2.1) |
+| Feature-Binding während des Writes verschwunden (Disconnect-Race) | Upstream-Sentinel (§4.6) | `UNAVAILABLE`; ohne Sentinel heute `Internal` — Exit-Kriterium |
 | Context abgebrochen/Deadline überschritten | `context.Canceled` / `context.DeadlineExceeded` | bestehendes Context-Mapping |
 
 `api.ErrNotSupported` ist ohne Vorvalidierung mehrdeutig. Deshalb validiert der
@@ -402,12 +505,17 @@ Arbeiten:
    Restore auf den Ausgangswert.
 4. Prüfen, ob Upstream-Configuration ohne Feature-Binding am VR940 schreiben
    kann; #240/#241 subscriben, der heutige lokale Pfad bindet zusätzlich.
+5. Die beiden Defekte aus §4.7 im lokalen Pfad beheben (Mode-Dedup mit
+   fail-closed Mehrdeutigkeit, eindeutiger `roomAirTemperature`-Setpoint) und
+   mit Tabellentests belegen.
 
 Exit:
 
 - Ein reproduzierbarer Capture dokumentiert Entity, Firmware, Ausgangswerte,
   Write-Result und Read-back.
 - Kein öffentlicher Vertrag wurde geändert.
+- Die §4.7-Semantik ist als Invariante getestet und dient allen folgenden
+  „identisch zu vorher“-Exits als Referenz.
 
 ### Phase 1 — MRHSF übernimmt Reads und State-Events
 
@@ -458,7 +566,11 @@ Arbeiten:
 1. Angeforderten Mode gegen die MRHSF-/CRHSF-Relation vorvalidieren.
 2. `CRHSF.WriteOperationMode` aufrufen und Result contextgebunden abwarten.
 3. Post-Result-Refresh durch eebus-go sicherstellen.
-4. Bridge-lokale Mode-ID-, Relation-, List-Merge- und Write-Logik entfernen.
+4. Die bridge-lokale Mode-ID-, Relation-, List-Merge- und Write-Logik bleibt in
+   diesem PR unverändert im Baum, nur nicht mehr verdrahtet. Ihre Löschung ist
+   ein eigener PR **nach** bestandener Hardwarematrix (§10, „Der alte Writer
+   wird erst nach Hardware-Abnahme entfernt“) — andernfalls wäre der unten
+   genannte Rollback im Folgerelease nicht möglich.
 
 Exit:
 
@@ -486,7 +598,10 @@ Arbeiten:
 Exit:
 
 - Wert, Minimum, Maximum, Step und Writable-State sind identisch zur lokalen
-  Implementierung.
+  Implementierung *in der nach §4.7 korrigierten Fassung*. Für den VR940
+  (genau ein `roomAirTemperature`-Setpoint) ist das wörtlich identisch; ein
+  Gerät mit mehreren Kandidaten wird beidseitig unavailable statt
+  erstbester Treffer.
 - Fehlende einzelne Remote-Felder machen den Setpoint unavailable und werden
   nicht zu Nullwerten.
 - Constraint- und Value-Events konvergieren ohne doppelte Publikation.
@@ -504,7 +619,8 @@ Arbeiten:
 1. Wert in der Bridge weiterhin auf finite/range/step validieren.
 2. Upstream-Write ohne Mode-Alias ausführen.
 3. Result contextgebunden abwarten; eebus-go refreshed danach die Liste.
-4. Bridge-lokale Setpoint-ID-, Constraint-, Full-List- und Write-Logik löschen.
+4. Bridge-lokale Setpoint-ID-, Constraint-, Full-List- und Write-Logik
+   abklemmen; Löschung wie in Phase 3 erst im Folge-PR nach Hardware-Abnahme.
 
 Exit:
 
@@ -513,6 +629,23 @@ Exit:
 - Zehn Writes mit Read-back und Wiederherstellung sind erfolgreich.
 - Out-of-range, falscher Step, read-only, non-zero Result, Timeout und
   Disconnect behalten ihre Fehlercodes.
+
+### Phase 5b — Legacy-Code löschen
+
+Erst nach bestandener Hardwarematrix für Phase 3 und Phase 5, als eigener PR
+ohne Verhaltensänderung. Zu erwartende Löschungen bzw. Restumfänge:
+
+| Datei | erwartetes Ergebnis |
+|---|---|
+| `internal/usecases/roomheatingsysfn.go` | Facade + Entity-Resolution bleiben; Mode-ID-, Relation-, List-Merge- und Write-Teile entfallen |
+| `internal/usecases/roomheatingtemp.go` | Facade bleibt; Setpoint-ID-Auflösung und Write entfallen |
+| `internal/usecases/hvac_cache.go` | vollständig entfernbar, sobald Room Heating der letzte Nutzer war (DHW nutzt es nach der CDSF-Migration nicht mehr) |
+| `internal/usecases/hvac_write_flow.go` | entfällt mit dem letzten rohen HVAC-Write |
+| `internal/usecases/setpoint_flow.go` | entfällt mit dem letzten rohen Setpoint-Write; Range-/Step-Validierung wandert in den Heating-Facade |
+| `internal/grpc/hvac_service.go` | unverändert — Sentinel-Namen und Mapping bleiben Vertrag |
+
+Ein Nachweis, dass keine dieser Dateien mehr referenziert wird, ist Teil des
+PRs (`go build ./... && go vet ./...` plus Grep auf die entfernten Symbole).
 
 ### Phase 6 — Fork-Patches abbauen
 
@@ -547,6 +680,11 @@ Exit:
 - Adapter kombiniert MRHSF-State ausschließlich mit CRHSF-Capability;
 - vollständige und unvollständige CRHT-State-Konvertierung;
 - Mode-Deduplizierung und unbekannte Mode-Typen;
+- zwei Mode-IDs mit gleichem Typ ⇒ ein Eintrag in `AvailableModes`, Write auf
+  diesen Typ ⇒ `INVALID_ARGUMENT` statt Zufallsauswahl (§4.7);
+- mehrere `roomAirTemperature`-Setpoints ⇒ `UNAVAILABLE` (§4.7);
+- Capability noch nicht ausgehandelt ⇒ `UNAVAILABLE`, nicht
+  `FAILED_PRECONDITION` (§4.2.1);
 - synchroner und asynchroner Callback;
 - falscher/nil Message Counter;
 - Sendefehler, Geräteablehnung, Cancellation, Deadline und interner Timeout;
@@ -616,7 +754,7 @@ Die Migration ist abgeschlossen, wenn:
 - CRHSF ausschließlich Configuration-Capability und Mode-Writes besitzt;
 - CRHT Setpoint-State, Constraints und Setpoint-Writes besitzt;
 - die Bridge keine generische Heating-ID-, Relation-, Cache- oder List-Merge-
-  Semantik mehr implementiert;
+  Semantik mehr implementiert (nachgewiesen über die Löschliste in Phase 5b);
 - die Bridge nur Entity-Komposition, Context/Result-Adaptation, Fehlerabbildung,
   EventBus, gRPC und HA-Policy behält;
 - bestehende gRPC-/HA-Verträge und Unique IDs unverändert sind;
