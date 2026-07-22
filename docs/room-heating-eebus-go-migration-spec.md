@@ -1,7 +1,7 @@
 # Room Heating auf eebus-go migrieren — Spec Proposal
 
 **Datum:** 2026-07-22
-**Status:** In Umsetzung — Phase 0 begonnen
+**Status:** In Umsetzung — Phase 1 begonnen
 **Scope:** Schrittweise Ablösung der bridge-lokalen Implementierungen für
 Configuration/Monitoring of Room Heating durch die bereits im gepinnten
 `eebus-go`-Fork enthaltenen Upstream-PRs, ohne Änderung des bestehenden gRPC-
@@ -57,7 +57,7 @@ Der produktive Dependency-Satz enthält die benötigten Upstream-Beiträge berei
 
 ```text
 replace github.com/enbility/eebus-go =>
-        github.com/volschin/eebus-go@2845a153ae11
+        github.com/volschin/eebus-go@b40877d34a63
 ```
 
 `eebus-bridge/UPSTREAM_PATCHES.md` inventarisiert #239–#242. Die Bridge importiert
@@ -559,6 +559,22 @@ Exit:
 - Pro Remote-Update entsteht genau ein Benutzerzustands-Event.
 - Fresh start, drei Reconnects und drei Bridge-Restarts repopulieren den State.
 - Modus-Writes laufen noch ausschließlich über den Legacy-Writer.
+
+Umsetzungsstand 2026-07-22:
+
+- [x] #242 auf eindeutige Heating-SystemFunction gehärtet: Fork-PR
+  `volschin/eebus-go#4` verlangt genau einen Treffer und ist über den
+  `bridge-integration`-Commit `b40877d34a63` gepinnt.
+- [x] `RoomHeatingSystemFunctionMonitoring` um `mrhsf.NewMRHSF` eingeführt;
+  Operation Mode und deduplizierte Mode-Liste kommen aus MRHSF.
+- [x] `RoomHeatingSystemFunctionAdapter` komponiert MRHSF-Reads mit
+  Legacy-CRHSF-Writeability und -Writes über separat per SKI aufgelöste
+  Entities.
+- [x] MRHSF und Legacy-CRHSF separat registriert; der Legacy-CRHSF-EventBus ist
+  deaktiviert, sodass nur MRHSF SystemFunction-State-Events publiziert.
+- [x] Unit-, Composition-, vollständige Go-, Vet- und Race-Suite grün.
+- [ ] Fresh Start, drei Reconnects und drei Bridge-Restarts auf Zielhardware
+  prüfen; Mode- und Event-Gleichheit im Hardware-Capture bestätigen.
 
 ### Phase 2 — Upstream CRHSF übernimmt Negotiation und Capability
 
