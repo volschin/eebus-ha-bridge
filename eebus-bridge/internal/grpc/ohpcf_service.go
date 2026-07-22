@@ -63,6 +63,15 @@ type OHPCFController interface {
 	Abort(spineapi.EntityRemoteInterface) error
 }
 
+// ohpcfRefreshController is implemented by production controllers that can
+// actively reconcile their remote feature cache. Keeping this optional leaves
+// deterministic read/controller fakes and alternative adapters lightweight.
+type ohpcfRefreshController interface {
+	Refresh(spineapi.EntityRemoteInterface)
+}
+
+var _ ohpcfRefreshController = (*usecases.OHPCFWrapper)(nil)
+
 // OHPCFServiceOption customizes the OHPCF adapter at construction time.
 type OHPCFServiceOption func(*OHPCFService)
 
@@ -112,6 +121,27 @@ func (s *OHPCFService) GetCompressorFlexibility(_ context.Context, req *pb.Devic
 		s.registry.RecordCapabilityRead(req.Ski, eebus.CapabilityOHPCF, nil)
 	}
 	return flexibility, nil
+}
+
+// RefreshCompressorFlexibility starts a best-effort remote reconciliation for
+// snapshot reads. The resulting SPINE reply updates the cache and emits the
+// normal OHPCF state/data events; it does not make the current snapshot wait on
+// network I/O or discard its last coherent value.
+func (s *OHPCFService) RefreshCompressorFlexibility(ski string) {
+	if s.ohpcf == nil {
+		return
+	}
+	entity, err := s.resolveEntity(ski)
+	if err != nil {
+		return
+	}
+	s.refresh(entity)
+}
+
+func (s *OHPCFService) refresh(entity spineapi.EntityRemoteInterface) {
+	if refresher, ok := s.ohpcf.(ohpcfRefreshController); ok {
+		refresher.Refresh(entity)
+	}
 }
 
 func (s *OHPCFService) ControlCompressorFlexibility(_ context.Context, req *pb.ControlCompressorRequest) (*pb.Empty, error) {

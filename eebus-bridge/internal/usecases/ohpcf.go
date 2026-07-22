@@ -7,6 +7,7 @@ import (
 	"time"
 
 	eebusapi "github.com/enbility/eebus-go/api"
+	"github.com/enbility/eebus-go/features/client"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
 	cemohpcf "github.com/enbility/eebus-go/usecases/cem/ohpcf"
 	spineapi "github.com/enbility/spine-go/api"
@@ -123,6 +124,26 @@ func (w *OHPCFWrapper) OptionalPowerConsumptionAvailable(entity spineapi.EntityR
 		return false, errOHPCFNotInitialized
 	}
 	return w.uc.OptionalPowerConsumptionAvailable(entity)
+}
+
+// Refresh requests the current SmartEnergyManagementPs data from the remote
+// compressor. The reply updates the spine-go feature cache asynchronously and
+// is surfaced through HandleEvent, so callers keep serving the last coherent
+// cache value while the reconciliation request is in flight.
+func (w *OHPCFWrapper) Refresh(entity spineapi.EntityRemoteInterface) {
+	if w.uc == nil || w.localEntity == nil || entity == nil {
+		return
+	}
+	feature, err := client.NewSmartEnergyManagementPs(w.localEntity, entity)
+	if err != nil {
+		if w.debug {
+			log.Printf("[OHPCF] refresh setup failed: %v", err)
+		}
+		return
+	}
+	if _, err := feature.RequestData(); err != nil && w.debug {
+		log.Printf("[OHPCF] refresh request failed: %v", err)
+	}
 }
 
 // CompatibleEntity returns the first remote entity that actually supports the

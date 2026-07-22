@@ -82,6 +82,8 @@ func (*snapshotPayloads) AttachOHPCFPayload(event *pb.OHPCFEvent, _ string, _ ee
 	return true
 }
 
+func (*snapshotPayloads) RefreshCompressorFlexibility(string) {}
+
 func snapshotService(bus *eebus.EventBus, registry *eebus.DeviceRegistry, payloads *snapshotPayloads) *bridgegrpc.DeviceService {
 	payloads.registry = registry
 	sources := bridgegrpc.DeviceStatePayloadSources{

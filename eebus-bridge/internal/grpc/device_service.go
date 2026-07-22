@@ -69,6 +69,7 @@ type HVACPayloadSource interface {
 
 type OHPCFPayloadSource interface {
 	AttachOHPCFPayload(*pb.OHPCFEvent, string, eebus.EventType) bool
+	RefreshCompressorFlexibility(string)
 }
 
 func WithDeviceStatePayloads(sources DeviceStatePayloadSources) DeviceServiceOption {

@@ -177,6 +177,7 @@ func (a *DeviceSnapshotAssembler) Build(ski string, revision uint64) (*pb.Device
 		a.ohpcf.AttachOHPCFPayload(flexibility, ski, eebus.EventTypeOHPCFConsumptionStateUpdated)
 		result.CompressorFlexibility = flexibility.GetFlexibility()
 		result.CompressorFlexibilityState = valueState(eebus.CapabilityOHPCF, result.CompressorFlexibility != nil, true)
+		a.ohpcf.RefreshCompressorFlexibility(ski)
 	} else {
 		result.CompressorFlexibilityState = valueState(eebus.CapabilityOHPCF, false, false)
 	}

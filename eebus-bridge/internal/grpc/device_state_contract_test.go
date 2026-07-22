@@ -77,6 +77,8 @@ func (completeDeviceStatePayloads) AttachOHPCFPayload(event *pb.OHPCFEvent, _ st
 	return true
 }
 
+func (completeDeviceStatePayloads) RefreshCompressorFlexibility(string) {}
+
 func TestEveryDeclaredEventTypeHasExplicitDeviceStateClassification(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
