@@ -322,7 +322,14 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 			dhwSystemFunctionConfiguration,
 		)
 		roomHeatingTemperature := usecases.NewRoomHeatingTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
-		roomHeatingSystemFunction := usecases.NewRoomHeatingSystemFunction(localEntity, bus, registry, cfg.Logging.DebugEvents)
+		roomHeatingSystemFunctionMonitoring := usecases.NewRoomHeatingSystemFunctionMonitoring(bus, registry, cfg.Logging.DebugEvents)
+		// MRHSF owns reads and state events. The local CRHSF implementation stays
+		// registered only as the legacy configuration/write owner during Phase 1.
+		roomHeatingSystemFunctionConfiguration := usecases.NewRoomHeatingSystemFunction(localEntity, nil, registry, cfg.Logging.DebugEvents)
+		roomHeatingSystemFunction := usecases.NewRoomHeatingSystemFunctionAdapter(
+			roomHeatingSystemFunctionMonitoring,
+			roomHeatingSystemFunctionConfiguration,
+		)
 		hydraulicTemperatures := usecases.NewHydraulicTemperatures(bus, registry, cfg.Logging.DebugEvents)
 		deviceOperatingState := usecases.NewDeviceOperatingState(bus, registry, cfg.Logging.DebugEvents)
 
@@ -463,10 +470,15 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 			},
 			{
 				name: "HVAC",
+				setup: func() error {
+					roomHeatingSystemFunctionMonitoring.Setup(localEntity)
+					return nil
+				},
 				registerUseCases: useCaseRegistrar(
 					bridgeSvc,
 					eebusUseCaseRegistration{name: "RoomHeatingTemperature", useCase: func() eebusapi.UseCaseInterface { return roomHeatingTemperature.UseCase() }},
-					eebusUseCaseRegistration{name: "RoomHeatingSystemFunction", useCase: func() eebusapi.UseCaseInterface { return roomHeatingSystemFunction.UseCase() }},
+					eebusUseCaseRegistration{name: "MRHSF", useCase: func() eebusapi.UseCaseInterface { return roomHeatingSystemFunctionMonitoring.UseCase() }},
+					eebusUseCaseRegistration{name: "RoomHeatingSystemFunctionConfiguration", useCase: func() eebusapi.UseCaseInterface { return roomHeatingSystemFunctionConfiguration.UseCase() }},
 				),
 				registerGRPC: func(srv *bridgegrpc.Server) {
 					pb.RegisterHVACServiceServer(srv.GRPCServer(), hvacService)
