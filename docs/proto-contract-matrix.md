@@ -15,6 +15,7 @@ existing streams requires a new API package such as `eebus.v2`.
 | `LPCEvent.heartbeat_update` | next release after `0.14.0` | Additive payload on heartbeat deltas; old clients ignore it, new clients no longer wait for periodic reconciliation. |
 | `DeviceStatus.readiness` / `recovery` | next release after `0.14.0` | Additive device-scoped states distinguish untrusted, disconnected, grace-period, recovering, ready, and exhausted without changing process-wide gRPC health. |
 | `DeviceService.GetDeviceDiagnostics` / `FEATURE_OPERATIONAL_DIAGNOSTICS` | next release after `0.14.0` | Authenticated, feature-negotiated operational projection with redacted SKI, event/drop/resync counters, connection/monitoring and snapshot freshness, recovery, provider sample state, and advertised features. Older bridges simply omit this diagnostics section. |
+| `PairedDevice` software and hardware revisions | next release after `0.15.0` | Additive classification fields. New clients map values reported through SPINE DeviceClassification into the Home Assistant device registry; old clients ignore them. Missing remote fields remain unset rather than being guessed. |
 | Deprecated `LPCService.StartHeartbeat` / `StopHeartbeat` | `<= 0.12.x`, retained in `0.13.x` | Kept for old clients; removal is only allowed in a future non-v1 package. |
 
 Compatibility rule: additive fields, messages, RPCs, and services may continue

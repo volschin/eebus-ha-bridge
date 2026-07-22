@@ -561,6 +561,14 @@ inventory update.
 - The old strategy is deleted only after the corresponding phase exit criteria
   are met.
 
+### Checklist for every completed phase
+
+- [ ] Update this specification's status header to the phase actually reached.
+- [ ] Remove stale comments and documentation references to deleted writers,
+  superseded ownership, or hardware validation that has already completed.
+- [ ] Reconcile the known upstream limitations and the patch inventory with the
+  new state, explicitly recording every limitation that remains.
+
 ## 13. Upstream follow-up candidates
 
 The following generic improvements should be proposed upstream rather than kept

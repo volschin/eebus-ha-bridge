@@ -1619,6 +1619,8 @@ type PairedDevice struct {
 	Serial            string                 `protobuf:"bytes,4,opt,name=serial,proto3" json:"serial,omitempty"`
 	DeviceType        string                 `protobuf:"bytes,5,opt,name=device_type,json=deviceType,proto3" json:"device_type,omitempty"`
 	SupportedUseCases []string               `protobuf:"bytes,6,rep,name=supported_use_cases,json=supportedUseCases,proto3" json:"supported_use_cases,omitempty"`
+	SoftwareRevision  string                 `protobuf:"bytes,7,opt,name=software_revision,json=softwareRevision,proto3" json:"software_revision,omitempty"`
+	HardwareRevision  string                 `protobuf:"bytes,8,opt,name=hardware_revision,json=hardwareRevision,proto3" json:"hardware_revision,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1693,6 +1695,20 @@ func (x *PairedDevice) GetSupportedUseCases() []string {
 		return x.SupportedUseCases
 	}
 	return nil
+}
+
+func (x *PairedDevice) GetSoftwareRevision() string {
+	if x != nil {
+		return x.SoftwareRevision
+	}
+	return ""
+}
+
+func (x *PairedDevice) GetHardwareRevision() string {
+	if x != nil {
+		return x.HardwareRevision
+	}
+	return ""
 }
 
 type ListPairedDevicesResponse struct {
@@ -2543,7 +2559,7 @@ const file_eebus_v1_device_service_proto_rawDesc = "" +
 	"\x13ListDevicesResponse\x124\n" +
 	"\adevices\x18\x01 \x03(\v2\x1a.eebus.v1.DiscoveredDeviceR\adevices\"&\n" +
 	"\x12RegisterSKIRequest\x12\x10\n" +
-	"\x03ski\x18\x01 \x01(\tR\x03ski\"\xb5\x01\n" +
+	"\x03ski\x18\x01 \x01(\tR\x03ski\"\x8f\x02\n" +
 	"\fPairedDevice\x12\x10\n" +
 	"\x03ski\x18\x01 \x01(\tR\x03ski\x12\x14\n" +
 	"\x05brand\x18\x02 \x01(\tR\x05brand\x12\x14\n" +
@@ -2551,7 +2567,9 @@ const file_eebus_v1_device_service_proto_rawDesc = "" +
 	"\x06serial\x18\x04 \x01(\tR\x06serial\x12\x1f\n" +
 	"\vdevice_type\x18\x05 \x01(\tR\n" +
 	"deviceType\x12.\n" +
-	"\x13supported_use_cases\x18\x06 \x03(\tR\x11supportedUseCases\"M\n" +
+	"\x13supported_use_cases\x18\x06 \x03(\tR\x11supportedUseCases\x12+\n" +
+	"\x11software_revision\x18\a \x01(\tR\x10softwareRevision\x12+\n" +
+	"\x11hardware_revision\x18\b \x01(\tR\x10hardwareRevision\"M\n" +
 	"\x19ListPairedDevicesResponse\x120\n" +
 	"\adevices\x18\x01 \x03(\v2\x16.eebus.v1.PairedDeviceR\adevices\"Y\n" +
 	"\vDeviceEvent\x12\x10\n" +

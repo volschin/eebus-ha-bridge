@@ -182,6 +182,8 @@ message PairedDevice {
   string serial = 4;
   string device_type = 5;
   repeated string supported_use_cases = 6;
+  string software_revision = 7;
+  string hardware_revision = 8;
 }
 
 message ListPairedDevicesResponse {

@@ -119,8 +119,12 @@ Scope-Ausschlüsse, Profil-Parsing, Blocküberlappung und Prozentberechnung.
 Der gleiche Checker erzeugt aus dem vollständigen Profil das eingecheckte
 `docs/badges/go-coverage.svg`. Das README bindet diese lokale Datei direkt ein;
 es gibt keine Abhängigkeit von einem externen Coverage- oder Badge-Dienst. Die
-CI regeneriert das SVG und schlägt bei einer Abweichung vom eingecheckten Badge
-fehl. Lokal wird es mit folgendem Zusatz zur Patch-Prüfung aktualisiert:
+CI vergleicht den auf eine Nachkommastelle gerundeten Messwert mit dem
+eingecheckten Badge und toleriert eine Abweichung von höchstens **0,2
+Prozentpunkten**. Erst bei einer größeren Abweichung muss das Badge aktualisiert
+werden. Damit blockieren nicht-deterministische Schwankungen einzelner
+Nebenläufigkeitspfade nicht mehr wegen eines Zehntelprozentpunkts. Lokal wird
+das Badge mit folgendem Zusatz zur Patch-Prüfung aktualisiert:
 
 ```bash
 --badge-output ../docs/badges/go-coverage.svg
@@ -137,3 +141,5 @@ fehl. Lokal wird es mit folgendem Zusatz zur Patch-Prüfung aktualisiert:
 - [x] Die CI verhindert eine Gesamt-Coverage unter 83,0 %.
 - [x] Die CI schlägt bei weniger als 90,0 % Coverage neuen oder geänderten
   produktiven Go-Codes fehl.
+- [x] Das eingecheckte Coverage-Badge darf um höchstens 0,2 Prozentpunkte vom
+  aktuellen CI-Messwert abweichen.

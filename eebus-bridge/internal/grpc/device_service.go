@@ -384,6 +384,8 @@ func (s *DeviceService) ListPairedDevices(_ context.Context, _ *pb.Empty) (*pb.L
 			Serial:            device.Serial,
 			DeviceType:        device.DeviceType,
 			SupportedUseCases: device.UseCases,
+			SoftwareRevision:  device.SoftwareRevision,
+			HardwareRevision:  device.HardwareRevision,
 		})
 	}
 	return &pb.ListPairedDevicesResponse{Devices: result}, nil

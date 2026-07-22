@@ -6,12 +6,13 @@ import "time"
 type EventType string
 
 const (
-	EventTypeDeviceConnected    EventType = "device.connected"
-	EventTypeDeviceDisconnected EventType = "device.disconnected"
-	EventTypeDeviceTrustRemoved EventType = "device.trust_removed"
-	EventTypeDiscoveryUpdated   EventType = "discovery.updated"
-	EventTypePairingUpdated     EventType = "pairing.updated"
-	EventTypeResyncRequired     EventType = "device_state.resync_required"
+	EventTypeDeviceConnected             EventType = "device.connected"
+	EventTypeDeviceDisconnected          EventType = "device.disconnected"
+	EventTypeDeviceTrustRemoved          EventType = "device.trust_removed"
+	EventTypeDeviceClassificationUpdated EventType = "device.classification_updated"
+	EventTypeDiscoveryUpdated            EventType = "discovery.updated"
+	EventTypePairingUpdated              EventType = "pairing.updated"
+	EventTypeResyncRequired              EventType = "device_state.resync_required"
 
 	EventTypeMonitoringPowerUpdated                EventType = "monitoring.power_updated"
 	EventTypeMonitoringPowerPerPhaseUpdated        EventType = "monitoring.power_per_phase_updated"

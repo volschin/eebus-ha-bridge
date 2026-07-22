@@ -108,6 +108,18 @@ class CoverageBadgeTest(unittest.TestCase):
         self.assertIn("83.3%", badge)
         self.assertIn("#4c1", badge)
 
+    def test_parses_rendered_badge_percentage(self) -> None:
+        badge = coverage.render_coverage_badge(85.36)
+        self.assertEqual(coverage.parse_coverage_badge(badge), 85.4)
+
+    def test_rejects_badge_without_coverage_percentage(self) -> None:
+        with self.assertRaisesRegex(ValueError, "no Go coverage percentage"):
+            coverage.parse_coverage_badge("<svg></svg>")
+
+    def test_matches_badge_with_defined_tolerance(self) -> None:
+        self.assertTrue(coverage.badge_matches_coverage(85.36, 85.2, 0.2))
+        self.assertFalse(coverage.badge_matches_coverage(85.36, 85.1, 0.2))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -140,7 +140,7 @@ entfernbare Zeilen.
 
 ### Gruppe D — Aufgefallene Punkte aus Umsetzung und Review
 
-**OPEN-D1 — HA-Device-Registry liefert keine Gerätemetadaten.**
+**[x] OPEN-D1 — HA-Device-Registry liefert keine Gerätemetadaten.**
 Quelle: RH Phase 0, Capture 2026-07-22:
 `manufacturer`, `model`, `sw_version`, `hw_version` sind am
 `climate.eebus_…`-Device `None`, obwohl die Bridge DeviceClassification
@@ -149,8 +149,30 @@ als „separat zu klären" vertagt.
 Exit: Ursache geklärt (liefert die Bridge die Felder nicht, oder setzt die
 Integration `DeviceInfo` unvollständig?) und behoben oder als
 Geräteeinschränkung dokumentiert.
+Erledigt 2026-07-22: Es lagen drei Bridge-/Integrationslücken vor. Die Bridge
+las nur einen zufällig bereits gefüllten Cache, ohne ein
+DeviceClassification-Client-Feature anzulegen oder Manufacturer-Daten
+anzufordern; Software- und Hardware-Revision fehlten im gRPC-Vertrag; und die
+Integration schrieb nach dem Entity-Aufbau eintreffende Metadaten nicht in die
+HA-Device-Registry nach. Ein eigener Classification-Client fordert die Daten
+nun bei Detailed Discovery an, persistiert Brand, Modell, Seriennummer,
+Gerätetyp sowie Software-/Hardware-Revision und löst einen Snapshot-Refresh
+aus. HA übernimmt Initial- und Spätwerte. Nicht vom Gerät gesendete Felder
+bleiben bewusst leer; es werden keine Vaillant-/VR940-Konstanten erfunden.
 
-**OPEN-D2 — Spec- und Kommentar-Drift nach Phasenabschlüssen.**
+Hardwarebefund 2026-07-22 (VR940 `682F708C`, Stack 93, Dev-Image
+`ghcr.io/volschin/eebus-bridge:d1-hwtest`): `manufacturer` = `Vaillant`,
+`model` = `VWL 75/8.1 A 230V`, `serial_number` = `8000033711` erscheinen
+Ende-zu-Ende im HA-Device-Registry (vorher alle `None`) und überstehen einen
+Bridge-Neustart. **Geräteeinschränkung:** `sw_version`/`hw_version` bleiben
+`null`. Der VR940 lehnt den aktiven `RequestManufacturerDetails`-Read ab
+(`operation is not supported on function deviceClassificationManufacturerData`);
+Software-/Hardware-Revision werden nur über diesen Read übertragen und sind auf
+dem VR940 daher nicht verfügbar. Marke/Modell/Seriennummer kommen passiv aus der
+Detailed Discovery. Die Bridge fordert den Read pro Gerät nur einmal an und
+loggt die Ablehnung nur einmal statt bei jedem Reconnect.
+
+**[x] OPEN-D2 — Spec- und Kommentar-Drift nach Phasenabschlüssen.**
 Beobachtet in PR #156: Statuszeile der RH-Spec stand nach Phase 5b noch auf
 „Phase 4 begonnen"; Doc-Kommentare verwiesen auf gelöschte Legacy-Writer;
 `UPSTREAM_PATCHES.md` nannte eine bereits erfolgte Hardwareabnahme als
@@ -159,20 +181,25 @@ Alles in `54ced05` korrigiert, die Ursache bleibt: Phasenabschlüsse aktualisier
 den Fließtext, nicht die Statusköpfe.
 Exit: Checkliste „Phase abgeschlossen" in den Migrationsspecs verlangt
 ausdrücklich Statuskopf, Kommentarbereinigung und Limitationsabschnitt.
+Erledigt 2026-07-22: beide Migrationsspecs enthalten diese Abschlusscheckliste.
 
-**OPEN-D3 — Beleg für Write ohne zusätzliches Feature-Binding.**
+**[x] OPEN-D3 — Beleg für Write ohne zusätzliches Feature-Binding.**
 Quelle: RH Phase 0, letzte offene Checkbox (Zeile 538).
 De facto durch die Hardwarematrizen aus Phase 3 und Phase 5 erbracht: die
 Upstream-Writer schrieben am VR940 ohne zusätzliches Binding. Der Nachweis ist
 nur nicht an der Checkbox vermerkt.
 Exit: Checkbox mit Verweis auf die Phase-3-/Phase-5-Matrix schließen.
+Erledigt 2026-07-22: Die Phase-0-Checkbox verweist auf beide erfolgreichen
+VR940-Hardwarematrizen und dokumentiert das fehlende Zusatz-Binding.
 
-**OPEN-D4 — Coverage-Badge blockiert CI wiederholt.**
+**[x] OPEN-D4 — Coverage-Badge blockiert CI wiederholt.**
 Beobachtet in PR #143, #154, #155: `go check` schlägt fehl, weil das
 eingecheckte `docs/badges/go-coverage.svg` um Zehntelprozente vom CI-Wert
 abweicht; jedes Mal ein manueller Regenerationscommit.
 Exit: Badge wird im CI generiert statt eingecheckt geprüft, oder die Prüfung
 toleriert eine definierte Abweichung.
+Erledigt 2026-07-22: Die CI toleriert eine dokumentierte Abweichung von 0,2
+Prozentpunkten und verlangt erst darüber eine Regeneration des Badges.
 
 **OPEN-D5 — Post-Write-Konvergenzlücke bei schneller Write-Folge.**
 Quelle: RH Phase-3-Matrix. Bei 6 s Abstand zeigte ein Sample einmalig noch den
@@ -195,15 +222,13 @@ OPEN-B2 --> OPEN-D5
 OPEN-B3 (unabhängig einreichbar)
 
 OPEN-C1 wartet auf Produktionstelemetrie.
-OPEN-C3, OPEN-D1..D4 sind jederzeit unabhängig umsetzbar.
+OPEN-C3 ist jederzeit unabhängig umsetzbar; OPEN-D1 bis OPEN-D4 sind erledigt.
 ```
 
 Empfohlene Bearbeitung:
 
-1. **Sofort, klein:** OPEN-D2, OPEN-D3, OPEN-D4 — Dokumentations- und
-   CI-Hygiene, kein Produktionsrisiko, entfernen wiederkehrende Reibung.
-2. **Als Nächstes:** OPEN-D1 — einziger Punkt mit direkt sichtbarer
-   Nutzerwirkung (leere Geräteinformation in Home Assistant).
+1. **Erledigt:** OPEN-D2, OPEN-D3, OPEN-D4 — Dokumentations- und CI-Hygiene.
+2. **Erledigt:** OPEN-D1 — Geräteinformationen werden Ende-zu-Ende übernommen.
 3. **Laufend:** OPEN-A1/A2 verfolgen und einreichen; OPEN-B3 ist der billigste
    Upstream-Beitrag mit echtem Nutzen (korrektes `UNAVAILABLE`-Mapping).
 4. **Danach:** OPEN-A3, anschließend OPEN-C2 und OPEN-C3.

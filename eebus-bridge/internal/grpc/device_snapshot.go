@@ -99,6 +99,7 @@ func (a *DeviceSnapshotAssembler) Build(ski string, revision uint64) (*pb.Device
 		result.Classification = &pb.PairedDevice{
 			Ski: ski, Brand: info.Brand, Model: info.Model, Serial: info.Serial,
 			DeviceType: info.DeviceType, SupportedUseCases: append([]string(nil), info.UseCases...),
+			SoftwareRevision: info.SoftwareRevision, HardwareRevision: info.HardwareRevision,
 		}
 		result.ClassificationState = pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_AVAILABLE
 	}

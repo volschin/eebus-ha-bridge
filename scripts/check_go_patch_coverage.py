@@ -25,6 +25,7 @@ PROFILE_RE = re.compile(
     r"(?P<end_line>\d+)\.(?P<end_col>\d+) "
     r"(?P<statements>\d+) (?P<count>\d+)$"
 )
+BADGE_PERCENTAGE_RE = re.compile(r'aria-label="Go coverage: (?P<percentage>\d+(?:\.\d+)?)%"')
 
 
 @dataclass(frozen=True)
@@ -85,6 +86,18 @@ def render_coverage_badge(percentage: float) -> str:
   </g>
 </svg>
 """
+
+
+def parse_coverage_badge(svg: str) -> float:
+    match = BADGE_PERCENTAGE_RE.search(svg)
+    if match is None:
+        raise ValueError("coverage badge has no Go coverage percentage")
+    return float(match.group("percentage"))
+
+
+def badge_matches_coverage(actual: float, badge: float, tolerance: float) -> bool:
+    displayed_actual = float(f"{actual:.1f}")
+    return abs(displayed_actual - badge) <= tolerance + 1e-9
 
 
 def is_productive_go_path(path: str) -> bool:
@@ -197,6 +210,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repository", default=Path.cwd(), type=Path, help="Git repository root")
     parser.add_argument("--threshold", default=90.0, type=float, help="required percentage")
     parser.add_argument("--badge-output", type=Path, help="write a self-contained total coverage SVG")
+    parser.add_argument("--badge-reference", type=Path, help="compare total coverage with this badge")
+    parser.add_argument(
+        "--badge-tolerance",
+        default=0.0,
+        type=float,
+        help="allowed badge deviation in percentage points (default: 0.0)",
+    )
     return parser.parse_args()
 
 
@@ -205,23 +225,46 @@ def main() -> int:
     if not 0 <= args.threshold <= 100:
         print("error: threshold must be between 0 and 100", file=sys.stderr)
         return 2
+    if args.badge_tolerance < 0:
+        print("error: badge tolerance must not be negative", file=sys.stderr)
+        return 2
     try:
         diff = git_diff(args.base, args.head, args.repository)
         changed = parse_changed_lines(diff)
         with args.profile.open(encoding="utf-8") as profile:
             blocks = parse_coverage_profile(profile)
+        _, _, total_percentage = total_statement_coverage(blocks)
         if args.badge_output is not None:
-            _, _, total_percentage = total_statement_coverage(blocks)
             args.badge_output.parent.mkdir(parents=True, exist_ok=True)
             args.badge_output.write_text(render_coverage_badge(total_percentage), encoding="utf-8")
+        badge_matches = True
+        if args.badge_reference is not None:
+            badge_percentage = parse_coverage_badge(args.badge_reference.read_text(encoding="utf-8"))
+            badge_matches = badge_matches_coverage(
+                total_percentage, badge_percentage, args.badge_tolerance
+            )
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
+    if args.badge_reference is not None:
+        deviation = abs(float(f"{total_percentage:.1f}") - badge_percentage)
+        print(
+            f"Go coverage badge: {badge_percentage:.1f}%, measured {total_percentage:.1f}%, "
+            f"deviation {deviation:.1f} percentage points "
+            f"(allowed {args.badge_tolerance:.1f})"
+        )
+        if not badge_matches:
+            print(
+                "Go coverage badge is outside the allowed deviation; regenerate it with "
+                "--badge-output",
+                file=sys.stderr,
+            )
+
     result = calculate_patch_coverage(changed, blocks)
     if result.total == 0:
         print("Go patch coverage: no changed production Go statements; gate passed")
-        return 0
+        return 0 if badge_matches else 1
 
     print(
         f"Go patch coverage: {result.percentage:.1f}% "
@@ -233,7 +276,7 @@ def main() -> int:
         print("Uncovered changed blocks:")
         for block in result.uncovered:
             print(f"  {block.path}:{block.start_line}-{block.end_line} ({block.statements} statements)")
-    return 0 if meets_threshold(result, args.threshold) else 1
+    return 0 if meets_threshold(result, args.threshold) and badge_matches else 1
 
 
 if __name__ == "__main__":

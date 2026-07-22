@@ -343,6 +343,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		)
 		hydraulicTemperatures := usecases.NewHydraulicTemperatures(bus, registry, cfg.Logging.DebugEvents)
 		deviceOperatingState := usecases.NewDeviceOperatingState(bus, registry, cfg.Logging.DebugEvents)
+		deviceClassifier := usecases.NewDeviceClassifier(registry, bus)
 
 		mgcpProvider, err := setupMGCPProvider(cfg, bridgeSvc, bus)
 		if err != nil {
@@ -399,6 +400,9 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		modules := []applicationModule{
 			{
 				name: "Device",
+				setup: func() error {
+					return deviceClassifier.Setup(localEntity)
+				},
 				registerGRPC: func(srv *bridgegrpc.Server) {
 					pb.RegisterDeviceServiceServer(
 						srv.GRPCServer(),

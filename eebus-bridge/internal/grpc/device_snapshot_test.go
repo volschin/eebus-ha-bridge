@@ -107,7 +107,9 @@ func snapshotFieldState(snapshot *pb.DeviceSnapshot, id pb.SnapshotFieldId) pb.S
 func TestDeviceSnapshotKeepsZeroValuesAndPerFieldState(t *testing.T) {
 	bus := eebus.NewEventBus()
 	registry := eebus.NewDeviceRegistry()
-	registry.AddDevice(testValidSKI, eebus.DeviceInfo{Brand: "Vaillant", Model: "VR940"})
+	registry.AddDevice(testValidSKI, eebus.DeviceInfo{
+		Brand: "Vaillant", Model: "VR940", SoftwareRevision: "4.2.1", HardwareRevision: "R3",
+	})
 	registry.MarkConnected(testValidSKI)
 	bus.Publish(eebus.Event{SKI: testValidSKI, Type: eebus.EventTypeMonitoringPowerUpdated})
 	service := snapshotService(bus, registry, &snapshotPayloads{})
@@ -121,6 +123,10 @@ func TestDeviceSnapshotKeepsZeroValuesAndPerFieldState(t *testing.T) {
 	}
 	if !snapshot.GetConnection().GetConnected() || snapshot.GetClassification().GetBrand() != "Vaillant" {
 		t.Fatalf("snapshot identity state = %+v", snapshot)
+	}
+	if snapshot.GetClassification().GetSoftwareRevision() != "4.2.1" ||
+		snapshot.GetClassification().GetHardwareRevision() != "R3" {
+		t.Fatalf("snapshot classification revisions = %+v", snapshot.GetClassification())
 	}
 	measurement := snapshot.GetMeasurements()[0]
 	if measurement.GetValue() != 0 || measurement.GetId() != pb.MeasurementId_MEASUREMENT_ID_POWER_CONSUMPTION || measurement.GetUnit() != "W" {
