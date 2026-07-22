@@ -573,8 +573,32 @@ Umsetzungsstand 2026-07-22:
 - [x] MRHSF und Legacy-CRHSF separat registriert; der Legacy-CRHSF-EventBus ist
   deaktiviert, sodass nur MRHSF SystemFunction-State-Events publiziert.
 - [x] Unit-, Composition-, vollständige Go-, Vet- und Race-Suite grün.
-- [ ] Fresh Start, drei Reconnects und drei Bridge-Restarts auf Zielhardware
-  prüfen; Mode- und Event-Gleichheit im Hardware-Capture bestätigen.
+- [x] Fresh Start, drei Reconnects und drei Bridge-Restarts auf Zielhardware
+  geprüft; Mode- und Event-Gleichheit im Hardware-Capture bestätigt.
+
+Hardware-Capture 2026-07-22 (VR940 `682F708C`, Stack 93, Dev-Image
+`ghcr.io/volschin/eebus-bridge:mrhsf-phase1`):
+
+- Fresh Start: `Registered EEBUS use cases: … RoomHeatingTemperature, MRHSF,
+  RoomHeatingSystemFunctionConfiguration, …`; Discovery meldet
+  `monitoringOfRoomHeatingSystemFunction v1.0.0 available=true scenarios=[1]`
+  neben `configurationOfRoomHeatingSystemFunction`.
+- Mode-Gleichheit: `hvac_modes` bleibt `['auto','heat','off']`, identisch zum
+  Legacy-Capture aus Phase 0; Setpoint-Bereich 5–30 °C, Schritt 0,5 °C.
+- Mode-Transitions über MRHSF-Reads plus Legacy-Writer: `off→auto→heat→off`
+  jeweils mit Readback bestätigt; nach den Restarts erneut `off→auto→off`.
+- Events: nur MRHSF publiziert SystemFunction-Events
+  (`ma-mrhsf-UseCaseSupportUpdate`, `ma-mrhsf-DataUpdateOperationMode`); pro
+  Remote-Update genau ein Event, keine Legacy-CRHSF-Events, keine Fehler im
+  Log.
+- Drei Bridge-Restarts (ein Stack-Redeploy, zwei Container-Restarts) inklusive
+  der zugehörigen SHIP-Reconnects repopulieren Mode, Mode-Liste und Setpoint
+  vollständig; Writes funktionieren nach den Restarts unverändert.
+- Setpoint-Round-Trip 21,0 → 21,5 → 21,0 °C erfolgreich. Zwei Setpoint-Writes
+  in kurzer Folge (< 15 s) verwirft das Gerät gelegentlich; der Wiederholungs-
+  Write greift. Betrifft den unveränderten `RoomHeatingTemperature`-Pfad, nicht
+  MRHSF.
+- Baseline wiederhergestellt (`off`, 21,0 °C); Stack 93 zurück auf `:latest`.
 
 ### Phase 2 — Upstream CRHSF übernimmt Negotiation und Capability
 
