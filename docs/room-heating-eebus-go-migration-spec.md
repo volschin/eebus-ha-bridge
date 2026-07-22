@@ -1,7 +1,7 @@
 # Room Heating auf eebus-go migrieren — Spec Proposal
 
 **Datum:** 2026-07-22
-**Status:** Proposal
+**Status:** In Umsetzung — Phase 0 begonnen
 **Scope:** Schrittweise Ablösung der bridge-lokalen Implementierungen für
 Configuration/Monitoring of Room Heating durch die bereits im gepinnten
 `eebus-go`-Fork enthaltenen Upstream-PRs, ohne Änderung des bestehenden gRPC-
@@ -516,6 +516,19 @@ Exit:
 - Kein öffentlicher Vertrag wurde geändert.
 - Die §4.7-Semantik ist als Invariante getestet und dient allen folgenden
   „identisch zu vorher“-Exits als Referenz.
+
+Umsetzungsstand 2026-07-22:
+
+- [x] §4.7 lokal gehärtet: Mode-Typen werden dedupliziert, verschiedene IDs
+  desselben Typs sind nicht schreibbar, und mehrere verschiedene
+  `roomAirTemperature`-Setpoints liefern Data-Unavailable.
+- [x] Automatisierte Contract-Tests für State/Presence, Range, Step, Relation,
+  Result/Reject, Cancellation, internen Timeout, Reconnect-Refresh und das
+  bestehende gRPC-Fehlermapping ergänzt.
+- [ ] Reproduzierbaren VR940-Capture mit Firmware, Ausgangswerten,
+  `auto`/`on`/`off`, Setpoint-Read-back und Restore durchführen.
+- [ ] Upstream-CRHT/CRHSF-Write ohne zusätzliches Feature-Binding am VR940
+  prüfen.
 
 ### Phase 1 — MRHSF übernimmt Reads und State-Events
 

@@ -41,22 +41,44 @@ func operationModesForSystem(
 	var modeIDs []model.HvacOperationModeIdType
 	for _, relation := range data.HvacSystemFunctionOperationModeRelationData {
 		if relation.SystemFunctionId != nil && *relation.SystemFunctionId == systemID {
-			modeIDs = relation.OperationModeId
-			break
+			modeIDs = append(modeIDs, relation.OperationModeId...)
 		}
 	}
 	if len(modeIDs) == 0 {
 		return nil, nil, false
 	}
 	modes := make([]string, 0, len(modeIDs))
-	idForType := make(map[string]model.HvacOperationModeIdType, len(modeIDs))
+	idsForType := make(map[string][]model.HvacOperationModeIdType, len(modeIDs))
 	for _, id := range modeIDs {
 		modeType, ok := operationModeType(feature, id)
 		if !ok {
 			return nil, nil, false
 		}
-		modes = append(modes, string(modeType))
-		idForType[string(modeType)] = id
+		typeName := string(modeType)
+		ids := idsForType[typeName]
+		duplicateID := false
+		for _, knownID := range ids {
+			if knownID == id {
+				duplicateID = true
+				break
+			}
+		}
+		if duplicateID {
+			continue
+		}
+		if len(ids) == 0 {
+			modes = append(modes, typeName)
+		}
+		idsForType[typeName] = append(ids, id)
+	}
+
+	// A type remains readable when a device advertises it through multiple
+	// IDs, but it is not safe to choose one of those IDs for a write.
+	idForType := make(map[string]model.HvacOperationModeIdType, len(idsForType))
+	for modeType, ids := range idsForType {
+		if len(ids) == 1 {
+			idForType[modeType] = ids[0]
+		}
 	}
 	return modes, idForType, true
 }

@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/enbility/spine-go/mocks"
@@ -69,5 +70,72 @@ func TestOperationModesForSystemFailsClosedOnUnresolvedModeType(t *testing.T) {
 
 	if _, _, ok := operationModesForSystem(feature, 3); ok {
 		t.Fatal("operationModesForSystem() accepted an unresolved mode type")
+	}
+}
+
+func TestOperationModesForSystemDeduplicatesTypesAndWithholdsAmbiguousWriteIDs(t *testing.T) {
+	tests := []struct {
+		name      string
+		relations [][]model.HvacOperationModeIdType
+		wantModes []string
+		wantIDs   map[string]model.HvacOperationModeIdType
+	}{
+		{
+			name:      "unique types",
+			relations: [][]model.HvacOperationModeIdType{{0, 1, 2}},
+			wantModes: []string{"off", "on", "auto"},
+			wantIDs:   map[string]model.HvacOperationModeIdType{"off": 0, "on": 1, "auto": 2},
+		},
+		{
+			name:      "same ID repeated",
+			relations: [][]model.HvacOperationModeIdType{{0, 1, 1, 2}},
+			wantModes: []string{"off", "on", "auto"},
+			wantIDs:   map[string]model.HvacOperationModeIdType{"off": 0, "on": 1, "auto": 2},
+		},
+		{
+			name:      "same type has distinct IDs",
+			relations: [][]model.HvacOperationModeIdType{{0, 1}, {3, 2}},
+			wantModes: []string{"off", "on", "auto"},
+			wantIDs:   map[string]model.HvacOperationModeIdType{"off": 0, "auto": 2},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			feature := mocks.NewFeatureRemoteInterface(t)
+			relationData := make([]model.HvacSystemFunctionOperationModeRelationDataType, 0, len(test.relations))
+			for _, ids := range test.relations {
+				relationData = append(relationData, model.HvacSystemFunctionOperationModeRelationDataType{
+					SystemFunctionId: ptr(model.HvacSystemFunctionIdType(3)),
+					OperationModeId:  ids,
+				})
+			}
+			feature.On("DataCopy", model.FunctionTypeHvacSystemFunctionOperationModeRelationListData).Return(
+				&model.HvacSystemFunctionOperationModeRelationListDataType{
+					HvacSystemFunctionOperationModeRelationData: relationData,
+				},
+			)
+			feature.On("DataCopy", model.FunctionTypeHvacOperationModeDescriptionListData).Return(
+				&model.HvacOperationModeDescriptionListDataType{
+					HvacOperationModeDescriptionData: []model.HvacOperationModeDescriptionDataType{
+						{OperationModeId: ptr(model.HvacOperationModeIdType(0)), OperationModeType: ptr(model.HvacOperationModeTypeTypeOff)},
+						{OperationModeId: ptr(model.HvacOperationModeIdType(1)), OperationModeType: ptr(model.HvacOperationModeTypeTypeOn)},
+						{OperationModeId: ptr(model.HvacOperationModeIdType(2)), OperationModeType: ptr(model.HvacOperationModeTypeTypeAuto)},
+						{OperationModeId: ptr(model.HvacOperationModeIdType(3)), OperationModeType: ptr(model.HvacOperationModeTypeTypeOn)},
+					},
+				},
+			)
+
+			modes, ids, ok := operationModesForSystem(feature, 3)
+			if !ok {
+				t.Fatal("operationModesForSystem() failed")
+			}
+			if !reflect.DeepEqual(modes, test.wantModes) {
+				t.Errorf("modes = %v, want %v", modes, test.wantModes)
+			}
+			if !reflect.DeepEqual(ids, test.wantIDs) {
+				t.Errorf("write IDs = %v, want %v", ids, test.wantIDs)
+			}
+		})
 	}
 }

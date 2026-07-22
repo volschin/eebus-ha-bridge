@@ -25,14 +25,26 @@ func hvacWriteHarnessWithErrno(
 	remote *mocks.FeatureRemoteInterface,
 	errno model.ErrorNumberType,
 ) (*mocks.EntityLocalInterface, *mocks.EntityRemoteInterface, *writtenHvacCommand) {
+	return hvacWriteHarnessWithResult(t, remote, &errno)
+}
+
+func hvacWriteHarnessWithResult(
+	t *testing.T,
+	remote *mocks.FeatureRemoteInterface,
+	errno *model.ErrorNumberType,
+) (*mocks.EntityLocalInterface, *mocks.EntityRemoteInterface, *writtenHvacCommand) {
 	t.Helper()
 	localAddress := &model.FeatureAddressType{}
 	local := mocks.NewFeatureLocalInterface(t)
 	local.On("Address").Return(localAddress)
-	local.On("AddResponseCallback", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-		callback := args.Get(1).(func(spineapi.ResponseMessage))
-		callback(spineapi.ResponseMessage{Data: &model.ResultDataType{ErrorNumber: ptr(errno)}})
-	}).Return(nil)
+	response := local.On("AddResponseCallback", mock.Anything, mock.Anything)
+	if errno != nil {
+		response.Run(func(args mock.Arguments) {
+			callback := args.Get(1).(func(spineapi.ResponseMessage))
+			callback(spineapi.ResponseMessage{Data: &model.ResultDataType{ErrorNumber: errno}})
+		})
+	}
+	response.Return(nil)
 	local.On("RequestRemoteData", mock.Anything, mock.Anything, mock.Anything, remote).
 		Return(ptr(model.MsgCounterType(10)), (*model.ErrorType)(nil)).Maybe()
 

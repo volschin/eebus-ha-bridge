@@ -19,6 +19,8 @@ type setpointState struct {
 	Writable bool
 }
 
+var setpointWriteTimeout = dhwWriteTimeout
+
 func readSetpointState(
 	entity spineapi.EntityRemoteInterface,
 	setpointID func(spineapi.FeatureRemoteInterface) (model.SetpointIdType, bool),
@@ -123,7 +125,7 @@ func writeSetpointValue(
 		return fmt.Errorf("waiting for %s result: %w", label, err)
 	}
 
-	timer := time.NewTimer(dhwWriteTimeout)
+	timer := time.NewTimer(setpointWriteTimeout)
 	defer timer.Stop()
 	select {
 	case response := <-result:
