@@ -76,16 +76,6 @@ func NewRoomHeatingTemperature(
 	return r
 }
 
-// newLegacyRoomHeatingTemperatureStrategy retains only the Phase 4 setpoint
-// writer. Upstream CRHT owns negotiation, cache population, reads and events,
-// so this strategy deliberately has no UseCaseBase or event subscription.
-func newLegacyRoomHeatingTemperatureStrategy(
-	localEntity spineapi.EntityLocalInterface,
-	debug bool,
-) *RoomHeatingTemperature {
-	return &RoomHeatingTemperature{localEntity: localEntity, debug: debug}
-}
-
 // UseCase returns this use case for Service.AddUseCase.
 func (r *RoomHeatingTemperature) UseCase() eebusapi.UseCaseInterface { return r }
 

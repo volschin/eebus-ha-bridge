@@ -1,6 +1,6 @@
 # Upstream patch inventory
 
-The bridge currently pins commit `930469d6dd8e` from the
+The bridge currently pins commit `3c6795b4d157` from the
 `github.com/volschin/eebus-go` branch `bridge-integration` because the required
 upstream changes have not been merged.
 
@@ -22,6 +22,7 @@ Upstream base: `enbility/eebus-go@363db3c5c262`
 | [volschin/eebus-go#3](https://github.com/volschin/eebus-go/pull/3) | `8f497bffeeb4` | `2845a153ae11` | Independent fail-closed capability resolution for optional CDSF scenarios | Remove this patch together with #2 after equivalent capability semantics are merged upstream. |
 | [volschin/eebus-go#4](https://github.com/volschin/eebus-go/pull/4) | `2845a153ae11` | `b40877d34a63` | Fail-closed MRHSF resolution when an HVAC room exposes multiple heating system functions | Remove this patch after equivalent MRHSF ambiguity handling is merged upstream. |
 | [volschin/eebus-go#5](https://github.com/volschin/eebus-go/pull/5) | `b40877d34a63` | `930469d6dd8e` | Complete, presence-safe CRHT room-air setpoint state with shared-ID deduplication and fail-closed ambiguity handling | Remove this patch after an equivalent CRHT state API is merged upstream. |
+| [volschin/eebus-go#6](https://github.com/volschin/eebus-go/pull/6) | `930469d6dd8e` | `3c6795b4d157` | Mode-independent, relation-safe CRHT room-air setpoint writes with validation and post-acceptance refresh | Remove this patch after an equivalent CRHT write API is merged upstream. |
 
 The enbility PR rows are unmodified cherry-picks of their feature commits;
 #249 is our replacement contribution for the obsolete draft #132. The

@@ -57,7 +57,7 @@ Der produktive Dependency-Satz enthält die benötigten Upstream-Beiträge berei
 
 ```text
 replace github.com/enbility/eebus-go =>
-        github.com/volschin/eebus-go@930469d6dd8e
+        github.com/volschin/eebus-go@3c6795b4d157
 ```
 
 `eebus-bridge/UPSTREAM_PATCHES.md` inventarisiert #239–#242. Die Bridge importiert
@@ -733,7 +733,7 @@ Umsetzungsstand 2026-07-22:
   Wert, Minimum, Maximum, Step und Write-Operation nur bei vollständig
   vorhandenen, validen Remote-Feldern. Geteilte IDs werden dedupliziert;
   mehrere verschiedene `roomAirTemperature`-Kandidaten bleiben fail-closed.
-  Fork-PR `volschin/eebus-go#5` ist über `930469d6dd8e` gepinnt.
+  Fork-PR `volschin/eebus-go#5` ist im aktuellen Pin `3c6795b4d157` enthalten.
 - [x] `CRHTConfigurationFacade` eingeführt und `crht.NewCRHT` als alleinigen
   Owner für Negotiation, Cache-Population und Reads registriert.
 - [x] CRHT-Value-/Constraint-Events auf das bestehende Setpoint-Event und
@@ -782,6 +782,34 @@ Exit:
 - Zehn Writes mit Read-back und Wiederherstellung sind erfolgreich.
 - Out-of-range, falscher Step, read-only, non-zero Result, Timeout und
   Disconnect behalten ihre Fehlercodes.
+
+Umsetzungsstand 2026-07-22:
+
+- [x] Mode-unabhängige, relation-sichere CRHT-API
+  `WriteRoomAirTemperatureSetpoint` im Fork ergänzt. Sie adressiert genau den
+  von `State` eindeutig ausgewählten `roomAirTemperature`-Setpoint und benötigt
+  weder für `auto` noch für `off` einen falschen Mode-Alias. Fork-PR
+  `volschin/eebus-go#6` ist über `3c6795b4d157` gepinnt.
+- [x] Upstream prüft Write-Operation, Changeability, finite Range und Step,
+  erhält bei Full-List-Writes fremde Setpoints und fordert nach akzeptiertem
+  Result die Setpoint-Liste vor dem Bridge-Callback erneut an.
+- [x] Die Bridge validiert Wert, Range und Step weiterhin selbst, wartet
+  Message-Counter und Result contextgebunden ab und bildet read-only,
+  Data-Unavailable, Geräteablehnung, Cancellation, Timeout sowie Disconnect
+  auf die bestehenden Sentinels ab. Es existiert kein Legacy-Fallback im
+  Request.
+- [x] Focused-, vollständige-, Vet- und Race-Suite für Fork und Bridge grün.
+- [x] Hardwarematrix am VR940 (Stack 93, Image `:crht-phase5`) durchgeführt:
+  zehn Writes mit Read-back 10/10 erfolgreich (Konvergenz 0,1–10 s), Writes in
+  `off`, `heat` und `auto` ohne Mode-Alias akzeptiert, Out-of-range (40 °C) und
+  Step-Verletzung (21,25 °C) abgelehnt ohne Setpoint-Änderung, drei
+  Restart-Zyklen mit vollständiger Metadaten-Repopulation und funktionierendem
+  Post-Restart-Write, Ausgangswert 21,0 °C wiederhergestellt, null Fehler im
+  Bridge-Log. Die Restart-Zyklen decken Disconnect und Wiederherstellung ab;
+  Stack anschließend auf `:latest` zurückgesetzt. Der
+  Legacy-Typ `RoomHeatingTemperature` bleibt bis Phase 5b als Release-Rollback
+  im Baum; sein Strategie-Konstruktor entfällt, da der Rollback über einen
+  Revert erfolgt.
 
 ### Phase 5b — Legacy-Code löschen
 

@@ -16,7 +16,7 @@ import (
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
 
-func TestUpstreamRoomHeatingTemperatureConfigurationSelectsCRHT(t *testing.T) {
+func TestUpstreamRoomHeatingTemperatureConfigurationSelectsCRHTForReadsAndWrites(t *testing.T) {
 	facade := NewUpstreamRoomHeatingTemperatureConfiguration(
 		clientUsecaseLocalEntity(t),
 		eebus.NewEventBus(),
@@ -30,12 +30,12 @@ func TestUpstreamRoomHeatingTemperatureConfigurationSelectsCRHT(t *testing.T) {
 	if client.EventCB == nil {
 		t.Fatal("upstream CRHT has no event callback")
 	}
-	legacy, ok := facade.writer.(*RoomHeatingTemperature)
+	writer, ok := facade.writer.(*upstreamRoomHeatingTemperatureWriter)
 	if !ok {
-		t.Fatalf("writer = %T, want *RoomHeatingTemperature", facade.writer)
+		t.Fatalf("writer = %T, want *upstreamRoomHeatingTemperatureWriter", facade.writer)
 	}
-	if legacy.UseCaseBase != nil || legacy.bus != nil || legacy.registry != nil {
-		t.Fatalf("legacy writer retained negotiation or event state: %+v", legacy)
+	if writer.client != client || writer.reader == nil {
+		t.Fatalf("upstream writer is not backed by the selected CRHT client: %+v", writer)
 	}
 }
 

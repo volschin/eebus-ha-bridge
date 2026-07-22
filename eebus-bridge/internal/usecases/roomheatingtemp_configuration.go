@@ -9,6 +9,7 @@ import (
 	ucapi "github.com/enbility/eebus-go/usecases/api"
 	cacrht "github.com/enbility/eebus-go/usecases/ca/crht"
 	spineapi "github.com/enbility/spine-go/api"
+	"github.com/enbility/spine-go/model"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
 
@@ -16,6 +17,11 @@ type caCRHTClient interface {
 	eebusapi.UseCaseInterface
 	RemoteEntitiesScenarios() []eebusapi.RemoteEntityScenarios
 	State(spineapi.EntityRemoteInterface) (ucapi.RoomHeatingSetpointState, error)
+	WriteRoomAirTemperatureSetpoint(
+		spineapi.EntityRemoteInterface,
+		float64,
+		func(model.ResultDataType, model.MsgCounterType),
+	) (*model.MsgCounterType, error)
 }
 
 type roomHeatingTemperatureEntityResolver interface {
@@ -31,9 +37,9 @@ type roomHeatingTemperatureWriter interface {
 }
 
 // CRHTConfigurationFacade maps eebus-go's complete CRHT state into the
-// bridge's stable room-heating contract. Phase 4 deliberately retains the
-// bridge writer as the sole write strategy while upstream owns negotiation,
-// cache population, reads and events.
+// bridge's stable room-heating contract. Upstream owns negotiation, cache
+// population, reads, writes and events; the bridge retains validation plus
+// context/result and error adaptation.
 type CRHTConfigurationFacade struct {
 	useCase  eebusapi.UseCaseInterface
 	resolver roomHeatingTemperatureEntityResolver
@@ -59,8 +65,9 @@ func newCRHTConfigurationFacade(
 }
 
 // NewUpstreamRoomHeatingTemperatureConfiguration selects eebus-go CRHT as the
-// source of room-heating setpoint state. The legacy writer is isolated from
-// negotiation and events until Phase 5 resolves auto/off write semantics.
+// sole source of room-heating setpoint state and writes. The mode-independent
+// write API addresses CRHT's unique room-air setpoint directly, including in
+// auto and off, without aliasing either mode to another operation mode.
 func NewUpstreamRoomHeatingTemperatureConfiguration(
 	localEntity spineapi.EntityLocalInterface,
 	bus *eebus.EventBus,
@@ -72,10 +79,11 @@ func NewUpstreamRoomHeatingTemperatureConfiguration(
 		return facade
 	}
 	client := cacrht.NewCRHT(localEntity, facade.HandleEvent)
+	reader := upstreamRoomHeatingTemperatureReader{client: client}
 	facade.useCase = client
 	facade.resolver = crhtEntityResolver{client: client}
-	facade.reader = upstreamRoomHeatingTemperatureReader{client: client}
-	facade.writer = newLegacyRoomHeatingTemperatureStrategy(localEntity, debug)
+	facade.reader = reader
+	facade.writer = &upstreamRoomHeatingTemperatureWriter{client: client, reader: reader}
 	return facade
 }
 

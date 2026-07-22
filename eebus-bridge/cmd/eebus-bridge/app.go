@@ -321,9 +321,9 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 			dhwSystemFunctionMonitoring,
 			dhwSystemFunctionConfiguration,
 		)
-		// Upstream CRHT owns room-heating setpoint negotiation, reads and events.
-		// The bridge retains only its setpoint writer until Phase 5 resolves the
-		// operation-mode semantics of CRHT writes.
+		// Upstream CRHT owns room-heating setpoint negotiation, reads, writes and
+		// events. The bridge only adapts validation, results and errors to its
+		// synchronous public contract.
 		roomHeatingTemperature := usecases.NewUpstreamRoomHeatingTemperatureConfiguration(
 			localEntity,
 			bus,
