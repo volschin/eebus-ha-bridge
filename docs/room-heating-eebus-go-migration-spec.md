@@ -1,7 +1,7 @@
 # Room Heating auf eebus-go migrieren — Spec Proposal
 
 **Datum:** 2026-07-22
-**Status:** In Umsetzung — Phase 1 begonnen
+**Status:** In Umsetzung — Phase 2 begonnen
 **Scope:** Schrittweise Ablösung der bridge-lokalen Implementierungen für
 Configuration/Monitoring of Room Heating durch die bereits im gepinnten
 `eebus-go`-Fork enthaltenen Upstream-PRs, ohne Änderung des bestehenden gRPC-
@@ -619,6 +619,27 @@ Exit:
   überein.
 - Upstream CRHSF füllt nach Start/Reconnect alle benötigten Caches.
 - Der Legacy-Writer arbeitet mit dem von CRHSF installierten HVAC-Client weiter.
+
+Umsetzungsstand 2026-07-22:
+
+- [x] `CRHSFConfigurationFacade` eingeführt und `crhsf.NewCRHSF` als alleinigen
+  Owner für Negotiation, HVAC-Client-Feature und Cache-Population registriert;
+  der lokale CRHSF-Use-Case wird nicht parallel registriert.
+- [x] Temporären read-only Bridge-Inspector beibehalten, weil der gepinnte
+  CRHSF noch keine öffentliche fail-closed `WriteCapabilities`-API anbietet.
+  Unvollständige Caches bleiben `UNAVAILABLE`, ein ausgehandeltes read-only
+  Gerät liefert dagegen konservativ `mode_writable=false`.
+- [x] Den Legacy-Writer als releaseweit einzige Write-Strategie ohne eigenen
+  `UseCaseBase`, Event-Subscriber oder Request-Fallback extrahiert. MRHSF bleibt
+  alleiniger Owner von Reads und benutzersichtbaren State-Events.
+- [x] MRHSF- und CRHSF-Entity werden weiterhin getrennt per normalisiertem SKI
+  aufgelöst und erst im bestehenden Adapter komponiert.
+- [x] Focused Unit- und Composition-Root-Tests für Use-Case-Auswahl,
+  Entity-Auflösung, Capability-Trennung und Writer-Delegation ergänzt.
+- [ ] Auf Zielhardware verifizieren, dass Upstream CRHSF nach Fresh Start und
+  Reconnect alle Caches füllt, `mode_writable` stabil bleibt und der
+  Legacy-Writer mit dem von CRHSF installierten HVAC-Client weiterhin
+  `auto`/`on`/`off` schreibt und zurückliest.
 
 ### Phase 3 — Upstream CRHSF übernimmt Mode-Writes
 

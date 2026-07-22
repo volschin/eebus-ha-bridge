@@ -323,9 +323,13 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		)
 		roomHeatingTemperature := usecases.NewRoomHeatingTemperature(localEntity, bus, registry, cfg.Logging.DebugEvents)
 		roomHeatingSystemFunctionMonitoring := usecases.NewRoomHeatingSystemFunctionMonitoring(bus, registry, cfg.Logging.DebugEvents)
-		// MRHSF owns reads and state events. The local CRHSF implementation stays
-		// registered only as the legacy configuration/write owner during Phase 1.
-		roomHeatingSystemFunctionConfiguration := usecases.NewRoomHeatingSystemFunction(localEntity, nil, registry, cfg.Logging.DebugEvents)
+		// MRHSF owns reads and state events. Upstream CRHSF owns negotiation and
+		// cache population; Phase 2 retains the read-only bridge capability
+		// inspector and legacy writer as release-wide strategies.
+		roomHeatingSystemFunctionConfiguration := usecases.NewUpstreamRoomHeatingSystemFunctionConfiguration(
+			localEntity,
+			cfg.Logging.DebugEvents,
+		)
 		roomHeatingSystemFunction := usecases.NewRoomHeatingSystemFunctionAdapter(
 			roomHeatingSystemFunctionMonitoring,
 			roomHeatingSystemFunctionConfiguration,
@@ -478,7 +482,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 					bridgeSvc,
 					eebusUseCaseRegistration{name: "RoomHeatingTemperature", useCase: func() eebusapi.UseCaseInterface { return roomHeatingTemperature.UseCase() }},
 					eebusUseCaseRegistration{name: "MRHSF", useCase: func() eebusapi.UseCaseInterface { return roomHeatingSystemFunctionMonitoring.UseCase() }},
-					eebusUseCaseRegistration{name: "RoomHeatingSystemFunctionConfiguration", useCase: func() eebusapi.UseCaseInterface { return roomHeatingSystemFunctionConfiguration.UseCase() }},
+					eebusUseCaseRegistration{name: "CRHSF", useCase: func() eebusapi.UseCaseInterface { return roomHeatingSystemFunctionConfiguration.UseCase() }},
 				),
 				registerGRPC: func(srv *bridgegrpc.Server) {
 					pb.RegisterHVACServiceServer(srv.GRPCServer(), hvacService)
