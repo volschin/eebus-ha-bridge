@@ -81,7 +81,7 @@ class EebusLPCLimitNumber(EebusEntity, NumberEntity):
 class EebusFailsafeLimitNumber(EebusEntity, NumberEntity):
     """Number entity for setting failsafe limit.
 
-    Gold: entity_category CONFIG, entity_disabled_by_default.
+    Gold: entity_category CONFIG. Enabled by default (primary §14a control).
     """
 
     _attr_device_class = NumberDeviceClass.POWER
@@ -92,7 +92,8 @@ class EebusFailsafeLimitNumber(EebusEntity, NumberEntity):
     _attr_native_step = 100
     _attr_translation_key = "failsafe_limit"
     _attr_entity_category = EntityCategory.CONFIG
-    _attr_entity_registry_enabled_default = False  # Gold: less popular entities disabled
+    # Enabled by default like the LPC limit number: the §14a failsafe fallback is a
+    # primary control, not a "less popular" entity — keep it reachable without manual enable.
 
     def __init__(self, coordinator: EebusCoordinator) -> None:
         """Initialize."""
