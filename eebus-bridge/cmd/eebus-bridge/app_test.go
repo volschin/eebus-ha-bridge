@@ -596,6 +596,7 @@ func TestApplicationStartRollsBackOnlySuccessfulStagesInReverseOrder(t *testing.
 	tests := []struct {
 		name         string
 		setupErr     error
+		announceErr  error
 		bridgeErr    error
 		module1Err   error
 		module2Err   error
@@ -603,6 +604,9 @@ func TestApplicationStartRollsBackOnlySuccessfulStagesInReverseOrder(t *testing.
 		wantRollback []string
 	}{
 		{name: "setup", setupErr: errors.New("setup"), wantRollback: nil},
+		// Announcing runs before the rollback ledger owns the service, so the
+		// failure path shuts the bridge down itself.
+		{name: "announce", announceErr: errors.New("announce"), wantRollback: []string{"bridge"}},
 		{name: "bridge", bridgeErr: errors.New("bridge"), wantRollback: []string{"bridge"}},
 		{name: "first module", module1Err: errors.New("module"), wantRollback: []string{"bridge"}},
 		{name: "second module", module2Err: errors.New("module"), wantRollback: []string{"module-one", "bridge"}},
@@ -612,7 +616,10 @@ func TestApplicationStartRollsBackOnlySuccessfulStagesInReverseOrder(t *testing.
 		t.Run(test.name, func(t *testing.T) {
 			recorder := &shutdownRecorder{}
 			bridge := &fakeBridgeLifecycle{
-				setupErr: test.setupErr, startErr: test.bridgeErr, recorder: recorder,
+				setupErr:    test.setupErr,
+				announceErr: test.announceErr,
+				startErr:    test.bridgeErr,
+				recorder:    recorder,
 			}
 			grpcServer := &fakeGRPCLifecycle{startErr: test.grpcErr, recorder: recorder}
 			app := newTestApplication(bridge, grpcServer, &fakeHeartbeatLifecycle{}, nil)

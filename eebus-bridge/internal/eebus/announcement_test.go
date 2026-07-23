@@ -1,9 +1,12 @@
 package eebus
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	shipcert "github.com/enbility/ship-go/cert"
+	"github.com/enbility/spine-go/mocks"
 	"github.com/enbility/spine-go/model"
 	"github.com/volschin/eebus-bridge/internal/config"
 )
@@ -142,4 +145,59 @@ func manufacturerData(t *testing.T, bridge *BridgeService) *model.DeviceClassifi
 		t.Fatal("manufacturer data unavailable")
 	}
 	return data
+}
+
+// TestSetLocalOperatingStateFailurePaths covers the guards that a running service
+// never hits: a missing entity, an entity that yields no feature, and the
+// eebus-go constructor failing because the feature is not resolvable.
+func TestSetLocalOperatingStateFailurePaths(t *testing.T) {
+	state := model.DeviceDiagnosisOperatingStateTypeNormalOperation
+
+	if err := setLocalOperatingState(nil, state); !errors.Is(err, errNoLocalEntity) {
+		t.Fatalf("nil entity: err = %v, want %v", err, errNoLocalEntity)
+	}
+
+	noFeature := mocks.NewEntityLocalInterface(t)
+	noFeature.On("GetOrAddFeature", model.FeatureTypeTypeDeviceDiagnosis, model.RoleTypeServer).
+		Return(nil).Once()
+	if err := setLocalOperatingState(noFeature, state); !errors.Is(err, errNoLocalEntity) {
+		t.Fatalf("nil feature: err = %v, want %v", err, errNoLocalEntity)
+	}
+
+	feature := mocks.NewFeatureLocalInterface(t)
+	feature.On("AddFunctionType", model.FunctionTypeDeviceDiagnosisStateData, true, false).Once()
+	unresolvable := mocks.NewEntityLocalInterface(t)
+	unresolvable.On("GetOrAddFeature", model.FeatureTypeTypeDeviceDiagnosis, model.RoleTypeServer).
+		Return(feature).Once()
+	unresolvable.On("Device").Return(nil).Once()
+	unresolvable.On("FeatureOfTypeAndRole", model.FeatureTypeTypeDeviceDiagnosis, model.RoleTypeServer).
+		Return(nil).Once()
+	err := setLocalOperatingState(unresolvable, state)
+	if err == nil || !strings.Contains(err.Error(), "creating local device diagnosis") {
+		t.Fatalf("unresolvable feature: err = %v", err)
+	}
+}
+
+// TestSetLocalVendorNameFailurePaths covers the same class of guards for the
+// manufacturer-data rewrite.
+func TestSetLocalVendorNameFailurePaths(t *testing.T) {
+	if err := setLocalVendorName(nil, "vendor"); !errors.Is(err, errNoLocalEntity) {
+		t.Fatalf("nil entity: err = %v, want %v", err, errNoLocalEntity)
+	}
+
+	noFeature := mocks.NewEntityLocalInterface(t)
+	noFeature.On("FeatureOfTypeAndRole", model.FeatureTypeTypeDeviceClassification, model.RoleTypeServer).
+		Return(nil).Once()
+	if err := setLocalVendorName(noFeature, "vendor"); !errors.Is(err, errNoManufacturerData) {
+		t.Fatalf("nil feature: err = %v, want %v", err, errNoManufacturerData)
+	}
+
+	feature := mocks.NewFeatureLocalInterface(t)
+	feature.On("DataCopy", model.FunctionTypeDeviceClassificationManufacturerData).Return(nil).Once()
+	noData := mocks.NewEntityLocalInterface(t)
+	noData.On("FeatureOfTypeAndRole", model.FeatureTypeTypeDeviceClassification, model.RoleTypeServer).
+		Return(feature).Once()
+	if err := setLocalVendorName(noData, "vendor"); !errors.Is(err, errNoManufacturerData) {
+		t.Fatalf("missing manufacturer data: err = %v, want %v", err, errNoManufacturerData)
+	}
 }

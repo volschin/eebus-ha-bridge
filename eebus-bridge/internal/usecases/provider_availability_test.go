@@ -102,10 +102,138 @@ func TestProviderAvailabilityFollowsSampleLifecycle(t *testing.T) {
 	}
 }
 
+// TestVisualizationProviderAvailabilityFollowsSampleLifecycle is the VAPD/VABD
+// half of the lifecycle assertion: both providers announce, publish and expire
+// through the same helper, so the flag has to follow for each of them.
+func TestVisualizationProviderAvailabilityFollowsSampleLifecycle(t *testing.T) {
+	certificate, err := shipcert.CreateCertificate("test", "test", "DE", "provider-availability-vis")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		EEBUS: config.EEBUSConfig{
+			Port: 49878, Vendor: "Test", Brand: "Test", Model: "Test", Serial: "provider-availability-vis",
+		},
+		Experimental: config.ExperimentalConfig{VAPDProvider: true, VABDProvider: true},
+	}
+	bridge, err := eebus.NewBridgeService(cfg, certificate, eebus.NewEventBus())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bridge.Setup(); err != nil {
+		t.Fatal(err)
+	}
+	defer bridge.Shutdown()
+
+	now := time.Now()
+	validity := ProviderValidity{ObservedAt: now, ValidUntil: now.Add(time.Minute)}
+
+	vapd := NewVAPDProvider(bridge.PVEntity(), nil, false)
+	if err := vapd.AddFeatures(); err != nil {
+		t.Fatalf("VAPD AddFeatures: %v", err)
+	}
+	vapd.AddUseCase()
+	if announcedAvailability(t, bridge, model.UseCaseNameTypeVisualizationOfAggregatedPhotovoltaicData) {
+		t.Fatal("VAPD announced as available before the first sample")
+	}
+	if err := vapd.PublishPVSnapshot(PVSnapshot{PowerW: 500, Validity: validity}); err != nil {
+		t.Fatalf("PublishPVSnapshot: %v", err)
+	}
+	if !announcedAvailability(t, bridge, model.UseCaseNameTypeVisualizationOfAggregatedPhotovoltaicData) {
+		t.Fatal("VAPD still unavailable after a current sample")
+	}
+	vapd.expirePVSnapshot(vapd.snapshots.snapshotVersion(), now.Add(2*time.Minute))
+	if announcedAvailability(t, bridge, model.UseCaseNameTypeVisualizationOfAggregatedPhotovoltaicData) {
+		t.Fatal("VAPD still available after the sample expired")
+	}
+
+	vabd := NewVABDProvider(bridge.BatteryEntity(), nil, false)
+	if err := vabd.AddFeatures(); err != nil {
+		t.Fatalf("VABD AddFeatures: %v", err)
+	}
+	vabd.AddUseCase()
+	if announcedAvailability(t, bridge, model.UseCaseNameTypeVisualizationOfAggregatedBatteryData) {
+		t.Fatal("VABD announced as available before the first sample")
+	}
+	if err := vabd.PublishBatterySnapshot(BatterySnapshot{PowerW: -300, Validity: validity}); err != nil {
+		t.Fatalf("PublishBatterySnapshot: %v", err)
+	}
+	if !announcedAvailability(t, bridge, model.UseCaseNameTypeVisualizationOfAggregatedBatteryData) {
+		t.Fatal("VABD still unavailable after a current sample")
+	}
+	if err := vabd.Close(); err != nil {
+		t.Fatalf("VABD Close: %v", err)
+	}
+	if announcedAvailability(t, bridge, model.UseCaseNameTypeVisualizationOfAggregatedBatteryData) {
+		t.Fatal("VABD still available after the provider was closed")
+	}
+}
+
+// TestProviderAvailabilityFollowsInvalidatedSample covers the third path into
+// unavailable: Home Assistant reporting the source as invalid rather than the
+// sample ageing out.
+func TestProviderAvailabilityFollowsInvalidatedSample(t *testing.T) {
+	certificate, err := shipcert.CreateCertificate("test", "test", "DE", "provider-availability-invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		EEBUS: config.EEBUSConfig{
+			Port: 49879, Vendor: "Test", Brand: "Test", Model: "Test", Serial: "provider-availability-invalid",
+		},
+		Experimental: config.ExperimentalConfig{MGCPProvider: true},
+	}
+	bridge, err := eebus.NewBridgeService(cfg, certificate, eebus.NewEventBus())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bridge.Setup(); err != nil {
+		t.Fatal(err)
+	}
+	defer bridge.Shutdown()
+
+	provider := NewMGCPProvider(bridge.GridEntity(), nil, false)
+	if err := provider.AddFeatures(); err != nil {
+		t.Fatalf("AddFeatures: %v", err)
+	}
+	provider.AddUseCase()
+
+	now := time.Now()
+	err = provider.PublishGridSnapshot(GridSnapshot{
+		PowerW:   42,
+		Validity: ProviderValidity{ObservedAt: now, ValidUntil: now.Add(time.Minute)},
+	})
+	if err != nil {
+		t.Fatalf("PublishGridSnapshot: %v", err)
+	}
+	if !announcedMGCPAvailability(t, bridge) {
+		t.Fatal("still unavailable after a current sample")
+	}
+
+	err = provider.PublishGridSnapshot(GridSnapshot{Validity: ProviderValidity{Invalid: true}})
+	if err != nil {
+		t.Fatalf("PublishGridSnapshot (invalid): %v", err)
+	}
+	if announcedMGCPAvailability(t, bridge) {
+		t.Fatal("still available after the source was reported invalid")
+	}
+}
+
 // announcedMGCPAvailability reads the useCaseAvailable flag the bridge actually
 // puts on the wire, i.e. from nodeManagementUseCaseData rather than from provider
 // state.
 func announcedMGCPAvailability(t *testing.T, bridge *eebus.BridgeService) bool {
+	t.Helper()
+	return announcedAvailability(t, bridge, model.UseCaseNameTypeMonitoringOfGridConnectionPoint)
+}
+
+// announcedAvailability reads the useCaseAvailable flag for one use case out of
+// nodeManagementUseCaseData, i.e. the value a consumer actually sees.
+func announcedAvailability(
+	t *testing.T,
+	bridge *eebus.BridgeService,
+	useCase model.UseCaseNameType,
+) bool {
 	t.Helper()
 
 	nodeManagement := bridge.Service().LocalDevice().NodeManagement()
@@ -118,13 +246,12 @@ func announcedMGCPAvailability(t *testing.T, bridge *eebus.BridgeService) bool {
 	}
 	for _, information := range data.UseCaseInformation {
 		for _, support := range information.UseCaseSupport {
-			if support.UseCaseName == nil ||
-				*support.UseCaseName != model.UseCaseNameTypeMonitoringOfGridConnectionPoint {
+			if support.UseCaseName == nil || *support.UseCaseName != useCase {
 				continue
 			}
 			return support.UseCaseAvailable != nil && *support.UseCaseAvailable
 		}
 	}
-	t.Fatal("MGCP use case is not announced at all")
+	t.Fatalf("use case %s is not announced at all", useCase)
 	return false
 }
