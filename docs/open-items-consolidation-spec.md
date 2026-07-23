@@ -224,6 +224,20 @@ Entity-Namen in HA ersetzen würden.
 Exit: entweder pro Punkt ein Feature-Ticket mit Hardwareabnahme, oder eine
 dokumentierte Entscheidung gegen die Umsetzung.
 
+**OPEN-D7 — Vendorname wird upstream aus der Brand abgeleitet.**
+Quelle: Announcement-Audit, PR #161. `spine.NewDeviceLocal` kennt keinen
+Vendor-Parameter und befüllt `VendorName` wie `BrandName` aus der Brand
+(`spine/device_local.go`), `eebus-go`s `api.Configuration` führt nur den
+`vendorCode` (IANA PEN), keinen Vendornamen. Die Bridge korrigiert
+`deviceClassificationManufacturerData` deshalb nach `Setup` selbst
+(`internal/eebus/announcement.go`).
+Ein Fork von `spine-go` ist bewusst ausgeschlossen: ein zweiter
+`replace`-Eintrag mit eigenem Patch-Inventar arbeitet direkt gegen OPEN-A3.
+Der saubere Weg sind zwei Upstream-PRs — `vendorName` als Parameter in
+`spine.NewDeviceLocal` plus optionales Feld in `api.Configuration`.
+Exit: beide Upstream-PRs eingereicht; nach Merge entfällt die Bridge-Korrektur
+ersatzlos, oder es steht eine dokumentierte Ablehnung dagegen.
+
 ## 4. Reihenfolge und Abhängigkeiten
 
 ```text
@@ -239,6 +253,7 @@ OPEN-B3 (unabhängig einreichbar)
 OPEN-C1 wartet auf Produktionstelemetrie.
 OPEN-C3 ist jederzeit unabhängig umsetzbar; OPEN-D1 bis OPEN-D4 sind erledigt.
 OPEN-D6 ist unabhängig und reine Bestandsaufnahme.
+OPEN-D7 hängt wie OPEN-A1/A2 an fremdem Merge-Tempo, blockiert aber nichts.
 ```
 
 Empfohlene Bearbeitung:
