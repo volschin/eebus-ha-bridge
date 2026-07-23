@@ -234,13 +234,12 @@ func (p *MGCPProvider) PublishGridSnapshot(snapshot GridSnapshot) error {
 		return err
 	}
 	next := snapshot.clone()
-	if err := p.snapshots.commit(next, snapshot.Validity.ValidUntil, func(version uint64) {
-		p.expireGridSnapshot(version, time.Now())
-	}); err != nil {
-		return err
-	}
+	// Announced before the commit: the measurements are already on the wire, and
+	// Close holds the same publish mutex, so this cannot outlive the provider.
 	p.available.set(true)
-	return nil
+	return p.snapshots.commit(next, snapshot.Validity.ValidUntil, func(version uint64) {
+		p.expireGridSnapshot(version, time.Now())
+	})
 }
 
 func (p *MGCPProvider) CurrentGridSnapshot(now time.Time) (GridSnapshot, bool) {

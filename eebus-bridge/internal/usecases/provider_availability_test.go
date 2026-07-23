@@ -161,6 +161,36 @@ func TestVisualizationProviderAvailabilityFollowsSampleLifecycle(t *testing.T) {
 	if !announcedAvailability(t, bridge, model.UseCaseNameTypeVisualizationOfAggregatedBatteryData) {
 		t.Fatal("VABD still unavailable after a current sample")
 	}
+	vabd.expireBatterySnapshot(vabd.snapshots.snapshotVersion(), now.Add(2*time.Minute))
+	if announcedAvailability(t, bridge, model.UseCaseNameTypeVisualizationOfAggregatedBatteryData) {
+		t.Fatal("VABD still available after the sample expired")
+	}
+
+	// Both providers must also follow an explicitly invalidated source, and VABD
+	// must end up unavailable once closed.
+	if err := vapd.PublishPVSnapshot(PVSnapshot{PowerW: 500, Validity: validity}); err != nil {
+		t.Fatalf("PublishPVSnapshot: %v", err)
+	}
+	if err := vapd.PublishPVSnapshot(PVSnapshot{Validity: ProviderValidity{Invalid: true}}); err != nil {
+		t.Fatalf("PublishPVSnapshot (invalid): %v", err)
+	}
+	if announcedAvailability(t, bridge, model.UseCaseNameTypeVisualizationOfAggregatedPhotovoltaicData) {
+		t.Fatal("VAPD still available after the source was reported invalid")
+	}
+
+	if err := vabd.PublishBatterySnapshot(BatterySnapshot{PowerW: -300, Validity: validity}); err != nil {
+		t.Fatalf("PublishBatterySnapshot: %v", err)
+	}
+	if err := vabd.PublishBatterySnapshot(BatterySnapshot{Validity: ProviderValidity{Invalid: true}}); err != nil {
+		t.Fatalf("PublishBatterySnapshot (invalid): %v", err)
+	}
+	if announcedAvailability(t, bridge, model.UseCaseNameTypeVisualizationOfAggregatedBatteryData) {
+		t.Fatal("VABD still available after the source was reported invalid")
+	}
+
+	if err := vabd.PublishBatterySnapshot(BatterySnapshot{PowerW: -300, Validity: validity}); err != nil {
+		t.Fatalf("PublishBatterySnapshot: %v", err)
+	}
 	if err := vabd.Close(); err != nil {
 		t.Fatalf("VABD Close: %v", err)
 	}
