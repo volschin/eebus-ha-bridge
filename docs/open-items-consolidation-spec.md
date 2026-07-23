@@ -209,6 +209,21 @@ Geräte-Notify.
 Exit: nach OPEN-B2 erneut mit enger Write-Folge messen; kein Sample zeigt den
 Vorzustand nach abgeschlossenem Write.
 
+**OPEN-D6 — Lesbare Gerätefunktionen ohne Bridge-Nutzung.**
+Quelle: Function-Inventar des VR940 (`docs/vr940-function-inventory.md`, Capture
+2026-07-13). Die Schreibfläche des Geräts ist vollständig ausgeschöpft, vier
+lesbare Functions werden aber nicht konsumiert: `deviceClassificationUserData`
+auf `5`/`5:1`/`5:1:1` (Heizkreis-, Zonen- und Raumnamen; der zugehörige
+`visualizationOfHeatingAreaName` wird annonciert),
+`electricalConnectionCharacteristicListData` auf `3:f7`,
+`measurementConstraintsListData` auf allen Measurement-Features sowie die
+beiden HVAC-Relations-Listen.
+Reine Bestandsaufnahme, kein Fehler: jede Umsetzung ist ein eigenes Feature mit
+eigenem Hardwaretest. Priorität liegt bei den Namen, weil sie generische
+Entity-Namen in HA ersetzen würden.
+Exit: entweder pro Punkt ein Feature-Ticket mit Hardwareabnahme, oder eine
+dokumentierte Entscheidung gegen die Umsetzung.
+
 ## 4. Reihenfolge und Abhängigkeiten
 
 ```text
@@ -223,6 +238,7 @@ OPEN-B3 (unabhängig einreichbar)
 
 OPEN-C1 wartet auf Produktionstelemetrie.
 OPEN-C3 ist jederzeit unabhängig umsetzbar; OPEN-D1 bis OPEN-D4 sind erledigt.
+OPEN-D6 ist unabhängig und reine Bestandsaufnahme.
 ```
 
 Empfohlene Bearbeitung:

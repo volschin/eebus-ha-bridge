@@ -84,6 +84,9 @@ func FormatDeviceUseCases(ski string, device spineapi.DeviceRemoteInterface) str
 		}
 		fmt.Fprintf(&b, "[DISCOVERY]   entity addr=%s type=%s features=[%s]\n",
 			formatEntityAddress(e.Address()), e.EntityType(), formatFeatures(e.Features()))
+		for _, line := range formatFeatureFunctions(e.Features()) {
+			fmt.Fprintf(&b, "[DISCOVERY]     %s\n", line)
+		}
 	}
 
 	useCases := device.UseCases()
@@ -153,4 +156,77 @@ func formatFeatures(features []spineapi.FeatureRemoteInterface) string {
 	}
 	sort.Strings(out)
 	return strings.Join(out, ", ")
+}
+
+// formatFeatureFunctions renders one line per remote feature listing every function
+// the device reports in its detailed discovery, annotated with the operations it
+// permits (r = read, rp = read partial, w = write, wp = write partial).
+//
+// This is the inventory that matters when a device implements functionality without
+// advertising the corresponding use case: a function carrying "w" can be written via
+// a direct SPINE request even though device.UseCases() never mentions it. Lines are
+// sorted so two dumps can be diffed across firmware versions.
+func formatFeatureFunctions(features []spineapi.FeatureRemoteInterface) []string {
+	out := make([]string, 0, len(features))
+	for _, f := range features {
+		if f == nil {
+			continue
+		}
+		ops := f.Operations()
+		names := make([]string, 0, len(ops))
+		for function, op := range ops {
+			names = append(names, fmt.Sprintf("%s(%s)", function, formatOperations(op)))
+		}
+		sort.Strings(names)
+		out = append(out, fmt.Sprintf("feature addr=%s type=%s role=%s functions=[%s]",
+			formatFeatureAddress(f.Address()), f.Type(), f.Role(), strings.Join(names, ", ")))
+	}
+	sort.Strings(out)
+	return out
+}
+
+// formatOperations renders the permitted operations of a single function as a
+// compact flag list, e.g. "r,w" for a readable and writable function. Returns "-"
+// when the device permits none.
+func formatOperations(op spineapi.OperationsInterface) string {
+	if op == nil {
+		return "-"
+	}
+	flags := make([]string, 0, 4)
+	for _, f := range []struct {
+		name    string
+		allowed bool
+	}{
+		{"r", op.Read()},
+		{"rp", op.ReadPartial()},
+		{"w", op.Write()},
+		{"wp", op.WritePartial()},
+	} {
+		if f.allowed {
+			flags = append(flags, f.name)
+		}
+	}
+	if len(flags) == 0 {
+		return "-"
+	}
+	return strings.Join(flags, ",")
+}
+
+// formatFeatureAddress renders the feature address path (e.g. "1:2:5") for the dump.
+// Returns "?" when the address is absent.
+func formatFeatureAddress(addr *model.FeatureAddressType) string {
+	if addr == nil {
+		return "?"
+	}
+	parts := make([]string, 0, len(addr.Entity)+1)
+	for _, a := range addr.Entity {
+		parts = append(parts, fmt.Sprintf("%d", uint(a)))
+	}
+	if addr.Feature != nil {
+		parts = append(parts, fmt.Sprintf("%d", uint(*addr.Feature)))
+	}
+	if len(parts) == 0 {
+		return "?"
+	}
+	return strings.Join(parts, ":")
 }
