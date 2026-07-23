@@ -59,6 +59,7 @@ type VAPDProvider struct {
 
 	publishMu sync.Mutex
 	snapshots providerSnapshotStore[PVSnapshot]
+	available providerAvailability
 }
 
 // NewVAPDProvider builds the provider on the given local PV-system entity
@@ -95,7 +96,16 @@ func NewVAPDProvider(pvEntity spineapi.EntityLocalInterface, bus *eebus.EventBus
 		validEntityTypes,
 		false,
 	)
+	p.available.bind(p.UpdateUseCaseAvailability)
 	return p
+}
+
+// AddUseCase announces the use case and immediately marks it unavailable:
+// eebus-go's AddUseCase hardcodes available=true, but the bridge has nothing to
+// serve until Home Assistant delivers a first sample.
+func (p *VAPDProvider) AddUseCase() {
+	p.UseCaseBase.AddUseCase()
+	p.available.set(false)
 }
 
 // UseCase returns the provider for registration via Service.AddUseCase, which calls
@@ -219,15 +229,20 @@ func (p *VAPDProvider) PublishPVSnapshot(snapshot PVSnapshot) error {
 		if err := p.invalidatePVMeasurements(); err != nil {
 			return err
 		}
+		p.available.set(false)
 		return p.snapshots.invalidate()
 	}
 	if err := p.publishPVMeasurements(snapshot); err != nil {
 		return err
 	}
 	next := snapshot.clone()
-	return p.snapshots.commit(next, snapshot.Validity.ValidUntil, func(version uint64) {
+	if err := p.snapshots.commit(next, snapshot.Validity.ValidUntil, func(version uint64) {
 		p.expirePVSnapshot(version, time.Now())
-	})
+	}); err != nil {
+		return err
+	}
+	p.available.set(true)
+	return nil
 }
 
 func (p *VAPDProvider) CurrentPVSnapshot(now time.Time) (PVSnapshot, bool) {
@@ -253,6 +268,7 @@ func (p *VAPDProvider) expirePVSnapshot(version uint64, now time.Time) {
 		return
 	}
 	p.snapshots.clearExpired(version)
+	p.available.set(false)
 }
 
 // Close stops sample expiry and prevents every later EEBUS write.
@@ -260,6 +276,7 @@ func (p *VAPDProvider) Close() error {
 	p.publishMu.Lock()
 	defer p.publishMu.Unlock()
 	p.snapshots.close()
+	p.available.set(false)
 	return nil
 }
 

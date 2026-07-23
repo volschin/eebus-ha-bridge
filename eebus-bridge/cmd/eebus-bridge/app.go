@@ -43,6 +43,7 @@ type bridgeLifecycle interface {
 	Shutdown()
 	RegisterRemoteSKI(string)
 	UnregisterRemoteSKI(string)
+	AnnounceLocalIdentity(string) error
 }
 
 type grpcLifecycle interface {
@@ -699,6 +700,12 @@ func (a *Application) startComponents(runtimeCtx context.Context, tx *lifecycleT
 	}
 	if err := a.bridgeSvc.Setup(); err != nil {
 		return fmt.Errorf("setting up EEBUS service: %w", err)
+	}
+	// Setup created the local SPINE device; complete its announcement (operating
+	// state, vendor name) before Start exposes it to remotes.
+	if err := a.bridgeSvc.AnnounceLocalIdentity(a.cfg.EEBUS.Vendor); err != nil {
+		a.bridgeSvc.Shutdown()
+		return fmt.Errorf("announcing local identity: %w", err)
 	}
 	if err := tx.add("EEBUS", func() error {
 		a.bridgeSvc.Shutdown()

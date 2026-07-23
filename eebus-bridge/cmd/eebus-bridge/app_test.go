@@ -25,6 +25,8 @@ import (
 type fakeBridgeLifecycle struct {
 	mu           sync.Mutex
 	setupErr     error
+	announceErr  error
+	announced    []string
 	startErr     error
 	started      chan struct{}
 	startOnce    sync.Once
@@ -38,6 +40,13 @@ type fakeBridgeLifecycle struct {
 	setupStarted chan struct{}
 	setupRelease chan struct{}
 	setupOnce    sync.Once
+}
+
+func (f *fakeBridgeLifecycle) AnnounceLocalIdentity(vendor string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.announced = append(f.announced, vendor)
+	return f.announceErr
 }
 
 func (f *fakeBridgeLifecycle) Setup() error {
