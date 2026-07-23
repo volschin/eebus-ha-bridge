@@ -12,8 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import EebusCoordinator
 from .entity import EebusEntity
-from .models import CompressorFlexibilityState
-from .models import CapabilityState
+from .models import CapabilityState, CompressorFlexibilityState
 from .state import StateField, is_fresh
 
 PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling
@@ -53,7 +52,9 @@ class EebusCompressorFlexibilitySelect(EebusEntity, SelectEntity):
     """
 
     _attr_translation_key = "compressor_flexibility"
-    _attr_options = [OPTION_ON, OPTION_PAUSED, OPTION_OFF]
+    # RUF012: HA declares _attr_options as an instance variable, so annotating it
+    # ClassVar here makes mypy reject the override.
+    _attr_options = [OPTION_ON, OPTION_PAUSED, OPTION_OFF]  # noqa: RUF012
 
     def __init__(self, coordinator: EebusCoordinator) -> None:
         """Initialize."""

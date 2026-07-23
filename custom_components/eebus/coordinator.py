@@ -13,9 +13,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, ServiceValidationError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from . import proto_stubs
 from .const import SECURITY_MODE_LOOPBACK
 from .device_session import WriteOutcome
-from . import proto_stubs
 from .grpc_client import RPC_TIMEOUT
 from .providers import ProviderManager, ProviderMappings
 from .runtime import BridgeRuntime, BridgeRuntimeKey
@@ -125,7 +125,7 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
         self._provider_manager = replacement
         try:
             await previous.async_stop(invalidate=False)
-        except Exception:  # noqa: BLE001
+        except Exception:
             _LOGGER.exception("Failed to stop previous EEBUS provider manager")
 
     async def async_reconfigure_runtime(
@@ -209,13 +209,13 @@ class EebusCoordinator(DataUpdateCoordinator[DeviceState]):
             await previous_provider.async_stop(invalidate=False)
         except asyncio.CancelledError as err:
             cancellation = err
-        except Exception:  # noqa: BLE001
+        except Exception:
             _LOGGER.exception("Failed to stop previous EEBUS provider manager")
         try:
             await previous_runtime.release_device_session(previous_session)
         except asyncio.CancelledError as err:
             cancellation = cancellation or err
-        except Exception:  # noqa: BLE001
+        except Exception:
             _LOGGER.exception("Failed to stop previous EEBUS device session")
         if cancellation is not None:
             raise cancellation

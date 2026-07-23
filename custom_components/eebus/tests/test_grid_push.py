@@ -89,7 +89,7 @@ async def test_push_publishes_power_and_optional_energy(monkeypatch):
         def __init__(self, _channel):
             pass
 
-        async def PublishGridData(self, request, timeout=None):  # noqa: N802
+        async def PublishGridData(self, request, timeout=None):
             captured["request"] = request
             return proto_stubs.Empty()
 
@@ -117,7 +117,7 @@ async def test_push_invalidates_when_power_unavailable(monkeypatch):
         def __init__(self, _channel):
             pass
 
-        async def PublishGridData(self, request, timeout=None):  # noqa: N802
+        async def PublishGridData(self, request, timeout=None):
             captured["request"] = request
             return proto_stubs.Empty()
 
@@ -139,7 +139,7 @@ async def test_invalid_required_sensor_is_latched_until_valid_sample(monkeypatch
         def __init__(self, _channel):
             pass
 
-        async def PublishGridData(self, request, timeout=None):  # noqa: N802
+        async def PublishGridData(self, request, timeout=None):
             requests.append(request)
             return proto_stubs.Empty()
 

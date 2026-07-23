@@ -106,7 +106,7 @@ class StreamManager:
                     name,
                     rpc_error_text(err),
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 attempt += 1
                 self._reconnects += 1
                 _LOGGER.exception("EEBUS %s stream failed; scheduling retry", name)

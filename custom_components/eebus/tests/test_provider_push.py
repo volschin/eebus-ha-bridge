@@ -9,8 +9,8 @@ import grpc
 import pytest
 from grpc.aio import AioRpcError, Metadata
 
-from custom_components.eebus import providers as providers_module
 from custom_components.eebus import proto_stubs
+from custom_components.eebus import providers as providers_module
 from custom_components.eebus.providers import (
     ProviderManager,
     ProviderMappings,
@@ -128,7 +128,7 @@ async def test_provider_push_failure_warning_is_rate_limited(monkeypatch, caplog
     outcomes = [failure, failure, failure, None, failure]
 
     class _FakeStub:
-        async def Publish(self, _request, timeout=None):  # noqa: N802
+        async def Publish(self, _request, timeout=None):
             outcome = outcomes.pop(0)
             if outcome is not None:
                 raise outcome
@@ -169,7 +169,7 @@ async def test_provider_manager_stop_invalidates_enabled_providers(monkeypatch):
         def __init__(self, _channel):
             pass
 
-        async def PublishGridData(self, request, timeout=None):  # noqa: N802
+        async def PublishGridData(self, request, timeout=None):
             requests.append(("grid", request))
             return proto_stubs.Empty()
 
@@ -177,11 +177,11 @@ async def test_provider_manager_stop_invalidates_enabled_providers(monkeypatch):
         def __init__(self, _channel):
             pass
 
-        async def PublishPVData(self, request, timeout=None):  # noqa: N802
+        async def PublishPVData(self, request, timeout=None):
             requests.append(("pv", request))
             return proto_stubs.Empty()
 
-        async def PublishBatteryData(self, request, timeout=None):  # noqa: N802
+        async def PublishBatteryData(self, request, timeout=None):
             requests.append(("battery", request))
             return proto_stubs.Empty()
 
@@ -259,14 +259,14 @@ async def test_provider_manager_skips_invalidations_for_old_bridge(monkeypatch):
         def __init__(self, _channel):
             pass
 
-        async def GetDeviceCapabilities(self, request, timeout=None):  # noqa: N802
+        async def GetDeviceCapabilities(self, request, timeout=None):
             raise error
 
     class _GridStub:
         def __init__(self, _channel):
             pass
 
-        async def PublishGridData(self, request, timeout=None):  # noqa: N802
+        async def PublishGridData(self, request, timeout=None):
             requests.append(request)
             return proto_stubs.Empty()
 

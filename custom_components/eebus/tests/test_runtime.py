@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import grpc
 import pytest
+from google.protobuf.timestamp_pb2 import Timestamp
 from grpc.aio import AioRpcError, Metadata
 
 from custom_components.eebus import _async_reload_entry, async_unload_entry, proto_stubs
@@ -19,7 +20,6 @@ from custom_components.eebus.runtime import (
 )
 from custom_components.eebus.server_info import BridgeContract
 from custom_components.eebus.state import DeviceState, MeasurementsState
-from google.protobuf.timestamp_pb2 import Timestamp
 
 
 @pytest.fixture(autouse=True)

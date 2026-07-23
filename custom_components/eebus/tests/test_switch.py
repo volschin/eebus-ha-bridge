@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock
 
-from custom_components.eebus.switch import EebusLPCActiveSwitch
 from custom_components.eebus.models import CapabilityState, ConsumptionLimitState
 from custom_components.eebus.state import (
     CapabilitiesState,
@@ -10,6 +9,7 @@ from custom_components.eebus.state import (
     DeviceState,
     LPCState,
 )
+from custom_components.eebus.switch import EebusLPCActiveSwitch
 
 
 def test_lpc_is_primary_control():

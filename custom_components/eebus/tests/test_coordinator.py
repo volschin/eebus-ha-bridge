@@ -11,7 +11,7 @@ from grpc.aio import AioRpcError, Metadata
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 from custom_components.eebus import proto_stubs
-from custom_components.eebus.coordinator import EebusCoordinator, POLL_INTERVAL
+from custom_components.eebus.coordinator import POLL_INTERVAL, EebusCoordinator
 from custom_components.eebus.device_streams import DeviceStreams
 from custom_components.eebus.generated.eebus.v1 import (
     device_service_pb2,
@@ -23,11 +23,11 @@ from custom_components.eebus.generated.eebus.v1 import (
     ohpcf_service_pb2,
 )
 from custom_components.eebus.models import (
+    MEASUREMENT_ID_CATALOG,
     CapabilityState,
     CompressorFlexibilityState,
     ConsumptionLimitState,
     DeviceInfo,
-    MEASUREMENT_ID_CATALOG,
     RoomHeatingValues,
     SetpointState,
     SystemFunctionState,
@@ -35,26 +35,26 @@ from custom_components.eebus.models import (
     _extract_scoped_energy_kwh,
 )
 from custom_components.eebus.snapshot import (
-    DevicePoller,
+    _SNAPSHOT_FIELD_TO_STATE_FIELD,
     RE_REGISTER_NOT_FOUND_STREAK,
+    DevicePoller,
     SnapshotResult,
     _async_fetch_device_info,
     _async_read_room_heating,
     _poll_read,
     _snapshot_observation_from_proto,
-    _SNAPSHOT_FIELD_TO_STATE_FIELD,
     async_build_device_snapshot,
     async_build_snapshot,
 )
 from custom_components.eebus.state import (
+    CapabilitiesState,
+    ConnectionState,
     DeviceState,
     DeviceStateStore,
     HVACState,
     LPCState,
     MeasurementsState,
     OHPCFState,
-    CapabilitiesState,
-    ConnectionState,
     StateField,
     StateObservation,
 )
@@ -501,7 +501,7 @@ def _streams_with(initial: DeviceState) -> tuple[DeviceStateStore, DeviceStreams
 
 
 def test_consolidated_stream_ignores_duplicates_and_detects_revision_gap() -> None:
-    store, streams, hass = _streams_with(DeviceState())
+    _store, streams, hass = _streams_with(DeviceState())
     initial = device_service_pb2.DeviceStateEvent(
         ski="device-ski",
         revision=4,

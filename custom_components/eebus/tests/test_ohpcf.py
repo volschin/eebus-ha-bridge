@@ -16,7 +16,7 @@ from custom_components.eebus.device_session import DeviceSession
 from custom_components.eebus.generated.eebus.v1 import ohpcf_service_pb2 as ohpcf_pb2
 from custom_components.eebus.models import CapabilityState, CompressorFlexibilityState
 from custom_components.eebus.select import EebusCompressorFlexibilitySelect
-from custom_components.eebus.sensor import EebusMeasurementSensor, STATE_SENSORS
+from custom_components.eebus.sensor import STATE_SENSORS, EebusMeasurementSensor
 from custom_components.eebus.snapshot import _async_read_compressor_flexibility
 from custom_components.eebus.state import (
     CapabilitiesState,
@@ -190,9 +190,8 @@ def test_control_rejection_is_validation_error() -> None:
         details="ohpcf control: data not available",
     )
     stub = SimpleNamespace(ControlCompressorFlexibility=AsyncMock(side_effect=error))
-    with patch.object(proto_stubs, "ohpcf_service_stub", return_value=stub):
-        with pytest.raises(ServiceValidationError):
-            asyncio.run(coordinator.async_control_compressor(proto_stubs.OHPCFAction.OHPCF_ACTION_SCHEDULE))
+    with patch.object(proto_stubs, "ohpcf_service_stub", return_value=stub), pytest.raises(ServiceValidationError):
+        asyncio.run(coordinator.async_control_compressor(proto_stubs.OHPCFAction.OHPCF_ACTION_SCHEDULE))
 
 
 @pytest.mark.parametrize(

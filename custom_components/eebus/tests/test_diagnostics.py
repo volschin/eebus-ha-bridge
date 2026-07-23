@@ -12,9 +12,9 @@ from custom_components.eebus.session_diagnostics import (
     StreamWorkerDiagnostics,
 )
 from custom_components.eebus.state import (
+    CapabilitiesState,
     CapabilityKey,
     CapabilityMetadata,
-    CapabilitiesState,
     ConnectionState,
     DeviceState,
     MeasurementsState,

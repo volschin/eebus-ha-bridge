@@ -1,14 +1,13 @@
 """Tests for DeviceSession: typed write RPCs with gRPC error classification."""
 
 import asyncio
-from unittest.mock import AsyncMock
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import grpc
 from grpc.aio import AioRpcError, Metadata
 
-from custom_components.eebus.device_session import DeviceSession, WriteOutcome
 from custom_components.eebus import proto_stubs
+from custom_components.eebus.device_session import DeviceSession, WriteOutcome
 
 
 def _session(ski: str = "test-ski") -> DeviceSession:

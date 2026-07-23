@@ -92,9 +92,8 @@ async def test_setup_entry_retries_when_contract_negotiation_unavailable():
         side_effect=AioRpcError(
             grpc.StatusCode.UNAVAILABLE, Metadata(), Metadata(), details="connect failed"
         ),
-    ):
-        with pytest.raises(ConfigEntryNotReady):
-            await async_setup_entry(MagicMock(), _contract_probe_entry())
+    ), pytest.raises(ConfigEntryNotReady):
+        await async_setup_entry(MagicMock(), _contract_probe_entry())
 
 
 @pytest.mark.asyncio
@@ -106,9 +105,8 @@ async def test_setup_entry_fails_terminally_on_incompatible_api_major():
         "custom_components.eebus.runtime.BridgeRuntime.ensure_contract",
         new_callable=AsyncMock,
         side_effect=IncompatibleAPIMajorError(2),
-    ):
-        with pytest.raises(ConfigEntryError):
-            await async_setup_entry(MagicMock(), _contract_probe_entry())
+    ), pytest.raises(ConfigEntryError):
+        await async_setup_entry(MagicMock(), _contract_probe_entry())
 
 
 def test_remove_replaced_heartbeat_switch():
