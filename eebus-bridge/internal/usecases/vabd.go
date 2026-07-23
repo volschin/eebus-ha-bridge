@@ -61,6 +61,7 @@ type VABDProvider struct {
 
 	publishMu sync.Mutex
 	snapshots providerSnapshotStore[BatterySnapshot]
+	available providerAvailability
 }
 
 // NewVABDProvider builds the provider on the given local battery-system entity
@@ -98,7 +99,16 @@ func NewVABDProvider(batteryEntity spineapi.EntityLocalInterface, bus *eebus.Eve
 		validEntityTypes,
 		false,
 	)
+	p.available.bind(p.UpdateUseCaseAvailability)
 	return p
+}
+
+// AddUseCase announces the use case and immediately marks it unavailable:
+// eebus-go's AddUseCase hardcodes available=true, but the bridge has nothing to
+// serve until Home Assistant delivers a first sample.
+func (p *VABDProvider) AddUseCase() {
+	p.UseCaseBase.AddUseCase()
+	p.available.set(false)
 }
 
 // UseCase returns the provider for registration via Service.AddUseCase, which calls
@@ -227,12 +237,16 @@ func (p *VABDProvider) PublishBatterySnapshot(snapshot BatterySnapshot) error {
 		if err := p.invalidateBatteryMeasurements(); err != nil {
 			return err
 		}
+		p.available.set(false)
 		return p.snapshots.invalidate()
 	}
 	if err := p.publishBatteryMeasurements(snapshot); err != nil {
 		return err
 	}
 	next := snapshot.clone()
+	// Announced before the commit: the measurements are already on the wire, and
+	// Close holds the same publish mutex, so this cannot outlive the provider.
+	p.available.set(true)
 	return p.snapshots.commit(next, snapshot.Validity.ValidUntil, func(version uint64) {
 		p.expireBatterySnapshot(version, time.Now())
 	})
@@ -261,6 +275,7 @@ func (p *VABDProvider) expireBatterySnapshot(version uint64, now time.Time) {
 		return
 	}
 	p.snapshots.clearExpired(version)
+	p.available.set(false)
 }
 
 // Close stops sample expiry and prevents every later EEBUS write.
@@ -268,6 +283,7 @@ func (p *VABDProvider) Close() error {
 	p.publishMu.Lock()
 	defer p.publishMu.Unlock()
 	p.snapshots.close()
+	p.available.set(false)
 	return nil
 }
 

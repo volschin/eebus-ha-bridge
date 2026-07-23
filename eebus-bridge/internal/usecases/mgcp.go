@@ -59,6 +59,7 @@ type MGCPProvider struct {
 
 	publishMu sync.Mutex
 	snapshots providerSnapshotStore[GridSnapshot]
+	available providerAvailability
 }
 
 // NewMGCPProvider builds the provider on the given local grid-connection-point
@@ -96,7 +97,16 @@ func NewMGCPProvider(gridEntity spineapi.EntityLocalInterface, bus *eebus.EventB
 		validEntityTypes,
 		false,
 	)
+	p.available.bind(p.UpdateUseCaseAvailability)
 	return p
+}
+
+// AddUseCase announces the use case and immediately marks it unavailable:
+// eebus-go's AddUseCase hardcodes available=true, but the bridge has nothing to
+// serve until Home Assistant delivers a first sample.
+func (p *MGCPProvider) AddUseCase() {
+	p.UseCaseBase.AddUseCase()
+	p.available.set(false)
 }
 
 // UseCase returns the provider for registration via Service.AddUseCase, which calls
@@ -217,12 +227,16 @@ func (p *MGCPProvider) PublishGridSnapshot(snapshot GridSnapshot) error {
 		if err := p.invalidateGridMeasurements(); err != nil {
 			return err
 		}
+		p.available.set(false)
 		return p.snapshots.invalidate()
 	}
 	if err := p.publishGridMeasurements(snapshot); err != nil {
 		return err
 	}
 	next := snapshot.clone()
+	// Announced before the commit: the measurements are already on the wire, and
+	// Close holds the same publish mutex, so this cannot outlive the provider.
+	p.available.set(true)
 	return p.snapshots.commit(next, snapshot.Validity.ValidUntil, func(version uint64) {
 		p.expireGridSnapshot(version, time.Now())
 	})
@@ -251,6 +265,7 @@ func (p *MGCPProvider) expireGridSnapshot(version uint64, now time.Time) {
 		return
 	}
 	p.snapshots.clearExpired(version)
+	p.available.set(false)
 }
 
 // Close stops sample expiry and prevents every later EEBUS write. It is safe
@@ -259,6 +274,7 @@ func (p *MGCPProvider) Close() error {
 	p.publishMu.Lock()
 	defer p.publishMu.Unlock()
 	p.snapshots.close()
+	p.available.set(false)
 	return nil
 }
 
