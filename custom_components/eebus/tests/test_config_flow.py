@@ -5,8 +5,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import grpc
-from homeassistant.data_entry_flow import FlowResultType
 from grpc.aio import AioRpcError, Metadata
+from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.eebus.config_flow import (
     BridgeProbeResult,
@@ -298,10 +298,10 @@ async def test_probe_classifies_grpc_errors():
     flow._security_mode = "loopback"
 
     class FakeChannel:
-        async def close(self, grace):  # noqa: ANN001
+        async def close(self, grace):
             return None
 
-    async def get_status(_request, timeout):  # noqa: ANN001
+    async def get_status(_request, timeout):
         raise AioRpcError(
             grpc.StatusCode.UNIMPLEMENTED,
             Metadata(),

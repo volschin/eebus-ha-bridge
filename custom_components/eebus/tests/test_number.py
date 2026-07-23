@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 from homeassistant.const import EntityCategory
 
-from custom_components.eebus.number import EebusFailsafeLimitNumber, EebusLPCLimitNumber
 from custom_components.eebus.models import CapabilityState, ConsumptionLimitState, FailsafeState
+from custom_components.eebus.number import EebusFailsafeLimitNumber, EebusLPCLimitNumber
 from custom_components.eebus.state import (
     CapabilitiesState,
     ConnectionState,

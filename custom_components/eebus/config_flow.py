@@ -9,7 +9,6 @@ from typing import Any
 
 import grpc
 import voluptuous as vol
-
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -31,22 +30,22 @@ from homeassistant.helpers.selector import (
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .const import (
+    CONF_AUTH_TOKEN,
     CONF_BATTERY_CHARGED_ENERGY_ENTITY,
     CONF_BATTERY_DISCHARGED_ENERGY_ENTITY,
     CONF_BATTERY_POWER_ENTITY,
     CONF_BATTERY_SOC_ENTITY,
-    CONF_AUTH_TOKEN,
     CONF_DEVICE_SKI,
     CONF_GRID_CONSUMPTION_ENERGY_ENTITY,
     CONF_GRID_FEED_IN_ENERGY_ENTITY,
     CONF_GRID_POWER_ENTITY,
     CONF_GRPC_HOST,
     CONF_GRPC_PORT,
-    CONF_SECURITY_MODE,
-    CONF_TLS_CA_CERTIFICATE,
     CONF_PV_PEAK_POWER_ENTITY,
     CONF_PV_POWER_ENTITY,
     CONF_PV_YIELD_ENERGY_ENTITY,
+    CONF_SECURITY_MODE,
+    CONF_TLS_CA_CERTIFICATE,
     DEFAULT_GRPC_PORT,
     DOMAIN,
     SECURITY_MODE_LOOPBACK,
@@ -213,7 +212,7 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
                 exc_info=True,
             )
             return BridgeProbeResult(error=error)
-        except Exception:  # noqa: BLE001
+        except Exception:
             _LOGGER.debug(
                 "No EEBUS bridge reachable at %s:%s", host, port, exc_info=True
             )
@@ -247,7 +246,7 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
                 label = f"{name} ({device.ski})" if name else device.ski
                 options.append(SelectOptionDict(value=device.ski, label=label))
             return options
-        except Exception:  # noqa: BLE001
+        except Exception:
             _LOGGER.debug("Listing discovered devices failed", exc_info=True)
             return []
         finally:

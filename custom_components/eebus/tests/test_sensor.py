@@ -6,10 +6,10 @@ from homeassistant.const import EntityCategory
 
 from custom_components.eebus.models import CapabilityState, FailsafeState
 from custom_components.eebus.sensor import (
-    EebusMeasurementDescription,
-    EebusMeasurementSensor,
     MEASUREMENT_SENSORS,
     STATE_SENSORS,
+    EebusMeasurementDescription,
+    EebusMeasurementSensor,
 )
 from custom_components.eebus.state import (
     CapabilitiesState,

@@ -13,7 +13,6 @@ from typing import Protocol
 
 import grpc
 import grpc.aio
-
 from homeassistant.const import (
     ATTR_UNIT_OF_MEASUREMENT,
     PERCENTAGE,
@@ -31,7 +30,11 @@ from homeassistant.helpers.event import (
 from . import proto_stubs
 from .grpc_client import (
     RPC_TIMEOUT,
+)
+from .grpc_client import (
     is_unimplemented as _is_unimplemented,
+)
+from .grpc_client import (
     rpc_error_text as _rpc_error_text,
 )
 
@@ -155,7 +158,7 @@ class _ProviderPusher:
                 await self._push()
             except asyncio.CancelledError:
                 raise
-            except Exception:  # noqa: BLE001
+            except Exception:
                 _LOGGER.exception("Unexpected failure pushing %s provider data", self._label)
 
 

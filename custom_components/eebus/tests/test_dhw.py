@@ -28,9 +28,9 @@ from custom_components.eebus.snapshot import (
 from custom_components.eebus.state import (
     CapabilitiesState,
     ConnectionState,
-    DHWState,
     DeviceState,
     DeviceStateStore,
+    DHWState,
     MeasurementsState,
     StateField,
 )
@@ -216,9 +216,8 @@ def test_system_function_validation_error_is_mapped() -> None:
     )
     stub = SimpleNamespace(SetDHWBoost=AsyncMock(side_effect=error))
     coordinator = _coordinator()
-    with patch.object(proto_stubs, "dhw_service_stub", return_value=stub):
-        with pytest.raises(ServiceValidationError):
-            asyncio.run(coordinator.async_set_dhw_boost(True))
+    with patch.object(proto_stubs, "dhw_service_stub", return_value=stub), pytest.raises(ServiceValidationError):
+        asyncio.run(coordinator.async_set_dhw_boost(True))
 
 
 def test_dhw_boost_switch_reads_typed_state() -> None:

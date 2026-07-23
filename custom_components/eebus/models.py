@@ -224,8 +224,7 @@ def _dhw_system_function_to_dict(state: proto_stubs.DHWSystemFunctionState) -> D
 
     status = proto_stubs.DHWBoostStatus.Name(state.boost_status)
     prefix = "DHW_BOOST_STATUS_"
-    if status.startswith(prefix):
-        status = status[len(prefix) :]
+    status = status.removeprefix(prefix)
     return DHWSystemFunctionState(
         boost_status=status.lower(),
         boost_writable=state.boost_writable,

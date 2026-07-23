@@ -12,7 +12,6 @@ from typing import Any
 
 import grpc
 import grpc.aio
-
 from homeassistant.core import HomeAssistant
 
 from . import proto_stubs
@@ -20,14 +19,14 @@ from .device_session import DeviceSession
 from .device_streams import DeviceStreams
 from .grpc_client import RPC_TIMEOUT, GrpcChannelManager
 from .server_info import BridgeContract, async_read_bridge_contract
-from .ski import normalize_ski
-from .snapshot import DevicePoller
 from .session_diagnostics import (
     DeviceStreamDiagnostics,
     OperationalDiagnostics,
     ProviderSampleProjection,
     RecoveryProjection,
 )
+from .ski import normalize_ski
+from .snapshot import DevicePoller
 from .state import DeviceState, DeviceStateStore
 
 

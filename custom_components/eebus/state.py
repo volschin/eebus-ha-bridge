@@ -15,8 +15,8 @@ from .models import (
     CapabilityState,
     CompressorFlexibilityState,
     ConsumptionLimitState,
-    DHWSystemFunctionState,
     DeviceInfo,
+    DHWSystemFunctionState,
     FailsafeState,
     HeartbeatState,
     SetpointState,
@@ -400,11 +400,7 @@ def reduce_observation(
                 updated = _replace_field(updated, field_name, None)
                 fresh.discard(field_name)
                 field_revisions[field_name] = revision
-        elif capability == CapabilityState.TEMPORARILY_UNAVAILABLE:
-            for field_name in value_fields:
-                fresh.discard(field_name)
-                field_revisions[field_name] = revision
-        elif result.explicit_support and result.explicit_state is None:
+        elif capability == CapabilityState.TEMPORARILY_UNAVAILABLE or result.explicit_support and result.explicit_state is None:
             for field_name in value_fields:
                 fresh.discard(field_name)
                 field_revisions[field_name] = revision

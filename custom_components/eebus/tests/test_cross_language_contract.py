@@ -38,14 +38,14 @@ def go_contract_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str
     if shutil.which("go") is None:
         pytest.skip("Go toolchain not available; the cross-language contract test runs in CI")
     binary = tmp_path_factory.mktemp("contract-server") / "eebus-contract-testserver"
-    subprocess.run(  # noqa: S603
+    subprocess.run(
         ["go", "build", "-o", str(binary), "./cmd/eebus-contract-testserver"],
         cwd=ROOT / "eebus-bridge",
         check=True,
     )
     stderr_path = tmp_path_factory.mktemp("contract-server-logs") / "stderr.log"
     with stderr_path.open("w", encoding="utf-8") as stderr_sink:
-        process = subprocess.Popen(  # noqa: S603
+        process = subprocess.Popen(
             [str(binary)],
             cwd=ROOT / "eebus-bridge",
             stdout=subprocess.PIPE,

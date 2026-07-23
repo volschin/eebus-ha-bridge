@@ -116,7 +116,7 @@ async def test_pv_push_publishes_power_and_optional_fields(monkeypatch):
         def __init__(self, _channel):
             pass
 
-        async def PublishPVData(self, request, timeout=None):  # noqa: N802
+        async def PublishPVData(self, request, timeout=None):
             captured["request"] = request
             return proto_stubs.Empty()
 
@@ -151,11 +151,11 @@ async def test_pv_push_publishes_peak_power_separately(monkeypatch):
         def __init__(self, _channel):
             pass
 
-        async def PublishPVData(self, request, timeout=None):  # noqa: N802
+        async def PublishPVData(self, request, timeout=None):
             captured["pv"] = request
             return proto_stubs.Empty()
 
-        async def PublishPVPeakPower(self, request, timeout=None):  # noqa: N802
+        async def PublishPVPeakPower(self, request, timeout=None):
             captured["peak"] = request
             return proto_stubs.Empty()
 
@@ -177,7 +177,7 @@ async def test_pv_push_invalidates_when_power_unavailable(monkeypatch):
         def __init__(self, _channel):
             pass
 
-        async def PublishPVData(self, request, timeout=None):  # noqa: N802
+        async def PublishPVData(self, request, timeout=None):
             captured["request"] = request
             return proto_stubs.Empty()
 
@@ -198,7 +198,7 @@ async def test_pv_invalid_required_sensor_is_latched_until_valid_sample(monkeypa
         def __init__(self, _channel):
             pass
 
-        async def PublishPVData(self, request, timeout=None):  # noqa: N802
+        async def PublishPVData(self, request, timeout=None):
             requests.append(request)
             return proto_stubs.Empty()
 
@@ -239,7 +239,7 @@ async def test_battery_push_publishes_power_and_optional_fields(monkeypatch):
         def __init__(self, _channel):
             pass
 
-        async def PublishBatteryData(self, request, timeout=None):  # noqa: N802
+        async def PublishBatteryData(self, request, timeout=None):
             captured["request"] = request
             return proto_stubs.Empty()
 
@@ -268,7 +268,7 @@ async def test_battery_push_invalidates_when_power_unavailable(monkeypatch):
         def __init__(self, _channel):
             pass
 
-        async def PublishBatteryData(self, request, timeout=None):  # noqa: N802
+        async def PublishBatteryData(self, request, timeout=None):
             captured["request"] = request
             return proto_stubs.Empty()
 
@@ -289,7 +289,7 @@ async def test_battery_invalid_required_sensor_is_latched_until_valid_sample(mon
         def __init__(self, _channel):
             pass
 
-        async def PublishBatteryData(self, request, timeout=None):  # noqa: N802
+        async def PublishBatteryData(self, request, timeout=None):
             requests.append(request)
             return proto_stubs.Empty()
 

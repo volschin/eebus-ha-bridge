@@ -7,7 +7,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import UTC
-from typing import Generic, Protocol, TypeVar, cast
+from typing import Protocol, TypeVar, cast
 
 import grpc
 import grpc.aio
@@ -15,17 +15,23 @@ import grpc.aio
 from . import proto_stubs
 from .grpc_client import (
     RPC_TIMEOUT,
+)
+from .grpc_client import (
     is_not_found as _is_not_found,
+)
+from .grpc_client import (
     is_unimplemented as _is_unimplemented,
+)
+from .grpc_client import (
     rpc_error_text as _rpc_error_text,
 )
 from .models import (
-    CapabilityState,
     FLAT_MEASUREMENT_KEYS,
+    CapabilityState,
     CompressorFlexibilityState,
     ConsumptionLimitState,
-    DHWSystemFunctionState,
     DeviceInfo,
+    DHWSystemFunctionState,
     FailsafeState,
     HeartbeatState,
     RoomHeatingValues,
@@ -40,9 +46,9 @@ from .state import (
     CapabilityKey,
     CapabilityResult,
     ConnectionState,
-    DHWState,
     DeviceState,
     DeviceStateStore,
+    DHWState,
     HVACState,
     LPCState,
     MeasurementsState,
@@ -56,7 +62,6 @@ _LEGACY_CAPABILITY_WARNED: set[str] = set()
 
 RE_REGISTER_NOT_FOUND_STREAK = 4
 
-_ResponseT = TypeVar("_ResponseT")
 _ResponseT_co = TypeVar("_ResponseT_co", covariant=True)
 
 
@@ -67,10 +72,10 @@ class _ReadCall(Protocol[_ResponseT_co]):
 
 
 @dataclass(frozen=True, slots=True)
-class _ReadResult(Generic[_ResponseT]):
+class _ReadResult[ResponseT]:
     """One best-effort read plus its deferred support result."""
 
-    value: _ResponseT | None
+    value: ResponseT | None
     saw_not_found: bool = False
     status: grpc.StatusCode | None = None
 
@@ -193,12 +198,12 @@ def _capability_results_from_proto(
     return tuple(results)
 
 
-async def _poll_read(
+async def _poll_read[ResponseT](
     label: str,
-    call: _ReadCall[_ResponseT],
+    call: _ReadCall[ResponseT],
     request: proto_stubs.DeviceRequest,
     ski: str,
-) -> _ReadResult[_ResponseT]:
+) -> _ReadResult[ResponseT]:
     """Call a device-scoped read RPC once and return deferred status metadata."""
     try:
         response = await call(request, timeout=RPC_TIMEOUT)
@@ -214,7 +219,7 @@ async def _poll_read(
             _is_not_found(err),
             status=err.code(),
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         _LOGGER.exception("Failed to read %s", label)
         return _ReadResult(
             None,
@@ -268,7 +273,7 @@ async def _async_fetch_device_info(device_stub: proto_stubs.DeviceServiceStub, s
                 _rpc_error_text(err),
             )
         return None
-    except Exception:  # noqa: BLE001
+    except Exception:
         _LOGGER.exception("Failed to list paired devices")
         return None
 
