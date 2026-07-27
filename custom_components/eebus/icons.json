@@ -30,7 +30,8 @@
     "select": {},
     "binary_sensor": {
       "connected": { "default": "mdi:lan-connect" },
-      "heartbeat_ok": { "default": "mdi:heart-pulse" }
+      "heartbeat_ok": { "default": "mdi:heart-pulse" },
+      "heat_pump_active": { "default": "mdi:heat-pump" }
     },
     "climate": {
       "room_heating": { "default": "mdi:radiator" }
