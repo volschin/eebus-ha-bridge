@@ -18,12 +18,17 @@ from .state import StateField, is_fresh
 PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling
 
 # Compressor-flexibility process states that count as "on" (consuming or about to).
-_OHPCF_ON_STATES = {"COMPRESSOR_STATE_RUNNING", "COMPRESSOR_STATE_SCHEDULED"}
+_OHPCF_RUNNING_STATE = "COMPRESSOR_STATE_RUNNING"
+_OHPCF_ON_STATES = {_OHPCF_RUNNING_STATE, "COMPRESSOR_STATE_SCHEDULED"}
 _OHPCF_PAUSED_STATE = "COMPRESSOR_STATE_PAUSED"
 
 OPTION_ON = "on"
 OPTION_PAUSED = "paused"
 OPTION_OFF = "off"
+
+# Canonical display order; the offered subset is filtered out of this tuple so
+# the dropdown never reorders as the process state changes.
+_OPTION_ORDER = (OPTION_ON, OPTION_PAUSED, OPTION_OFF)
 
 
 async def async_setup_entry(
@@ -48,13 +53,13 @@ class EebusCompressorFlexibilitySelect(EebusEntity, SelectEntity):
     paused = pause the running process.
     off    = abort the process (or the implicit state when no offer is running).
 
+    ``options`` is narrowed to the transitions the current process state and its
+    pausable/stoppable constraints actually permit.
+
     This is a primary operational control, so it has no entity category.
     """
 
     _attr_translation_key = "compressor_flexibility"
-    # RUF012: HA declares _attr_options as an instance variable, so annotating it
-    # ClassVar here makes mypy reject the override.
-    _attr_options = [OPTION_ON, OPTION_PAUSED, OPTION_OFF]  # noqa: RUF012
 
     def __init__(self, coordinator: EebusCoordinator) -> None:
         """Initialize."""
@@ -90,6 +95,31 @@ class EebusCompressorFlexibilitySelect(EebusEntity, SelectEntity):
         if state == _OHPCF_PAUSED_STATE:
             return OPTION_PAUSED
         return OPTION_OFF
+
+    @property
+    def options(self) -> list[str]:
+        """Return only the transitions OHPCF permits in the current state.
+
+        OHPCF-022 writes the state of an *existing* power sequence, so a pause
+        needs a running (and pausable) process and an abort needs an active or
+        scheduled (and stoppable) one. Offering the full list regardless would
+        let the dropdown advertise transitions that can only end in an error.
+        The current option always stays in the list, as HA requires.
+        """
+        flex = self._flex()
+        if flex is None:
+            return list(_OPTION_ORDER)
+        allowed = {self.current_option}
+        if flex.state == _OHPCF_PAUSED_STATE or flex.available:
+            allowed.add(OPTION_ON)
+        if flex.state == _OHPCF_RUNNING_STATE and flex.is_pausable:
+            allowed.add(OPTION_PAUSED)
+        if (
+            flex.state in _OHPCF_ON_STATES | {_OHPCF_PAUSED_STATE}
+            and flex.is_stoppable
+        ):
+            allowed.add(OPTION_OFF)
+        return [option for option in _OPTION_ORDER if option in allowed]
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:

@@ -107,6 +107,53 @@ def test_select_current_option(raw: str, option: str) -> None:
     assert _select_with(_flex(raw)).current_option == option
 
 
+@pytest.mark.parametrize(
+    ("flex", "expected"),
+    [
+        # An offered but not yet started process: schedule it, nothing to pause or abort.
+        (_flex(), ["on", "off"]),
+        # Running: pausable per the offer, but not stoppable, so no abort.
+        (_flex("COMPRESSOR_STATE_RUNNING"), ["on", "paused"]),
+        (
+            replace(_flex("COMPRESSOR_STATE_RUNNING"), is_stoppable=True),
+            ["on", "paused", "off"],
+        ),
+        # Scheduled: OHPCF-022/2 needs a *running* process, so no pause.
+        (_flex("COMPRESSOR_STATE_SCHEDULED"), ["on"]),
+        (
+            replace(_flex("COMPRESSOR_STATE_SCHEDULED"), is_stoppable=True),
+            ["on", "off"],
+        ),
+        # Paused: resume is always permitted, abort only when stoppable.
+        (_flex("COMPRESSOR_STATE_PAUSED"), ["on", "paused"]),
+        (
+            replace(_flex("COMPRESSOR_STATE_PAUSED"), is_stoppable=True),
+            ["on", "paused", "off"],
+        ),
+        # No offer at all: nothing to schedule, pause or abort.
+        (
+            replace(
+                _flex("COMPRESSOR_STATE_STOPPED"),
+                available=False,
+                is_pausable=False,
+                is_stoppable=False,
+            ),
+            ["off"],
+        ),
+    ],
+)
+def test_select_offers_only_permitted_transitions(
+    flex: CompressorFlexibilityState, expected: list[str]
+) -> None:
+    select = _select_with(flex)
+    assert select.options == expected
+    assert select.current_option in select.options
+
+
+def test_select_options_fall_back_to_all_transitions_without_an_offer() -> None:
+    assert _select_with(None).options == ["on", "paused", "off"]
+
+
 def test_select_is_unavailable_when_retained_offer_is_stale() -> None:
     coordinator = _coordinator(_flex())
     coordinator.data = DeviceState(
