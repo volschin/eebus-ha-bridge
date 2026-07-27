@@ -17,6 +17,11 @@ from .state import StateField, is_fresh
 
 PARALLEL_UPDATES = 0  # Coordinator-based, no per-entity polling
 
+# Standby draw sits at roughly 5-25 W (measured on a Bosch Compress 5800i), while
+# a running compressor pulls far more, so anything above this separates the two
+# without needing an extra EEBUS data point.
+HEAT_PUMP_ACTIVE_THRESHOLD_W = 100.0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -29,6 +34,7 @@ async def async_setup_entry(
         [
             EebusConnectedSensor(coordinator),
             EebusHeartbeatOkSensor(coordinator),
+            EebusHeatPumpActiveSensor(coordinator),
         ]
     )
 
@@ -103,3 +109,38 @@ class EebusHeartbeatOkSensor(EebusEntity, BinarySensorEntity):
             return None
         # PROBLEM class: is_on=True means there's a problem
         return not hb.within_duration
+
+
+class EebusHeatPumpActiveSensor(EebusEntity, BinarySensorEntity):
+    """Binary sensor deriving compressor activity from total power draw.
+
+    The device reports no explicit "compressor running" flag, so this thresholds
+    the power consumption measurement instead: standby is a few watts, an active
+    compressor is orders of magnitude above it. Purely derived — it needs no
+    EEBUS data point beyond the power reading the power sensor already uses.
+    """
+
+    _attr_device_class = BinarySensorDeviceClass.RUNNING
+    _attr_translation_key = "heat_pump_active"
+
+    def __init__(self, coordinator: EebusCoordinator) -> None:
+        """Initialize."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.ski}_heat_pump_active"
+
+    @property
+    def available(self) -> bool:
+        """Expose activity only while the power measurement is fresh."""
+        data = self.coordinator.data
+        return bool(super().available and data and is_fresh(data, StateField.POWER_WATTS))
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return True while power draw exceeds the standby threshold."""
+        data = self.coordinator.data
+        if data is None:
+            return None
+        power = data.measurements.power_watts
+        if power is None:
+            return None
+        return power > HEAT_PUMP_ACTIVE_THRESHOLD_W

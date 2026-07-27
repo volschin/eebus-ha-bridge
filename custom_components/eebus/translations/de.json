@@ -168,7 +168,8 @@
     },
     "binary_sensor": {
       "connected": { "name": "Verbunden" },
-      "heartbeat_ok": { "name": "Heartbeat OK" }
+      "heartbeat_ok": { "name": "Heartbeat OK" },
+      "heat_pump_active": { "name": "Wärmepumpe aktiv" }
     },
     "climate": {
       "room_heating": { "name": "Raumheizung" }

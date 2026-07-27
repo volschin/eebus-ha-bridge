@@ -211,6 +211,7 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 |--------|-----|-------------|
 | `sensor.eebus_power_consumption` | sensor | Aktuelle elektr. Leistung (W) |
 | `sensor.eebus_consumption_limit` | sensor | Aktuell gesetztes LPC-Limit (W), readonly |
+| `binary_sensor.eebus_heat_pump_active` | binary_sensor | Verdichter laeuft, abgeleitet aus Leistungsaufnahme > 100 W |
 
 ### Steuerung
 
