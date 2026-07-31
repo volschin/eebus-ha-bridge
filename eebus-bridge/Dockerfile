@@ -17,8 +17,8 @@ FROM alpine:3.24
 
 # hadolint ignore=DL3018
 RUN apk add --no-cache ca-certificates \
- && addgroup -S eebus \
- && adduser -S -G eebus eebus \
+ && addgroup -g 101 -S eebus \
+ && adduser -u 100 -S -G eebus eebus \
  && mkdir -p /data /etc/eebus-bridge \
  && chown eebus:eebus /data
 
@@ -30,6 +30,9 @@ EXPOSE 50051 4712
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["eebus-bridge", "-healthcheck", "--config", "/etc/eebus-bridge/config.yaml"]
 
-USER eebus
+# Numeric form satisfies hadolint DL3066 and is resolvable without /etc/passwd.
+# 100:101 is exactly what `adduser -S` assigned before, so ownership of the
+# existing /data volume is unchanged and no re-pairing is triggered.
+USER 100:101
 ENTRYPOINT ["eebus-bridge"]
 CMD ["--config", "/etc/eebus-bridge/config.yaml"]
