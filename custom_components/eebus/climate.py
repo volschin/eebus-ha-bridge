@@ -71,6 +71,13 @@ class EebusRoomHeatingClimate(EebusEntity, ClimateEntity):
         )
 
     @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Expose the EEBUS HeatingZone user label when the device publishes one."""
+        data = self.coordinator.data
+        label = data.hvac.zone_label if data is not None else None
+        return None if label is None else {"zone_label": label}
+
+    @property
     def supported_features(self) -> ClimateEntityFeature:
         features = ClimateEntityFeature(0)
         setpoint = self._setpoint()

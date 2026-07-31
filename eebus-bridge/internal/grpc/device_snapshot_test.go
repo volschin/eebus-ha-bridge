@@ -136,8 +136,8 @@ func TestDeviceSnapshotKeepsZeroValuesAndPerFieldState(t *testing.T) {
 		snapshotFieldState(snapshot, pb.SnapshotFieldId_SNAPSHOT_FIELD_ENERGY_CONSUMED) == pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_AVAILABLE {
 		t.Fatalf("field states = %+v", snapshot.GetFieldStates())
 	}
-	if len(snapshot.GetFieldStates()) != 34 {
-		t.Fatalf("field state count = %d, want 34", len(snapshot.GetFieldStates()))
+	if len(snapshot.GetFieldStates()) != 35 {
+		t.Fatalf("field state count = %d, want 35", len(snapshot.GetFieldStates()))
 	}
 	for _, capability := range snapshot.GetCapabilities().GetCapabilities() {
 		if capability.GetId() == pb.CapabilityId_CAPABILITY_MONITORING &&

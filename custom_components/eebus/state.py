@@ -86,6 +86,9 @@ class HVACState:
 
     setpoint: SetpointState | None = None
     system_function: SystemFunctionState | None = None
+    # EEBUS HeatingZone deviceClassificationUserData.userLabel. Device metadata
+    # rather than a live reading: it changes only when the user renames the zone.
+    zone_label: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +150,7 @@ class StateField(StrEnum):
     DHW_SYSTEM_FUNCTION = "dhw_system_function"
     ROOM_HEATING_SETPOINT = "room_heating_setpoint"
     ROOM_HEATING_SYSTEM_FUNCTION = "room_heating_system_function"
+    ROOM_HEATING_ZONE_LABEL = "room_heating_zone_label"
 
 
 class CapabilityKey(StrEnum):
@@ -230,6 +234,7 @@ _MEASUREMENT_FIELDS = (
         StateField.DHW_SYSTEM_FUNCTION,
         StateField.ROOM_HEATING_SETPOINT,
         StateField.ROOM_HEATING_SYSTEM_FUNCTION,
+        StateField.ROOM_HEATING_ZONE_LABEL,
     }
 )
 _CAPABILITY_FIELDS: dict[CapabilityKey, tuple[StateField, ...]] = {
@@ -246,6 +251,7 @@ _CAPABILITY_FIELDS: dict[CapabilityKey, tuple[StateField, ...]] = {
     CapabilityKey.ROOM_HEATING: (
         StateField.ROOM_HEATING_SETPOINT,
         StateField.ROOM_HEATING_SYSTEM_FUNCTION,
+        StateField.ROOM_HEATING_ZONE_LABEL,
     ),
 }
 _FIELD_CAPABILITY = {
@@ -297,6 +303,8 @@ def _field_value(state: DeviceState, field_name: StateField) -> object:
         return state.dhw.system_function
     if field_name == StateField.ROOM_HEATING_SETPOINT:
         return state.hvac.setpoint
+    if field_name == StateField.ROOM_HEATING_ZONE_LABEL:
+        return state.hvac.zone_label
     return state.hvac.system_function
 
 
@@ -325,6 +333,8 @@ def _replace_field(state: DeviceState, field_name: StateField, value: object) ->
         return replace(state, dhw=replace(state.dhw, system_function=value))  # type: ignore[arg-type]
     if field_name == StateField.ROOM_HEATING_SETPOINT:
         return replace(state, hvac=replace(state.hvac, setpoint=value))  # type: ignore[arg-type]
+    if field_name == StateField.ROOM_HEATING_ZONE_LABEL:
+        return replace(state, hvac=replace(state.hvac, zone_label=value))  # type: ignore[arg-type]
     return replace(state, hvac=replace(state.hvac, system_function=value))  # type: ignore[arg-type]
 
 

@@ -148,6 +148,7 @@ _SNAPSHOT_FIELD_TO_STATE_FIELD = {
     proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_DHW_SYSTEM_FUNCTION: StateField.DHW_SYSTEM_FUNCTION,
     proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_ROOM_HEATING_SETPOINT: StateField.ROOM_HEATING_SETPOINT,
     proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_ROOM_HEATING_SYSTEM_FUNCTION: StateField.ROOM_HEATING_SYSTEM_FUNCTION,
+    proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_ROOM_HEATING_ZONE_LABEL: StateField.ROOM_HEATING_ZONE_LABEL,
 }
 
 
@@ -595,6 +596,7 @@ async def async_build_snapshot(
         hvac=HVACState(
             setpoint=(room_heating_value.setpoint if room_heating_value is not None else None),
             system_function=(room_heating_value.system_function if room_heating_value is not None else None),
+            zone_label=(room_heating_value.zone_label if room_heating_value is not None else None),
         ),
         ohpcf=OHPCFState(compressor_flexibility=compressor.value),
     )
@@ -657,6 +659,10 @@ async def async_build_snapshot(
         observed_fields.update(room_fields)
         if room_heating_value is not None and room_heating_value.current_temperature_celsius is not None:
             observed_fields.add(StateField.ROOM_TEMPERATURE_C)
+        # Absent label means the device publishes none; do not mark it observed,
+        # so a poll cannot clear a label discovered earlier.
+        if room_heating_value is not None and room_heating_value.zone_label is not None:
+            observed_fields.add(StateField.ROOM_HEATING_ZONE_LABEL)
     else:
         unavailable_fields.update(room_fields)
 
@@ -787,6 +793,7 @@ def _snapshot_observation_from_proto(
         hvac=HVACState(
             setpoint=room_heating.setpoint if room_heating is not None else None,
             system_function=room_heating.system_function if room_heating is not None else None,
+            zone_label=room_heating.zone_label if room_heating is not None else None,
         ),
         ohpcf=OHPCFState(compressor_flexibility=compressor),
     )

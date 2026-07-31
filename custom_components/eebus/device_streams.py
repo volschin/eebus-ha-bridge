@@ -765,6 +765,7 @@ class DeviceStreams:
             hvac=HVACState(
                 setpoint=values.setpoint,
                 system_function=values.system_function,
+                zone_label=values.zone_label,
             ),
             measurements=MeasurementsState(room_temperature_c=values.current_temperature_celsius),
         )
@@ -775,6 +776,10 @@ class DeviceStreams:
             fields.add(StateField.ROOM_HEATING_SYSTEM_FUNCTION)
         if values.current_temperature_celsius is not None:
             fields.add(StateField.ROOM_TEMPERATURE_C)
+        # Only observe the label when the bridge actually sent one. An event
+        # without it must leave a previously discovered label untouched.
+        if values.zone_label is not None:
+            fields.add(StateField.ROOM_HEATING_ZONE_LABEL)
         self._store.dispatch(
             StateObservation(
                 state=state,

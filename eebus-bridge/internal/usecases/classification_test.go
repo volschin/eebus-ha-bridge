@@ -7,6 +7,7 @@ import (
 	spineapi "github.com/enbility/spine-go/api"
 	"github.com/enbility/spine-go/mocks"
 	"github.com/enbility/spine-go/model"
+	"github.com/stretchr/testify/mock"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
 
@@ -139,6 +140,7 @@ func TestDeviceClassifierReadsCachedClassificationOnEntityDiscovery(t *testing.T
 		model.RoleTypeServer,
 	).Return(remoteFeature)
 	entity.On("Device").Return(device)
+	entity.On("EntityType").Return(model.EntityTypeTypeHeatPumpAppliance).Maybe()
 	entity.On("FeatureOfTypeAndRole", model.FeatureTypeTypeDeviceClassification, model.RoleTypeServer).
 		Return(remoteFeature)
 	remoteFeature.On("DataCopy", model.FunctionTypeDeviceClassificationManufacturerData).Return(
@@ -177,6 +179,7 @@ func TestDeviceClassifierRequestsMissingClassification(t *testing.T) {
 	operation := mocks.NewOperationsInterface(t)
 	operation.On("Read").Return(true)
 	entity.On("Device").Return(device)
+	entity.On("EntityType").Return(model.EntityTypeTypeHeatPumpAppliance).Maybe()
 	entity.On("FeatureOfTypeAndRole", model.FeatureTypeTypeDeviceClassification, model.RoleTypeServer).
 		Return(remoteFeature)
 	device.On(
@@ -220,6 +223,7 @@ func TestDeviceClassifierRequestsManufacturerDataOncePerDevice(t *testing.T) {
 	operation := mocks.NewOperationsInterface(t)
 	operation.On("Read").Return(true)
 	entity.On("Device").Return(device)
+	entity.On("EntityType").Return(model.EntityTypeTypeHeatPumpAppliance).Maybe()
 	entity.On("FeatureOfTypeAndRole", model.FeatureTypeTypeDeviceClassification, model.RoleTypeServer).
 		Return(remoteFeature)
 	device.On(
@@ -282,6 +286,7 @@ func TestDeviceClassifierHandlesMissingClientAndReadOperation(t *testing.T) {
 	entity.On("FeatureOfTypeAndRole", model.FeatureTypeTypeDeviceClassification, model.RoleTypeServer).
 		Return(remoteFeature)
 	entity.On("Device").Return(device)
+	entity.On("EntityType").Return(model.EntityTypeTypeHeatPumpAppliance).Maybe()
 	device.On(
 		"FeatureByEntityTypeAndRole",
 		entity,
@@ -343,5 +348,194 @@ func TestClassificationDetailsPreferDeviceCodeAndMergePartialValues(t *testing.T
 	})
 	if vendorFallback.brand != "Vaillant Group" {
 		t.Fatalf("vendor fallback brand = %q", vendorFallback.brand)
+	}
+}
+
+func zoneLabelValue(value string) *model.LabelType {
+	result := model.LabelType(value)
+	return &result
+}
+
+// zoneLabelEntity builds a remote entity of the given type whose
+// DeviceClassification server feature answers the user-data function with data.
+func zoneLabelEntity(
+	t *testing.T,
+	device *mocks.DeviceRemoteInterface,
+	entityType model.EntityTypeType,
+	data *model.DeviceClassificationUserDataType,
+) *mocks.EntityRemoteInterface {
+	t.Helper()
+	entity := mocks.NewEntityRemoteInterface(t)
+	entity.On("EntityType").Return(entityType).Maybe()
+	entity.On("Device").Return(device).Maybe()
+	remoteFeature := mocks.NewFeatureRemoteInterface(t)
+	remoteFeature.On("String").Return("DeviceClassification/server").Maybe()
+	remoteFeature.On("DataCopy", model.FunctionTypeDeviceClassificationManufacturerData).
+		Return(&model.DeviceClassificationManufacturerDataType{}).Maybe()
+	remoteFeature.On("DataCopy", model.FunctionTypeDeviceClassificationUserData).
+		Return(data).Maybe()
+	entity.On("FeatureOfTypeAndRole", model.FeatureTypeTypeDeviceClassification, model.RoleTypeServer).
+		Return(remoteFeature).Maybe()
+	device.On(
+		"FeatureByEntityTypeAndRole",
+		entity,
+		model.FeatureTypeTypeDeviceClassification,
+		model.RoleTypeServer,
+	).Return(remoteFeature).Maybe()
+	return entity
+}
+
+func TestDeviceClassifierStoresZoneLabelFromHeatingZoneEntity(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	bus := eebus.NewEventBus()
+	events := bus.Subscribe()
+	defer bus.Unsubscribe(events)
+	classifier := NewDeviceClassifier(registry, bus)
+	classifier.localEntity = mocks.NewEntityLocalInterface(t)
+	device := mocks.NewDeviceRemoteInterface(t)
+	entity := mocks.NewEntityRemoteInterface(t)
+	entity.On("EntityType").Return(model.EntityTypeTypeHeatingZone).Maybe()
+
+	payload := spineapi.EventPayload{
+		Ski:    testValidUsecaseSKI,
+		Device: device,
+		Entity: entity,
+		Data:   &model.DeviceClassificationUserDataType{UserLabel: zoneLabelValue("Zone 1")},
+	}
+	classifier.HandleEvent(payload)
+
+	if label := registry.ZoneLabel(testValidUsecaseSKI); label != "Zone 1" {
+		t.Fatalf("zone label = %q", label)
+	}
+	if event := <-events; event.Type != eebus.EventTypeDeviceClassificationUpdated {
+		t.Fatalf("event = %+v", event)
+	}
+
+	// An unchanged label must not fan out a second resync.
+	classifier.HandleEvent(payload)
+	select {
+	case event := <-events:
+		t.Fatalf("unchanged zone label published %+v", event)
+	default:
+	}
+}
+
+// The HeatingCircuit and HVACRoom entities advertise deviceClassificationUserData
+// and answer it empty on real hardware. Neither may store or clear a label.
+func TestDeviceClassifierIgnoresZoneLabelFromSiblingEntities(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	classifier := NewDeviceClassifier(registry, nil)
+	classifier.localEntity = mocks.NewEntityLocalInterface(t)
+	device := mocks.NewDeviceRemoteInterface(t)
+
+	for _, entityType := range []model.EntityTypeType{
+		model.EntityTypeTypeHeatingCircuit,
+		model.EntityTypeTypeHvacRoom,
+	} {
+		entity := mocks.NewEntityRemoteInterface(t)
+		entity.On("EntityType").Return(entityType).Maybe()
+		classifier.HandleEvent(spineapi.EventPayload{
+			Ski:    testValidUsecaseSKI,
+			Device: device,
+			Entity: entity,
+			Data:   &model.DeviceClassificationUserDataType{UserLabel: zoneLabelValue("wrong")},
+		})
+		if label := registry.ZoneLabel(testValidUsecaseSKI); label != "" {
+			t.Fatalf("%s entity stored label %q", entityType, label)
+		}
+	}
+
+	// A good label must survive a later empty answer from a sibling entity.
+	zone := mocks.NewEntityRemoteInterface(t)
+	zone.On("EntityType").Return(model.EntityTypeTypeHeatingZone).Maybe()
+	classifier.HandleEvent(spineapi.EventPayload{
+		Ski: testValidUsecaseSKI, Device: device, Entity: zone,
+		Data: &model.DeviceClassificationUserDataType{UserLabel: zoneLabelValue("Zone 1")},
+	})
+	classifier.HandleEvent(spineapi.EventPayload{
+		Ski: testValidUsecaseSKI, Device: device, Entity: zone,
+		Data: &model.DeviceClassificationUserDataType{},
+	})
+	if label := registry.ZoneLabel(testValidUsecaseSKI); label != "Zone 1" {
+		t.Fatalf("empty user data cleared the label: %q", label)
+	}
+}
+
+func TestDeviceClassifierReadsCachedZoneLabelOnEntityDiscovery(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	classifier := NewDeviceClassifier(registry, nil)
+	local := mocks.NewEntityLocalInterface(t)
+	local.On("Device").Return(nil)
+	local.On("FeatureOfTypeAndRole", model.FeatureTypeTypeDeviceClassification, model.RoleTypeClient).
+		Return(mocks.NewFeatureLocalInterface(t)).Maybe()
+	classifier.localEntity = local
+
+	device := mocks.NewDeviceRemoteInterface(t)
+	deviceType := model.DeviceTypeTypeHeatgenerationSystem
+	device.On("DeviceType").Return(&deviceType).Maybe()
+	entity := zoneLabelEntity(t, device, model.EntityTypeTypeHeatingZone,
+		&model.DeviceClassificationUserDataType{UserLabel: zoneLabelValue("Zone 1")})
+
+	classifier.HandleEvent(spineapi.EventPayload{
+		Ski: testValidUsecaseSKI, Device: device, Entity: entity,
+		EventType: spineapi.EventTypeEntityChange, ChangeType: spineapi.ElementChangeAdd,
+	})
+
+	if label := registry.ZoneLabel(testValidUsecaseSKI); label != "Zone 1" {
+		t.Fatalf("cached zone label = %q", label)
+	}
+}
+
+// A device that never publishes the function must not be re-requested on every
+// reconnect: the VR940 rejects such reads and would otherwise flood the log.
+func TestDeviceClassifierRequestsZoneLabelOncePerDevice(t *testing.T) {
+	classifier := NewDeviceClassifier(eebus.NewDeviceRegistry(), nil)
+	local := mocks.NewEntityLocalInterface(t)
+	localFeature := mocks.NewFeatureLocalInterface(t)
+	local.On("Device").Return(nil)
+	local.On("FeatureOfTypeAndRole", model.FeatureTypeTypeDeviceClassification, model.RoleTypeClient).
+		Return(localFeature)
+	classifier.localEntity = local
+
+	device := mocks.NewDeviceRemoteInterface(t)
+	deviceType := model.DeviceTypeTypeHeatgenerationSystem
+	device.On("DeviceType").Return(&deviceType).Maybe()
+	entity := zoneLabelEntity(t, device, model.EntityTypeTypeHeatingZone, nil)
+
+	counter := model.MsgCounterType(1)
+	requests := 0
+	localFeature.On(
+		"RequestRemoteData",
+		model.FunctionTypeDeviceClassificationUserData,
+		nil,
+		nil,
+		mock.Anything,
+	).Run(func(mock.Arguments) { requests++ }).Return(&counter, (*model.ErrorType)(nil)).Maybe()
+	localFeature.On(
+		"RequestRemoteData",
+		model.FunctionTypeDeviceClassificationManufacturerData,
+		nil,
+		nil,
+		mock.Anything,
+	).Return(&counter, (*model.ErrorType)(nil)).Maybe()
+
+	payload := spineapi.EventPayload{
+		Ski: testValidUsecaseSKI, Device: device, Entity: entity,
+		EventType: spineapi.EventTypeEntityChange, ChangeType: spineapi.ElementChangeAdd,
+	}
+	classifier.HandleEvent(payload)
+	classifier.HandleEvent(payload)
+
+	if requests != 1 {
+		t.Fatalf("user-data requests = %d, want 1", requests)
+	}
+}
+
+func TestZoneLabelHelpers(t *testing.T) {
+	if userLabel(nil) != "" || userLabel(&model.DeviceClassificationUserDataType{}) != "" {
+		t.Fatal("nil user data did not yield an empty label")
+	}
+	if isHeatingZone(nil) {
+		t.Fatal("nil entity reported as heating zone")
 	}
 }

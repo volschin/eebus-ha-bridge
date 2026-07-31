@@ -1414,7 +1414,7 @@ def test_device_snapshot_converts_partial_status_and_zero_values() -> None:
 
 def test_snapshot_field_catalog_covers_every_bridge_owned_state_leaf() -> None:
     assert set(_SNAPSHOT_FIELD_TO_STATE_FIELD.values()) == set(StateField) - {StateField.SKI_REGISTERED}
-    assert len(_SNAPSHOT_FIELD_TO_STATE_FIELD) == 34
+    assert len(_SNAPSHOT_FIELD_TO_STATE_FIELD) == 35
 
 
 async def test_aggregate_snapshot_path_uses_register_plus_one_read() -> None:
@@ -1542,3 +1542,96 @@ async def test_coordinator_reuses_one_lifelong_write_session() -> None:
     await coordinator.async_write_lpc_limit(1000.0)
     await coordinator.async_write_lpc_limit(2000.0)
     assert coordinator._device_session.write_lpc_limit.await_count == 2
+
+
+def test_room_heating_proto_maps_zone_label() -> None:
+    """The label is optional on the wire; absence must map to None, not ""."""
+    from custom_components.eebus.models import _room_heating_from_proto
+
+    labelled = _room_heating_from_proto(hvac_service_pb2.RoomHeatingState(zone_label="Zone 1"))
+    assert labelled.zone_label == "Zone 1"
+
+    unlabelled = _room_heating_from_proto(hvac_service_pb2.RoomHeatingState())
+    assert unlabelled.zone_label is None
+
+    # An explicitly empty label is still a set field and must survive as "".
+    empty = _room_heating_from_proto(hvac_service_pb2.RoomHeatingState(zone_label=""))
+    assert empty.zone_label == ""
+
+
+def test_snapshot_observation_carries_zone_label() -> None:
+    """The aggregate snapshot path must reach the climate entity with the label."""
+    snapshot = proto_stubs.DeviceSnapshot(
+        ski="DEVICE",
+        local_ski="LOCAL",
+        connection=proto_stubs.DeviceStatus(connected=True),
+        room_heating=hvac_service_pb2.RoomHeatingState(zone_label="Zone 1"),
+        # The label is capability-gated like every other room-heating leaf: an
+        # unsupported use case must not leak an attribute onto a dead entity.
+        capabilities=device_service_pb2.DeviceCapabilities(
+            ski="DEVICE",
+            capabilities=[
+                device_service_pb2.DeviceCapability(
+                    id=proto_stubs.CapabilityId.CAPABILITY_ROOM_HEATING,
+                    state=proto_stubs.CapabilityState.CAPABILITY_STATE_AVAILABLE,
+                )
+            ],
+        ),
+        field_states=[
+            proto_stubs.SnapshotFieldStatus(
+                id=proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_ROOM_HEATING_ZONE_LABEL,
+                state=proto_stubs.SnapshotValueState.SNAPSHOT_VALUE_STATE_AVAILABLE,
+            )
+        ],
+    )
+    observation = _snapshot_observation_from_proto(snapshot, ski_registered=True)
+    assert observation.state.hvac.zone_label == "Zone 1"
+    assert StateField.ROOM_HEATING_ZONE_LABEL in observation.observed_fields
+
+    reduced = DeviceStateStore().dispatch(observation)
+    assert reduced.hvac.zone_label == "Zone 1"
+
+
+def test_zone_label_is_dropped_when_room_heating_is_unsupported() -> None:
+    """No capability, no attribute: the label must not outlive its use case."""
+    snapshot = proto_stubs.DeviceSnapshot(
+        ski="DEVICE",
+        local_ski="LOCAL",
+        connection=proto_stubs.DeviceStatus(connected=True),
+        room_heating=hvac_service_pb2.RoomHeatingState(zone_label="Zone 1"),
+        capabilities=device_service_pb2.DeviceCapabilities(
+            ski="DEVICE",
+            capabilities=[
+                device_service_pb2.DeviceCapability(
+                    id=proto_stubs.CapabilityId.CAPABILITY_ROOM_HEATING,
+                    state=proto_stubs.CapabilityState.CAPABILITY_STATE_UNSUPPORTED,
+                )
+            ],
+        ),
+        field_states=[
+            proto_stubs.SnapshotFieldStatus(
+                id=proto_stubs.SnapshotFieldId.SNAPSHOT_FIELD_ROOM_HEATING_ZONE_LABEL,
+                state=proto_stubs.SnapshotValueState.SNAPSHOT_VALUE_STATE_AVAILABLE,
+            )
+        ],
+    )
+    reduced = DeviceStateStore().dispatch(_snapshot_observation_from_proto(snapshot, ski_registered=True))
+    assert reduced.hvac.zone_label is None
+
+
+def test_zone_label_survives_a_later_event_without_one() -> None:
+    """A push carrying no label must not clear a label discovered earlier."""
+    store = DeviceStateStore()
+    store.dispatch(
+        StateObservation(
+            state=DeviceState(hvac=HVACState(zone_label="Zone 1")),
+            observed_fields=frozenset({StateField.ROOM_HEATING_ZONE_LABEL}),
+        )
+    )
+    reduced = store.dispatch(
+        StateObservation(
+            state=DeviceState(hvac=HVACState(setpoint=SetpointState(21.0, 5.0, 30.0, 0.5, True))),
+            observed_fields=frozenset({StateField.ROOM_HEATING_SETPOINT}),
+        )
+    )
+    assert reduced.hvac.zone_label == "Zone 1"

@@ -116,6 +116,7 @@ class SnapshotFieldId(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     SNAPSHOT_FIELD_DHW_SYSTEM_FUNCTION: _ClassVar[SnapshotFieldId]
     SNAPSHOT_FIELD_ROOM_HEATING_SETPOINT: _ClassVar[SnapshotFieldId]
     SNAPSHOT_FIELD_ROOM_HEATING_SYSTEM_FUNCTION: _ClassVar[SnapshotFieldId]
+    SNAPSHOT_FIELD_ROOM_HEATING_ZONE_LABEL: _ClassVar[SnapshotFieldId]
 
 class EventAvailability(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -215,6 +216,7 @@ SNAPSHOT_FIELD_DHW_SETPOINT: SnapshotFieldId
 SNAPSHOT_FIELD_DHW_SYSTEM_FUNCTION: SnapshotFieldId
 SNAPSHOT_FIELD_ROOM_HEATING_SETPOINT: SnapshotFieldId
 SNAPSHOT_FIELD_ROOM_HEATING_SYSTEM_FUNCTION: SnapshotFieldId
+SNAPSHOT_FIELD_ROOM_HEATING_ZONE_LABEL: SnapshotFieldId
 EVENT_AVAILABILITY_UNSPECIFIED: EventAvailability
 EVENT_AVAILABILITY_AVAILABLE: EventAvailability
 EVENT_AVAILABILITY_TEMPORARILY_UNAVAILABLE: EventAvailability
