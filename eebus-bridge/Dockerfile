@@ -1,4 +1,9 @@
-FROM golang:1.26-alpine AS builder
+# Pinning the builder to BUILDPLATFORM keeps the toolchain running natively on
+# the runner. Without it, buildx runs the whole builder stage — including the Go
+# compiler — under QEMU for every non-native target, which dominated release
+# build time. The binary is CGO_ENABLED=0, so cross-compiling is a plain
+# GOARCH/GOARM switch and produces the same static output.
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
 # hadolint ignore=DL3018
 RUN apk add --no-cache git
@@ -9,7 +14,13 @@ RUN go mod download
 
 COPY . .
 ARG BUILD_VERSION=dev
-RUN CGO_ENABLED=0 go build \
+# Provided by buildx: TARGETARCH is arm64/amd64/arm, TARGETVARIANT is v7 for
+# linux/arm/v7 and empty elsewhere. GOARM only applies to GOARCH=arm and is
+# ignored otherwise, so the stripped variant can be passed unconditionally.
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT#v} go build \
   -ldflags "-X github.com/volschin/eebus-bridge/internal/grpc.BuildVersion=${BUILD_VERSION}" \
   -o /eebus-bridge ./cmd/eebus-bridge
 
