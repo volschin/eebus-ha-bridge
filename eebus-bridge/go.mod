@@ -3,9 +3,9 @@ module github.com/volschin/eebus-bridge
 go 1.25.0
 
 require (
-	github.com/enbility/eebus-go v0.7.1-0.20260720111250-363db3c5c262
-	github.com/enbility/ship-go v0.6.1-0.20260724175717-215cec4f8165
-	github.com/enbility/spine-go v0.7.1-0.20260629113257-b3bcc643f323
+	github.com/enbility/eebus-go v0.7.1-0.20260731142702-0aa83d264add
+	github.com/enbility/ship-go v0.6.1-0.20260731153113-3c1bdb364d48
+	github.com/enbility/spine-go v0.7.1-0.20260731142244-261abb719483
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.11
@@ -35,4 +35,4 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 )
 
-replace github.com/enbility/eebus-go => github.com/volschin/eebus-go v0.7.1-0.20260722184322-3c6795b4d157
+replace github.com/enbility/eebus-go => github.com/volschin/eebus-go v0.7.1-0.20260731151816-4b2730e630aa
