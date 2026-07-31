@@ -13,6 +13,13 @@ on:
 permissions:
   contents: read
 
+# A second push to a PR supersedes the first: keeping the older run alive only
+# burns runner minutes on a diff nobody will merge. Runs on main are keyed by
+# their own ref and cancel only each other, never a PR run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Detect which paths changed so Go jobs can be skipped when irrelevant
   changes:
@@ -120,8 +127,17 @@ jobs:
         # already-persisted credentials and fails with
         # `remote: Duplicate header: "Authorization"` (HTTP 400). The repo is
         # already checked out and Go is already set up above.
+        #
+        # Pinned rather than @latest: every action in this repo is SHA-pinned,
+        # and an unpinned `go install` in the security step is the one place an
+        # upstream compromise would land straight in CI. The env var carries the
+        # version because that is the shape customManagers:githubActionsVersions
+        # matches — a bare `@v1.6.0` in the run body would rot unnoticed.
+        env:
+          # renovate: datasource=go depName=golang.org/x/vuln
+          GOVULNCHECK_VERSION: v1.6.0
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
           govulncheck ./...
       - run: go build ./cmd/eebus-bridge/
 
@@ -138,6 +154,13 @@ jobs:
       - run: docker build -t eebus-bridge ./eebus-bridge
 
   test:
+    # Gated like the go job: a Go- or Dockerfile-only PR cannot break ruff,
+    # mypy or pytest, and this matrix spends ~3.5 job-minutes installing
+    # homeassistant to prove it. The python filter covers custom_components,
+    # pyproject.toml and this workflow, so anything that can affect the result
+    # still triggers a run.
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:

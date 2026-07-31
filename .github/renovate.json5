@@ -1,7 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "local>olcond/renovate-config"
+    "local>olcond/renovate-config",
+    // Picks up `# renovate: datasource=… depName=…` comments above *_VERSION
+    // env vars in workflows (currently govulncheck). The shared preset does not
+    // include it, so without this the pinned tool versions would never be
+    // bumped and would silently rot.
+    "customManagers:githubActionsVersions"
   ],
   "packageRules": [
     {
