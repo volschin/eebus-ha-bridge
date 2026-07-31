@@ -8,6 +8,15 @@ FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 # hadolint ignore=DL3018
 RUN apk add --no-cache git
 
+# Stage the runtime filesystem here, where a shell still exists. distroless has
+# neither shell nor package manager, so /data and its ownership cannot be
+# created in the final stage. Empty directories are arch-independent, so this
+# belongs in the BUILDPLATFORM-pinned builder rather than an extra stage that
+# buildx would rebuild under QEMU for every non-native target. Kept above the
+# source COPY so it stays cached across code changes.
+RUN mkdir -p /rootfs/data /rootfs/etc/eebus-bridge \
+ && chown -R 100:101 /rootfs/data
+
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
@@ -24,16 +33,6 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT#v}
   -ldflags "-X github.com/volschin/eebus-bridge/internal/grpc.BuildVersion=${BUILD_VERSION}" \
   -o /eebus-bridge ./cmd/eebus-bridge
 
-# Stage the runtime filesystem while a shell is still available. distroless has
-# no shell and no package manager, so /data and its ownership cannot be created
-# in the final stage.
-FROM alpine:3.24 AS rootfs
-
-RUN addgroup -g 101 -S eebus \
- && adduser -u 100 -S -G eebus eebus \
- && mkdir -p /rootfs/data /rootfs/etc/eebus-bridge \
- && chown -R 100:101 /rootfs/data
-
 # distroless/static carries ca-certificates, tzdata and /etc/passwd, and nothing
 # else: no shell, no package manager, no busybox. The bridge is a static
 # CGO_ENABLED=0 binary that makes no outbound HTTP calls and never shells out,
@@ -43,7 +42,7 @@ RUN addgroup -g 101 -S eebus \
 # renovate: datasource=docker depName=gcr.io/distroless/static-debian12
 FROM gcr.io/distroless/static-debian12@sha256:a9fcaedd4c9b59e12dd65d954f0b5044f19b0647a8a3712e77205df9e7b102cd
 
-COPY --from=rootfs /rootfs/ /
+COPY --from=builder /rootfs/ /
 COPY --from=builder /eebus-bridge /usr/local/bin/eebus-bridge
 
 VOLUME /data
