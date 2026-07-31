@@ -1,10 +1,10 @@
 # Upstream patch inventory
 
-The bridge currently pins commit `3c6795b4d157` from the
+The bridge currently pins commit `4b2730e630aa` from the
 `github.com/volschin/eebus-go` branch `bridge-integration` because the required
 upstream changes have not been merged.
 
-Upstream base: `enbility/eebus-go@363db3c5c262`
+Upstream base: `enbility/eebus-go@0aa83d264add`
 
 | Patch | Upstream base | Pinned commit | Purpose | Removal condition |
 |---|---|---|---|---|
