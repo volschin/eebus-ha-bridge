@@ -1,0 +1,2795 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-13T21:19:23.604505868Z",
+  "device": {
+    "identifier": "<redacted:sha256:e6277a10e106>",
+    "type": "Generic"
+  },
+  "useCases": [
+    {
+      "actor": "ControllableSystem",
+      "address": {
+        "device": "<redacted>",
+        "entity": [
+          3
+        ]
+      },
+      "useCaseSupport": [
+        {
+          "scenarioSupport": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "limitationOfPowerConsumption",
+          "useCaseVersion": "1.0.0"
+        }
+      ]
+    },
+    {
+      "actor": "IdentifiableNode",
+      "address": {
+        "device": "<redacted>",
+        "entity": [
+          3
+        ]
+      },
+      "useCaseSupport": [
+        {
+          "scenarioSupport": [
+            1
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "nodeIdentification",
+          "useCaseVersion": "1.0.0"
+        }
+      ]
+    },
+    {
+      "actor": "MonitoredUnit",
+      "address": {
+        "device": "<redacted>",
+        "entity": [
+          3
+        ]
+      },
+      "useCaseSupport": [
+        {
+          "scenarioSupport": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "monitoringOfPowerConsumption",
+          "useCaseVersion": "1.0.0"
+        }
+      ]
+    },
+    {
+      "actor": "Compressor",
+      "address": {
+        "device": "<redacted>",
+        "entity": [
+          3,
+          1
+        ]
+      },
+      "useCaseSupport": [
+        {
+          "scenarioSupport": [
+            1,
+            2
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "optimizationOfSelfConsumptionByHeatPumpCompressorFlexibility",
+          "useCaseVersion": "1.0.0"
+        }
+      ]
+    },
+    {
+      "actor": "MonitoredUnit",
+      "address": {
+        "device": "<redacted>",
+        "entity": [
+          3,
+          1
+        ]
+      },
+      "useCaseSupport": [
+        {
+          "scenarioSupport": [
+            1
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "monitoringOfPowerConsumption",
+          "useCaseVersion": "1.0.0"
+        }
+      ]
+    },
+    {
+      "actor": "DHWCircuit",
+      "address": {
+        "device": "<redacted>",
+        "entity": [
+          4
+        ]
+      },
+      "useCaseSupport": [
+        {
+          "scenarioSupport": [
+            1,
+            2,
+            3
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "configurationOfDhwSystemFunction",
+          "useCaseVersion": "1.0.0"
+        },
+        {
+          "scenarioSupport": [
+            1
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "configurationOfDhwTemperature",
+          "useCaseVersion": "1.0.0"
+        },
+        {
+          "scenarioSupport": [
+            1,
+            2
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "monitoringOfDhwSystemFunction",
+          "useCaseVersion": "1.0.0"
+        },
+        {
+          "scenarioSupport": [
+            1
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "monitoringOfDhwTemperature",
+          "useCaseVersion": "1.0.0"
+        }
+      ]
+    },
+    {
+      "actor": "HVACRoom",
+      "address": {
+        "device": "<redacted>",
+        "entity": [
+          5,
+          1,
+          1
+        ]
+      },
+      "useCaseSupport": [
+        {
+          "scenarioSupport": [
+            1
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "configurationOfRoomHeatingSystemFunction",
+          "useCaseVersion": "1.0.0"
+        },
+        {
+          "scenarioSupport": [
+            1
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "configurationOfRoomHeatingTemperature",
+          "useCaseVersion": "1.0.0"
+        },
+        {
+          "scenarioSupport": [
+            1
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "monitoringOfRoomHeatingSystemFunction",
+          "useCaseVersion": "1.0.0"
+        },
+        {
+          "scenarioSupport": [
+            1
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "monitoringOfRoomTemperature",
+          "useCaseVersion": "1.0.0"
+        },
+        {
+          "scenarioSupport": [
+            3
+          ],
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "visualizationOfHeatingAreaName",
+          "useCaseVersion": "1.0.0"
+        }
+      ]
+    },
+    {
+      "actor": "HeatingCircuit",
+      "address": {
+        "device": "<redacted>",
+        "entity": [
+          5,
+          1,
+          1
+        ]
+      },
+      "useCaseSupport": [
+        {
+          "scenarioSupport": [
+            1
+          ],
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "visualizationOfHeatingAreaName",
+          "useCaseVersion": "1.0.0"
+        }
+      ]
+    },
+    {
+      "actor": "HeatingZone",
+      "address": {
+        "device": "<redacted>",
+        "entity": [
+          5,
+          1,
+          1
+        ]
+      },
+      "useCaseSupport": [
+        {
+          "scenarioSupport": [
+            2
+          ],
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "visualizationOfHeatingAreaName",
+          "useCaseVersion": "1.0.0"
+        }
+      ]
+    },
+    {
+      "actor": "OutdoorTemperatureSensor",
+      "address": {
+        "device": "<redacted>",
+        "entity": [
+          6
+        ]
+      },
+      "useCaseSupport": [
+        {
+          "scenarioSupport": [
+            1
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "monitoringOfOutdoorTemperature",
+          "useCaseVersion": "1.0.0"
+        }
+      ]
+    },
+    {
+      "actor": "MonitoringAppliance",
+      "address": {
+        "device": "<redacted>",
+        "entity": [
+          1
+        ]
+      },
+      "useCaseSupport": [
+        {
+          "scenarioSupport": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "release",
+          "useCaseName": "monitoringOfGridConnectionPoint",
+          "useCaseVersion": "1.0.0"
+        }
+      ]
+    },
+    {
+      "actor": "VisualizationAppliance",
+      "address": {
+        "device": "<redacted>",
+        "entity": [
+          2
+        ]
+      },
+      "useCaseSupport": [
+        {
+          "scenarioSupport": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "RC1",
+          "useCaseName": "visualizationOfAggregatedBatteryData",
+          "useCaseVersion": "1.0.0"
+        },
+        {
+          "scenarioSupport": [
+            1,
+            2,
+            3
+          ],
+          "useCaseAvailable": true,
+          "useCaseDocumentSubRevision": "RC1",
+          "useCaseName": "visualizationOfAggregatedPhotovoltaicData",
+          "useCaseVersion": "1.0.0"
+        }
+      ]
+    }
+  ],
+  "entities": [
+    {
+      "address": "0",
+      "type": "DeviceInformation",
+      "features": [
+        {
+          "address": "0:f1",
+          "type": "DeviceClassification",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "deviceClassificationManufacturerData",
+              "operations": {
+                "read": true,
+                "readPartial": false,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "brandName": "Vaillant",
+                "vendorName": "Vaillant Group"
+              }
+            }
+          ]
+        },
+        {
+          "address": "0:f0",
+          "type": "NodeManagement",
+          "role": "special",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "nodeManagementBindingData",
+              "operations": {
+                "read": true,
+                "readPartial": false,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "not_queried_unsupported_feature"
+            },
+            {
+              "name": "nodeManagementBindingDeleteCall",
+              "operations": {
+                "read": false,
+                "readPartial": false,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "not_readable"
+            },
+            {
+              "name": "nodeManagementBindingRequestCall",
+              "operations": {
+                "read": false,
+                "readPartial": false,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "not_readable"
+            },
+            {
+              "name": "nodeManagementDetailedDiscoveryData",
+              "operations": {
+                "read": true,
+                "readPartial": false,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "not_queried_unsupported_feature"
+            },
+            {
+              "name": "nodeManagementSubscriptionData",
+              "operations": {
+                "read": true,
+                "readPartial": false,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "not_queried_unsupported_feature"
+            },
+            {
+              "name": "nodeManagementSubscriptionDeleteCall",
+              "operations": {
+                "read": false,
+                "readPartial": false,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "not_readable"
+            },
+            {
+              "name": "nodeManagementSubscriptionRequestCall",
+              "operations": {
+                "read": false,
+                "readPartial": false,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "not_readable"
+            },
+            {
+              "name": "nodeManagementUseCaseData",
+              "operations": {
+                "read": true,
+                "readPartial": false,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "not_queried_unsupported_feature",
+              "cachedBefore": {
+                "useCaseInformation": [
+                  {
+                    "actor": "ControllableSystem",
+                    "address": {
+                      "device": "<redacted>",
+                      "entity": [
+                        3
+                      ]
+                    },
+                    "useCaseSupport": [
+                      {
+                        "scenarioSupport": [
+                          1,
+                          2,
+                          3,
+                          4
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "limitationOfPowerConsumption",
+                        "useCaseVersion": "1.0.0"
+                      }
+                    ]
+                  },
+                  {
+                    "actor": "IdentifiableNode",
+                    "address": {
+                      "device": "<redacted>",
+                      "entity": [
+                        3
+                      ]
+                    },
+                    "useCaseSupport": [
+                      {
+                        "scenarioSupport": [
+                          1
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "nodeIdentification",
+                        "useCaseVersion": "1.0.0"
+                      }
+                    ]
+                  },
+                  {
+                    "actor": "MonitoredUnit",
+                    "address": {
+                      "device": "<redacted>",
+                      "entity": [
+                        3
+                      ]
+                    },
+                    "useCaseSupport": [
+                      {
+                        "scenarioSupport": [
+                          1,
+                          2,
+                          3,
+                          4,
+                          5
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "monitoringOfPowerConsumption",
+                        "useCaseVersion": "1.0.0"
+                      }
+                    ]
+                  },
+                  {
+                    "actor": "Compressor",
+                    "address": {
+                      "device": "<redacted>",
+                      "entity": [
+                        3,
+                        1
+                      ]
+                    },
+                    "useCaseSupport": [
+                      {
+                        "scenarioSupport": [
+                          1,
+                          2
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "optimizationOfSelfConsumptionByHeatPumpCompressorFlexibility",
+                        "useCaseVersion": "1.0.0"
+                      }
+                    ]
+                  },
+                  {
+                    "actor": "MonitoredUnit",
+                    "address": {
+                      "device": "<redacted>",
+                      "entity": [
+                        3,
+                        1
+                      ]
+                    },
+                    "useCaseSupport": [
+                      {
+                        "scenarioSupport": [
+                          1
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "monitoringOfPowerConsumption",
+                        "useCaseVersion": "1.0.0"
+                      }
+                    ]
+                  },
+                  {
+                    "actor": "DHWCircuit",
+                    "address": {
+                      "device": "<redacted>",
+                      "entity": [
+                        4
+                      ]
+                    },
+                    "useCaseSupport": [
+                      {
+                        "scenarioSupport": [
+                          1,
+                          2,
+                          3
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "configurationOfDhwSystemFunction",
+                        "useCaseVersion": "1.0.0"
+                      },
+                      {
+                        "scenarioSupport": [
+                          1
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "configurationOfDhwTemperature",
+                        "useCaseVersion": "1.0.0"
+                      },
+                      {
+                        "scenarioSupport": [
+                          1,
+                          2
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "monitoringOfDhwSystemFunction",
+                        "useCaseVersion": "1.0.0"
+                      },
+                      {
+                        "scenarioSupport": [
+                          1
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "monitoringOfDhwTemperature",
+                        "useCaseVersion": "1.0.0"
+                      }
+                    ]
+                  },
+                  {
+                    "actor": "HVACRoom",
+                    "address": {
+                      "device": "<redacted>",
+                      "entity": [
+                        5,
+                        1,
+                        1
+                      ]
+                    },
+                    "useCaseSupport": [
+                      {
+                        "scenarioSupport": [
+                          1
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "configurationOfRoomHeatingSystemFunction",
+                        "useCaseVersion": "1.0.0"
+                      },
+                      {
+                        "scenarioSupport": [
+                          1
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "configurationOfRoomHeatingTemperature",
+                        "useCaseVersion": "1.0.0"
+                      },
+                      {
+                        "scenarioSupport": [
+                          1
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "monitoringOfRoomHeatingSystemFunction",
+                        "useCaseVersion": "1.0.0"
+                      },
+                      {
+                        "scenarioSupport": [
+                          1
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "monitoringOfRoomTemperature",
+                        "useCaseVersion": "1.0.0"
+                      },
+                      {
+                        "scenarioSupport": [
+                          3
+                        ],
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "visualizationOfHeatingAreaName",
+                        "useCaseVersion": "1.0.0"
+                      }
+                    ]
+                  },
+                  {
+                    "actor": "HeatingCircuit",
+                    "address": {
+                      "device": "<redacted>",
+                      "entity": [
+                        5,
+                        1,
+                        1
+                      ]
+                    },
+                    "useCaseSupport": [
+                      {
+                        "scenarioSupport": [
+                          1
+                        ],
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "visualizationOfHeatingAreaName",
+                        "useCaseVersion": "1.0.0"
+                      }
+                    ]
+                  },
+                  {
+                    "actor": "HeatingZone",
+                    "address": {
+                      "device": "<redacted>",
+                      "entity": [
+                        5,
+                        1,
+                        1
+                      ]
+                    },
+                    "useCaseSupport": [
+                      {
+                        "scenarioSupport": [
+                          2
+                        ],
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "visualizationOfHeatingAreaName",
+                        "useCaseVersion": "1.0.0"
+                      }
+                    ]
+                  },
+                  {
+                    "actor": "OutdoorTemperatureSensor",
+                    "address": {
+                      "device": "<redacted>",
+                      "entity": [
+                        6
+                      ]
+                    },
+                    "useCaseSupport": [
+                      {
+                        "scenarioSupport": [
+                          1
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "monitoringOfOutdoorTemperature",
+                        "useCaseVersion": "1.0.0"
+                      }
+                    ]
+                  },
+                  {
+                    "actor": "MonitoringAppliance",
+                    "address": {
+                      "device": "<redacted>",
+                      "entity": [
+                        1
+                      ]
+                    },
+                    "useCaseSupport": [
+                      {
+                        "scenarioSupport": [
+                          1,
+                          2,
+                          3,
+                          4,
+                          5,
+                          6,
+                          7
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "release",
+                        "useCaseName": "monitoringOfGridConnectionPoint",
+                        "useCaseVersion": "1.0.0"
+                      }
+                    ]
+                  },
+                  {
+                    "actor": "VisualizationAppliance",
+                    "address": {
+                      "device": "<redacted>",
+                      "entity": [
+                        2
+                      ]
+                    },
+                    "useCaseSupport": [
+                      {
+                        "scenarioSupport": [
+                          1,
+                          2,
+                          3,
+                          4
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "RC1",
+                        "useCaseName": "visualizationOfAggregatedBatteryData",
+                        "useCaseVersion": "1.0.0"
+                      },
+                      {
+                        "scenarioSupport": [
+                          1,
+                          2,
+                          3
+                        ],
+                        "useCaseAvailable": true,
+                        "useCaseDocumentSubRevision": "RC1",
+                        "useCaseName": "visualizationOfAggregatedPhotovoltaicData",
+                        "useCaseVersion": "1.0.0"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "address": "1",
+      "type": "CEM",
+      "features": [
+        {
+          "address": "1:f1",
+          "type": "Generic",
+          "role": "client",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": []
+        }
+      ]
+    },
+    {
+      "address": "2",
+      "type": "CEM",
+      "features": [
+        {
+          "address": "2:f1",
+          "type": "Generic",
+          "role": "client",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": []
+        }
+      ]
+    },
+    {
+      "address": "3",
+      "type": "HeatPumpAppliance",
+      "features": [
+        {
+          "address": "3:f4",
+          "type": "DeviceClassification",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "deviceClassificationManufacturerData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "brandName": "Vaillant",
+                "deviceCode": "VWL 75/8.1 A 230V",
+                "deviceName": "aroTHERM plus",
+                "serialNumber": "<redacted>",
+                "vendorName": "Vaillant Group"
+              }
+            }
+          ]
+        },
+        {
+          "address": "3:f24",
+          "type": "DeviceConfiguration",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "deviceConfigurationKeyValueDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "deviceConfigurationKeyValueDescriptionData": [
+                  {
+                    "keyId": 0,
+                    "keyName": "failsafeConsumptionActivePowerLimit",
+                    "unit": "W",
+                    "valueType": "scaledNumber"
+                  },
+                  {
+                    "keyId": 1,
+                    "keyName": "failsafeDurationMinimum",
+                    "valueType": "duration"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "deviceConfigurationKeyValueListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": true,
+                "writePartial": true
+              },
+              "status": "received",
+              "data": {
+                "deviceConfigurationKeyValueData": [
+                  {
+                    "isValueChangeable": true,
+                    "keyId": 0,
+                    "value": {
+                      "scaledNumber": {
+                        "number": 3500,
+                        "scale": 0
+                      }
+                    }
+                  },
+                  {
+                    "isValueChangeable": true,
+                    "keyId": 1,
+                    "value": {
+                      "duration": "PT2H"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "address": "3:f1000",
+          "type": "DeviceDiagnosis",
+          "role": "server",
+          "description": "Device diagnosis server feature",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "deviceDiagnosisHeartbeatData",
+              "operations": {
+                "read": true,
+                "readPartial": false,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "heartbeatCounter": 22333,
+                "heartbeatTimeout": "PT1M",
+                "timestamp": "2026-07-13T21:18:56.843Z"
+              }
+            },
+            {
+              "name": "deviceDiagnosisStateData",
+              "operations": {
+                "read": true,
+                "readPartial": false,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "operatingState": "normalOperation"
+              }
+            }
+          ]
+        },
+        {
+          "address": "3:f7",
+          "type": "ElectricalConnection",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "electricalConnectionCharacteristicListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {}
+            },
+            {
+              "name": "electricalConnectionDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received_via_cache",
+              "data": {
+                "electricalConnectionDescriptionData": [
+                  {
+                    "electricalConnectionId": 0,
+                    "positiveEnergyDirection": "consume",
+                    "powerSupplyType": "ac"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "electricalConnectionParameterDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received_via_cache",
+              "data": {
+                "electricalConnectionParameterDescriptionData": [
+                  {
+                    "acMeasurementType": "real",
+                    "electricalConnectionId": 0,
+                    "measurementId": 0,
+                    "parameterId": 9,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "neutral",
+                    "acMeasuredPhases": "a",
+                    "acMeasurementType": "real",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 7,
+                    "parameterId": 6,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "neutral",
+                    "acMeasuredPhases": "b",
+                    "acMeasurementType": "real",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 8,
+                    "parameterId": 7,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "neutral",
+                    "acMeasuredPhases": "c",
+                    "acMeasurementType": "real",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 9,
+                    "parameterId": 8,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasurementType": "real",
+                    "electricalConnectionId": 0,
+                    "measurementId": 4,
+                    "parameterId": 3,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasurementType": "real",
+                    "electricalConnectionId": 0,
+                    "measurementId": 5,
+                    "parameterId": 4,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredPhases": "a",
+                    "acMeasurementType": "real",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 1,
+                    "parameterId": 0,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredPhases": "b",
+                    "acMeasurementType": "real",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 2,
+                    "parameterId": 1,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredPhases": "c",
+                    "acMeasurementType": "real",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 3,
+                    "parameterId": 2,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "neutral",
+                    "acMeasuredPhases": "a",
+                    "acMeasurementType": "apparent",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 11,
+                    "parameterId": 11,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "neutral",
+                    "acMeasuredPhases": "b",
+                    "acMeasurementType": "apparent",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 13,
+                    "parameterId": 13,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "neutral",
+                    "acMeasuredPhases": "c",
+                    "acMeasurementType": "apparent",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 15,
+                    "parameterId": 15,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "b",
+                    "acMeasuredPhases": "a",
+                    "acMeasurementType": "apparent",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 10,
+                    "parameterId": 10,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "c",
+                    "acMeasuredPhases": "b",
+                    "acMeasurementType": "apparent",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 12,
+                    "parameterId": 12,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "a",
+                    "acMeasuredPhases": "c",
+                    "acMeasurementType": "apparent",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 14,
+                    "parameterId": 14,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "electricalConnectionId": 0,
+                    "measurementId": 6,
+                    "parameterId": 5,
+                    "voltageType": "ac"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "address": "3:f1001",
+          "type": "Generic",
+          "role": "client",
+          "description": "Heartbeat device diagnosis client feature",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": []
+        },
+        {
+          "address": "3:f10",
+          "type": "LoadControl",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "loadControlLimitDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received_via_cache",
+              "data": {
+                "loadControlLimitDescriptionData": [
+                  {
+                    "limitCategory": "obligation",
+                    "limitDirection": "consume",
+                    "limitId": 0,
+                    "limitType": "signDependentAbsValueLimit",
+                    "measurementId": 0,
+                    "scopeType": "activePowerLimit",
+                    "unit": "W"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "loadControlLimitListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": true,
+                "writePartial": true
+              },
+              "status": "received",
+              "data": {
+                "loadControlLimitData": [
+                  {
+                    "isLimitActive": true,
+                    "isLimitChangeable": true,
+                    "limitId": 0,
+                    "timePeriod": {
+                      "endTime": "P0D"
+                    },
+                    "value": {
+                      "number": 1500,
+                      "scale": 0
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "address": "3:f11",
+          "type": "Measurement",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "measurementConstraintsListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "measurementConstraintsData": [
+                  {
+                    "measurementId": 0
+                  },
+                  {
+                    "measurementId": 7
+                  },
+                  {
+                    "measurementId": 8
+                  },
+                  {
+                    "measurementId": 9
+                  },
+                  {
+                    "measurementId": 4
+                  },
+                  {
+                    "measurementId": 5
+                  },
+                  {
+                    "measurementId": 1
+                  },
+                  {
+                    "measurementId": 2
+                  },
+                  {
+                    "measurementId": 3
+                  },
+                  {
+                    "measurementId": 11
+                  },
+                  {
+                    "measurementId": 13
+                  },
+                  {
+                    "measurementId": 15
+                  },
+                  {
+                    "measurementId": 10
+                  },
+                  {
+                    "measurementId": 12
+                  },
+                  {
+                    "measurementId": 14
+                  },
+                  {
+                    "measurementId": 6
+                  }
+                ]
+              }
+            },
+            {
+              "name": "measurementDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "measurementDescriptionData": [
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 0,
+                    "measurementType": "power",
+                    "scopeType": "acPowerTotal",
+                    "unit": "W"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 7,
+                    "measurementType": "power",
+                    "scopeType": "acPower",
+                    "unit": "W"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 8,
+                    "measurementType": "power",
+                    "scopeType": "acPower",
+                    "unit": "W"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 9,
+                    "measurementType": "power",
+                    "scopeType": "acPower",
+                    "unit": "W"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 4,
+                    "measurementType": "energy",
+                    "scopeType": "acEnergyConsumed",
+                    "unit": "Wh"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 5,
+                    "measurementType": "energy",
+                    "scopeType": "acEnergyProduced",
+                    "unit": "Wh"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 1,
+                    "measurementType": "current",
+                    "scopeType": "acCurrent",
+                    "unit": "A"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 2,
+                    "measurementType": "current",
+                    "scopeType": "acCurrent",
+                    "unit": "A"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 3,
+                    "measurementType": "current",
+                    "scopeType": "acCurrent",
+                    "unit": "A"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 11,
+                    "measurementType": "voltage",
+                    "scopeType": "acVoltage",
+                    "unit": "V"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 13,
+                    "measurementType": "voltage",
+                    "scopeType": "acVoltage",
+                    "unit": "V"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 15,
+                    "measurementType": "voltage",
+                    "scopeType": "acVoltage",
+                    "unit": "V"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 10,
+                    "measurementType": "voltage",
+                    "scopeType": "acVoltage",
+                    "unit": "V"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 12,
+                    "measurementType": "voltage",
+                    "scopeType": "acVoltage",
+                    "unit": "V"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 14,
+                    "measurementType": "voltage",
+                    "scopeType": "acVoltage",
+                    "unit": "V"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 6,
+                    "measurementType": "frequency",
+                    "scopeType": "acFrequency",
+                    "unit": "Hz"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "measurementListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "measurementData": [
+                  {
+                    "measurementId": 0,
+                    "value": {
+                      "number": 11,
+                      "scale": 0
+                    },
+                    "valueSource": "measuredValue",
+                    "valueState": "normal",
+                    "valueType": "value"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "address": "3:1",
+      "type": "Compressor",
+      "features": [
+        {
+          "address": "3:1:f7",
+          "type": "ElectricalConnection",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "electricalConnectionDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received_via_cache",
+              "data": {
+                "electricalConnectionDescriptionData": [
+                  {
+                    "electricalConnectionId": 0,
+                    "positiveEnergyDirection": "consume",
+                    "powerSupplyType": "ac"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "electricalConnectionParameterDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received_via_cache",
+              "data": {
+                "electricalConnectionParameterDescriptionData": [
+                  {
+                    "acMeasurementType": "real",
+                    "electricalConnectionId": 0,
+                    "measurementId": 9,
+                    "parameterId": 9,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "neutral",
+                    "acMeasuredPhases": "a",
+                    "acMeasurementType": "real",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 6,
+                    "parameterId": 6,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "neutral",
+                    "acMeasuredPhases": "b",
+                    "acMeasurementType": "real",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 7,
+                    "parameterId": 7,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "neutral",
+                    "acMeasuredPhases": "c",
+                    "acMeasurementType": "real",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 8,
+                    "parameterId": 8,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasurementType": "real",
+                    "electricalConnectionId": 0,
+                    "measurementId": 3,
+                    "parameterId": 3,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasurementType": "real",
+                    "electricalConnectionId": 0,
+                    "measurementId": 4,
+                    "parameterId": 4,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredPhases": "a",
+                    "acMeasurementType": "real",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 0,
+                    "parameterId": 0,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredPhases": "b",
+                    "acMeasurementType": "real",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 1,
+                    "parameterId": 1,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredPhases": "c",
+                    "acMeasurementType": "real",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 2,
+                    "parameterId": 2,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "neutral",
+                    "acMeasuredPhases": "a",
+                    "acMeasurementType": "apparent",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 11,
+                    "parameterId": 11,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "neutral",
+                    "acMeasuredPhases": "b",
+                    "acMeasurementType": "apparent",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 13,
+                    "parameterId": 13,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "neutral",
+                    "acMeasuredPhases": "c",
+                    "acMeasurementType": "apparent",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 15,
+                    "parameterId": 15,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "b",
+                    "acMeasuredPhases": "a",
+                    "acMeasurementType": "apparent",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 10,
+                    "parameterId": 10,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "c",
+                    "acMeasuredPhases": "b",
+                    "acMeasurementType": "apparent",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 12,
+                    "parameterId": 12,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "acMeasuredInReferenceTo": "a",
+                    "acMeasuredPhases": "c",
+                    "acMeasurementType": "apparent",
+                    "acMeasurementVariant": "rms",
+                    "electricalConnectionId": 0,
+                    "measurementId": 14,
+                    "parameterId": 14,
+                    "voltageType": "ac"
+                  },
+                  {
+                    "electricalConnectionId": 0,
+                    "measurementId": 5,
+                    "parameterId": 5,
+                    "voltageType": "ac"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "address": "3:1:f11",
+          "type": "Measurement",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "measurementConstraintsListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "measurementConstraintsData": [
+                  {
+                    "measurementId": 9,
+                    "valueRangeMax": {
+                      "number": 3390,
+                      "scale": 0
+                    },
+                    "valueRangeMin": {
+                      "number": 0,
+                      "scale": 0
+                    },
+                    "valueStepSize": {
+                      "number": 100,
+                      "scale": 0
+                    }
+                  },
+                  {
+                    "measurementId": 6
+                  },
+                  {
+                    "measurementId": 7
+                  },
+                  {
+                    "measurementId": 8
+                  },
+                  {
+                    "measurementId": 3
+                  },
+                  {
+                    "measurementId": 4
+                  },
+                  {
+                    "measurementId": 0
+                  },
+                  {
+                    "measurementId": 1
+                  },
+                  {
+                    "measurementId": 2
+                  },
+                  {
+                    "measurementId": 11
+                  },
+                  {
+                    "measurementId": 13
+                  },
+                  {
+                    "measurementId": 15
+                  },
+                  {
+                    "measurementId": 10
+                  },
+                  {
+                    "measurementId": 12
+                  },
+                  {
+                    "measurementId": 14
+                  },
+                  {
+                    "measurementId": 5
+                  }
+                ]
+              }
+            },
+            {
+              "name": "measurementDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "measurementDescriptionData": [
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 9,
+                    "measurementType": "power",
+                    "scopeType": "acPowerTotal",
+                    "unit": "W"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 6,
+                    "measurementType": "power",
+                    "scopeType": "acPower",
+                    "unit": "W"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 7,
+                    "measurementType": "power",
+                    "scopeType": "acPower",
+                    "unit": "W"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 8,
+                    "measurementType": "power",
+                    "scopeType": "acPower",
+                    "unit": "W"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 3,
+                    "measurementType": "energy",
+                    "scopeType": "acEnergyConsumed",
+                    "unit": "Wh"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 4,
+                    "measurementType": "energy",
+                    "scopeType": "acEnergyProduced",
+                    "unit": "Wh"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 0,
+                    "measurementType": "current",
+                    "scopeType": "acCurrent",
+                    "unit": "A"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 1,
+                    "measurementType": "current",
+                    "scopeType": "acCurrent",
+                    "unit": "A"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 2,
+                    "measurementType": "current",
+                    "scopeType": "acCurrent",
+                    "unit": "A"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 11,
+                    "measurementType": "voltage",
+                    "scopeType": "acVoltage",
+                    "unit": "V"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 13,
+                    "measurementType": "voltage",
+                    "scopeType": "acVoltage",
+                    "unit": "V"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 15,
+                    "measurementType": "voltage",
+                    "scopeType": "acVoltage",
+                    "unit": "V"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 10,
+                    "measurementType": "voltage",
+                    "scopeType": "acVoltage",
+                    "unit": "V"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 12,
+                    "measurementType": "voltage",
+                    "scopeType": "acVoltage",
+                    "unit": "V"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 14,
+                    "measurementType": "voltage",
+                    "scopeType": "acVoltage",
+                    "unit": "V"
+                  },
+                  {
+                    "commodityType": "electricity",
+                    "measurementId": 5,
+                    "measurementType": "frequency",
+                    "scopeType": "acFrequency",
+                    "unit": "Hz"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "measurementListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "measurementData": [
+                  {
+                    "measurementId": 9,
+                    "value": {
+                      "number": 6,
+                      "scale": 0
+                    },
+                    "valueSource": "measuredValue",
+                    "valueState": "normal",
+                    "valueType": "value"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "address": "3:1:f19",
+          "type": "SmartEnergyManagementPs",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "smartEnergyManagementPsData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": true,
+                "writePartial": true
+              },
+              "status": "received",
+              "data": {
+                "alternatives": [
+                  {
+                    "powerSequence": [
+                      {
+                        "description": {
+                          "powerUnit": "W",
+                          "sequenceId": 0,
+                          "valueSource": "calculatedValue"
+                        },
+                        "operatingConstraintsDuration": {
+                          "activeDurationMin": "PT3M"
+                        },
+                        "operatingConstraintsInterrupt": {
+                          "isPausable": false,
+                          "isStoppable": true
+                        },
+                        "powerTimeSlot": [
+                          {
+                            "schedule": {
+                              "slotNumber": 0
+                            },
+                            "valueList": {
+                              "value": [
+                                {
+                                  "value": {
+                                    "number": 3390,
+                                    "scale": 0
+                                  },
+                                  "valueType": "powerMax"
+                                }
+                              ]
+                            }
+                          }
+                        ],
+                        "scheduleConstraints": {
+                          "earliestStartTime": "-PT4M2.115S",
+                          "latestEndTime": "PT23H55M57.885S"
+                        },
+                        "state": {
+                          "sequenceRemoteControllable": true,
+                          "state": "inactive"
+                        }
+                      }
+                    ],
+                    "relation": {
+                      "alternativesId": 0
+                    }
+                  }
+                ],
+                "nodeScheduleInformation": {
+                  "alternativesCount": 1,
+                  "nodeRemoteControllable": true,
+                  "supportsReselection": false,
+                  "supportsSingleSlotSchedulingOnly": true,
+                  "totalSequencesCountMax": 1
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "address": "4",
+      "type": "DHWCircuit",
+      "features": [
+        {
+          "address": "4:f9",
+          "type": "HVAC",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "hvacOperationModeDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "hvacOperationModeDescriptionData": [
+                  {
+                    "operationModeId": 0,
+                    "operationModeType": "auto"
+                  },
+                  {
+                    "operationModeId": 1,
+                    "operationModeType": "on"
+                  },
+                  {
+                    "operationModeId": 2,
+                    "operationModeType": "off"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "hvacOverrunDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "hvacOverrunDescriptionData": [
+                  {
+                    "affectedSystemFunctionId": [
+                      0
+                    ],
+                    "overrunId": 0,
+                    "overrunType": "oneTimeDhw"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "hvacOverrunListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": true,
+                "writePartial": true
+              },
+              "status": "received",
+              "data": {
+                "hvacOverrunData": [
+                  {
+                    "overrunId": 0,
+                    "overrunStatus": "finished"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "hvacSystemFunctionDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received_via_cache",
+              "data": {
+                "hvacSystemFunctionDescriptionData": [
+                  {
+                    "systemFunctionId": 0,
+                    "systemFunctionType": "dhw"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "hvacSystemFunctionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": true,
+                "writePartial": true
+              },
+              "status": "received",
+              "data": {
+                "hvacSystemFunctionData": [
+                  {
+                    "currentOperationModeId": 0,
+                    "isOperationModeIdChangeable": true,
+                    "isOverrunActive": false,
+                    "systemFunctionId": 0
+                  }
+                ]
+              }
+            },
+            {
+              "name": "hvacSystemFunctionOperationModeRelationListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "hvacSystemFunctionOperationModeRelationData": [
+                  {
+                    "operationModeId": [
+                      0,
+                      1,
+                      2
+                    ],
+                    "systemFunctionId": 0
+                  }
+                ]
+              }
+            },
+            {
+              "name": "hvacSystemFunctionSetpointRelationListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "hvacSystemFunctionSetpointRelationData": [
+                  {
+                    "operationModeId": 0,
+                    "setpointId": [
+                      1
+                    ],
+                    "systemFunctionId": 0
+                  },
+                  {
+                    "operationModeId": 1,
+                    "setpointId": [
+                      1
+                    ],
+                    "systemFunctionId": 0
+                  },
+                  {
+                    "operationModeId": 2,
+                    "systemFunctionId": 0
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "address": "4:f11",
+          "type": "Measurement",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "measurementConstraintsListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "measurementConstraintsData": [
+                  {
+                    "measurementId": 0,
+                    "valueRangeMax": {
+                      "number": 99,
+                      "scale": 0
+                    },
+                    "valueRangeMin": {
+                      "number": 0,
+                      "scale": -6
+                    },
+                    "valueStepSize": {
+                      "number": 1,
+                      "scale": 0
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "measurementDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received_via_cache",
+              "data": {
+                "measurementDescriptionData": [
+                  {
+                    "commodityType": "domesticHotWater",
+                    "measurementId": 0,
+                    "measurementType": "temperature",
+                    "scopeType": "dhwTemperature",
+                    "unit": "degC"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "measurementListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "measurementData": [
+                  {
+                    "measurementId": 0,
+                    "value": {
+                      "number": 44,
+                      "scale": 0
+                    },
+                    "valueSource": "measuredValue",
+                    "valueState": "normal",
+                    "valueType": "value"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "address": "4:f18",
+          "type": "Setpoint",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "setpointConstraintsListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "setpointConstraintsData": [
+                  {
+                    "setpointId": 0
+                  },
+                  {
+                    "setpointId": 1,
+                    "setpointRangeMax": {
+                      "number": 7,
+                      "scale": 1
+                    },
+                    "setpointRangeMin": {
+                      "number": 35,
+                      "scale": 0
+                    },
+                    "setpointStepSize": {
+                      "number": 1,
+                      "scale": 0
+                    }
+                  },
+                  {
+                    "setpointId": 2,
+                    "setpointRangeMax": {
+                      "number": 7,
+                      "scale": 1
+                    },
+                    "setpointRangeMin": {
+                      "number": 35,
+                      "scale": 0
+                    },
+                    "setpointStepSize": {
+                      "number": 1,
+                      "scale": 0
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "setpointDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received_via_cache",
+              "data": {
+                "setpointDescriptionData": [
+                  {
+                    "measurementId": 0,
+                    "setpointId": 0
+                  },
+                  {
+                    "measurementId": 0,
+                    "scopeType": "dhwTemperature",
+                    "setpointId": 1,
+                    "setpointType": "valueAbsolute",
+                    "unit": "degC"
+                  },
+                  {
+                    "measurementId": 0,
+                    "setpointId": 2
+                  }
+                ]
+              }
+            },
+            {
+              "name": "setpointListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": true,
+                "writePartial": true
+              },
+              "status": "received",
+              "data": {
+                "setpointData": [
+                  {
+                    "setpointId": 0
+                  },
+                  {
+                    "setpointId": 1,
+                    "value": {
+                      "number": 46,
+                      "scale": 0
+                    }
+                  },
+                  {
+                    "setpointId": 2
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "address": "5",
+      "type": "HeatingCircuit",
+      "features": [
+        {
+          "address": "5:f4",
+          "type": "DeviceClassification",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "deviceClassificationUserData",
+              "operations": {
+                "read": true,
+                "readPartial": false,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "address": "5:1",
+      "type": "HeatingZone",
+      "features": [
+        {
+          "address": "5:1:f4",
+          "type": "DeviceClassification",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "deviceClassificationUserData",
+              "operations": {
+                "read": true,
+                "readPartial": false,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "userLabel": "Zone 1"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "address": "5:1:1",
+      "type": "HVACRoom",
+      "features": [
+        {
+          "address": "5:1:1:f4",
+          "type": "DeviceClassification",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "deviceClassificationUserData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {}
+            }
+          ]
+        },
+        {
+          "address": "5:1:1:f9",
+          "type": "HVAC",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "hvacOperationModeDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "hvacOperationModeDescriptionData": [
+                  {
+                    "operationModeId": 0,
+                    "operationModeType": "auto"
+                  },
+                  {
+                    "operationModeId": 1,
+                    "operationModeType": "on"
+                  },
+                  {
+                    "operationModeId": 2,
+                    "operationModeType": "off"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "hvacSystemFunctionDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "hvacSystemFunctionDescriptionData": [
+                  {
+                    "systemFunctionId": 0,
+                    "systemFunctionType": "heating"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "hvacSystemFunctionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": true,
+                "writePartial": true
+              },
+              "status": "received",
+              "data": {
+                "hvacSystemFunctionData": [
+                  {
+                    "currentOperationModeId": 2,
+                    "isOperationModeIdChangeable": true,
+                    "systemFunctionId": 0
+                  }
+                ]
+              }
+            },
+            {
+              "name": "hvacSystemFunctionOperationModeRelationListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "hvacSystemFunctionOperationModeRelationData": [
+                  {
+                    "operationModeId": [
+                      0,
+                      1,
+                      2
+                    ],
+                    "systemFunctionId": 0
+                  }
+                ]
+              }
+            },
+            {
+              "name": "hvacSystemFunctionSetpointRelationListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "hvacSystemFunctionSetpointRelationData": [
+                  {
+                    "operationModeId": 0,
+                    "setpointId": [
+                      1
+                    ],
+                    "systemFunctionId": 0
+                  },
+                  {
+                    "operationModeId": 1,
+                    "setpointId": [
+                      1
+                    ],
+                    "systemFunctionId": 0
+                  },
+                  {
+                    "operationModeId": 2,
+                    "systemFunctionId": 0
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "address": "5:1:1:f11",
+          "type": "Measurement",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "measurementConstraintsListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received_via_cache",
+              "data": {
+                "measurementConstraintsData": [
+                  {
+                    "measurementId": 0,
+                    "valueRangeMax": {
+                      "number": 6,
+                      "scale": 1
+                    },
+                    "valueRangeMin": {
+                      "number": 0,
+                      "scale": -6
+                    },
+                    "valueStepSize": {
+                      "number": 5,
+                      "scale": -1
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "measurementDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received_via_cache",
+              "data": {
+                "measurementDescriptionData": [
+                  {
+                    "commodityType": "air",
+                    "measurementId": 0,
+                    "measurementType": "temperature",
+                    "scopeType": "roomAirTemperature",
+                    "unit": "degC"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "measurementListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "measurementData": [
+                  {
+                    "measurementId": 0,
+                    "value": {
+                      "number": 22,
+                      "scale": 0
+                    },
+                    "valueSource": "measuredValue",
+                    "valueState": "normal",
+                    "valueType": "value"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "address": "5:1:1:f18",
+          "type": "Setpoint",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "setpointConstraintsListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "setpointConstraintsData": [
+                  {
+                    "setpointId": 0
+                  },
+                  {
+                    "setpointId": 1,
+                    "setpointRangeMax": {
+                      "number": 3,
+                      "scale": 1
+                    },
+                    "setpointRangeMin": {
+                      "number": 5,
+                      "scale": 0
+                    },
+                    "setpointStepSize": {
+                      "number": 5,
+                      "scale": -1
+                    }
+                  },
+                  {
+                    "setpointId": 2,
+                    "setpointRangeMax": {
+                      "number": 3,
+                      "scale": 1
+                    },
+                    "setpointRangeMin": {
+                      "number": 5,
+                      "scale": 0
+                    },
+                    "setpointStepSize": {
+                      "number": 5,
+                      "scale": -1
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "setpointDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "setpointDescriptionData": [
+                  {
+                    "measurementId": 0,
+                    "setpointId": 0
+                  },
+                  {
+                    "measurementId": 0,
+                    "scopeType": "roomAirTemperature",
+                    "setpointId": 1,
+                    "setpointType": "valueAbsolute",
+                    "unit": "degC"
+                  },
+                  {
+                    "measurementId": 0,
+                    "setpointId": 2
+                  }
+                ]
+              }
+            },
+            {
+              "name": "setpointListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": true,
+                "writePartial": true
+              },
+              "status": "received",
+              "data": {
+                "setpointData": [
+                  {
+                    "setpointId": 0
+                  },
+                  {
+                    "setpointId": 1,
+                    "value": {
+                      "number": 21,
+                      "scale": 0
+                    }
+                  },
+                  {
+                    "setpointId": 2
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "address": "6",
+      "type": "TemperatureSensor",
+      "features": [
+        {
+          "address": "6:f11",
+          "type": "Measurement",
+          "role": "server",
+          "subscriptionProbe": "not_attempted_read_only",
+          "functions": [
+            {
+              "name": "measurementConstraintsListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "measurementConstraintsData": [
+                  {
+                    "measurementId": 0,
+                    "valueRangeMax": {
+                      "number": 8,
+                      "scale": 1
+                    },
+                    "valueRangeMin": {
+                      "number": -6,
+                      "scale": 1
+                    },
+                    "valueStepSize": {
+                      "number": 5,
+                      "scale": -1
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "measurementDescriptionListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received_via_cache",
+              "data": {
+                "measurementDescriptionData": [
+                  {
+                    "commodityType": "air",
+                    "measurementId": 0,
+                    "measurementType": "temperature",
+                    "scopeType": "outsideAirTemperature",
+                    "unit": "degC"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "measurementListData",
+              "operations": {
+                "read": true,
+                "readPartial": true,
+                "write": false,
+                "writePartial": false
+              },
+              "status": "received",
+              "data": {
+                "measurementData": [
+                  {
+                    "measurementId": 0,
+                    "value": {
+                      "number": 225,
+                      "scale": -1
+                    },
+                    "valueSource": "measuredValue",
+                    "valueState": "normal",
+                    "valueType": "value"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
