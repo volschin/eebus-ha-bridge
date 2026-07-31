@@ -1,17 +1,27 @@
 name: Hassfest
 
+# hassfest validates manifest.json and the integration's file layout, so only
+# custom_components (and this workflow) can change its verdict. Go- and
+# Dockerfile-only PRs no longer trigger it. (Duplicated per event: Actions does
+# not expand YAML anchors.)
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
+    paths:
+      - 'custom_components/**'
+      - '.github/workflows/hassfest.yml'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
+    paths:
+      - 'custom_components/**'
+      - '.github/workflows/hassfest.yml'
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   hassfest:

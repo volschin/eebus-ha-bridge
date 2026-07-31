@@ -1,17 +1,33 @@
 name: HACS
 
+# HACS validates the integration's repository structure: custom_components,
+# hacs.json, the manifest, and the README it renders as the store description.
+# The path list replaces the former '**/*.md' ignore — GitHub rejects paths and
+# paths-ignore on the same event, so README.md is listed explicitly as the one
+# markdown file that is validated input. Go- and Dockerfile-only PRs no longer
+# trigger this. (Duplicated per event: Actions does not expand YAML anchors.)
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
+    paths:
+      - 'custom_components/**'
+      - 'hacs.json'
+      - 'README.md'
+      - '.github/workflows/hacs.yml'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
+    paths:
+      - 'custom_components/**'
+      - 'hacs.json'
+      - 'README.md'
+      - '.github/workflows/hacs.yml'
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   hacs:
