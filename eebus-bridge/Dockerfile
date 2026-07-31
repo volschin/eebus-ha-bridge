@@ -24,26 +24,39 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT#v}
   -ldflags "-X github.com/volschin/eebus-bridge/internal/grpc.BuildVersion=${BUILD_VERSION}" \
   -o /eebus-bridge ./cmd/eebus-bridge
 
-FROM alpine:3.24
+# Stage the runtime filesystem while a shell is still available. distroless has
+# no shell and no package manager, so /data and its ownership cannot be created
+# in the final stage.
+FROM alpine:3.24 AS rootfs
 
-# hadolint ignore=DL3018
-RUN apk add --no-cache ca-certificates \
- && addgroup -g 101 -S eebus \
+RUN addgroup -g 101 -S eebus \
  && adduser -u 100 -S -G eebus eebus \
- && mkdir -p /data /etc/eebus-bridge \
- && chown eebus:eebus /data
+ && mkdir -p /rootfs/data /rootfs/etc/eebus-bridge \
+ && chown -R 100:101 /rootfs/data
 
+# distroless/static carries ca-certificates, tzdata and /etc/passwd, and nothing
+# else: no shell, no package manager, no busybox. The bridge is a static
+# CGO_ENABLED=0 binary that makes no outbound HTTP calls and never shells out,
+# so none of alpine's userland was reachable at runtime anyway.
+# Pinned by digest: distroless publishes no semver tags, so a digest is the only
+# way to get a reproducible base and satisfy hadolint DL3006/DL3007.
+# renovate: datasource=docker depName=gcr.io/distroless/static-debian12
+FROM gcr.io/distroless/static-debian12@sha256:a9fcaedd4c9b59e12dd65d954f0b5044f19b0647a8a3712e77205df9e7b102cd
+
+COPY --from=rootfs /rootfs/ /
 COPY --from=builder /eebus-bridge /usr/local/bin/eebus-bridge
 
 VOLUME /data
 EXPOSE 50051 4712
 
+# Absolute paths: distroless has no shell, so nothing resolves these via PATH
+# on our behalf if the image's PATH ever changes.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD ["eebus-bridge", "-healthcheck", "--config", "/etc/eebus-bridge/config.yaml"]
+  CMD ["/usr/local/bin/eebus-bridge", "-healthcheck", "--config", "/etc/eebus-bridge/config.yaml"]
 
 # Numeric form satisfies hadolint DL3066 and is resolvable without /etc/passwd.
 # 100:101 is exactly what `adduser -S` assigned before, so ownership of the
 # existing /data volume is unchanged and no re-pairing is triggered.
 USER 100:101
-ENTRYPOINT ["eebus-bridge"]
+ENTRYPOINT ["/usr/local/bin/eebus-bridge"]
 CMD ["--config", "/etc/eebus-bridge/config.yaml"]
