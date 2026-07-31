@@ -38,6 +38,7 @@ jobs:
               - 'eebus-bridge/**'
               - 'scripts/check_go_patch_coverage.py'
               - 'scripts/tests/test_check_go_patch_coverage.py'
+              - 'scripts/smoke-image.sh'
               - 'docs/badges/go-coverage.svg'
               - '.github/workflows/ci.yml'
             python:
@@ -151,7 +152,43 @@ jobs:
         uses: hadolint/hadolint-action@2a66e89f53d0771bb131a7fa31f3136336094aa6 # v3.4.0 # renovate: datasource=github-releases depName=hadolint/hadolint-action
         with:
           dockerfile: eebus-bridge/Dockerfile
-      - run: docker build -t eebus-bridge ./eebus-bridge
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0 # renovate: datasource=github-releases depName=docker/setup-buildx-action
+      # Recorded so the log shows whether emulation was even available. No
+      # setup-qemu-action here on purpose: since the rootfs stage was folded
+      # into the BUILDPLATFORM-pinned builder, no RUN executes outside the
+      # native builder and the arm stages are COPY-only. If this job goes red
+      # for a missing binfmt handler, that assumption is wrong.
+      - name: Record binfmt handlers
+        run: ls /proc/sys/fs/binfmt_misc/ 2>/dev/null || echo "no binfmt handlers registered"
+      # Previously a plain amd64 `docker build`. A cross-compile break on
+      # arm64/armv7 — the platforms the release publishes — was invisible until
+      # the tag build, i.e. after the release was already cut.
+      - name: Build all release platforms
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0 # renovate: datasource=github-releases depName=docker/build-push-action
+        with:
+          context: ./eebus-bridge
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_VERSION=ci-${{ github.sha }}
+      # Multi-platform results cannot be loaded into the docker daemon, so the
+      # smoke target is rebuilt for amd64 alone. Everything is cached from the
+      # step above, so this costs seconds.
+      - name: Build amd64 image for the smoke run
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0 # renovate: datasource=github-releases depName=docker/build-push-action
+        with:
+          context: ./eebus-bridge
+          platforms: linux/amd64
+          load: true
+          tags: eebus-bridge:ci
+          cache-from: type=gha
+          build-args: |
+            BUILD_VERSION=ci-${{ github.sha }}
+      - name: Smoke-run the image
+        run: bash scripts/smoke-image.sh eebus-bridge:ci
 
   test:
     # Gated like the go job: a Go- or Dockerfile-only PR cannot break ruff,
