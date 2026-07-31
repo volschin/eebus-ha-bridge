@@ -62,6 +62,14 @@ func (s *HVACService) snapshotRoomHeating(ski string) (*pb.RoomHeatingState, err
 	entityResolved := false
 	readSucceeded := false
 	var resolveErr error
+	// The zone label is device metadata cached by DeviceClassifier, not a live
+	// room-heating read. It deliberately does not set readSucceeded: a label on
+	// its own must never make an otherwise unavailable aggregate look readable.
+	if s.registry != nil {
+		if label := s.registry.ZoneLabel(ski); label != "" {
+			state.ZoneLabel = &label
+		}
+	}
 	if s.room != nil {
 		if value, err := s.room.Temperature(ski); err == nil {
 			state.CurrentTemperatureCelsius = &value

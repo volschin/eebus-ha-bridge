@@ -112,6 +112,7 @@ class RoomHeatingValues:
     setpoint: SetpointState | None
     system_function: SystemFunctionState | None
     current_temperature_celsius: float | None
+    zone_label: str | None = None
 
 
 # Maps a GetMeasurements entry type (as emitted by the Go bridge) to the
@@ -268,6 +269,7 @@ def _room_heating_from_proto(state: proto_stubs.RoomHeatingState) -> RoomHeating
         current_temperature_celsius=(
             state.current_temperature_celsius if state.HasField("current_temperature_celsius") else None
         ),
+        zone_label=state.zone_label if state.HasField("zone_label") else None,
     )
 
 

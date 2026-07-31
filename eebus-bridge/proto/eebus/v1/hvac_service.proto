@@ -19,6 +19,10 @@ message RoomHeatingState {
   optional double current_temperature_celsius = 1;
   RoomHeatingSetpoint setpoint = 2;
   RoomHeatingSystemFunction system_function = 3;
+  // zone_label carries deviceClassificationUserData.userLabel from the remote
+  // HeatingZone entity (e.g. "Zone 1"). Unset when the device publishes no
+  // label; an absent label is normal, not a read failure.
+  optional string zone_label = 4;
 }
 
 message RoomHeatingSetpoint {

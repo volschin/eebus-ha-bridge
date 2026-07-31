@@ -26,7 +26,11 @@ type DeviceInfo struct {
 	DeviceType       string
 	SoftwareRevision string
 	HardwareRevision string
-	UseCases         []string
+	// ZoneLabel is deviceClassificationUserData.userLabel read from the remote
+	// HeatingZone entity. Only that entity populates the function; the sibling
+	// HeatingCircuit and HVACRoom entities advertise it and return it empty.
+	ZoneLabel      string
+	UseCases       []string
 	RemoteDevice     spineapi.DeviceRemoteInterface
 	RemoteEntities   []spineapi.EntityRemoteInterface
 	Entities         []EntityInfo
@@ -482,6 +486,38 @@ func (r *DeviceRegistry) UpsertDeviceClassification(
 		info.DeviceType != previous.DeviceType ||
 		info.SoftwareRevision != previous.SoftwareRevision ||
 		info.HardwareRevision != previous.HardwareRevision
+}
+
+// UpsertZoneLabel stores the heating-zone user label reported by a remote
+// HeatingZone entity. An empty label is ignored so a sibling entity answering
+// the same function with empty data never clears a previously discovered label.
+// Returns true when the stored label changed, so callers can fan out a resync.
+func (r *DeviceRegistry) UpsertZoneLabel(ski, label string) bool {
+	if label == "" {
+		return false
+	}
+	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return false
+	}
+	r.catalog.mu.Lock()
+	defer r.catalog.mu.Unlock()
+	info := r.catalog.devices[ski]
+	previous := info.ZoneLabel
+	info.SKI = ski
+	info.ZoneLabel = label
+	r.catalog.devices[ski] = info
+	return info.ZoneLabel != previous
+}
+
+// ZoneLabel returns the stored heating-zone user label for a device, if any.
+func (r *DeviceRegistry) ZoneLabel(ski string) string {
+	ski = NormalizeSKI(ski)
+	r.catalog.mu.RLock()
+	defer r.catalog.mu.RUnlock()
+	return r.catalog.devices[ski].ZoneLabel
 }
 
 func (r *DeviceRegistry) RemoveDevice(ski string) {

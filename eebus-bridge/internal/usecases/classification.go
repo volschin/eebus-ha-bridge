@@ -36,10 +36,19 @@ type DeviceClassifier struct {
 	// SHIP reconnect.
 	mu        sync.Mutex
 	requested map[string]bool
+	// userRequested is the same guard for deviceClassificationUserData reads.
+	// It is deliberately a separate map: a manufacturer-data rejection must not
+	// suppress the user-data request, or vice versa.
+	userRequested map[string]bool
 }
 
 func NewDeviceClassifier(registry *eebus.DeviceRegistry, bus *eebus.EventBus) *DeviceClassifier {
-	return &DeviceClassifier{registry: registry, bus: bus, requested: make(map[string]bool)}
+	return &DeviceClassifier{
+		registry:      registry,
+		bus:           bus,
+		requested:     make(map[string]bool),
+		userRequested: make(map[string]bool),
+	}
 }
 
 func (c *DeviceClassifier) Setup(localEntity spineapi.EntityLocalInterface) error {
@@ -69,16 +78,27 @@ func (c *DeviceClassifier) HandleEvent(payload spineapi.EventPayload) {
 		c.store(payload.Ski, device, classificationDetails(data))
 		return
 	}
+	if data, ok := payload.Data.(*model.DeviceClassificationUserDataType); ok {
+		// Only the HeatingZone entity populates this function; siblings answer
+		// it empty. storeZoneLabel ignores empty labels, so an unsolicited
+		// response from another entity cannot clear a good value.
+		if payload.Entity == nil || isHeatingZone(payload.Entity) {
+			c.storeZoneLabel(payload.Ski, device, userLabel(data))
+		}
+		return
+	}
 	if payload.ChangeType != spineapi.ElementChangeAdd {
 		return
 	}
 	if payload.Entity != nil {
 		c.readOrRequest(payload.Ski, device, payload.Entity)
+		c.readOrRequestZoneLabel(payload.Ski, device, payload.Entity)
 		return
 	}
 	if device != nil {
 		for _, entity := range device.Entities() {
 			c.readOrRequest(payload.Ski, device, entity)
+			c.readOrRequestZoneLabel(payload.Ski, device, entity)
 		}
 	}
 }
@@ -148,6 +168,95 @@ func (c *DeviceClassifier) store(
 	)
 	if changed && c.bus != nil {
 		c.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeDeviceClassificationUpdated})
+	}
+}
+
+// isHeatingZone reports whether a remote entity is the HeatingZone entity. The
+// zone label lives only there: the sibling HeatingCircuit and HVACRoom entities
+// advertise deviceClassificationUserData and return it empty, so an unfiltered
+// read looks like a device that publishes no label at all.
+func isHeatingZone(entity spineapi.EntityRemoteInterface) bool {
+	return entity != nil && entity.EntityType() == model.EntityTypeTypeHeatingZone
+}
+
+// userLabel extracts the label from a user-data payload. UserNodeIdentification
+// is an identifier and UserDescription has never been observed populated, so
+// neither is read.
+func userLabel(data *model.DeviceClassificationUserDataType) string {
+	if data == nil || data.UserLabel == nil {
+		return ""
+	}
+	return string(*data.UserLabel)
+}
+
+// readOrRequestZoneLabel reads the cached zone label from a HeatingZone entity
+// or issues a one-shot read. eebus-go's DeviceClassification client exposes only
+// RequestManufacturerDetails, so the user-data function is requested directly.
+func (c *DeviceClassifier) readOrRequestZoneLabel(
+	ski string,
+	device spineapi.DeviceRemoteInterface,
+	entity spineapi.EntityRemoteInterface,
+) {
+	if !isHeatingZone(entity) {
+		return
+	}
+	remoteFeature := entity.FeatureOfTypeAndRole(
+		model.FeatureTypeTypeDeviceClassification,
+		model.RoleTypeServer,
+	)
+	if remoteFeature == nil {
+		return
+	}
+	if data, ok := remoteFeature.DataCopy(
+		model.FunctionTypeDeviceClassificationUserData,
+	).(*model.DeviceClassificationUserDataType); ok && data != nil {
+		if label := userLabel(data); label != "" {
+			c.storeZoneLabel(ski, device, label)
+			return
+		}
+	}
+	key := observationSKI(ski, device)
+	c.mu.Lock()
+	already := c.userRequested[key]
+	c.userRequested[key] = true
+	c.mu.Unlock()
+	if already {
+		return
+	}
+	localFeature := c.localEntity.FeatureOfTypeAndRole(
+		model.FeatureTypeTypeDeviceClassification,
+		model.RoleTypeClient,
+	)
+	if localFeature == nil {
+		return
+	}
+	if _, err := localFeature.RequestRemoteData(
+		model.FunctionTypeDeviceClassificationUserData,
+		nil,
+		nil,
+		remoteFeature,
+	); err != nil {
+		log.Printf(
+			"requesting DeviceClassification user data for %s: %v",
+			eebus.ShortSKI(key),
+			err,
+		)
+	}
+}
+
+func (c *DeviceClassifier) storeZoneLabel(
+	ski string,
+	device spineapi.DeviceRemoteInterface,
+	label string,
+) {
+	if label == "" {
+		return
+	}
+	if c.registry.UpsertZoneLabel(observationSKI(ski, device), label) && c.bus != nil {
+		c.bus.Publish(eebus.Event{
+			SKI:  observationSKI(ski, device),
+			Type: eebus.EventTypeDeviceClassificationUpdated,
+		})
 	}
 }
 

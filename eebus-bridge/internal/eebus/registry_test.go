@@ -647,3 +647,34 @@ func TestStaleDevicesReconnectRetainsLastSuccessOnlyForDiagnostics(t *testing.T)
 		t.Errorf("MonitoringLastSuccessAge() = (%s, %t), want (4m, true)", age, ok)
 	}
 }
+
+func TestRegistryZoneLabelIgnoresEmptyAndReportsChange(t *testing.T) {
+	registry := eebus.NewDeviceRegistry()
+	ski := "0011223344556677889900112233445566778899"
+
+	if registry.UpsertZoneLabel(ski, "") {
+		t.Fatal("empty label reported a change")
+	}
+	if label := registry.ZoneLabel(ski); label != "" {
+		t.Fatalf("empty label stored %q", label)
+	}
+	if !registry.UpsertZoneLabel(ski, "Zone 1") {
+		t.Fatal("first label did not report a change")
+	}
+	if registry.UpsertZoneLabel(ski, "Zone 1") {
+		t.Fatal("unchanged label reported a change")
+	}
+	// A later empty answer from a sibling entity must not clear a good label.
+	if registry.UpsertZoneLabel(ski, "") {
+		t.Fatal("empty label reported a change after a good one")
+	}
+	if label := registry.ZoneLabel(ski); label != "Zone 1" {
+		t.Fatalf("zone label = %q, want Zone 1", label)
+	}
+	if !registry.UpsertZoneLabel(ski, "Ground floor") {
+		t.Fatal("renamed label did not report a change")
+	}
+	if label := registry.ZoneLabel(ski); label != "Ground floor" {
+		t.Fatalf("renamed zone label = %q", label)
+	}
+}

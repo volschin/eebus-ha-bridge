@@ -79,3 +79,25 @@ async def test_writes_delegate_to_coordinator() -> None:
     await entity.async_set_hvac_mode(HVACMode.AUTO)
     coordinator.async_set_room_heating_temperature.assert_awaited_once_with(22.0)
     coordinator.async_set_room_heating_mode.assert_awaited_once_with("auto")
+
+
+def test_zone_label_exposed_as_attribute_when_published() -> None:
+    """The HeatingZone user label rides along as a climate attribute."""
+    state = replace(_state(), hvac=replace(_state().hvac, zone_label="Zone 1"))
+    entity = EebusRoomHeatingClimate(_coordinator(state))
+    assert entity.extra_state_attributes == {"zone_label": "Zone 1"}
+
+
+def test_zone_label_absent_yields_no_attributes() -> None:
+    """A device that publishes no label must not emit a null-valued attribute."""
+    entity = EebusRoomHeatingClimate(_coordinator(_state()))
+    assert entity.extra_state_attributes is None
+
+
+def test_zone_label_does_not_affect_entity_identity() -> None:
+    """The label is metadata only: it must never churn the entity id or name."""
+    plain = EebusRoomHeatingClimate(_coordinator(_state()))
+    labelled_state = replace(_state(), hvac=replace(_state().hvac, zone_label="Zone 1"))
+    labelled = EebusRoomHeatingClimate(_coordinator(labelled_state))
+    assert plain.unique_id == labelled.unique_id
+    assert plain.translation_key == labelled.translation_key

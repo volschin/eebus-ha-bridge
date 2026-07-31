@@ -247,6 +247,7 @@ func populateSnapshotFieldStates(snapshot *pb.DeviceSnapshot, measurementOverrid
 		pb.SnapshotFieldId_SNAPSHOT_FIELD_DHW_SYSTEM_FUNCTION:          snapshot.DhwSystemFunctionState,
 		pb.SnapshotFieldId_SNAPSHOT_FIELD_ROOM_HEATING_SETPOINT:        snapshot.RoomHeatingState,
 		pb.SnapshotFieldId_SNAPSHOT_FIELD_ROOM_HEATING_SYSTEM_FUNCTION: snapshot.RoomHeatingState,
+		pb.SnapshotFieldId_SNAPSHOT_FIELD_ROOM_HEATING_ZONE_LABEL:      snapshot.RoomHeatingState,
 		pb.SnapshotFieldId_SNAPSHOT_FIELD_COMPRESSOR_FLEXIBILITY:       snapshot.CompressorFlexibilityState,
 	}
 	for _, field := range snapshotMeasurementFields {
@@ -288,9 +289,16 @@ func populateSnapshotFieldStates(snapshot *pb.DeviceSnapshot, measurementOverrid
 		if snapshot.RoomHeating.CurrentTemperatureCelsius != nil {
 			states[pb.SnapshotFieldId_SNAPSHOT_FIELD_ROOM_TEMPERATURE] = pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_AVAILABLE
 		}
+		// A missing label means the device publishes none, which is a permanent
+		// property of the hardware rather than a failed read.
+		if snapshot.RoomHeating.ZoneLabel == nil {
+			states[pb.SnapshotFieldId_SNAPSHOT_FIELD_ROOM_HEATING_ZONE_LABEL] = pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_UNSUPPORTED
+		} else {
+			states[pb.SnapshotFieldId_SNAPSHOT_FIELD_ROOM_HEATING_ZONE_LABEL] = pb.SnapshotValueState_SNAPSHOT_VALUE_STATE_AVAILABLE
+		}
 	}
-	snapshot.FieldStates = make([]*pb.SnapshotFieldStatus, 0, int(pb.SnapshotFieldId_SNAPSHOT_FIELD_ROOM_HEATING_SYSTEM_FUNCTION))
-	for id := pb.SnapshotFieldId_SNAPSHOT_FIELD_CONNECTED; id <= pb.SnapshotFieldId_SNAPSHOT_FIELD_ROOM_HEATING_SYSTEM_FUNCTION; id++ {
+	snapshot.FieldStates = make([]*pb.SnapshotFieldStatus, 0, int(pb.SnapshotFieldId_SNAPSHOT_FIELD_ROOM_HEATING_ZONE_LABEL))
+	for id := pb.SnapshotFieldId_SNAPSHOT_FIELD_CONNECTED; id <= pb.SnapshotFieldId_SNAPSHOT_FIELD_ROOM_HEATING_ZONE_LABEL; id++ {
 		snapshot.FieldStates = append(snapshot.FieldStates, &pb.SnapshotFieldStatus{Id: id, State: states[id]})
 	}
 }

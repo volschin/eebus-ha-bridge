@@ -180,3 +180,63 @@ func TestHVACServiceMapsOutOfRangeToInvalidArgument(t *testing.T) {
 		t.Fatalf("SetRoomHeatingTemperature() error = %v, want InvalidArgument", err)
 	}
 }
+
+func TestHVACServiceServesZoneLabelOnSnapshotAndStream(t *testing.T) {
+	entity := mocks.NewEntityRemoteInterface(t)
+	registry := eebus.NewDeviceRegistry()
+	registry.UpsertZoneLabel(testValidSKI, "Zone 1")
+	temp := &fakeRoomHeatingTemp{
+		entity: entity,
+		state:  usecases.RoomHeatingSetpoint{Value: 21, Minimum: 5, Maximum: 30, Step: 0.5, Writable: true},
+	}
+	svc := NewHVACService(temp, nil, nil, nil, registry)
+
+	// Snapshot / polling path.
+	state, err := svc.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
+	if err != nil {
+		t.Fatalf("GetRoomHeating() error = %v", err)
+	}
+	if state.GetZoneLabel() != "Zone 1" {
+		t.Errorf("snapshot zone label = %q, want %q", state.GetZoneLabel(), "Zone 1")
+	}
+
+	// Stream path: the label must ride along on pushed events too, otherwise it
+	// only ever appears for polling clients.
+	event := &pb.RoomHeatingEvent{Ski: testValidSKI, EventType: pb.RoomHeatingEventType_ROOM_HEATING_EVENT_SETPOINT_UPDATED}
+	svc.AttachRoomHeatingPayload(event, testValidSKI)
+	if event.GetState().GetZoneLabel() != "Zone 1" {
+		t.Errorf("stream zone label = %q, want %q", event.GetState().GetZoneLabel(), "Zone 1")
+	}
+}
+
+// A label alone must never make an otherwise unreadable aggregate look available.
+func TestHVACServiceZoneLabelDoesNotMakeUnreadableAggregateAvailable(t *testing.T) {
+	entity := mocks.NewEntityRemoteInterface(t)
+	registry := eebus.NewDeviceRegistry()
+	registry.UpsertZoneLabel(testValidSKI, "Zone 1")
+	temp := &fakeRoomHeatingTemp{entity: entity, err: usecases.ErrRoomHeatingDataUnavailable}
+	svc := NewHVACService(temp, nil, failingTemperatureReader{err: usecases.ErrRoomHeatingDataUnavailable}, nil, registry)
+
+	state, err := svc.GetRoomHeating(context.Background(), &pb.DeviceRequest{Ski: testValidSKI})
+	if state != nil || status.Code(err) != codes.Unavailable {
+		t.Fatalf("GetRoomHeating() = (%+v, %v), want nil/Unavailable", state, err)
+	}
+}
+
+func TestHVACServiceOmitsZoneLabelWhenUnknown(t *testing.T) {
+	entity := mocks.NewEntityRemoteInterface(t)
+	temp := &fakeRoomHeatingTemp{
+		entity: entity,
+		state:  usecases.RoomHeatingSetpoint{Value: 21, Minimum: 5, Maximum: 30, Step: 0.5, Writable: true},
+	}
+	state, err := NewHVACService(temp, nil, nil, nil, eebus.NewDeviceRegistry()).GetRoomHeating(
+		context.Background(),
+		&pb.DeviceRequest{Ski: testValidSKI},
+	)
+	if err != nil {
+		t.Fatalf("GetRoomHeating() error = %v", err)
+	}
+	if state.ZoneLabel != nil {
+		t.Errorf("zone label = %q, want unset", state.GetZoneLabel())
+	}
+}

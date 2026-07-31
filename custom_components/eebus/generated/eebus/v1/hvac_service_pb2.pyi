@@ -22,14 +22,16 @@ ROOM_HEATING_EVENT_SETPOINT_UPDATED: RoomHeatingEventType
 ROOM_HEATING_EVENT_SYSTEM_FUNCTION_UPDATED: RoomHeatingEventType
 
 class RoomHeatingState(_message.Message):
-    __slots__ = ("current_temperature_celsius", "setpoint", "system_function")
+    __slots__ = ("current_temperature_celsius", "setpoint", "system_function", "zone_label")
     CURRENT_TEMPERATURE_CELSIUS_FIELD_NUMBER: _ClassVar[int]
     SETPOINT_FIELD_NUMBER: _ClassVar[int]
     SYSTEM_FUNCTION_FIELD_NUMBER: _ClassVar[int]
+    ZONE_LABEL_FIELD_NUMBER: _ClassVar[int]
     current_temperature_celsius: float
     setpoint: RoomHeatingSetpoint
     system_function: RoomHeatingSystemFunction
-    def __init__(self, current_temperature_celsius: _Optional[float] = ..., setpoint: _Optional[_Union[RoomHeatingSetpoint, _Mapping]] = ..., system_function: _Optional[_Union[RoomHeatingSystemFunction, _Mapping]] = ...) -> None: ...
+    zone_label: str
+    def __init__(self, current_temperature_celsius: _Optional[float] = ..., setpoint: _Optional[_Union[RoomHeatingSetpoint, _Mapping]] = ..., system_function: _Optional[_Union[RoomHeatingSystemFunction, _Mapping]] = ..., zone_label: _Optional[str] = ...) -> None: ...
 
 class RoomHeatingSetpoint(_message.Message):
     __slots__ = ("value_celsius", "min_celsius", "max_celsius", "step_celsius", "writable")

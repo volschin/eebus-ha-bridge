@@ -81,8 +81,12 @@ type RoomHeatingState struct {
 	CurrentTemperatureCelsius *float64                   `protobuf:"fixed64,1,opt,name=current_temperature_celsius,json=currentTemperatureCelsius,proto3,oneof" json:"current_temperature_celsius,omitempty"`
 	Setpoint                  *RoomHeatingSetpoint       `protobuf:"bytes,2,opt,name=setpoint,proto3" json:"setpoint,omitempty"`
 	SystemFunction            *RoomHeatingSystemFunction `protobuf:"bytes,3,opt,name=system_function,json=systemFunction,proto3" json:"system_function,omitempty"`
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
+	// zone_label carries deviceClassificationUserData.userLabel from the remote
+	// HeatingZone entity (e.g. "Zone 1"). Unset when the device publishes no
+	// label; an absent label is normal, not a read failure.
+	ZoneLabel     *string `protobuf:"bytes,4,opt,name=zone_label,json=zoneLabel,proto3,oneof" json:"zone_label,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RoomHeatingState) Reset() {
@@ -134,6 +138,13 @@ func (x *RoomHeatingState) GetSystemFunction() *RoomHeatingSystemFunction {
 		return x.SystemFunction
 	}
 	return nil
+}
+
+func (x *RoomHeatingState) GetZoneLabel() string {
+	if x != nil && x.ZoneLabel != nil {
+		return *x.ZoneLabel
+	}
+	return ""
 }
 
 type RoomHeatingSetpoint struct {
@@ -440,12 +451,15 @@ var File_eebus_v1_hvac_service_proto protoreflect.FileDescriptor
 
 const file_eebus_v1_hvac_service_proto_rawDesc = "" +
 	"\n" +
-	"\x1beebus/v1/hvac_service.proto\x12\beebus.v1\x1a\x15eebus/v1/common.proto\"\x80\x02\n" +
+	"\x1beebus/v1/hvac_service.proto\x12\beebus.v1\x1a\x15eebus/v1/common.proto\"\xb3\x02\n" +
 	"\x10RoomHeatingState\x12C\n" +
 	"\x1bcurrent_temperature_celsius\x18\x01 \x01(\x01H\x00R\x19currentTemperatureCelsius\x88\x01\x01\x129\n" +
 	"\bsetpoint\x18\x02 \x01(\v2\x1d.eebus.v1.RoomHeatingSetpointR\bsetpoint\x12L\n" +
-	"\x0fsystem_function\x18\x03 \x01(\v2#.eebus.v1.RoomHeatingSystemFunctionR\x0esystemFunctionB\x1e\n" +
-	"\x1c_current_temperature_celsius\"\xbb\x01\n" +
+	"\x0fsystem_function\x18\x03 \x01(\v2#.eebus.v1.RoomHeatingSystemFunctionR\x0esystemFunction\x12\"\n" +
+	"\n" +
+	"zone_label\x18\x04 \x01(\tH\x01R\tzoneLabel\x88\x01\x01B\x1e\n" +
+	"\x1c_current_temperature_celsiusB\r\n" +
+	"\v_zone_label\"\xbb\x01\n" +
 	"\x13RoomHeatingSetpoint\x12#\n" +
 	"\rvalue_celsius\x18\x01 \x01(\x01R\fvalueCelsius\x12\x1f\n" +
 	"\vmin_celsius\x18\x02 \x01(\x01R\n" +
