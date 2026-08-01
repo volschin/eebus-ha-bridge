@@ -38,6 +38,8 @@ jobs:
             addon:
               - 'eebus-bridge-addon/**'
               - 'repository.yaml'
+              - 'custom_components/eebus/manifest.json'
+              - 'scripts/check_addon_version.py'
               - '.github/workflows/ci.yml'
             go:
               - 'eebus-bridge/**'
@@ -216,6 +218,8 @@ jobs:
         uses: frenck/action-addon-linter@f995494fd84fae6310d23617e66d0e37de4f14eb # v2.21.0 # renovate: datasource=github-releases depName=frenck/action-addon-linter
         with:
           path: ./eebus-bridge-addon
+      - name: Check add-on version matches the integration
+        run: python3 scripts/check_addon_version.py
 
   test:
     # Gated like the go job: a Go- or Dockerfile-only PR cannot break ruff,
