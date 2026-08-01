@@ -22,7 +22,7 @@ writes.
 
 ## Enable the capture
 
-In `eebus-bridge/config.yaml`:
+In `eebus-bridge/config-default.yaml`:
 
 ```yaml
 experimental:
