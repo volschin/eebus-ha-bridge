@@ -25,6 +25,7 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
+      addon: ${{ steps.filter.outputs.addon }}
       go: ${{ steps.filter.outputs.go }}
       proto: ${{ steps.filter.outputs.proto }}
       python: ${{ steps.filter.outputs.python }}
@@ -34,6 +35,12 @@ jobs:
         id: filter
         with:
           filters: |
+            addon:
+              - 'eebus-bridge-addon/**'
+              - 'repository.yaml'
+              - 'custom_components/eebus/manifest.json'
+              - 'scripts/check_addon_version.py'
+              - '.github/workflows/ci.yml'
             go:
               - 'eebus-bridge/**'
               - 'scripts/check_go_patch_coverage.py'
@@ -189,6 +196,30 @@ jobs:
             BUILD_VERSION=ci-${{ github.sha }}
       - name: Smoke-run the image
         run: bash scripts/smoke-image.sh eebus-bridge:ci
+
+  # Not folded into the docker job: that one is gated on `go`, and the add-on
+  # is packaging around a released binary, so a Go change cannot break it and a
+  # packaging change does not need the Go build to run first.
+  addon:
+    needs: changes
+    if: needs.changes.outputs.addon == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Lint add-on Dockerfile
+        uses: hadolint/hadolint-action@2a66e89f53d0771bb131a7fa31f3136336094aa6 # v3.4.0 # renovate: datasource=github-releases depName=hadolint/hadolint-action
+        with:
+          dockerfile: eebus-bridge-addon/Dockerfile
+      # Validates config.yaml against the Supervisor's own add-on schema. A key
+      # it rejects is otherwise invisible here and only surfaces on a user's
+      # box, where the Supervisor logs a warning and silently skips the add-on
+      # rather than failing loudly.
+      - name: Lint add-on config
+        uses: frenck/action-addon-linter@f995494fd84fae6310d23617e66d0e37de4f14eb # v2.21.0 # renovate: datasource=github-releases depName=frenck/action-addon-linter
+        with:
+          path: ./eebus-bridge-addon
+      - name: Check add-on version matches the integration
+        run: python3 scripts/check_addon_version.py
 
   test:
     # Gated like the go job: a Go- or Dockerfile-only PR cannot break ruff,

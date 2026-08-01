@@ -1,0 +1,44 @@
+name: EEBUS Bridge
+# Deliberately identical to custom_components/eebus/manifest.json: the
+# Supervisor passes this string to the build as BUILD_VERSION, and the
+# Dockerfile uses it as the tag of the published bridge image. Bumping it is
+# therefore the single action that both offers users an update and selects the
+# binary they get. scripts/check_addon_version.py enforces the equality.
+version: "0.16.2"
+slug: eebus_bridge
+description: >-
+  EEBUS SHIP/SPINE bridge for heat pumps. Serves the gRPC API that the EEBUS
+  custom integration connects to.
+url: https://github.com/volschin/eebus-ha-bridge/tree/main/eebus-bridge-addon
+# The release workflow publishes linux/amd64, linux/arm64 and linux/arm/v7.
+# armhf (arm/v6) and i386 are absent from that list, so they are absent here.
+arch:
+  - amd64
+  - aarch64
+  - armv7
+# SHIP discovery uses _ship._tcp mDNS multicast, which cannot cross a Docker
+# bridge network. This is the same constraint that forces network_mode: host in
+# docker-compose.yml, and it is also what lets the integration reach the gRPC
+# socket on localhost: HA Core shares the host network namespace, so the
+# bridge's default loopback bind is enough and no TLS/token setup is needed.
+host_network: true
+# run.sh is a plain s6 service script, not an s6-overlay service tree.
+init: false
+# Before Home Assistant, so the integration finds the bridge already listening
+# on its first setup attempt instead of failing and retrying.
+startup: services
+options:
+  grpc_port: 50051
+  eebus_port: 4712
+  vendor: HomeAssistant
+  brand: Home Assistant
+  model: eebus-bridge
+  serial: ""
+schema:
+  grpc_port: port
+  eebus_port: port
+  vendor: str
+  brand: str
+  model: str
+  # Optional: run.sh generates and persists one when this is left empty.
+  serial: str?

@@ -55,7 +55,23 @@ Home Assistant                    eebus-bridge (Go)         Vaillant VR940f
 
 ### Bridge-Setup
 
-Der Go-basierte Bridge-Dienst muss separat laufen (Docker empfohlen):
+Der Go-basierte Bridge-Dienst laeuft als eigener Prozess neben Home Assistant.
+Welcher Weg passt, haengt von der HA-Installationsart ab.
+
+#### Home Assistant OS / Supervised: Add-on
+
+1. **Settings** > **Add-ons** > **Add-on Store** > Drei-Punkte-Menue oben
+   rechts > **Repositories**
+2. Repository-URL einfuegen: `https://github.com/volschin/eebus-ha-bridge` >
+   **Add**
+3. Store schliessen und neu oeffnen, **EEBUS Bridge** auswaehlen > **Install**
+4. **Start**, danach im Add-on-Log die SKI der Bridge notieren (wird fuer das
+   Pairing gebraucht)
+
+Die Integration traegt anschliessend `localhost` und Port `50051` ein. Optionen
+und Fehlersuche: [`eebus-bridge-addon/DOCS.md`](eebus-bridge-addon/DOCS.md).
+
+#### Home Assistant Core / Container: Docker
 
 ```bash
 docker-compose up -d eebus-bridge

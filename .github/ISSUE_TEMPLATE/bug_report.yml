@@ -90,7 +90,7 @@ body:
     attributes:
       label: Bridge-Konfiguration (config.yaml)
       description: |
-        Inhalt von `eebus-bridge/config.yaml` (bzw. dem gemounteten Config-File).
+        Inhalt von `eebus-bridge/config-default.yaml` (bzw. dem gemounteten Config-File).
         **Keine Zertifikate/SKI einfuegen** -- nur die Struktur/Werte, keine geheimen Inhalte aus `certificates.storage_path`.
       render: yaml
 

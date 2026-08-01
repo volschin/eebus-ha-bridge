@@ -13,7 +13,7 @@
 set -euo pipefail
 
 IMAGE="${1:?usage: smoke-image.sh <image-ref> [config-path]}"
-CONFIG="${2:-eebus-bridge/config.yaml}"
+CONFIG="${2:-eebus-bridge/config-default.yaml}"
 TIMEOUT_SECONDS="${SMOKE_TIMEOUT_SECONDS:-120}"
 
 if [[ ! -f "$CONFIG" ]]; then

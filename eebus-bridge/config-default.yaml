@@ -1,3 +1,8 @@
+# Not named config.yaml on purpose. The Supervisor discovers add-ons by
+# globbing `**/config.*` over an add-on repository and validating every hit
+# against the add-on schema, so a file with that name anywhere in the tree
+# produces a permanent warning in every HA OS user's Supervisor log. Mounted
+# to /etc/eebus-bridge/config.yaml in the container either way.
 grpc:
   port: 50051
   # bind to 127.0.0.1 (default) to restrict gRPC to local access only.

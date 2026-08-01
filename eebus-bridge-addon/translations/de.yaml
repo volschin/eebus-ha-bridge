@@ -1,0 +1,22 @@
+configuration:
+  grpc_port:
+    name: gRPC-Port
+    description: Port, auf dem die gRPC-API lauscht. Denselben Wert in der EEBUS-Integration eintragen.
+  eebus_port:
+    name: EEBUS-Port
+    description: Port, auf dem das EEBUS-SHIP-Protokoll lauscht. Die Waermepumpe verbindet sich hierher.
+  vendor:
+    name: Hersteller
+    description: Herstellername, der ueber EEBUS angekuendigt wird.
+  brand:
+    name: Marke
+    description: Markenname, der ueber EEBUS angekuendigt wird. Diesen zeigt die App der Waermepumpe an.
+  model:
+    name: Modell
+    description: Modellname, der ueber EEBUS angekuendigt wird.
+  serial:
+    name: Seriennummer
+    description: >-
+      Seriennummer, die ueber EEBUS angekuendigt wird. Leer lassen, um beim
+      ersten Start eine zu erzeugen und dauerhaft zu speichern. Eine Aenderung
+      kann ein erneutes Pairing mit der Waermepumpe erzwingen.

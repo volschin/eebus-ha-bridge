@@ -5,7 +5,7 @@ services:
       context: ./eebus-bridge
     volumes:
       - eebus-data:/data
-      - ./eebus-bridge/config.yaml:/etc/eebus-bridge/config.yaml:ro
+      - ./eebus-bridge/config-default.yaml:/etc/eebus-bridge/config.yaml:ro
     # host networking required: SHIP device discovery uses mDNS multicast (_ship._tcp)
     # which cannot cross Docker bridge network boundaries.
     # gRPC defaults to loopback; remote binds require TLS + token auth (see config.yaml).
