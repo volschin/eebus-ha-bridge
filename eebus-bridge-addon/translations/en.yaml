@@ -1,0 +1,21 @@
+configuration:
+  grpc_port:
+    name: gRPC port
+    description: Port the gRPC API listens on. Enter the same value in the EEBUS integration.
+  eebus_port:
+    name: EEBUS port
+    description: Port the EEBUS SHIP protocol listens on. The heat pump connects here.
+  vendor:
+    name: Vendor
+    description: Vendor name announced over EEBUS.
+  brand:
+    name: Brand
+    description: Brand name announced over EEBUS. This is what the heat pump's app shows.
+  model:
+    name: Model
+    description: Model name announced over EEBUS.
+  serial:
+    name: Serial number
+    description: >-
+      Serial number announced over EEBUS. Leave empty to generate one on first
+      start and keep it. Changing it may force re-pairing with the heat pump.

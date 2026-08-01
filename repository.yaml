@@ -1,0 +1,7 @@
+# Makes this repository installable as a Home Assistant add-on repository, in
+# addition to being a HACS custom repository for custom_components/eebus. The
+# Supervisor reads this file at the repository root; HACS ignores it, and the
+# two discovery mechanisms never look at the same paths.
+name: EEBUS Bridge Add-ons
+url: https://github.com/volschin/eebus-ha-bridge
+maintainer: volschin <veit@olschinski.de>
