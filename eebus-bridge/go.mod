@@ -8,7 +8,7 @@ require (
 	github.com/enbility/spine-go v0.7.1-0.20260731142244-261abb719483
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.83.0
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
 
