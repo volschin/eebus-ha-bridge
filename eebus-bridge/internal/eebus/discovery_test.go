@@ -78,7 +78,7 @@ func TestFormatDeviceUseCases(t *testing.T) {
 	out := FormatDeviceUseCases("ABCD1234", device)
 
 	for _, want := range []string{
-		"[DISCOVERY] device ski=ABCD1234",
+		"[DISCOVERY] device ski=…CD1234",
 		string(model.DeviceTypeTypeHeatgenerationSystem),
 		string(model.UseCaseNameTypeMonitoringOfPowerConsumption),
 		"available=true",

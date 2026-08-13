@@ -25,3 +25,9 @@ def normalize_ski(ski: str) -> str:
 def is_valid_ski(ski: str) -> bool:
     """Return whether an SKI is a 40-character hexadecimal fingerprint."""
     return len(ski) == 40 and all(character in string.hexdigits for character in ski)
+
+
+def short_ski(ski: str) -> str:
+    """Return a normalized, redacted SKI suitable for log messages."""
+    normalized = normalize_ski(ski)
+    return f"…{normalized[-6:]}"

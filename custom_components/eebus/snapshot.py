@@ -56,6 +56,7 @@ from .state import (
     StateField,
     StateObservation,
 )
+from .ski import short_ski
 
 _LOGGER = logging.getLogger(__name__)
 _LEGACY_CAPABILITY_WARNED: set[str] = set()
@@ -166,10 +167,10 @@ async def _async_read_capabilities(
                 _LEGACY_CAPABILITY_WARNED.add(ski)
                 _LOGGER.warning(
                     "Bridge lacks GetDeviceCapabilities; using legacy gRPC-status capability inference for SKI %s",
-                    ski,
+                    short_ski(ski),
                 )
             return None
-        _LOGGER.debug("Capability contract read failed for SKI %s: %s", ski, _rpc_error_text(err))
+        _LOGGER.debug("Capability contract read failed for SKI %s: %s", short_ski(ski), _rpc_error_text(err))
         return None
 
     return _capability_results_from_proto(response)
@@ -212,7 +213,7 @@ async def _poll_read[ResponseT](
         _LOGGER.debug(
             "EEBUS %s read failed for SKI %s: %s",
             label,
-            ski,
+            short_ski(ski),
             _rpc_error_text(err),
         )
         return _ReadResult(
@@ -226,7 +227,7 @@ async def _poll_read[ResponseT](
             None,
             status=grpc.StatusCode.UNKNOWN,
         )
-    _LOGGER.debug("EEBUS %s read for SKI %s succeeded", label, ski)
+    _LOGGER.debug("EEBUS %s read for SKI %s succeeded", label, short_ski(ski))
     return _ReadResult(response)
 
 
@@ -241,22 +242,22 @@ async def _async_register_remote_ski(
     try:
         await device_stub.RegisterRemoteSKI(proto_stubs.RegisterSKIRequest(ski=ski), timeout=RPC_TIMEOUT)
         if force:
-            _LOGGER.info("Forced re-registration of remote SKI %s with bridge", ski)
+            _LOGGER.info("Forced re-registration of remote SKI %s with bridge", short_ski(ski))
         else:
-            _LOGGER.info("Registered remote SKI %s with bridge", ski)
+            _LOGGER.info("Registered remote SKI %s with bridge", short_ski(ski))
         return True
     except grpc.aio.AioRpcError as err:
         if force:
             _LOGGER.warning(
                 "Forced remote SKI re-registration failed for %s: %s",
-                ski,
+                short_ski(ski),
                 _rpc_error_text(err),
             )
         else:
             # Retry in next polling cycle until the bridge accepts registration.
             _LOGGER.debug(
                 "Remote SKI registration pending for %s: %s",
-                ski,
+                short_ski(ski),
                 _rpc_error_text(err),
             )
         return registered
@@ -270,7 +271,7 @@ async def _async_fetch_device_info(device_stub: proto_stubs.DeviceServiceStub, s
         if not _is_unimplemented(err):
             _LOGGER.debug(
                 "ListPairedDevices failed for SKI %s: %s",
-                ski,
+                short_ski(ski),
                 _rpc_error_text(err),
             )
         return None
@@ -312,7 +313,7 @@ async def _async_read_compressor_flexibility(
         if not _is_unimplemented(err):
             _LOGGER.debug(
                 "EEBUS OHPCF read failed for SKI %s: %s",
-                ski,
+                short_ski(ski),
                 _rpc_error_text(err),
             )
         return _ReadResult(None, status=err.code())
@@ -346,7 +347,7 @@ async def _async_read_dhw_setpoint(
         if not _is_unimplemented(err):
             _LOGGER.debug(
                 "EEBUS DHW setpoint read failed for SKI %s: %s",
-                ski,
+                short_ski(ski),
                 _rpc_error_text(err),
             )
         return _ReadResult(None, status=err.code())
@@ -366,7 +367,7 @@ async def _async_read_dhw_system_function(
         if not _is_unimplemented(err):
             _LOGGER.debug(
                 "EEBUS DHW system function read failed for SKI %s: %s",
-                ski,
+                short_ski(ski),
                 _rpc_error_text(err),
             )
         return _ReadResult(None, status=err.code())
@@ -403,7 +404,7 @@ async def _async_read_device_diagnostics(
         if not (_is_unimplemented(err) or err.code() in (grpc.StatusCode.NOT_FOUND, grpc.StatusCode.UNAVAILABLE)):
             _LOGGER.debug(
                 "EEBUS device diagnosis read failed for SKI %s: %s",
-                ski,
+                short_ski(ski),
                 _rpc_error_text(err),
             )
         return _ReadResult(None, status=err.code())
@@ -528,7 +529,7 @@ async def async_build_snapshot(
     if ski == status.local_ski:
         _LOGGER.warning(
             "Configured remote SKI %s matches bridge local SKI; monitoring reads will stay empty",
-            ski,
+            short_ski(ski),
         )
 
     flat_measurements: dict[str, float | None] = {}
@@ -676,7 +677,7 @@ async def async_build_snapshot(
         _LOGGER.warning(
             "EEBUS reads returned NOT_FOUND for %s consecutive polls; forcing remote SKI re-registration for %s",
             updated_not_found_streak,
-            ski,
+            short_ski(ski),
         )
         registered = await _async_register_remote_ski(
             device_stub,
@@ -688,7 +689,7 @@ async def async_build_snapshot(
 
     _LOGGER.debug(
         "EEBUS poll summary for SKI %s: power=%s energy_total=%s energy_heating=%s energy_dhw=%s",
-        ski,
+        short_ski(ski),
         state.measurements.power_watts,
         state.measurements.energy_consumed_kwh,
         state.measurements.energy_consumed_heating_kwh,
@@ -843,7 +844,7 @@ async def async_build_device_snapshot(
             _LOGGER.warning(
                 "GetDeviceSnapshot returned NOT_FOUND for %s consecutive polls; forcing remote SKI re-registration for %s",
                 updated_not_found_streak,
-                ski,
+                short_ski(ski),
             )
             registered = await _async_register_remote_ski(
                 stub,

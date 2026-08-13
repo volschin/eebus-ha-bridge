@@ -126,7 +126,7 @@ func (w *TemperatureMonitoringWrapper) HandleEvent(
 	event eebusapi.EventType,
 ) {
 	if w.debug {
-		log.Printf("[DEBUG] EEBUS %s event received: ski=%s event=%s", w.logLabel, ski, event)
+		log.Printf("[DEBUG] EEBUS %s event received: ski=%s event=%s", w.logLabel, eebus.ShortSKI(ski), event)
 	}
 	if w.registry != nil {
 		w.registry.UpsertObservation(ski, device, entity, w.registryTag)

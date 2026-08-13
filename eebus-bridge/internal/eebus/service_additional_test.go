@@ -102,10 +102,14 @@ func TestShipLoggerForwardsEveryLevelAndTraceGate(t *testing.T) {
 	logger.Infof("info %d", 4)
 	logger.Error("error")
 	logger.Errorf("error %d", 5)
+	logger.Info("local ski=682f708ceba5df9adcb9e6787ea911d9fc3ac490 token=super-secret")
 	for _, marker := range []string{"[SHIP TRACE]", "[SHIP DEBUG]", "[SHIP INFO]", "[SHIP ERROR]"} {
 		if !strings.Contains(output.String(), marker) {
 			t.Fatalf("log output %q does not contain %q", output.String(), marker)
 		}
+	}
+	if strings.Contains(output.String(), "682f708ceba5df9adcb9e6787ea911d9fc3ac490") || strings.Contains(output.String(), "super-secret") {
+		t.Fatalf("SHIP logger leaked sensitive detail: %q", output.String())
 	}
 }
 

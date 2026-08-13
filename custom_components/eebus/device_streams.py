@@ -27,7 +27,7 @@ from .models import (
     _setpoint_to_dict,
 )
 from .session_diagnostics import DeviceStreamDiagnostics
-from .ski import normalize_ski
+from .ski import normalize_ski, short_ski
 from .snapshot import _capability_results_from_proto, _snapshot_observation_from_proto
 from .state import (
     CapabilityKey,
@@ -507,7 +507,7 @@ class DeviceStreams:
         if not self._matches(event.ski):
             return
         if event.event_type == proto_stubs.DeviceEventType.DEVICE_EVENT_TRUST_REMOVED:
-            _LOGGER.warning("EEBUS device %s removed trust with bridge", event.ski)
+            _LOGGER.warning("EEBUS device %s removed trust with bridge", short_ski(event.ski))
             connected = False
         elif event.event_type not in (
             proto_stubs.DeviceEventType.DEVICE_EVENT_CONNECTED,

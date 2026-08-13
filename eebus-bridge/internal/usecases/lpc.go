@@ -49,7 +49,7 @@ func (w *LPCWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInterfa
 	if w.debug {
 		log.Printf(
 			"[DEBUG] EEBUS LPC event received: ski=%s event=%s has_device=%t has_entity=%t",
-			ski,
+			eebus.ShortSKI(ski),
 			event,
 			device != nil,
 			entity != nil,

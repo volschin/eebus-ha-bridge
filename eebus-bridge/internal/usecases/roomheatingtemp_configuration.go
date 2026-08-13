@@ -136,7 +136,7 @@ func (f *CRHTConfigurationFacade) HandleEvent(
 		return
 	}
 	if f.debug {
-		log.Printf("[DEBUG] EEBUS room heating temperature event received: ski=%s event=%s", ski, event)
+		log.Printf("[DEBUG] EEBUS room heating temperature event received: ski=%s event=%s", eebus.ShortSKI(ski), event)
 	}
 
 	var eventType eebus.EventType

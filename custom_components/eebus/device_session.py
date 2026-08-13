@@ -12,6 +12,7 @@ import grpc.aio
 
 from . import proto_stubs
 from .grpc_client import RPC_TIMEOUT, WRITE_VALIDATION_CODES, is_unimplemented
+from .ski import short_ski
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ class DeviceSession:
         except grpc.aio.AioRpcError as err:
             if is_unimplemented(err):
                 _LOGGER.info(
-                    "%s unsupported for SKI %s: %s", label, self._ski, err.details()
+                    "%s unsupported for SKI %s: %s", label, short_ski(self._ski), err.details()
                 )
                 return WriteOutcome(
                     status_code=err.code(), unimplemented=True, error=err
