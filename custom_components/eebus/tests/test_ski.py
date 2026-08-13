@@ -2,7 +2,7 @@
 
 import pytest
 
-from custom_components.eebus.ski import is_valid_ski, normalize_ski
+from custom_components.eebus.ski import is_valid_ski, normalize_ski, short_ski
 
 
 @pytest.mark.parametrize(
@@ -34,6 +34,12 @@ def test_normalize_ski_does_not_expand_unicode_ligatures() -> None:
     normalized = normalize_ski(ligature_ski)
     assert normalized != "F" * 40
     assert not is_valid_ski(normalized)
+
+
+def test_short_ski_redacts_normalized_fingerprint() -> None:
+    ski = "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD"
+    assert short_ski(ski) == "…BBCCDD"
+    assert "AABBCC" not in short_ski(ski)
 
 
 @pytest.mark.parametrize(

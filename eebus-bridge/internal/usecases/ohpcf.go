@@ -71,7 +71,7 @@ func (w *OHPCFWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInter
 	if w.debug {
 		log.Printf(
 			"[DEBUG] EEBUS ohpcf event received: ski=%s event=%s has_device=%t has_entity=%t",
-			ski,
+			eebus.ShortSKI(ski),
 			event,
 			device != nil,
 			entity != nil,

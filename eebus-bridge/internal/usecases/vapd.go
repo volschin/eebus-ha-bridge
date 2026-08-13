@@ -339,7 +339,7 @@ func (p *VAPDProvider) PublishPeakPower(watts float64) error {
 // remote VisualizationAppliance binds to the provider.
 func (p *VAPDProvider) handleEvent(ski string, _ spineapi.DeviceRemoteInterface, _ spineapi.EntityRemoteInterface, event eebusapi.EventType) {
 	if event == vapdUseCaseSupportUpdate {
-		log.Printf("[VAPD] consumer support update from ski=%s", ski)
+		log.Printf("[VAPD] consumer support update from ski=%s", eebus.ShortSKI(ski))
 		if p.bus != nil {
 			p.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeVAPDConsumerUpdated})
 		}

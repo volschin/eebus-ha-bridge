@@ -1,9 +1,11 @@
 package grpc
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"testing"
 
@@ -81,6 +83,32 @@ func TestUnknownInternalErrorIsSanitized(t *testing.T) {
 	err := mapUsecaseError("reading data", errors.New("token=super-secret"), usecaseErrorClasses{})
 	if status.Code(err) != codes.Internal || strings.Contains(err.Error(), "super-secret") {
 		t.Fatalf("internal error was not sanitized: %v", err)
+	}
+}
+
+func TestUsecaseErrorLogIsSanitized(t *testing.T) {
+	var output bytes.Buffer
+	previousWriter := log.Writer()
+	previousFlags := log.Flags()
+	log.SetOutput(&output)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(previousWriter)
+		log.SetFlags(previousFlags)
+	})
+
+	mapUsecaseError(
+		"reading data",
+		fmt.Errorf("token=super-secret ski=%s: %w", testValidSKI, eebusapi.ErrEntityNotFound),
+		standardUsecaseErrorClasses,
+	)
+
+	got := output.String()
+	if strings.Contains(got, "super-secret") || strings.Contains(got, testValidSKI) {
+		t.Fatalf("usecase error log leaked sensitive detail: %q", got)
+	}
+	if !strings.Contains(got, "token=[redacted]") || !strings.Contains(got, "[redacted-ski]") {
+		t.Fatalf("usecase error log did not preserve redaction markers: %q", got)
 	}
 }
 

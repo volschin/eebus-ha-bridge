@@ -61,7 +61,7 @@ func (w *MonitoringWrapper) HandleEvent(ski string, device spineapi.DeviceRemote
 	if w.debug {
 		log.Printf(
 			"[DEBUG] EEBUS monitoring event received: ski=%s event=%s has_device=%t has_entity=%t",
-			ski,
+			eebus.ShortSKI(ski),
 			event,
 			device != nil,
 			entity != nil,
@@ -194,7 +194,7 @@ func (w *MonitoringWrapper) GenericMeasurements(ski string) ([]GenericMeasuremen
 		measurements, err := w.measurementsForEntity(entityInfo)
 		if err != nil {
 			if w.debug {
-				log.Printf("[DEBUG] EEBUS generic measurement read failed: ski=%s entity=%s/%s err=%v", ski, entityInfo.Address, entityInfo.Type, err)
+				log.Printf("[DEBUG] EEBUS generic measurement read failed: ski=%s entity=%s/%s err=%v", eebus.ShortSKI(ski), entityInfo.Address, entityInfo.Type, err)
 			}
 			continue
 		}

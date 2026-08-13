@@ -38,7 +38,7 @@ from .coordinator import EebusCoordinator
 from .providers import ProviderMappings
 from .runtime import BridgeRuntimeRegistry
 from .server_info import IncompatibleAPIMajorError
-from .ski import is_valid_ski, normalize_ski
+from .ski import is_valid_ski, normalize_ski, short_ski
 
 _LOGGER = logging.getLogger(__name__)
 _RUNTIME_REGISTRY = "runtime_registry"
@@ -83,7 +83,7 @@ async def async_migrate_entry(
             "valid 40-character hexadecimal fingerprint",
             config_entry.entry_id,
             config_entry.title,
-            config_entry.data[CONF_DEVICE_SKI],
+            "[redacted]",
         )
         return False
 
@@ -99,7 +99,7 @@ async def async_migrate_entry(
                 "SKI %s conflicts with older entry %s (%s)",
                 config_entry.entry_id,
                 config_entry.title,
-                canonical_ski,
+                short_ski(canonical_ski),
                 other_entry.entry_id,
                 other_entry.title,
             )

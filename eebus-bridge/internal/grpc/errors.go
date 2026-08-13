@@ -43,7 +43,7 @@ type usecaseErrorClasses struct {
 }
 
 func mapUsecaseError(action string, err error, classes usecaseErrorClasses) error {
-	log.Printf("%s failed: %v", action, err)
+	log.Printf("%s failed: %s", action, redactSensitiveDetail(err.Error()))
 	switch {
 	case errorsIsAny(err, classes.invalidArgument):
 		return status.Error(codes.InvalidArgument, classifiedErrorMessage(action, "invalid request", err))
