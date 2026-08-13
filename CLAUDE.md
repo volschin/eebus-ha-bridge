@@ -1,6 +1,7 @@
 # EEBUS bridge repository instructions
 
-Local two-component bridge:
+Local two-component bridge with two supported deployment forms for the Go
+daemon:
 
 ```text
 Home Assistant custom_components/eebus (Python) -> gRPC -> eebus-bridge (Go)
@@ -10,6 +11,10 @@ Home Assistant custom_components/eebus (Python) -> gRPC -> eebus-bridge (Go)
 The Python side is a gRPC client and contains no EEBUS protocol logic. SHIP mDNS
 requires host networking. gRPC defaults to plaintext loopback; non-loopback binds
 must use `security.mode: tls_token` with TLS and per-RPC bearer authentication.
+On Home Assistant OS/Supervised, `eebus-bridge-addon/` packages the same Go
+daemon as an add-on; Home Assistant Core/Container installations use the
+standalone image or binary. `repository.yaml` makes this checkout an add-on
+repository while HACS independently discovers `custom_components/eebus`.
 
 ## Commands
 
@@ -20,6 +25,7 @@ PYTHONPATH=. pytest
 ruff check custom_components/
 mypy custom_components/eebus
 bash generate_proto.sh
+python3 scripts/check_addon_version.py
 ```
 
 From `eebus-bridge/`:
@@ -41,6 +47,12 @@ make proto
   `__all__` exports and construct grpc stubs through its typed factory helpers.
 - Keep HA's grpcio pin, `manifest.json`, `generate_proto.sh` and
   `.github/workflows/grpcio-sync.yml` aligned.
+- The add-on copies the released `ghcr.io/volschin/eebus-bridge` binary instead
+  of rebuilding it. Keep its `arch` list aligned with the release platforms and
+  preserve `/usr/local/bin/eebus-bridge` as the image/add-on hand-off path.
+- The Supervisor scans `**/config.*` as add-on metadata. Keep the daemon's sample
+  configuration named `eebus-bridge/config-default.yaml`; do not introduce
+  another non-add-on `config.*` file into the repository.
 - New entities, config-flow paths and translated exceptions may require matching
   README, translations and `quality_scale.yaml` updates.
 
@@ -53,6 +65,10 @@ make proto
 - Pair/unpair is a synchronous command through `TrustController`; bus events are
   observations. Deleting `internal/certs` changes the bridge SKI and forces
   re-pairing.
+- The add-on requires `host_network: true`: SHIP discovery needs mDNS, and the
+  shared host namespace lets HA Core reach the default loopback-only gRPC socket
+  without TLS or a token. Keep generated certificates and serial identity under
+  `/data`; changing or deleting them forces re-pairing.
 - Vaillant gateways accept only one active SHIP connection. Before diagnosing an
   endless trust loop, rule out another energy manager and inspect `ship_log`.
 - The `volschin/eebus-go` replacement carries required room-heating/DHW patches.
