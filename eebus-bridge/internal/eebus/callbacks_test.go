@@ -1,7 +1,10 @@
 package eebus_test
 
 import (
+	"bytes"
 	"errors"
+	"log"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +12,32 @@ import (
 	spineapi "github.com/enbility/spine-go/api"
 	"github.com/volschin/eebus-bridge/internal/eebus"
 )
+
+func TestCallbacksDebugLogsRedactedSKI(t *testing.T) {
+	const fullSKI = "682f708ceba5df9adcb9e6787ea911d9fc3ac490"
+	var output bytes.Buffer
+	previousWriter := log.Writer()
+	previousFlags := log.Flags()
+	log.SetOutput(&output)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(previousWriter)
+		log.SetFlags(previousFlags)
+	})
+
+	callbacks := eebus.NewCallbacks(eebus.NewEventBus(), true)
+	identity := shipapi.ServiceIdentity{SKI: fullSKI}
+	callbacks.RemoteServiceConnected(nil, identity)
+	callbacks.RemoteServiceDisconnected(nil, identity)
+
+	got := output.String()
+	if strings.Contains(got, fullSKI) {
+		t.Fatalf("callback log leaked full SKI: %q", got)
+	}
+	if !strings.Contains(got, "…3AC490") {
+		t.Fatalf("callback log lacks redacted correlation suffix: %q", got)
+	}
+}
 
 func TestCallbacksDispatchConnect(t *testing.T) {
 	bus := eebus.NewEventBus()

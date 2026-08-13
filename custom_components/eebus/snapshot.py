@@ -42,6 +42,7 @@ from .models import (
     _room_heating_from_proto,
     _setpoint_to_dict,
 )
+from .ski import short_ski
 from .state import (
     CapabilityKey,
     CapabilityResult,
@@ -56,7 +57,6 @@ from .state import (
     StateField,
     StateObservation,
 )
-from .ski import short_ski
 
 _LOGGER = logging.getLogger(__name__)
 _LEGACY_CAPABILITY_WARNED: set[str] = set()
