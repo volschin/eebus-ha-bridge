@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   create-release:
@@ -28,8 +27,25 @@ jobs:
 
   publish-image:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release source and version
+        run: |
+          set -euo pipefail
+          python3 scripts/check_addon_version.py "${GITHUB_REF_NAME}"
+          git fetch --no-tags origin main
+          release_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
+          if ! git merge-base --is-ancestor "${release_commit}" origin/main; then
+            echo "::error::release tag ${GITHUB_REF_NAME} does not point to a commit on main"
+            exit 1
+          fi
 
       # No setup-qemu-action: the builder stage is pinned to BUILDPLATFORM and
       # the arm stages are COPY-only, so nothing executes under emulation. CI's
