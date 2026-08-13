@@ -76,7 +76,7 @@ func FormatDeviceUseCases(ski string, device spineapi.DeviceRemoteInterface) str
 		deviceType = string(*dt)
 	}
 	entities := device.Entities()
-	fmt.Fprintf(&b, "[DISCOVERY] device ski=%s type=%s entities=%d\n", ski, deviceType, len(entities))
+	fmt.Fprintf(&b, "[DISCOVERY] device ski=%s type=%s entities=%d\n", ShortSKI(ski), deviceType, len(entities))
 
 	for _, e := range entities {
 		if e == nil {

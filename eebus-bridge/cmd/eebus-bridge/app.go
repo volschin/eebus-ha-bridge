@@ -261,7 +261,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	if err != nil {
 		return nil, fmt.Errorf("extracting SKI: %w", err)
 	}
-	log.Printf("Local SKI: %s", ski)
+	log.Printf("Local SKI: %s", eebus.ShortSKI(ski))
 
 	bus := eebus.NewEventBus()
 	registry := eebus.NewDeviceRegistry()
@@ -769,7 +769,7 @@ func (a *Application) startComponents(runtimeCtx context.Context, tx *lifecycleT
 	// the SHIP handshake without Home Assistant sending device.register_ski.
 	if a.cfg.Experimental.TrustSKI != "" {
 		a.bridgeSvc.RegisterRemoteSKI(a.cfg.Experimental.TrustSKI)
-		log.Printf("[EXP] auto-trusted remote SKI: %s", a.cfg.Experimental.TrustSKI)
+		log.Printf("[EXP] auto-trusted remote SKI: %s", eebus.ShortSKI(a.cfg.Experimental.TrustSKI))
 	}
 	if a.cfg.Logging.DebugEvents {
 		log.Println("[DEBUG] EEBUS event debug logging enabled; waiting for incoming callbacks")

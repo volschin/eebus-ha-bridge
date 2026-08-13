@@ -28,9 +28,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # A PAT lets the resulting PR trigger CI; falls back to GITHUB_TOKEN
-          # (PRs opened with GITHUB_TOKEN do NOT trigger other workflows).
-          token: ${{ secrets.WORKFLOW_PAT || secrets.GITHUB_TOKEN }}
+          # Keep the write-capable PAT out of the checkout and all dependency
+          # installation/generation steps. It is exposed only after those
+          # steps have completed, immediately before publishing the branch.
+          persist-credentials: false
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -108,6 +109,7 @@ jobs:
             echo "Branch ${BRANCH} already exists — PR likely open. Skipping."
             exit 0
           fi
+          gh auth setup-git
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "${BRANCH}"

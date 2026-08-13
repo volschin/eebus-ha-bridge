@@ -56,7 +56,7 @@ func (w *RoomHeatingSystemFunctionMonitoring) HandleEvent(
 	event eebusapi.EventType,
 ) {
 	if w.debug {
-		log.Printf("[DEBUG] EEBUS room heating system function monitoring event received: ski=%s event=%s", ski, event)
+		log.Printf("[DEBUG] EEBUS room heating system function monitoring event received: ski=%s event=%s", eebus.ShortSKI(ski), event)
 	}
 
 	var eventType eebus.EventType

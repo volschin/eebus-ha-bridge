@@ -3,12 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
 
 permissions:
   contents: read
@@ -31,6 +27,8 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
@@ -67,6 +65,17 @@ jobs:
               - 'custom_components/eebus/tests/test_proto_postprocess.py'
               - 'docs/proto-contract-matrix.md'
 
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test release version policy
+        run: python3 -m unittest scripts.tests.test_check_addon_version -v
+      - name: Check add-on version matches the integration
+        run: python3 scripts/check_addon_version.py
+
   go:
     needs: changes
     if: needs.changes.outputs.go == 'true'
@@ -78,6 +87,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26"
@@ -155,6 +165,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Lint Dockerfile
         uses: hadolint/hadolint-action@2a66e89f53d0771bb131a7fa31f3136336094aa6 # v3.4.0 # renovate: datasource=github-releases depName=hadolint/hadolint-action
         with:
@@ -206,6 +218,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Lint add-on Dockerfile
         uses: hadolint/hadolint-action@2a66e89f53d0771bb131a7fa31f3136336094aa6 # v3.4.0 # renovate: datasource=github-releases depName=hadolint/hadolint-action
         with:
@@ -235,6 +249,8 @@ jobs:
         python-version: ["3.13", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
@@ -261,6 +277,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26"
@@ -282,6 +300,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26"
@@ -299,10 +318,14 @@ jobs:
         run: .cache/proto-tools/bin/buf lint
       - name: Buf breaking check
         if: github.event_name == 'pull_request'
-        run: .cache/proto-tools/bin/buf breaking --against ".git#branch=origin/${{ github.base_ref }},subdir=eebus-bridge/proto"
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: .cache/proto-tools/bin/buf breaking --against ".git#branch=origin/${BASE_REF},subdir=eebus-bridge/proto"
       - name: Check scoped cardinality waivers
         if: github.event_name == 'pull_request'
-        run: python scripts/check_proto_cardinality.py "origin/${{ github.base_ref }}"
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: python scripts/check_proto_cardinality.py "origin/${BASE_REF}"
       - name: Regenerate proto stubs
         run: PYTHON_BIN=python bash generate_proto.sh
       - name: Check for stub drift
@@ -312,4 +335,35 @@ jobs:
       - name: Check v1 governance rules
         run: python scripts/check_proto_governance.py
 
-  
+  required:
+    name: Required
+    needs: [changes, policy, go, docker, addon, test, cross-language, proto-governance]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every applicable CI job
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          POLICY_RESULT: ${{ needs.policy.result }}
+          GO_RESULT: ${{ needs.go.result }}
+          DOCKER_RESULT: ${{ needs.docker.result }}
+          ADDON_RESULT: ${{ needs.addon.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          CROSS_LANGUAGE_RESULT: ${{ needs.cross-language.result }}
+          PROTO_GOVERNANCE_RESULT: ${{ needs.proto-governance.result }}
+        run: |
+          set -euo pipefail
+          failed=0
+          for name in CHANGES POLICY GO DOCKER ADDON TEST CROSS_LANGUAGE PROTO_GOVERNANCE; do
+            result_var="${name}_RESULT"
+            result="${!result_var}"
+            case "${result}" in
+              success|skipped)
+                ;;
+              *)
+                echo "::error::${name} concluded ${result}"
+                failed=1
+                ;;
+            esac
+          done
+          exit "${failed}"

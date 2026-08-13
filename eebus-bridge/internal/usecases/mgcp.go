@@ -332,7 +332,7 @@ func (p *MGCPProvider) PublishEnergyConsumed(wh float64) error {
 // VR940 has discovered our grid-connection-point.
 func (p *MGCPProvider) handleEvent(ski string, _ spineapi.DeviceRemoteInterface, _ spineapi.EntityRemoteInterface, event eebusapi.EventType) {
 	if event == mgcpUseCaseSupportUpdate {
-		log.Printf("[MGCP] consumer support update from ski=%s", ski)
+		log.Printf("[MGCP] consumer support update from ski=%s", eebus.ShortSKI(ski))
 		if p.bus != nil {
 			p.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeMGCPConsumerUpdated})
 		}

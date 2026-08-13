@@ -348,7 +348,7 @@ func (p *VABDProvider) PublishStateOfCharge(pct float64) error {
 // remote VisualizationAppliance binds to the provider.
 func (p *VABDProvider) handleEvent(ski string, _ spineapi.DeviceRemoteInterface, _ spineapi.EntityRemoteInterface, event eebusapi.EventType) {
 	if event == vabdUseCaseSupportUpdate {
-		log.Printf("[VABD] consumer support update from ski=%s", ski)
+		log.Printf("[VABD] consumer support update from ski=%s", eebus.ShortSKI(ski))
 		if p.bus != nil {
 			p.bus.Publish(eebus.Event{SKI: ski, Type: eebus.EventTypeVABDConsumerUpdated})
 		}

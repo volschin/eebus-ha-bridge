@@ -22,6 +22,7 @@ ADDON_CONFIG = ROOT / "eebus-bridge-addon" / "config.yaml"
 MANIFEST = ROOT / "custom_components" / "eebus" / "manifest.json"
 
 ADDON_VERSION_RE = re.compile(r"""^version:\s*["']?([^"'\s#]+)["']?\s*(?:#.*)?$""", re.MULTILINE)
+RELEASE_TAG_RE = re.compile(r"v[0-9]+(?:\.[0-9]+){2}")
 
 
 def addon_version() -> str:
@@ -41,7 +42,15 @@ def integration_version() -> str:
     return version
 
 
-def main() -> int:
+def validate_release_tag(release_tag: str, version: str) -> None:
+    """Require a canonical release tag for the version being published."""
+    if RELEASE_TAG_RE.fullmatch(release_tag) is None:
+        raise ValueError(f"release tag {release_tag!r} must have the form vMAJOR.MINOR.PATCH")
+    if release_tag != f"v{version}":
+        raise ValueError(f"release tag {release_tag!r} does not match manifest version {version!r}")
+
+
+def main(release_tag: str | None = None) -> int:
     """Compare both versions and report the mismatch."""
     addon = addon_version()
     integration = integration_version()
@@ -54,9 +63,19 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+    if release_tag is not None:
+        try:
+            validate_release_tag(release_tag, integration)
+        except ValueError as err:
+            print(err, file=sys.stderr)
+            return 1
     print(f"add-on and integration agree on version {addon}")
+    if release_tag is not None:
+        print(f"release tag {release_tag} matches version {integration}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    if len(sys.argv) > 2:
+        raise SystemExit(f"usage: {Path(sys.argv[0]).name} [RELEASE_TAG]")
+    raise SystemExit(main(sys.argv[1] if len(sys.argv) == 2 else None))
