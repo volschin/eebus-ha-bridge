@@ -229,7 +229,7 @@ jobs:
       # box, where the Supervisor logs a warning and silently skips the add-on
       # rather than failing loudly.
       - name: Lint add-on config
-        uses: frenck/action-addon-linter@b9cfd1bc62ba60d2c4fc96317b5f7ada5923f4a7 # v2.21.1 # renovate: datasource=github-releases depName=frenck/action-addon-linter
+        uses: frenck/action-addon-linter@f995494fd84fae6310d23617e66d0e37de4f14eb # v2.21.0 # renovate: datasource=github-releases depName=frenck/action-addon-linter
         with:
           path: ./eebus-bridge-addon
       - name: Check add-on version matches the integration
