@@ -172,7 +172,7 @@ jobs:
         with:
           dockerfile: eebus-bridge/Dockerfile
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0 # renovate: datasource=github-releases depName=docker/setup-buildx-action
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0 # renovate: datasource=github-releases depName=docker/setup-buildx-action
       # Recorded so the log shows whether emulation was even available. No
       # setup-qemu-action here on purpose: since the rootfs stage was folded
       # into the BUILDPLATFORM-pinned builder, no RUN executes outside the
