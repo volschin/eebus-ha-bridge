@@ -231,12 +231,10 @@ func (s *DeviceService) GetDeviceDiagnostics(_ context.Context, req *pb.DeviceRe
 		}
 	}
 	if age, ok := s.registry.MonitoringLastSuccessAge(ski); ok {
-		seconds := uint64(max(age/time.Second, 0))
-		result.MonitoringLastSuccessAgeSeconds = &seconds
+		result.MonitoringLastSuccessAgeSeconds = new(uint64(max(age/time.Second, 0)))
 	}
 	if health, ok := s.registry.DeviceHealth(ski); ok && health.Connected && !health.ConnectedAt.IsZero() {
-		seconds := uint64(max(now.Sub(health.ConnectedAt)/time.Second, 0))
-		result.ConnectionAgeSeconds = &seconds
+		result.ConnectionAgeSeconds = new(uint64(max(now.Sub(health.ConnectedAt)/time.Second, 0)))
 	}
 	if s.snapshot != nil {
 		metrics := s.snapshot.Metrics(ski)
