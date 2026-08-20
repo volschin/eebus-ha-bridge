@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
 	"reflect"
 	"strings"
 	"sync"
@@ -904,4 +906,8 @@ func logRunError(err error) {
 	if _, ok := errors.AsType[*controlledShutdownError](err); !ok {
 		log.Print(err)
 	}
+}
+
+func notifySignalContext(parent context.Context, signals ...os.Signal) (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(parent, signals...)
 }

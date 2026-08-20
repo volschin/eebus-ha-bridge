@@ -262,6 +262,7 @@ func TestGetDeviceDiagnosticsIsRedactedAndDeviceScoped(t *testing.T) {
 	registry.AddDevice(skiB, eebus.DeviceInfo{})
 	registry.MarkConnected(skiA)
 	registry.MarkConnected(skiB)
+	registry.RecordMonitoringSuccess(skiA)
 	bus.Publish(eebus.Event{SKI: skiA, Type: eebus.EventTypeMonitoringPowerUpdated})
 	bus.Publish(eebus.Event{SKI: skiB, Type: eebus.EventTypeMonitoringPowerUpdated})
 	bus.Publish(eebus.Event{SKI: skiB, Type: eebus.EventTypeMonitoringPowerUpdated})
@@ -291,6 +292,9 @@ func TestGetDeviceDiagnosticsIsRedactedAndDeviceScoped(t *testing.T) {
 	}
 	if diagnosticsA.ConnectionAgeSeconds == nil {
 		t.Fatal("connected device diagnostics omitted connection age")
+	}
+	if diagnosticsA.MonitoringLastSuccessAgeSeconds == nil {
+		t.Fatal("device diagnostics omitted monitoring success age")
 	}
 	if diagnosticsB.Readiness != pb.DeviceReadinessState_DEVICE_READINESS_EXHAUSTED || diagnosticsB.Recovery.Attempts != 3 || diagnosticsB.Events.Revision != 2 {
 		t.Fatalf("device B diagnostics = %+v", diagnosticsB)

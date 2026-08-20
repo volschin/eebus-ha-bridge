@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -295,6 +296,14 @@ func TestApplicationErrorWrappersAndLogging(t *testing.T) {
 
 	logRunError(want)
 	assert.Contains(t, output.String(), "runtime failure")
+}
+
+func TestNotifySignalContextStopCancelsContext(t *testing.T) {
+	ctx, stop := notifySignalContext(context.Background(), syscall.SIGUSR1)
+	stop()
+	stop()
+
+	assert.ErrorIs(t, context.Cause(ctx), context.Canceled)
 }
 
 type fakeHeartbeatLifecycle struct {

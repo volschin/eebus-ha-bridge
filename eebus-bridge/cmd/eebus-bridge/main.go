@@ -5,7 +5,6 @@ import (
 	"flag"
 	"log"
 	"os"
-	"os/signal"
 	"syscall"
 
 	"github.com/volschin/eebus-bridge/internal/config"
@@ -28,7 +27,7 @@ func main() {
 		log.Fatalf("loading config: %v", err)
 	}
 
-	ctx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stopSignals := notifySignalContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopSignals()
 	if err := run(ctx, cfg); err != nil {
 		logRunError(err)
