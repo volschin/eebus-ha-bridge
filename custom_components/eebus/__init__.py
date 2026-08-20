@@ -114,7 +114,9 @@ async def async_migrate_entry(
 
     raw_ski = config_entry.data[CONF_DEVICE_SKI]
     if raw_ski != canonical_ski:
-        _migrate_device_registry_identifier(hass, raw_ski, canonical_ski)
+        _migrate_device_registry_identifier(
+            hass, raw_ski, canonical_ski, config_entry.entry_id
+        )
 
     data = {**config_entry.data, CONF_DEVICE_SKI: canonical_ski}
     hass.config_entries.async_update_entry(
@@ -127,7 +129,10 @@ async def async_migrate_entry(
 
 
 def _migrate_device_registry_identifier(
-    hass: HomeAssistant, raw_ski: str, canonical_ski: str
+    hass: HomeAssistant,
+    raw_ski: str,
+    canonical_ski: str,
+    config_entry_id: str,
 ) -> None:
     """Rename a device registry entry's identifier from raw to canonical SKI.
 
@@ -137,7 +142,9 @@ def _migrate_device_registry_identifier(
     references instead of reusing it.
     """
     device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(identifiers={(DOMAIN, raw_ski)})
+    device = device_registry.async_get_device_by_identifier(
+        (DOMAIN, raw_ski), config_entry_id
+    )
     if device is not None:
         device_registry.async_update_device(
             device.id, new_identifiers={(DOMAIN, canonical_ski)}
