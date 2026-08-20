@@ -30,6 +30,7 @@ func TestPublishPVDataValidation(t *testing.T) {
 	}
 
 	peak := 5000.0
+	//nolint:staticcheck // Exercise released clients that still send the deprecated field.
 	if _, err := svc.PublishPVData(ctx, &pb.PVData{PowerW: ptrFloat64Viz(1500), PeakPowerW: &peak}); status.Code(err) != codes.Unavailable {
 		t.Errorf("legacy PublishPVData with peak_power_w code = %v, want Unavailable", status.Code(err))
 	}
