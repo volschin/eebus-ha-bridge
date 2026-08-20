@@ -233,11 +233,12 @@ async def test_migrate_entry_canonicalizes_data_and_unique_id():
 
         assert await async_migrate_entry(hass, entry)
 
-        device_registry.async_get_device.assert_called_once_with(
-            identifiers={("eebus", raw)}
+        device_registry.async_get_device_by_identifier.assert_called_once_with(
+            ("eebus", raw), "01"
         )
+        device_registry.async_get_device.assert_not_called()
         device_registry.async_update_device.assert_called_once_with(
-            device_registry.async_get_device.return_value.id,
+            device_registry.async_get_device_by_identifier.return_value.id,
             new_identifiers={("eebus", canonical)},
         )
     hass.config_entries.async_update_entry.assert_called_once_with(
@@ -265,12 +266,50 @@ async def test_migrate_entry_skips_device_rename_when_device_not_found():
 
     with patch("custom_components.eebus.dr.async_get") as async_get_device_registry:
         device_registry = MagicMock()
-        device_registry.async_get_device.return_value = None
+        device_registry.async_get_device_by_identifier.return_value = None
         async_get_device_registry.return_value = device_registry
 
         assert await async_migrate_entry(hass, entry)
 
+        device_registry.async_get_device_by_identifier.assert_called_once_with(
+            ("eebus", raw), "01"
+        )
+        device_registry.async_get_device.assert_not_called()
         device_registry.async_update_device.assert_not_called()
+
+
+async def test_migrate_entry_supports_device_registry_before_2026_8():
+    """Older HA releases use the legacy lookup only when the scoped API is absent."""
+    from custom_components.eebus import async_migrate_entry
+
+    raw = "68:2f:70:8C:EB:A5:DF:9A:DC:B9:E6:78:7E:A9:11:D9:FC:3A:C4:90"
+    canonical = "682F708CEBA5DF9ADCB9E6787EA911D9FC3AC490"
+    hass = MagicMock()
+    entry = MagicMock(
+        version=1,
+        data={CONF_DEVICE_SKI: raw},
+        unique_id=raw,
+        entry_id="01",
+        title="Heat pump",
+    )
+    hass.config_entries.async_entries.return_value = [entry]
+    device = MagicMock(id="device-id")
+    device_registry = MagicMock(
+        spec_set=["async_get_device", "async_update_device"]
+    )
+    device_registry.async_get_device.return_value = device
+
+    with patch(
+        "custom_components.eebus.dr.async_get", return_value=device_registry
+    ):
+        assert await async_migrate_entry(hass, entry)
+
+    device_registry.async_get_device.assert_called_once_with(
+        identifiers={("eebus", raw)}
+    )
+    device_registry.async_update_device.assert_called_once_with(
+        "device-id", new_identifiers={("eebus", canonical)}
+    )
 
 
 async def test_migrate_entry_rejects_newer_duplicate(caplog: pytest.LogCaptureFixture):

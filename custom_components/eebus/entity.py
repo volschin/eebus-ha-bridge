@@ -42,8 +42,10 @@ class EebusEntity(CoordinatorEntity[EebusCoordinator]):
         self._attr_device_info = current
         if self.hass is None:
             return
+        device = self.device_entry
+        if device is None:
+            return
         registry = dr.async_get(self.hass)
-        device = registry.async_get_device(identifiers={(DOMAIN, self.coordinator.ski)})
         if device is None:
             return
         info = self.coordinator.data.connection.device_info if self.coordinator.data else None

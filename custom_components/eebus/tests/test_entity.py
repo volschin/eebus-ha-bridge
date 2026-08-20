@@ -54,8 +54,8 @@ def test_device_info_maps_all_bridge_classification_fields() -> None:
 def test_late_device_info_updates_home_assistant_registry() -> None:
     entity = _entity(connected=True, poll_ok=True)
     entity.hass = MagicMock()
+    entity.device_entry = MagicMock(id="device-id")
     device_registry = MagicMock()
-    device_registry.async_get_device.return_value = MagicMock(id="device-id")
     entity.coordinator.data = DeviceState(
         connection=ConnectionState(
             connected=True,
@@ -66,6 +66,8 @@ def test_late_device_info_updates_home_assistant_registry() -> None:
     with patch("custom_components.eebus.entity.dr.async_get", return_value=device_registry):
         entity._sync_device_info()
 
+    device_registry.async_get_device_by_identifier.assert_not_called()
+    device_registry.async_get_device.assert_not_called()
     device_registry.async_update_device.assert_called_once_with(
         "device-id", manufacturer="Vaillant", model="VR940", sw_version="4.2.1"
     )
