@@ -788,6 +788,23 @@ func TestMonitoringWatchdogHealthTracksTrustedDisconnectedDevice(t *testing.T) {
 	assert.Equal(t, []bool{false}, grpcServer.deviceHealthValues())
 }
 
+type synchronizedLogOutput struct {
+	mu      sync.Mutex
+	builder strings.Builder
+}
+
+func (o *synchronizedLogOutput) Write(data []byte) (int, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.builder.Write(data)
+}
+
+func (o *synchronizedLogOutput) String() string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.builder.String()
+}
+
 func TestApplicationStartCancellationCauseTriggersShutdown(t *testing.T) {
 	bridge := &fakeBridgeLifecycle{started: make(chan struct{})}
 	grpcServer := &fakeGRPCLifecycle{release: make(chan struct{}), serving: make(chan struct{})}
@@ -795,7 +812,7 @@ func TestApplicationStartCancellationCauseTriggersShutdown(t *testing.T) {
 	app := newTestApplication(bridge, grpcServer, heartbeat, nil)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	result := make(chan error, 1)
-	var output strings.Builder
+	var output synchronizedLogOutput
 	oldOutput := log.Writer()
 	log.SetOutput(&output)
 	t.Cleanup(func() { log.SetOutput(oldOutput) })
