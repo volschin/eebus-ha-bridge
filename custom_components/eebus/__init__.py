@@ -142,9 +142,16 @@ def _migrate_device_registry_identifier(
     references instead of reusing it.
     """
     device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device_by_identifier(
-        (DOMAIN, raw_ski), config_entry_id
+    get_device_by_identifier = getattr(
+        device_registry, "async_get_device_by_identifier", None
     )
+    if get_device_by_identifier is None:
+        legacy_lookup_name = "async_get_device"
+        device = getattr(device_registry, legacy_lookup_name)(
+            identifiers={(DOMAIN, raw_ski)}
+        )
+    else:
+        device = get_device_by_identifier((DOMAIN, raw_ski), config_entry_id)
     if device is not None:
         device_registry.async_update_device(
             device.id, new_identifiers={(DOMAIN, canonical_ski)}
