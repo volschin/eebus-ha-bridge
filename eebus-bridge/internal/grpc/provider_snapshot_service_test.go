@@ -243,7 +243,8 @@ func TestPublishPVDataAcceptsLegacyPeakPower(t *testing.T) {
 	peak := 5000.0
 
 	_, err := service.PublishPVData(context.Background(), &pb.PVData{
-		PowerW:     ptrFloat64(1000),
+		PowerW: ptrFloat64(1000),
+		//nolint:staticcheck // Exercise released clients that still send the deprecated field.
 		PeakPowerW: &peak,
 		Sample:     sampleMeta(time.Now(), false),
 	})

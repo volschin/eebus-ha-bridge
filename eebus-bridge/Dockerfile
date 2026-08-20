@@ -3,7 +3,7 @@
 # compiler — under QEMU for every non-native target, which dominated release
 # build time. The binary is CGO_ENABLED=0, so cross-compiling is a plain
 # GOARCH/GOARM switch and produces the same static output.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 
 # hadolint ignore=DL3018
 RUN apk add --no-cache git
