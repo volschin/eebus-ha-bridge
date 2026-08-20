@@ -301,8 +301,7 @@ func cloneFloat64Ptr(value *float64) *float64 {
 	if value == nil {
 		return nil
 	}
-	cloned := *value
-	return &cloned
+	return new(*value)
 }
 
 func measurementDataForID(id model.MeasurementIdType, value *float64) eebusapi.MeasurementDataForID {

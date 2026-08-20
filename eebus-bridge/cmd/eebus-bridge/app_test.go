@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
@@ -282,38 +284,17 @@ func TestApplicationErrorWrappersAndLogging(t *testing.T) {
 	if controlled.Error() != want.Error() || !errors.Is(controlled, want) {
 		t.Fatalf("controlled error = %v", controlled)
 	}
-	signalErr := &signalShutdown{signal: syscall.SIGTERM}
-	if signalErr.Error() != "received signal terminated" {
-		t.Fatalf("signal error = %q", signalErr.Error())
-	}
-	logRunError(controlled)
+
+	var output strings.Builder
+	oldOutput := log.Writer()
+	log.SetOutput(&output)
+	t.Cleanup(func() { log.SetOutput(oldOutput) })
+
+	logRunError(fmt.Errorf("wrapped: %w", controlled))
+	assert.Empty(t, output.String())
+
 	logRunError(want)
-}
-
-func TestNotifySignalContextStopsAndCapturesSignal(t *testing.T) {
-	t.Run("explicit stop", func(t *testing.T) {
-		ctx, stop := notifySignalContext(context.Background(), syscall.SIGUSR1)
-		stop()
-		stop()
-		if !errors.Is(context.Cause(ctx), context.Canceled) {
-			t.Fatalf("context cause = %v", context.Cause(ctx))
-		}
-	})
-
-	t.Run("signal", func(t *testing.T) {
-		ctx, stop := notifySignalContext(context.Background(), syscall.SIGUSR1)
-		defer stop()
-		require.NoError(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
-		select {
-		case <-ctx.Done():
-			var signalCause *signalShutdown
-			if !errors.As(context.Cause(ctx), &signalCause) || signalCause.signal != syscall.SIGUSR1 {
-				t.Fatalf("context cause = %v", context.Cause(ctx))
-			}
-		case <-time.After(time.Second):
-			t.Fatal("timeout waiting for signal context")
-		}
-	})
+	assert.Contains(t, output.String(), "runtime failure")
 }
 
 type fakeHeartbeatLifecycle struct {
@@ -798,13 +779,17 @@ func TestMonitoringWatchdogHealthTracksTrustedDisconnectedDevice(t *testing.T) {
 	assert.Equal(t, []bool{false}, grpcServer.deviceHealthValues())
 }
 
-func TestApplicationStartSignalTriggersShutdown(t *testing.T) {
+func TestApplicationStartCancellationCauseTriggersShutdown(t *testing.T) {
 	bridge := &fakeBridgeLifecycle{started: make(chan struct{})}
 	grpcServer := &fakeGRPCLifecycle{release: make(chan struct{}), serving: make(chan struct{})}
 	heartbeat := &fakeHeartbeatLifecycle{}
 	app := newTestApplication(bridge, grpcServer, heartbeat, nil)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	result := make(chan error, 1)
+	var output strings.Builder
+	oldOutput := log.Writer()
+	log.SetOutput(&output)
+	t.Cleanup(func() { log.SetOutput(oldOutput) })
 	go func() { result <- app.Start(ctx) }()
 
 	select {
@@ -812,14 +797,15 @@ func TestApplicationStartSignalTriggersShutdown(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("application did not become ready")
 	}
-	cancel(&signalShutdown{signal: syscall.SIGTERM})
+	cancel(errors.New("terminated signal received"))
 
 	select {
 	case err := <-result:
 		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("application did not stop after signal cancellation")
+		t.Fatal("application did not stop after cancellation")
 	}
+	assert.Contains(t, output.String(), "Shutdown requested: terminated signal received")
 	assert.Equal(t, int32(1), bridge.stops.Load())
 	assert.Equal(t, int32(1), grpcServer.stops.Load())
 	assert.Equal(t, int32(1), heartbeat.stops.Load())

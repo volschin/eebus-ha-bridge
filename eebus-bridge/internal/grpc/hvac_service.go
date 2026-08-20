@@ -67,7 +67,7 @@ func (s *HVACService) snapshotRoomHeating(ski string) (*pb.RoomHeatingState, err
 	// its own must never make an otherwise unavailable aggregate look readable.
 	if s.registry != nil {
 		if label := s.registry.ZoneLabel(ski); label != "" {
-			state.ZoneLabel = &label
+			state.ZoneLabel = new(label)
 		}
 	}
 	if s.room != nil {

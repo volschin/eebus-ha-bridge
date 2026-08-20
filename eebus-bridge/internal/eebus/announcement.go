@@ -100,8 +100,7 @@ func setLocalVendorName(entity spineapi.EntityLocalInterface, vendor string) err
 	if !ok || data == nil {
 		return errNoManufacturerData
 	}
-	name := model.DeviceClassificationStringType(vendor)
-	data.VendorName = &name
+	data.VendorName = new(model.DeviceClassificationStringType(vendor))
 	feature.SetData(model.FunctionTypeDeviceClassificationManufacturerData, data)
 	return nil
 }

@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
 	"reflect"
 	"strings"
 	"sync"
@@ -196,12 +194,6 @@ type controlledShutdownError struct {
 
 func (e *controlledShutdownError) Error() string { return e.err.Error() }
 func (e *controlledShutdownError) Unwrap() error { return e.err }
-
-type signalShutdown struct {
-	signal os.Signal
-}
-
-func (s *signalShutdown) Error() string { return "received signal " + s.signal.String() }
 
 // Application owns the daemon's EEBUS, use-case, gRPC, watchdog, and shutdown
 // lifecycle. The small lifecycle interfaces keep failure fan-out and teardown
@@ -681,9 +673,8 @@ func (a *Application) Start(ctx context.Context) error {
 
 	select {
 	case <-runtimeCtx.Done():
-		var sig *signalShutdown
-		if errors.As(context.Cause(ctx), &sig) {
-			log.Printf("Received signal %s", sig.signal)
+		if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
+			log.Printf("Shutdown requested: %v", cause)
 		}
 		return nil
 	case failure := <-a.backgroundFailures:
@@ -910,32 +901,7 @@ func (a *Application) Stop() {
 }
 
 func logRunError(err error) {
-	var controlled *controlledShutdownError
-	if !errors.As(err, &controlled) {
+	if _, ok := errors.AsType[*controlledShutdownError](err); !ok {
 		log.Print(err)
-	}
-}
-
-func notifySignalContext(parent context.Context, signals ...os.Signal) (context.Context, func()) {
-	ctx, cancel := context.WithCancelCause(parent)
-	signalCh := make(chan os.Signal, 1)
-	signal.Notify(signalCh, signals...)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		select {
-		case sig := <-signalCh:
-			cancel(&signalShutdown{signal: sig})
-		case <-ctx.Done():
-		}
-	}()
-
-	var stopOnce sync.Once
-	return ctx, func() {
-		stopOnce.Do(func() {
-			signal.Stop(signalCh)
-			cancel(context.Canceled)
-		})
-		<-done
 	}
 }

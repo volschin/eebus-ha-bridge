@@ -105,18 +105,16 @@ func (fakePayloadSource) AttachDHWSystemFunctionPayload(event *pb.DHWSystemFunct
 }
 
 func (fakePayloadSource) AttachRoomHeatingPayload(event *pb.RoomHeatingEvent, _ string) bool {
-	current := 20.5
 	event.State = &pb.RoomHeatingState{
-		CurrentTemperatureCelsius: &current,
+		CurrentTemperatureCelsius: new(20.5),
 		Setpoint:                  &pb.RoomHeatingSetpoint{ValueCelsius: 21, Writable: true},
 	}
 	return true
 }
 
 func (fakePayloadSource) AttachOHPCFPayload(event *pb.OHPCFEvent, _ string, _ eebus.EventType) bool {
-	estimate := 1500.0
 	event.Flexibility = &pb.CompressorFlexibility{
-		Available: true, RequestedPowerEstimateW: &estimate,
+		Available: true, RequestedPowerEstimateW: new(1500.0),
 		State: pb.CompressorPowerConsumptionState_COMPRESSOR_STATE_AVAILABLE,
 	}
 	return true

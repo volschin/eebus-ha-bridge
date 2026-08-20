@@ -137,7 +137,6 @@ func LoadFromFile(path string) (*Config, error) {
 }
 
 func defaultConfig() *Config {
-	ohpcfEnabled := true
 	return &Config{
 		GRPC: GRPCConfig{
 			Port: 50051,
@@ -156,15 +155,16 @@ func defaultConfig() *Config {
 			StoragePath: "/data/certs",
 		},
 		OHPCF: OHPCFConfig{
-			Enabled: &ohpcfEnabled,
+			Enabled: new(true),
 		},
 	}
 }
 
 func applyPostLoadDefaults(cfg *Config) {
 	if cfg.Certificates.AutoGenerate == nil {
-		autoGenerate := cfg.Certificates.CertFile == "" && cfg.Certificates.KeyFile == ""
-		cfg.Certificates.AutoGenerate = &autoGenerate
+		cfg.Certificates.AutoGenerate = new(
+			cfg.Certificates.CertFile == "" && cfg.Certificates.KeyFile == "",
+		)
 	}
 }
 
