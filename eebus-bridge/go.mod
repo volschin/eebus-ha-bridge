@@ -6,7 +6,7 @@ require (
 	github.com/enbility/eebus-go v0.7.1-0.20260731142702-0aa83d264add
 	github.com/enbility/ship-go v0.6.1-0.20260803110610-c791ad564472
 	github.com/enbility/spine-go v0.7.1-0.20260731142244-261abb719483
-	github.com/stretchr/testify v1.11.1
+	github.com/stretchr/testify v1.12.0
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
