@@ -168,7 +168,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Lint Dockerfile
-        uses: hadolint/hadolint-action@2a66e89f53d0771bb131a7fa31f3136336094aa6 # v3.4.0 # renovate: datasource=github-releases depName=hadolint/hadolint-action
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0 # renovate: datasource=github-releases depName=hadolint/hadolint-action
         with:
           dockerfile: eebus-bridge/Dockerfile
       - name: Set up Docker Buildx
@@ -221,7 +221,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Lint add-on Dockerfile
-        uses: hadolint/hadolint-action@2a66e89f53d0771bb131a7fa31f3136336094aa6 # v3.4.0 # renovate: datasource=github-releases depName=hadolint/hadolint-action
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0 # renovate: datasource=github-releases depName=hadolint/hadolint-action
         with:
           dockerfile: eebus-bridge-addon/Dockerfile
       # Validates config.yaml against the Supervisor's own add-on schema. A key
