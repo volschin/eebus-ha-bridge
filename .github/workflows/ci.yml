@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       addon: ${{ steps.filter.outputs.addon }}
+      addon_build: ${{ steps.filter.outputs.addon_build }}
       go: ${{ steps.filter.outputs.go }}
       proto: ${{ steps.filter.outputs.proto }}
       python: ${{ steps.filter.outputs.python }}
@@ -37,8 +38,29 @@ jobs:
               - 'eebus-bridge-addon/**'
               - 'repository.yaml'
               - 'custom_components/eebus/manifest.json'
+              - 'eebus-bridge-addon/config.yaml'
               - 'scripts/check_addon_version.py'
+              - 'scripts/check_addon_tool_platforms.py'
+              - 'scripts/select_addon_ci_build_version.py'
+              - 'scripts/tests/test_check_addon_tool_platforms.py'
+              - 'scripts/tests/test_ci_addon_paths_filter.py'
+              - 'scripts/tests/test_fetch_verified_bridge.py'
+              - 'scripts/tests/test_addon_dockerfile_supply_chain.py'
+              - '.github/workflows/release.yml'
+              - 'scripts/tests/test_release_addon_gate.py'
+              - 'scripts/tests/test_select_addon_ci_build_version.py'
               - '.github/workflows/ci.yml'
+            addon_build:
+              - 'custom_components/eebus/manifest.json'
+              - 'eebus-bridge-addon/Dockerfile'
+              - 'eebus-bridge-addon/config.yaml'
+              - 'eebus-bridge-addon/fetch-verified-bridge.sh'
+              - 'eebus-bridge-addon/run.sh'
+              - 'scripts/check_addon_tool_platforms.py'
+              - 'scripts/select_addon_ci_build_version.py'
+              - 'scripts/tests/test_select_addon_ci_build_version.py'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/release.yml'
             go:
               - 'eebus-bridge/**'
               - 'scripts/check_go_patch_coverage.py'
@@ -219,7 +241,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0 # renovate: datasource=github-releases depName=docker/setup-buildx-action
       - name: Lint add-on Dockerfile
         uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0 # renovate: datasource=github-releases depName=hadolint/hadolint-action
         with:
@@ -234,6 +259,47 @@ jobs:
           path: ./eebus-bridge-addon
       - name: Check add-on version matches the integration
         run: python3 scripts/check_addon_version.py
+      - name: Test verified bridge fetcher
+        run: |
+          python3 -m unittest scripts.tests.test_fetch_verified_bridge -v
+          python3 -m unittest scripts.tests.test_addon_dockerfile_supply_chain -v
+          python3 -m unittest scripts.tests.test_check_addon_tool_platforms -v
+          python3 -m unittest scripts.tests.test_ci_addon_paths_filter -v
+          python3 -m unittest scripts.tests.test_release_addon_gate -v
+          python3 -m unittest scripts.tests.test_select_addon_ci_build_version -v
+      - name: Check verifier tool platforms
+        run: python3 scripts/check_addon_tool_platforms.py eebus-bridge-addon/Dockerfile
+      - name: Select verified add-on build version
+        id: addon-build-version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base="$PR_BASE_SHA"
+          else
+            base="$PUSH_BASE_SHA"
+          fi
+          version="$(python3 scripts/select_addon_ci_build_version.py --base "$base")"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+      - name: Build verified add-on image
+        if: needs.changes.outputs.addon_build == 'true'
+        env:
+          BUILD_VERSION: ${{ steps.addon-build-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          docker build \
+            --platform linux/amd64 \
+            --build-arg "BUILD_VERSION=${BUILD_VERSION}" \
+            --tag eebus-bridge-addon:ci \
+            eebus-bridge-addon
+          docker run --rm --entrypoint /bin/sh eebus-bridge-addon:ci -c \
+            'test -x /usr/local/bin/eebus-bridge &&
+             test ! -e /usr/local/bin/cosign &&
+             test ! -e /usr/local/bin/regctl &&
+             test ! -e /usr/local/bin/fetch-verified-bridge'
 
   test:
     # Gated like the go job: a Go- or Dockerfile-only PR cannot break ruff,
