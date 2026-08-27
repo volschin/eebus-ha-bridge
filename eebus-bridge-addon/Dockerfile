@@ -11,21 +11,24 @@ ARG BUILD_VERSION
 # pin it later if that becomes worth the churn.
 ARG BUILD_FROM=ghcr.io/home-assistant/base:latest
 
-# The release workflow already publishes this binary for linux/amd64,
-# linux/arm64 and linux/arm/v7 — the same three platforms `arch:` lists — so
-# the add-on copies it out instead of rebuilding. The Supervisor builds add-ons
-# on the user's own hardware, where a Go toolchain run costs minutes of CPU and
-# can plausibly OOM on a Pi.
-FROM ghcr.io/volschin/eebus-bridge:${BUILD_VERSION} AS bridge
+FROM ghcr.io/sigstore/cosign/cosign:v3.1.3@sha256:9e5c2f2edc34351160407ca3416c61855bdf9403c3c5936e0f0be7fc261611b8 AS cosign
+FROM ghcr.io/regclient/regctl:v0.11.5@sha256:dbe356c6cf9f8f85e302b9e47fed481ef3f1b04807350e99b02ab2cadee0a993 AS regctl
 
 # hadolint ignore=DL3006
-FROM ${BUILD_FROM}
+FROM ${BUILD_FROM} AS verified-bridge
+ARG BUILD_VERSION
+# Resolve the mutable version tag once; verification and extraction then use one digest.
+COPY --from=cosign /ko-app/cosign /usr/local/bin/cosign
+COPY --from=regctl /regctl /usr/local/bin/regctl
+COPY fetch-verified-bridge.sh /usr/local/bin/fetch-verified-bridge
+RUN chmod 0755 /usr/local/bin/fetch-verified-bridge \
+    && /usr/local/bin/fetch-verified-bridge \
+        "${BUILD_VERSION}" /verified/eebus-bridge
 
-# The bridge is a static CGO_ENABLED=0 binary that never shells out, so nothing
-# else from the release image is needed and the HA base's userland (s6, bashio)
-# is only here to read the add-on options.
-COPY --from=bridge /usr/local/bin/eebus-bridge /usr/local/bin/eebus-bridge
+# Tool binaries stay in the verifier stage; only verified output enters runtime.
+# hadolint ignore=DL3006
+FROM ${BUILD_FROM}
+COPY --from=verified-bridge /verified/eebus-bridge /usr/local/bin/eebus-bridge
 COPY run.sh /run.sh
 RUN chmod a+x /run.sh
-
 CMD [ "/run.sh" ]
