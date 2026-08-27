@@ -10,6 +10,7 @@ REQUIRED_ADDON_PATHS = {
     ".github/workflows/release.yml",
     "scripts/check_addon_tool_platforms.py",
     "scripts/tests/test_check_addon_tool_platforms.py",
+    "scripts/tests/test_ci_addon_paths_filter.py",
     "scripts/tests/test_release_addon_gate.py",
 }
 

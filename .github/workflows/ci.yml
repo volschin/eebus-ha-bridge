@@ -40,6 +40,7 @@ jobs:
               - 'scripts/check_addon_version.py'
               - 'scripts/check_addon_tool_platforms.py'
               - 'scripts/tests/test_check_addon_tool_platforms.py'
+              - 'scripts/tests/test_ci_addon_paths_filter.py'
               - '.github/workflows/release.yml'
               - 'scripts/tests/test_release_addon_gate.py'
               - '.github/workflows/ci.yml'
