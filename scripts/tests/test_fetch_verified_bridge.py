@@ -41,6 +41,10 @@ class FetchVerifiedBridgeTest(unittest.TestCase):
                     printf 'partial-binary' >"$7"
                     exit "${FAKE_GET_FILE_EXIT}"
                 fi
+                if [ "${FAKE_SYMLINK_OUTPUT:-0}" -eq 1 ]; then
+                    ln -s "${CALL_LOG}" "$7"
+                    exit 0
+                fi
                 if [ "${FAKE_EMPTY_OUTPUT:-0}" -eq 0 ]; then
                     printf 'verified-binary' >"$7"
                 else
@@ -113,10 +117,17 @@ class FetchVerifiedBridgeTest(unittest.TestCase):
         self.assertIn("regctl image get-file --platform local", calls)
         self.assertEqual(self.output.read_text(), "verified-binary")
         self.assertTrue(self.output.stat().st_mode & stat.S_IXUSR)
+        self.assertEqual(list(self.root.glob(".eebus-bridge.*")), [])
 
     def test_empty_extracted_file_fails_closed(self) -> None:
         result = self._run(FAKE_EMPTY_OUTPUT="1")
         self.assertNotEqual(result.returncode, 0)
+
+    def test_symlink_extracted_file_fails_closed(self) -> None:
+        result = self._run(FAKE_SYMLINK_OUTPUT="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(list(self.root.glob(".eebus-bridge.*")), [])
 
     def test_digest_resolution_failure_propagates(self) -> None:
         result = self._run(FAKE_DIGEST_EXIT="23")
@@ -133,6 +144,7 @@ class FetchVerifiedBridgeTest(unittest.TestCase):
         self.assertIn("cosign verify", calls)
         self.assertIn("regctl image get-file", calls)
         self.assertFalse(self.output.exists())
+        self.assertEqual(list(self.root.glob(".eebus-bridge.*")), [])
 
 
 if __name__ == "__main__":
