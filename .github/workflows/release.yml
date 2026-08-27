@@ -13,7 +13,7 @@ jobs:
     # Gated on the image so a failed or unhealthy build cannot produce a
     # published release. HACS updates users from published releases, so a
     # release without a working image strands everyone who upgrades on it.
-    needs: sign-image
+    needs: build-verified-addon
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -145,3 +145,31 @@ jobs:
             --certificate-identity "${CERTIFICATE_IDENTITY}" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             "${IMAGE}"
+
+  build-verified-addon:
+    needs: sign-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build add-on from verified release image
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          docker build \
+            --platform linux/amd64 \
+            --build-arg "BUILD_VERSION=${version}" \
+            --tag eebus-bridge-addon:release-verify \
+            eebus-bridge-addon
+          docker run --rm --entrypoint /bin/sh \
+            eebus-bridge-addon:release-verify -c \
+            'test -x /usr/local/bin/eebus-bridge &&
+             test ! -e /usr/local/bin/cosign &&
+             test ! -e /usr/local/bin/regctl &&
+             test ! -e /usr/local/bin/fetch-verified-bridge'
