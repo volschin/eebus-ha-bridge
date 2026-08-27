@@ -38,6 +38,8 @@ jobs:
               - 'repository.yaml'
               - 'custom_components/eebus/manifest.json'
               - 'scripts/check_addon_version.py'
+              - 'scripts/check_addon_tool_platforms.py'
+              - 'scripts/tests/test_check_addon_tool_platforms.py'
               - '.github/workflows/ci.yml'
             go:
               - 'eebus-bridge/**'
