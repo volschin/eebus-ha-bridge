@@ -90,9 +90,13 @@ class AddonPathsFilterTest(unittest.TestCase):
             selection_step,
         )
         self.assertIn(
-            '--build-arg "BUILD_VERSION=${{ steps.addon-build-version.outputs.version }}"',
+            "        env:\n"
+            "          BUILD_VERSION: ${{ steps.addon-build-version.outputs.version }}\n",
             build_step,
         )
+        build_run = build_step.split("        run: |\n", 1)[1]
+        self.assertIn('--build-arg "BUILD_VERSION=${BUILD_VERSION}"', build_run)
+        self.assertNotIn("${{ steps.addon-build-version.outputs.version }}", build_run)
 
 
 if __name__ == "__main__":

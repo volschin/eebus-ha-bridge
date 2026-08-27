@@ -49,6 +49,28 @@ class SelectAddonCiBuildVersionTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             select_build_version(VERSION_PATHS, BASE_FILES, head_files)
 
+    def test_rejects_current_shell_payload(self) -> None:
+        head_files = {
+            "custom_components/eebus/manifest.json": (
+                '{"domain":"eebus","version":"0.16.7;$(touch /tmp/pwned)"}\n'
+            ),
+            "eebus-bridge-addon/config.yaml": (
+                'name: EEBUS\nversion: "0.16.7;$(touch /tmp/pwned)"\n'
+            ),
+        }
+
+        with self.assertRaises(ValueError):
+            select_build_version(VERSION_PATHS, BASE_FILES, head_files)
+
+    def test_rejects_base_newline_payload(self) -> None:
+        base_files = dict(BASE_FILES)
+        base_files["eebus-bridge-addon/config.yaml"] = (
+            'name: EEBUS\nversion: "0.16.6\nmalicious"\n'
+        )
+
+        with self.assertRaises(ValueError):
+            select_build_version(VERSION_PATHS, base_files, HEAD_FILES)
+
 
 if __name__ == "__main__":
     unittest.main()

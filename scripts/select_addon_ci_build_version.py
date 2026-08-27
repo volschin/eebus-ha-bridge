@@ -19,14 +19,19 @@ VERSION_PATHS = frozenset(
 _MANIFEST_PATH = "custom_components/eebus/manifest.json"
 _ADDON_CONFIG_PATH = "eebus-bridge-addon/config.yaml"
 _ADDON_VERSION_RE = re.compile(r'(?m)^version: "([^"\n]+)"[ \t]*$')
+_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+
+
+def _validate_version(path: str, version: object) -> str:
+    if not isinstance(version, str) or not _VERSION_RE.fullmatch(version):
+        raise ValueError(f"{path} has an invalid version")
+    return version
 
 
 def _parse_version(path: str, content: str) -> tuple[str, str]:
     if path == _MANIFEST_PATH:
         document = json.loads(content)
-        version = document.get("version")
-        if not isinstance(version, str) or not version:
-            raise ValueError(f"{path} has no version")
+        version = _validate_version(path, document.get("version"))
         document["version"] = "__VERSION__"
         return version, json.dumps(document, sort_keys=True, separators=(",", ":"))
 
@@ -34,7 +39,8 @@ def _parse_version(path: str, content: str) -> tuple[str, str]:
         matches = list(_ADDON_VERSION_RE.finditer(content))
         if len(matches) != 1:
             raise ValueError(f"{path} must contain exactly one quoted version")
-        return matches[0].group(1), _ADDON_VERSION_RE.sub('version: "__VERSION__"', content)
+        version = _validate_version(path, matches[0].group(1))
+        return version, _ADDON_VERSION_RE.sub('version: "__VERSION__"', content)
 
     raise ValueError(f"unsupported version declaration: {path}")
 
@@ -66,7 +72,7 @@ def select_build_version(
 
     try:
         base_version, base_normalized = _version_and_normalized_files(base_files)
-    except (KeyError, ValueError, json.JSONDecodeError):
+    except KeyError:
         return current_version
 
     if base_normalized != current_normalized:

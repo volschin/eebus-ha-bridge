@@ -286,11 +286,13 @@ jobs:
           printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
       - name: Build verified add-on image
         if: needs.changes.outputs.addon_build == 'true'
+        env:
+          BUILD_VERSION: ${{ steps.addon-build-version.outputs.version }}
         run: |
           set -euo pipefail
           docker build \
             --platform linux/amd64 \
-            --build-arg "BUILD_VERSION=${{ steps.addon-build-version.outputs.version }}" \
+            --build-arg "BUILD_VERSION=${BUILD_VERSION}" \
             --tag eebus-bridge-addon:ci \
             eebus-bridge-addon
           docker run --rm --entrypoint /bin/sh eebus-bridge-addon:ci -c \
