@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       addon: ${{ steps.filter.outputs.addon }}
+      addon_build: ${{ steps.filter.outputs.addon_build }}
       go: ${{ steps.filter.outputs.go }}
       proto: ${{ steps.filter.outputs.proto }}
       python: ${{ steps.filter.outputs.python }}
@@ -41,9 +42,18 @@ jobs:
               - 'scripts/check_addon_tool_platforms.py'
               - 'scripts/tests/test_check_addon_tool_platforms.py'
               - 'scripts/tests/test_ci_addon_paths_filter.py'
+              - 'scripts/tests/test_fetch_verified_bridge.py'
+              - 'scripts/tests/test_addon_dockerfile_supply_chain.py'
               - '.github/workflows/release.yml'
               - 'scripts/tests/test_release_addon_gate.py'
               - '.github/workflows/ci.yml'
+            addon_build:
+              - 'eebus-bridge-addon/Dockerfile'
+              - 'eebus-bridge-addon/fetch-verified-bridge.sh'
+              - 'eebus-bridge-addon/run.sh'
+              - 'scripts/check_addon_tool_platforms.py'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/release.yml'
             go:
               - 'eebus-bridge/**'
               - 'scripts/check_go_patch_coverage.py'
@@ -251,6 +261,7 @@ jobs:
       - name: Check verifier tool platforms
         run: python3 scripts/check_addon_tool_platforms.py eebus-bridge-addon/Dockerfile
       - name: Build verified add-on image
+        if: needs.changes.outputs.addon_build == 'true'
         run: |
           set -euo pipefail
           version="$(python3 -c 'import re; from pathlib import Path; text=Path("eebus-bridge-addon/config.yaml").read_text(); print(re.search(r"(?m)^version: \"([^\"]+)\"$", text).group(1))')"
