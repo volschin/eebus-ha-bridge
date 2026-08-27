@@ -81,7 +81,7 @@ def select_build_version(
 
 
 def _git_output(*args: str) -> str:
-    return subprocess.check_output(("git", *args), text=True).strip()
+    return subprocess.check_output(("git", *args), text=True)
 
 
 def _current_files() -> dict[str, str]:
