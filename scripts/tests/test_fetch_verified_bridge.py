@@ -37,7 +37,10 @@ class FetchVerifiedBridgeTest(unittest.TestCase):
                 exit 0
             fi
             if [ "$1 $2" = "image get-file" ]; then
-                [ "${FAKE_GET_FILE_EXIT:-0}" -eq 0 ] || exit "${FAKE_GET_FILE_EXIT}"
+                if [ "${FAKE_GET_FILE_EXIT:-0}" -ne 0 ]; then
+                    printf 'partial-binary' >"$7"
+                    exit "${FAKE_GET_FILE_EXIT}"
+                fi
                 if [ "${FAKE_EMPTY_OUTPUT:-0}" -eq 0 ]; then
                     printf 'verified-binary' >"$7"
                 else

@@ -34,13 +34,20 @@ cosign verify \
 
 mkdir -p "$(dirname "${output}")"
 rm -f "${output}"
+temp_output="${output}.tmp.$$"
+cleanup() {
+    rm -f "${temp_output}"
+}
+trap cleanup EXIT HUP INT TERM
 regctl image get-file --platform local \
     "${image}" \
     /usr/local/bin/eebus-bridge \
-    "${output}"
-chmod 0755 "${output}"
+    "${temp_output}"
+chmod 0755 "${temp_output}"
 
-if [ ! -s "${output}" ] || [ ! -x "${output}" ]; then
+if [ ! -s "${temp_output}" ] || [ ! -x "${temp_output}" ]; then
     echo "verified bridge output is missing or not executable" >&2
     exit 67
 fi
+
+mv -f "${temp_output}" "${output}"
