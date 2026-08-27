@@ -243,6 +243,7 @@ jobs:
           python3 -m unittest scripts.tests.test_fetch_verified_bridge -v
           python3 -m unittest scripts.tests.test_addon_dockerfile_supply_chain -v
           python3 -m unittest scripts.tests.test_check_addon_tool_platforms -v
+          python3 -m unittest scripts.tests.test_ci_addon_paths_filter -v
       - name: Check verifier tool platforms
         run: python3 scripts/check_addon_tool_platforms.py eebus-bridge-addon/Dockerfile
       - name: Build verified add-on image
