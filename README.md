@@ -58,14 +58,14 @@ Home Assistant                    eebus-bridge (Go)         Vaillant VR940f
 Der Go-basierte Bridge-Dienst laeuft als eigener Prozess neben Home Assistant.
 Welcher Weg passt, haengt von der HA-Installationsart ab.
 
-#### Home Assistant OS / Supervised: Add-on
+#### Home Assistant OS / Supervised: App (früher Add-on)
 
-1. **Settings** > **Add-ons** > **Add-on Store** > Drei-Punkte-Menue oben
+1. **Settings** > **Apps** > **App Store** > Drei-Punkte-Menue oben
    rechts > **Repositories**
 2. Repository-URL einfuegen: `https://github.com/volschin/eebus-ha-bridge` >
    **Add**
 3. Store schliessen und neu oeffnen, **EEBUS Bridge** auswaehlen > **Install**
-4. **Start**, danach im Add-on-Log die SKI der Bridge notieren (wird fuer das
+4. **Start**, danach im App-Log die SKI der Bridge notieren (wird fuer das
    Pairing gebraucht)
 
 Die Integration traegt anschliessend `localhost` und Port `50051` ein. Optionen
