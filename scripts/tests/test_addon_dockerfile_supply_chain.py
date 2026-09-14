@@ -9,8 +9,8 @@ COSIGN_REF = (
     "9e5c2f2edc34351160407ca3416c61855bdf9403c3c5936e0f0be7fc261611b8"
 )
 REGCTL_REF = (
-    "ghcr.io/regclient/regctl:v0.11.5@sha256:"
-    "dbe356c6cf9f8f85e302b9e47fed481ef3f1b04807350e99b02ab2cadee0a993"
+    "ghcr.io/regclient/regctl:v0.11.6@sha256:"
+    "db2e5f3a5de80b24d53fea5af9edf7021a53f2689f1e166ef2f0e200dad4fb3a"
 )
 
 
