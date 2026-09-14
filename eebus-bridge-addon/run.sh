@@ -16,6 +16,14 @@ export EEBUS_BRAND="$(bashio::config 'brand')"
 export EEBUS_MODEL="$(bashio::config 'model')"
 export EEBUS_CERT_STORAGE="${CERT_STORAGE}"
 
+# Experimental MGCP grid provider (README, "Kooperatives Netzsignal"). The
+# bridge reads EEBUS_EXP_MGCP_PROVIDER; leave it unset when the option is off
+# so the bridge's own default (disabled) applies.
+if bashio::config.true 'experimental_mgcp_provider'; then
+    export EEBUS_EXP_MGCP_PROVIDER="true"
+    bashio::log.warning "Experimental MGCP grid provider enabled (requires myVAILLANT commissioning to take effect)"
+fi
+
 # The serial is part of the announced EEBUS device identity, so it has to
 # survive restarts and updates: a new serial makes the heat pump treat the
 # bridge as a different device and forces re-pairing in the vendor app.
