@@ -20,3 +20,7 @@ configuration:
       Seriennummer, die ueber EEBUS angekuendigt wird. Leer lassen, um beim
       ersten Start eine zu erzeugen und dauerhaft zu speichern. Eine Aenderung
       kann ein erneutes Pairing mit der Waermepumpe erzwingen.
+  experimental_mgcp_provider:
+    name: "Experimentell: MGCP-Netzsignal"
+    description: >-
+      Stellt den experimentellen MGCP-Grid-Provider bereit, damit die Wärmepumpe die Bilanz am Hausanschluss lesen und ihr eigenes PV-Überschuss-Energiemanagement ausführen kann. Erfordert das Commissioning in der Wärmepumpen-App (siehe README). Standardmäßig aus.
