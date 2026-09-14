@@ -49,6 +49,7 @@ heat pump's app asks for when pairing.
 | `brand` | `Home Assistant` | Brand name; this is what the heat pump's app shows |
 | `model` | `eebus-bridge` | Model name announced over EEBUS |
 | `serial` | *(generated)* | Serial number announced over EEBUS |
+| `experimental_mgcp_provider` | `false` | Exposes the experimental MGCP grid-connection-point provider so the heat pump can read the household balance from Home Assistant and run its own PV-surplus energy management. Only takes effect after the commissioning steps in the project README (bridge trusted in the myVAILLANT app, energy-management sliders enabled) and the grid/PV entities are selected in the integration's options. Not hardware-final on the VR 940f. |
 
 Leaving `serial` empty makes the add-on generate one on first start and keep it
 in `/data`. Changing `serial`, `vendor`, `brand` or `model` later changes the

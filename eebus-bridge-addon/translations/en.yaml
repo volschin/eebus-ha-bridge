@@ -19,3 +19,7 @@ configuration:
     description: >-
       Serial number announced over EEBUS. Leave empty to generate one on first
       start and keep it. Changing it may force re-pairing with the heat pump.
+  experimental_mgcp_provider:
+    name: "Experimental: MGCP grid provider"
+    description: >-
+      Expose the experimental MGCP grid-connection-point provider so the heat pump can read the household balance and run its own PV-surplus energy management. Requires commissioning in the heat pump app (see README). Off by default.
