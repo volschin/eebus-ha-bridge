@@ -34,6 +34,7 @@ options:
   brand: Home Assistant
   model: eebus-bridge
   serial: ""
+  experimental_mgcp_provider: false
 schema:
   grpc_port: port
   eebus_port: port
@@ -42,3 +43,6 @@ schema:
   model: str
   # Optional: run.sh generates and persists one when this is left empty.
   serial: str?
+  # Optional: exposes the experimental MGCP grid-connection-point provider
+  # (README, "Kooperatives Netzsignal"). Off unless explicitly enabled.
+  experimental_mgcp_provider: bool?
