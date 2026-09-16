@@ -206,7 +206,7 @@ jobs:
       # arm64/armv7 — the platforms the release publishes — was invisible until
       # the tag build, i.e. after the release was already cut.
       - name: Build all release platforms
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0 # renovate: datasource=github-releases depName=docker/build-push-action
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0 # renovate: datasource=github-releases depName=docker/build-push-action
         with:
           context: ./eebus-bridge
           platforms: linux/amd64,linux/arm64,linux/arm/v7
@@ -219,7 +219,7 @@ jobs:
       # smoke target is rebuilt for amd64 alone. Everything is cached from the
       # step above, so this costs seconds.
       - name: Build amd64 image for the smoke run
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0 # renovate: datasource=github-releases depName=docker/build-push-action
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0 # renovate: datasource=github-releases depName=docker/build-push-action
         with:
           context: ./eebus-bridge
           platforms: linux/amd64
