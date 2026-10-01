@@ -3,7 +3,7 @@ module github.com/volschin/eebus-bridge
 go 1.27.0
 
 require (
-	github.com/enbility/eebus-go v0.7.1-0.20260731142702-0aa83d264add
+	github.com/enbility/eebus-go v0.7.1-0.20260930170458-8583642861c3
 	github.com/enbility/ship-go v0.6.1-0.20260928110648-a84426bc3810
 	github.com/enbility/spine-go v0.7.1-0.20260921145843-eb2cd4daba13
 	github.com/stretchr/testify v1.12.1
