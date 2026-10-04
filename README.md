@@ -246,10 +246,21 @@ Die Integration nutzt **gRPC Streaming** (Server-Sent Events) fuer Echtzeit-Upda
 | Entity | Typ | Beschreibung |
 |--------|-----|-------------|
 | `binary_sensor.eebus_connected` | binary_sensor | EEBUS-Verbindungsstatus |
-| `binary_sensor.eebus_heartbeat_ok` | binary_sensor | Heartbeat innerhalb Toleranz, standardmaessig deaktiviert |
+| `binary_sensor.eebus_heartbeat_ok` | binary_sensor | Heartbeat-Problem: `on` bedeutet fehlender Heartbeat, `off` bedeutet gesund; standardmaessig deaktiviert |
 | `sensor.eebus_device_operating_state` | sensor | EEBUS-Geraete-Betriebszustand, z. B. `normalOperation` |
 | `sensor.eebus_compressor_flexibility_power_estimate` | sensor | OHPCF geschaetzte Leistung des Angebots (W), standardmaessig deaktiviert |
 | `sensor.eebus_compressor_flexibility_power_max` | sensor | OHPCF maximale Leistung des Angebots (W), standardmaessig deaktiviert |
+
+Bei Geraeten, die LPC-Heartbeat-Unterstuetzung melden, prueft der Watchdog
+empfangene SPINE-Heartbeat-Benachrichtigungen anhand der lokalen Empfangszeit.
+Nach zwei Minuten ohne Heartbeat (zuzueglich maximal 30 Sekunden bis zum
+naechsten Watchdog-Lauf) startet die bestehende geraetebezogene Wiederherstellung.
+gRPC-Abfragen alter SPINE-Cachewerte setzen diese Pruefung nicht zurueck.
+Nach einem Reconnect muessen Monitoring und ein neuer Heartbeat die Verbindung
+bestaetigen, bevor die Wiederherstellung erfolgreich ist. Die bestehende
+Backoff- und Neustartbegrenzung bleibt aktiv; SHIP-Identitaet und Konfiguration
+werden nicht neu erzeugt. Geraete ohne LPC-Heartbeat behalten die bisherige
+Monitoring-Pruefung.
 
 ## Unterstuetzte Geraete
 

@@ -31,9 +31,9 @@ type DeviceInfo struct {
 	// HeatingCircuit and HVACRoom entities advertise it and return it empty.
 	ZoneLabel      string
 	UseCases       []string
-	RemoteDevice     spineapi.DeviceRemoteInterface
-	RemoteEntities   []spineapi.EntityRemoteInterface
-	Entities         []EntityInfo
+	RemoteDevice   spineapi.DeviceRemoteInterface
+	RemoteEntities []spineapi.EntityRemoteInterface
+	Entities       []EntityInfo
 }
 
 // EntityResolution describes a device-scoped entity lookup. DeviceCount is the
@@ -72,8 +72,9 @@ type deviceCatalogStore struct {
 }
 
 type deviceHealthStore struct {
-	mu         sync.RWMutex
-	monitoring map[string]deviceMonitoringState
+	mu                sync.RWMutex
+	monitoring        map[string]deviceMonitoringState
+	heartbeatRequired map[string]bool
 }
 
 type deviceCapabilityStore struct {
@@ -91,6 +92,8 @@ type deviceMonitoringState struct {
 	lastTransitionAt           time.Time
 	lastMonitoringSuccess      time.Time
 	monitoringSuccessOnConnect bool
+	heartbeatRequired          bool
+	lastRemoteHeartbeat        time.Time
 }
 
 // DeviceHealthSnapshot is an immutable device-scoped projection used by
@@ -128,7 +131,10 @@ func NewDeviceRegistryWithClock(clock Clock) *DeviceRegistry {
 	}
 	return &DeviceRegistry{
 		catalog: deviceCatalogStore{devices: make(map[string]DeviceInfo)},
-		health:  deviceHealthStore{monitoring: make(map[string]deviceMonitoringState)},
+		health: deviceHealthStore{
+			monitoring:        make(map[string]deviceMonitoringState),
+			heartbeatRequired: make(map[string]bool),
+		},
 		capabilities: deviceCapabilityStore{
 			entries:           make(map[string]map[Capability]DeviceCapability),
 			support:           make(map[string]map[Capability]map[string]bool),
@@ -167,6 +173,8 @@ func (r *DeviceRegistry) MarkConnected(ski string) {
 	state.connectedAt = now
 	state.lastTransitionAt = now
 	state.monitoringSuccessOnConnect = false
+	state.lastRemoteHeartbeat = time.Time{}
+	state.heartbeatRequired = r.health.heartbeatRequired[ski]
 	r.health.monitoring[ski] = state
 	r.health.mu.Unlock()
 	r.markCapabilitiesConnected(ski)
@@ -264,6 +272,32 @@ func (r *DeviceRegistry) RecordMonitoringSuccess(ski string) {
 	r.health.monitoring[ski] = state
 }
 
+// RecordRemoteHeartbeat records a received SPINE heartbeat notification, never
+// a gRPC read of cached data. Use local receive time so peer clock skew cannot
+// conceal a silent connection or trigger recovery of an otherwise live peer.
+func (r *DeviceRegistry) RecordRemoteHeartbeat(ski string) {
+	ski = NormalizeSKI(ski)
+	r.lifecycle.RLock()
+	defer r.lifecycle.RUnlock()
+	if r.removedLocked(ski) {
+		return
+	}
+	r.health.mu.Lock()
+	defer r.health.mu.Unlock()
+	state, ok := r.health.monitoring[ski]
+	if !ok || !state.connected {
+		return
+	}
+	state.lastRemoteHeartbeat = r.clock.Now()
+	r.health.monitoring[ski] = state
+}
+
+const remoteHeartbeatTolerance = 2 * time.Minute
+
+func heartbeatOnConnection(state deviceMonitoringState) bool {
+	return !state.heartbeatRequired || !state.lastRemoteHeartbeat.IsZero()
+}
+
 // StaleDevices returns connected device SKIs whose grace period has elapsed
 // without a success on the current connection, or whose most recent success
 // on that connection is older than threshold.
@@ -277,7 +311,8 @@ func (r *DeviceRegistry) StaleDevices(threshold, gracePeriod time.Duration) []st
 		if !state.connected || now.Sub(state.connectedAt) <= gracePeriod {
 			continue
 		}
-		if !state.monitoringSuccessOnConnect || now.Sub(state.lastMonitoringSuccess) > threshold {
+		heartbeatStale := state.heartbeatRequired && (!heartbeatOnConnection(state) || now.Sub(state.lastRemoteHeartbeat) > remoteHeartbeatTolerance)
+		if !state.monitoringSuccessOnConnect || now.Sub(state.lastMonitoringSuccess) > threshold || heartbeatStale {
 			result = append(result, ski)
 		}
 	}
@@ -312,7 +347,7 @@ func (r *DeviceRegistry) MonitoringSuccessSince(ski string, since time.Time) boo
 	if !ok || state.lastMonitoringSuccess.IsZero() {
 		return false
 	}
-	return state.lastMonitoringSuccess.After(since)
+	return state.lastMonitoringSuccess.After(since) && (!state.heartbeatRequired || state.lastRemoteHeartbeat.After(since))
 }
 
 func (r *DeviceRegistry) DeviceHealth(ski string) (DeviceHealthSnapshot, bool) {
@@ -346,7 +381,7 @@ func deviceHealthSnapshot(ski string, state deviceMonitoringState) DeviceHealthS
 		ConnectedAt:                state.connectedAt,
 		LastTransitionAt:           state.lastTransitionAt,
 		LastMonitoringSuccess:      state.lastMonitoringSuccess,
-		MonitoringSuccessOnConnect: state.monitoringSuccessOnConnect,
+		MonitoringSuccessOnConnect: state.monitoringSuccessOnConnect && heartbeatOnConnection(state),
 	}
 }
 
@@ -530,6 +565,7 @@ func (r *DeviceRegistry) RemoveDevice(ski string) {
 	r.catalog.mu.Unlock()
 	r.health.mu.Lock()
 	delete(r.health.monitoring, ski)
+	delete(r.health.heartbeatRequired, ski)
 	r.health.mu.Unlock()
 	r.capabilities.mu.Lock()
 	delete(r.capabilities.entries, ski)
