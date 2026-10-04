@@ -114,8 +114,11 @@ func (w *LPCWrapper) HandleEvent(ski string, device spineapi.DeviceRemoteInterfa
 			}
 		}
 	case eglpc.DataUpdateHeartbeat:
-		// Per eebus-go: signals the remote entering or leaving failsafe state.
-		// No payload is attached; HA reconciles via GetHeartbeatStatus on refresh.
+		// eebus-go emits this only for a received heartbeat notification.
+		// Cached snapshot reads must not reset this receive-side watchdog.
+		if w.registry != nil {
+			w.registry.RecordRemoteHeartbeat(observationSKI(ski, device))
+		}
 		eventType = eebus.EventTypeLPCHeartbeatUpdated
 	default:
 		return

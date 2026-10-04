@@ -181,6 +181,18 @@ func (r *DeviceRegistry) RecordCapabilitySupport(ski string, capability Capabili
 		return
 	}
 	disconnected := r.deviceDisconnected(ski)
+	if capability == CapabilityHeartbeat && advertised {
+		r.health.mu.Lock()
+		// Empty scenario sets are also emitted during disconnect/re-discovery.
+		// Remember observed support until explicit device removal so teardown
+		// cannot let cached reads mask a missing subscription after reconnect.
+		r.health.heartbeatRequired[ski] = true
+		if state, known := r.health.monitoring[ski]; known {
+			state.heartbeatRequired = true
+			r.health.monitoring[ski] = state
+		}
+		r.health.mu.Unlock()
+	}
 	r.capabilities.mu.Lock()
 	defer r.capabilities.mu.Unlock()
 	r.recordCapabilitySupportLocked(ski, capability, advertised, disconnected)
