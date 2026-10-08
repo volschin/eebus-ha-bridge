@@ -6,7 +6,7 @@ import warnings
 from . import common_pb2 as eebus_dot_v1_dot_common__pb2
 from . import hvac_service_pb2 as eebus_dot_v1_dot_hvac__service__pb2
 
-GRPC_GENERATED_VERSION = '1.78.0'
+GRPC_GENERATED_VERSION = '1.83.1'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -26,7 +26,7 @@ if _version_not_supported:
     )
 
 
-class HVACServiceStub(object):
+class HVACServiceStub:
     """HVACService exposes the room-heating Configuration use cases validated
     against the Vaillant VR940 HVACRoom entity.
     """
@@ -59,7 +59,7 @@ class HVACServiceStub(object):
                 _registered_method=True)
 
 
-class HVACServiceServicer(object):
+class HVACServiceServicer:
     """HVACService exposes the room-heating Configuration use cases validated
     against the Vaillant VR940 HVACRoom entity.
     """
@@ -119,7 +119,7 @@ def add_HVACServiceServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class HVACService(object):
+class HVACService:
     """HVACService exposes the room-heating Configuration use cases validated
     against the Vaillant VR940 HVACRoom entity.
     """

@@ -45,7 +45,7 @@ class RoomHeatingSetpoint(_message.Message):
     max_celsius: float
     step_celsius: float
     writable: bool
-    def __init__(self, value_celsius: _Optional[float] = ..., min_celsius: _Optional[float] = ..., max_celsius: _Optional[float] = ..., step_celsius: _Optional[float] = ..., writable: bool = ...) -> None: ...
+    def __init__(self, value_celsius: _Optional[float] = ..., min_celsius: _Optional[float] = ..., max_celsius: _Optional[float] = ..., step_celsius: _Optional[float] = ..., writable: _Optional[bool] = ...) -> None: ...
 
 class RoomHeatingSystemFunction(_message.Message):
     __slots__ = ("operation_mode", "available_modes", "mode_writable")
@@ -55,7 +55,7 @@ class RoomHeatingSystemFunction(_message.Message):
     operation_mode: str
     available_modes: _containers.RepeatedScalarFieldContainer[str]
     mode_writable: bool
-    def __init__(self, operation_mode: _Optional[str] = ..., available_modes: _Optional[_Iterable[str]] = ..., mode_writable: bool = ...) -> None: ...
+    def __init__(self, operation_mode: _Optional[str] = ..., available_modes: _Optional[_Iterable[str]] = ..., mode_writable: _Optional[bool] = ...) -> None: ...
 
 class SetRoomHeatingTemperatureRequest(_message.Message):
     __slots__ = ("ski", "value_celsius")

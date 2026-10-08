@@ -331,7 +331,7 @@ jobs:
       - name: Audit production dependencies
         run: |
           pip-audit --requirement /dev/stdin <<'EOF'
-          grpcio>=1.78.0
+          grpcio>=1.83.1
           protobuf>=4.25.0
           EOF
       - name: Run tests with coverage

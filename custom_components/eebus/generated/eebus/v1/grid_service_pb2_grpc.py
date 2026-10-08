@@ -6,7 +6,7 @@ import warnings
 from . import common_pb2 as eebus_dot_v1_dot_common__pb2
 from . import grid_service_pb2 as eebus_dot_v1_dot_grid__service__pb2
 
-GRPC_GENERATED_VERSION = '1.78.0'
+GRPC_GENERATED_VERSION = '1.83.1'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -26,7 +26,7 @@ if _version_not_supported:
     )
 
 
-class GridServiceStub(object):
+class GridServiceStub:
     """GridService drives the bridge's MGCP (Monitoring of Grid Connection Point)
     provider. Home Assistant pushes the live grid situation so a consumer such as
     the Vaillant VR940 can read it and run PV-surplus optimisation (§1.3.1).
@@ -49,7 +49,7 @@ class GridServiceStub(object):
                 _registered_method=True)
 
 
-class GridServiceServicer(object):
+class GridServiceServicer:
     """GridService drives the bridge's MGCP (Monitoring of Grid Connection Point)
     provider. Home Assistant pushes the live grid situation so a consumer such as
     the Vaillant VR940 can read it and run PV-surplus optimisation (§1.3.1).
@@ -81,7 +81,7 @@ def add_GridServiceServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class GridService(object):
+class GridService:
     """GridService drives the bridge's MGCP (Monitoring of Grid Connection Point)
     provider. Home Assistant pushes the live grid situation so a consumer such as
     the Vaillant VR940 can read it and run PV-surplus optimisation (§1.3.1).
