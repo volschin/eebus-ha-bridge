@@ -257,7 +257,7 @@ class ServiceStatus(_message.Message):
     LOCAL_SKI_FIELD_NUMBER: _ClassVar[int]
     running: bool
     local_ski: str
-    def __init__(self, running: bool = ..., local_ski: _Optional[str] = ...) -> None: ...
+    def __init__(self, running: _Optional[bool] = ..., local_ski: _Optional[str] = ...) -> None: ...
 
 class ServerInfo(_message.Message):
     __slots__ = ("api_major", "api_minor", "bridge_build_version", "features", "local_ski")
@@ -283,7 +283,7 @@ class DeviceStatus(_message.Message):
     last_transition: _timestamp_pb2.Timestamp
     readiness: DeviceReadinessState
     recovery: RecoveryDiagnostics
-    def __init__(self, connected: bool = ..., last_transition: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., readiness: _Optional[_Union[DeviceReadinessState, str]] = ..., recovery: _Optional[_Union[RecoveryDiagnostics, _Mapping]] = ...) -> None: ...
+    def __init__(self, connected: _Optional[bool] = ..., last_transition: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., readiness: _Optional[_Union[DeviceReadinessState, str]] = ..., recovery: _Optional[_Union[RecoveryDiagnostics, _Mapping]] = ...) -> None: ...
 
 class RecoveryDiagnostics(_message.Message):
     __slots__ = ("state", "attempts", "first_stale_at", "last_attempt_at", "next_attempt_at", "last_transition_at")

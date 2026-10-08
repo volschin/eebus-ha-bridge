@@ -6,7 +6,7 @@ import warnings
 from . import common_pb2 as eebus_dot_v1_dot_common__pb2
 from . import ohpcf_service_pb2 as eebus_dot_v1_dot_ohpcf__service__pb2
 
-GRPC_GENERATED_VERSION = '1.78.0'
+GRPC_GENERATED_VERSION = '1.83.1'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -26,7 +26,7 @@ if _version_not_supported:
     )
 
 
-class OHPCFServiceStub(object):
+class OHPCFServiceStub:
     """OHPCFService drives the bridge's OHPCF (Optimization of Self-Consumption by
     Heat Pump Compressor Flexibility, a.k.a. OSCF) CEM-client use case. The remote
     heat pump's Compressor entity offers an optional power-consumption process; the
@@ -57,7 +57,7 @@ class OHPCFServiceStub(object):
                 _registered_method=True)
 
 
-class OHPCFServiceServicer(object):
+class OHPCFServiceServicer:
     """OHPCFService drives the bridge's OHPCF (Optimization of Self-Consumption by
     Heat Pump Compressor Flexibility, a.k.a. OSCF) CEM-client use case. The remote
     heat pump's Compressor entity offers an optional power-consumption process; the
@@ -112,7 +112,7 @@ def add_OHPCFServiceServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class OHPCFService(object):
+class OHPCFService:
     """OHPCFService drives the bridge's OHPCF (Optimization of Self-Consumption by
     Heat Pump Compressor Flexibility, a.k.a. OSCF) CEM-client use case. The remote
     heat pump's Compressor entity offers an optional power-consumption process; the

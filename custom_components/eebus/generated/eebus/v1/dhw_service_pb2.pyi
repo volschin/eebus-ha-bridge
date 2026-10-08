@@ -51,7 +51,7 @@ class DHWSetpoint(_message.Message):
     max_celsius: float
     step_celsius: float
     writable: bool
-    def __init__(self, value_celsius: _Optional[float] = ..., min_celsius: _Optional[float] = ..., max_celsius: _Optional[float] = ..., step_celsius: _Optional[float] = ..., writable: bool = ...) -> None: ...
+    def __init__(self, value_celsius: _Optional[float] = ..., min_celsius: _Optional[float] = ..., max_celsius: _Optional[float] = ..., step_celsius: _Optional[float] = ..., writable: _Optional[bool] = ...) -> None: ...
 
 class SetDHWSetpointRequest(_message.Message):
     __slots__ = ("ski", "value_celsius")
@@ -83,7 +83,7 @@ class DHWSystemFunctionState(_message.Message):
     operation_mode: str
     available_modes: _containers.RepeatedScalarFieldContainer[str]
     mode_writable: bool
-    def __init__(self, boost_status: _Optional[_Union[DHWBoostStatus, str]] = ..., boost_writable: bool = ..., operation_mode: _Optional[str] = ..., available_modes: _Optional[_Iterable[str]] = ..., mode_writable: bool = ...) -> None: ...
+    def __init__(self, boost_status: _Optional[_Union[DHWBoostStatus, str]] = ..., boost_writable: _Optional[bool] = ..., operation_mode: _Optional[str] = ..., available_modes: _Optional[_Iterable[str]] = ..., mode_writable: _Optional[bool] = ...) -> None: ...
 
 class SetDHWBoostRequest(_message.Message):
     __slots__ = ("ski", "active")
@@ -91,7 +91,7 @@ class SetDHWBoostRequest(_message.Message):
     ACTIVE_FIELD_NUMBER: _ClassVar[int]
     ski: str
     active: bool
-    def __init__(self, ski: _Optional[str] = ..., active: bool = ...) -> None: ...
+    def __init__(self, ski: _Optional[str] = ..., active: _Optional[bool] = ...) -> None: ...
 
 class SetDHWOperationModeRequest(_message.Message):
     __slots__ = ("ski", "mode")
