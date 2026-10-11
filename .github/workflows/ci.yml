@@ -332,7 +332,7 @@ jobs:
         run: |
           pip-audit --requirement /dev/stdin <<'EOF'
           grpcio>=1.83.1
-          protobuf>=4.25.0
+          protobuf>=7.35.1
           EOF
       - name: Run tests with coverage
         run: PYTHONPATH=. pytest -m "not cross_language" --cov --cov-report=term-missing -v
@@ -354,7 +354,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install contract-test dependencies
-        run: pip install pytest pytest-asyncio homeassistant voluptuous "grpcio==1.78.0" "protobuf>=4.25.0"
+        run: pip install pytest pytest-asyncio homeassistant voluptuous "grpcio==1.83.1" "protobuf>=7.35.1"
       - name: Run Go/Python contract harness
         run: PYTHONPATH=. pytest -m cross_language -v custom_components/eebus/tests/test_cross_language_contract.py
 

@@ -89,7 +89,7 @@ jobs:
           set -euo pipefail
           # Minimal-diff version bumps (preserve surrounding formatting).
           sed -i -E "s/grpcio>=[0-9.]+/grpcio>=${NEW}/g" custom_components/eebus/manifest.json
-          sed -i -E "s/grpcio>=[0-9.]+/grpcio>=${NEW}/g" .github/workflows/ci.yml
+          sed -i -E "s/grpcio(>=|==)[0-9.]+/grpcio\1${NEW}/g" .github/workflows/ci.yml
           sed -i -E "s/^GRPCIO_TOOLS_VERSION=.*/GRPCIO_TOOLS_VERSION=${NEW}/" proto-tools.env
           # Regenerate stubs with matching grpcio-tools so GRPC_GENERATED_VERSION
           # does not exceed HA's runtime grpcio.

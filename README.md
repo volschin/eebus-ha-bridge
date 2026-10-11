@@ -38,6 +38,9 @@ Home Assistant                    eebus-bridge (Go)         Vaillant VR940f
 
 ## Installation
 
+Die Integration benötigt Home Assistant **2026.10.0 oder neuer**, dessen
+gRPC- und Protobuf-Versionen zu den generierten Schnittstellen passen.
+
 ### HACS (empfohlen)
 
 1. HACS in Home Assistant oeffnen
