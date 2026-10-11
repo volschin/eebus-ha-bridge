@@ -92,7 +92,7 @@ class CompressorFlexibility(_message.Message):
     minimal_run_seconds: int
     minimal_pause_seconds: int
     start_time: _timestamp_pb2.Timestamp
-    def __init__(self, available: bool = ..., requested_power_estimate_w: _Optional[float] = ..., requested_power_max_w: _Optional[float] = ..., is_stoppable: bool = ..., is_pausable: bool = ..., state: _Optional[_Union[CompressorPowerConsumptionState, str]] = ..., minimal_run_seconds: _Optional[int] = ..., minimal_pause_seconds: _Optional[int] = ..., start_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+    def __init__(self, available: _Optional[bool] = ..., requested_power_estimate_w: _Optional[float] = ..., requested_power_max_w: _Optional[float] = ..., is_stoppable: _Optional[bool] = ..., is_pausable: _Optional[bool] = ..., state: _Optional[_Union[CompressorPowerConsumptionState, str]] = ..., minimal_run_seconds: _Optional[int] = ..., minimal_pause_seconds: _Optional[int] = ..., start_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
 class ControlCompressorRequest(_message.Message):
     __slots__ = ("ski", "action", "start_time")

@@ -28,7 +28,7 @@ class WriteLoadLimitRequest(_message.Message):
     value_watts: float
     duration_seconds: int
     is_active: bool
-    def __init__(self, ski: _Optional[str] = ..., value_watts: _Optional[float] = ..., duration_seconds: _Optional[int] = ..., is_active: bool = ...) -> None: ...
+    def __init__(self, ski: _Optional[str] = ..., value_watts: _Optional[float] = ..., duration_seconds: _Optional[int] = ..., is_active: _Optional[bool] = ...) -> None: ...
 
 class FailsafeLimit(_message.Message):
     __slots__ = ("value_watts", "duration_minimum_seconds")
@@ -54,7 +54,7 @@ class HeartbeatStatus(_message.Message):
     WITHIN_DURATION_FIELD_NUMBER: _ClassVar[int]
     running: bool
     within_duration: bool
-    def __init__(self, running: bool = ..., within_duration: bool = ...) -> None: ...
+    def __init__(self, running: _Optional[bool] = ..., within_duration: _Optional[bool] = ...) -> None: ...
 
 class LPCEvent(_message.Message):
     __slots__ = ("ski", "event_type", "limit_update", "failsafe_update", "heartbeat_update")

@@ -70,7 +70,7 @@ class ProviderSampleMeta(_message.Message):
     observed_at: _timestamp_pb2.Timestamp
     valid_until: _timestamp_pb2.Timestamp
     invalid: bool
-    def __init__(self, observed_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., valid_until: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., invalid: bool = ...) -> None: ...
+    def __init__(self, observed_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., valid_until: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., invalid: _Optional[bool] = ...) -> None: ...
 
 class DeviceRequest(_message.Message):
     __slots__ = ("ski",)
@@ -88,7 +88,7 @@ class LoadLimit(_message.Message):
     duration_seconds: int
     is_active: bool
     is_changeable: bool
-    def __init__(self, value_watts: _Optional[float] = ..., duration_seconds: _Optional[int] = ..., is_active: bool = ..., is_changeable: bool = ...) -> None: ...
+    def __init__(self, value_watts: _Optional[float] = ..., duration_seconds: _Optional[int] = ..., is_active: _Optional[bool] = ..., is_changeable: _Optional[bool] = ...) -> None: ...
 
 class PowerMeasurement(_message.Message):
     __slots__ = ("watts", "timestamp")

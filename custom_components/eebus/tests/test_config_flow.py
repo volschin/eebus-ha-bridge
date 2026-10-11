@@ -5,8 +5,9 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import grpc
+import pytest
 from grpc.aio import AioRpcError, Metadata
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import FlowResultType, InvalidData
 
 from custom_components.eebus.config_flow import (
     BridgeProbeResult,
@@ -32,6 +33,13 @@ from custom_components.eebus.server_info import IncompatibleAPIMajorError
 def test_config_flow_domain():
     """Test that config flow has correct domain."""
     assert EebusConfigFlow.DOMAIN == DOMAIN
+
+
+async def test_user_form_validation_uses_homeassistant_errors():
+    """Missing required input raises an error HA's flow manager can handle."""
+    result = await EebusConfigFlow().async_step_user()
+    with pytest.raises(InvalidData.__bases__[0]):
+        result["data_schema"]({})
 
 
 def test_config_flow_supports_zeroconf():
