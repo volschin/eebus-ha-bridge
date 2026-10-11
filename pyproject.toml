@@ -31,6 +31,19 @@ strict = true
 exclude = ["custom_components/eebus/tests"]
 
 [[tool.mypy.overrides]]
+# HA 2026.10 installs probatio as voluptuous at runtime. Static voluptuous
+# types describe the original classes, not HA's native aliases; keep these
+# imports dynamic while checking our code against HA's current API types.
+module = ["voluptuous", "voluptuous.*"]
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+# HA still exposes these enums at runtime after moving their definitions.
+# Keep the public imports usable on both older HA and 2026.10.
+module = ["homeassistant.components.binary_sensor", "homeassistant.components.water_heater"]
+implicit_reexport = true
+
+[[tool.mypy.overrides]]
 # grpcio-tools/mypy-protobuf generated code; not hand-maintained, no point
 # holding it to --strict (untyped grpc stub classes, Message subclasses
 # mypy can't fully resolve without the mypy-protobuf grpc plugin).
