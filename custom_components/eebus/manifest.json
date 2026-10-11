@@ -10,6 +10,6 @@
   "quality_scale": "platinum",
   "requirements": ["grpcio>=1.83.1", "protobuf>=7.35.1"],
   "single_config_entry": false,
-  "version": "0.16.10",
+  "version": "0.17.0",
   "zeroconf": ["_ship._tcp.local."]
 }
