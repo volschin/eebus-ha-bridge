@@ -26,7 +26,7 @@ exclude = ["custom_components/eebus/generated"]
 # Must track the newest Python in CI's test matrix (not this repo's own
 # target-version): mypy parses installed third-party sources like
 # homeassistant, which use syntax gated to whatever CPython they require.
-python_version = "3.14"
+python_version = "3.15"
 strict = true
 exclude = ["custom_components/eebus/tests"]
 
