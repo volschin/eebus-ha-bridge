@@ -352,7 +352,7 @@ jobs:
           cache-dependency-path: eebus-bridge/go.sum
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.14"
+          python-version: "3.15"
       - name: Install contract-test dependencies
         run: pip install pytest pytest-asyncio homeassistant voluptuous "grpcio==1.83.1" "protobuf>=7.35.1"
       - name: Run Go/Python contract harness
@@ -373,7 +373,7 @@ jobs:
           check-latest: true
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.14"
+          python-version: "3.15"
       - name: Install pinned buf
         run: |
           set -euo pipefail
