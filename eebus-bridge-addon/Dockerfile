@@ -11,7 +11,7 @@ ARG BUILD_VERSION
 # pin it later if that becomes worth the churn.
 ARG BUILD_FROM=ghcr.io/home-assistant/base:latest
 
-FROM ghcr.io/sigstore/cosign/cosign:v3.1.3@sha256:9e5c2f2edc34351160407ca3416c61855bdf9403c3c5936e0f0be7fc261611b8 AS cosign
+FROM ghcr.io/sigstore/cosign/cosign:v3.1.4@sha256:0f06154836d2de34f887a5c273506d52ca43edaa1d9e53e6510fa78a48f69c2d AS cosign
 FROM ghcr.io/regclient/regctl:v0.11.6@sha256:db2e5f3a5de80b24d53fea5af9edf7021a53f2689f1e166ef2f0e200dad4fb3a AS regctl
 
 # hadolint ignore=DL3006
