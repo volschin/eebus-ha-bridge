@@ -7,7 +7,7 @@ require (
 	github.com/enbility/ship-go v0.6.1-0.20260928110648-a84426bc3810
 	github.com/enbility/spine-go v0.7.1-0.20260921145843-eb2cd4daba13
 	github.com/stretchr/testify v1.12.1
-	google.golang.org/grpc v1.83.2
+	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -31,7 +31,7 @@ require (
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260817212433-ac3dfec99bb1 // indirect
 )
 
 replace github.com/enbility/eebus-go => github.com/volschin/eebus-go v0.7.1-0.20260731151816-4b2730e630aa
