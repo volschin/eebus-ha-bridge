@@ -37,7 +37,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 class EebusRoomHeatingClimate(EebusEntity, ClimateEntity):
     """Room-heating control exposed by the HVACRoom entity."""
 
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_translation_key = "room_heating"
 
     def __init__(self, coordinator: EebusCoordinator) -> None:
@@ -89,13 +89,13 @@ class EebusRoomHeatingClimate(EebusEntity, ClimateEntity):
         return features
 
     @property
-    def current_temperature(self) -> float | None:
+    def native_current_temperature(self) -> float | None:
         data = self.coordinator.data
         value = data.measurements.room_temperature_c if data is not None else None
         return None if value is None else float(value)
 
     @property
-    def target_temperature(self) -> float | None:
+    def native_target_temperature(self) -> float | None:
         setpoint = self._setpoint()
         return None if setpoint is None else float(setpoint.value_celsius)
 

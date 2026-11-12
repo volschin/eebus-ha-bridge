@@ -26,6 +26,11 @@ change-template: "- $TITLE @$AUTHOR (#$NUMBER)"
 change-title-escapes: '\<*_&'
 
 template: |
+  ## Requirements
+
+  Home Assistant **2026.11.0 or newer** is required. Room-heating and
+  domestic-hot-water entities use the native temperature API introduced in 2026.11.
+
   ## Changes
 
   $CHANGES

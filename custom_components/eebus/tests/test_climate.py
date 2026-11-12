@@ -46,8 +46,9 @@ def _state() -> DeviceState:
 
 def test_temperature_and_constraints_are_device_provided() -> None:
     entity = EebusRoomHeatingClimate(_coordinator(_state()))
-    assert entity.current_temperature == 22.5
-    assert entity.target_temperature == 21.0
+    assert entity.native_temperature_unit == "°C"
+    assert entity.native_current_temperature == 22.5
+    assert entity.native_target_temperature == 21.0
     assert entity.min_temp == 5.0
     assert entity.max_temp == 30.0
     assert entity.target_temperature_step == 0.5
