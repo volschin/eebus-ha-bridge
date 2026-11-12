@@ -31,7 +31,7 @@ async def async_setup_entry(
 class EebusDHWWaterHeater(EebusEntity, WaterHeaterEntity):
     """Domestic-hot-water tank exposed by the EEBUS heat pump."""
 
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_translation_key = "domestic_hot_water"
 
     def __init__(self, coordinator: EebusCoordinator) -> None:
@@ -78,14 +78,14 @@ class EebusDHWWaterHeater(EebusEntity, WaterHeaterEntity):
         return features
 
     @property
-    def current_temperature(self) -> float | None:
+    def native_current_temperature(self) -> float | None:
         """Return the measured domestic-hot-water temperature."""
         data = self.coordinator.data
         value = data.measurements.dhw_temperature_c if data is not None else None
         return None if value is None else float(value)
 
     @property
-    def target_temperature(self) -> float | None:
+    def native_target_temperature(self) -> float | None:
         """Return the configured domestic-hot-water target."""
         setpoint = self._setpoint()
         return None if setpoint is None else float(setpoint.value_celsius)

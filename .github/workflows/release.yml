@@ -23,7 +23,12 @@ jobs:
         # never sees a new version even though the tag and image exist.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --generate-notes --latest --verify-tag
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "Requires Home Assistant **2026.11.0 or newer**. Room-heating and domestic-hot-water entities use the native temperature API introduced in 2026.11." \
+            --generate-notes --latest --verify-tag
 
   publish-image:
     runs-on: ubuntu-latest
