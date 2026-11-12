@@ -105,8 +105,9 @@ def test_water_heater_combines_temperatures_modes_and_writes() -> None:
     coordinator.async_set_dhw_operation_mode = AsyncMock()
     coordinator.async_request_refresh = AsyncMock()
     entity = EebusDHWWaterHeater(coordinator)
-    assert entity.current_temperature == 44.5
-    assert entity.target_temperature == 46
+    assert entity.native_temperature_unit == "°C"
+    assert entity.native_current_temperature == 44.5
+    assert entity.native_target_temperature == 46
     assert entity.min_temp == 35
     assert entity.max_temp == 70
     assert entity.current_operation == "auto"
@@ -125,7 +126,7 @@ def test_temporary_dhw_state_is_not_exposed_as_current() -> None:
     coordinator = _coordinator(_dhw_state(supported=CapabilityState.TEMPORARILY_UNAVAILABLE))
     entity = EebusDHWWaterHeater(coordinator)
     assert entity.available is True  # fresh measured temperature remains useful
-    assert entity.target_temperature is None
+    assert entity.native_target_temperature is None
     assert entity.current_operation is None
 
 
