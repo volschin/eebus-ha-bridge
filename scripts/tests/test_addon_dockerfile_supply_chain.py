@@ -5,12 +5,12 @@ import unittest
 
 DOCKERFILE = Path(__file__).parents[2] / "eebus-bridge-addon" / "Dockerfile"
 COSIGN_REF = (
-    "ghcr.io/sigstore/cosign/cosign:v3.1.3@sha256:"
-    "9e5c2f2edc34351160407ca3416c61855bdf9403c3c5936e0f0be7fc261611b8"
+    "ghcr.io/sigstore/cosign/cosign:v3.1.4@sha256:"
+    "0f06154836d2de34f887a5c273506d52ca43edaa1d9e53e6510fa78a48f69c2d"
 )
 REGCTL_REF = (
-    "ghcr.io/regclient/regctl:v0.11.6@sha256:"
-    "db2e5f3a5de80b24d53fea5af9edf7021a53f2689f1e166ef2f0e200dad4fb3a"
+    "ghcr.io/regclient/regctl:v0.11.7@sha256:"
+    "45b57933c2b67bb1e280b4baaa220ef1ab212c81268ab19589fa1e83719c7c82"
 )
 
 
