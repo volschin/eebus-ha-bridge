@@ -38,7 +38,7 @@ Home Assistant                    eebus-bridge (Go)         Vaillant VR940f
 
 ## Installation
 
-Die nächste Version der Integration benötigt Home Assistant **2026.11.0 oder neuer**.
+Ab Version **0.18.0** benötigt die Integration Home Assistant **2026.11.0 oder neuer**.
 Heizung und Warmwasser verwenden dessen native Temperatur-API; die gRPC- und
 Protobuf-Versionen müssen zu den generierten Schnittstellen passen.
 

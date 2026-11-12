@@ -10,6 +10,12 @@ only what changed in the packaging. Bridge changes are in the
   `EEBUS_EXP_MGCP_PROVIDER` so the experimental MGCP grid provider can be
   enabled from the add-on configuration.
 
+## 0.18.0
+
+- Package bridge 0.18.0 alongside the integration requiring Home Assistant
+  2026.11.0 or newer.
+- Update signed-image verification tools to Cosign 3.1.4 and regctl 0.11.7.
+
 ## 0.16.2
 
 - Initial release of the add-on.
