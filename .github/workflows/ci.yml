@@ -352,7 +352,9 @@ jobs:
           cache-dependency-path: eebus-bridge/go.sum
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.15"
+          # grpcio's minimum supported pin has wheels for 3.14; using 3.15
+          # builds it from source. The Python job covers both HA runtimes.
+          python-version: "3.14"
       - name: Install contract-test dependencies
         run: pip install pytest pytest-asyncio "homeassistant>=2026.11.0" voluptuous "grpcio==1.83.1" "protobuf>=7.35.1"
       - name: Run Go/Python contract harness
